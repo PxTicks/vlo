@@ -120,7 +120,7 @@ describe("composite render contract", () => {
       ),
     });
     expect(serializeCompositeBakeKey(key)).toBe(
-      `v1:${key.contentHash}:30fps:1919x1080:transparent:${key.dependencyRevision}`,
+      `v2:${key.contentHash}:30fps:1919x1080:transparent:${key.dependencyRevision}`,
     );
   });
 

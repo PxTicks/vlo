@@ -150,6 +150,18 @@ interface LatestMaskSyncContext {
   fps?: number;
 }
 
+export function resolveClipTransformContentSize(
+  clip: TimelineClip,
+  logicalDimensions: { width: number; height: number },
+  contentSizeOverride?: { width: number; height: number },
+  sourceSize?: { width: number; height: number },
+): { width: number; height: number } | undefined {
+  return (
+    contentSizeOverride ??
+    (clip.type === "text" ? logicalDimensions : sourceSize)
+  );
+}
+
 interface TrackRenderEngineOptions {
   trackId?: string;
   adjustmentEffectResolver?: AdjustmentEffectResolver | null;
@@ -803,6 +815,7 @@ export class TrackRenderEngine {
       presentationClip,
       job.logicalDimensions,
       job.rawClipTick,
+      job.compositeSource ? job.contentSize : undefined,
     );
     return true;
   }
@@ -2632,8 +2645,16 @@ export class TrackRenderEngine {
     clip: TimelineClip,
     logicalDimensions: { width: number; height: number },
     rawTime: number,
+    contentSizeOverride?: { width: number; height: number },
   ) {
-    if (!this.tryApplyOffscreenEffectMask(clip, logicalDimensions, rawTime)) {
+    if (
+      !this.tryApplyOffscreenEffectMask(
+        clip,
+        logicalDimensions,
+        rawTime,
+        contentSizeOverride,
+      )
+    ) {
       // Leaving the offscreen effect-mask path ends ownership of its retained
       // filter slots. A later masked render must not inherit stale history.
       this.maskedEffectRenderer?.reset();
@@ -2643,7 +2664,11 @@ export class TrackRenderEngine {
         clip,
         logicalDimensions,
         rawTime,
-        clip.type === "text" ? logicalDimensions : undefined,
+        resolveClipTransformContentSize(
+          clip,
+          logicalDimensions,
+          contentSizeOverride,
+        ),
         { render: this.buildFrameRenderContext(rawTime) },
       );
     }
@@ -2665,6 +2690,7 @@ export class TrackRenderEngine {
     clip: TimelineClip,
     logicalDimensions: { width: number; height: number },
     rawTime: number,
+    contentSizeOverride?: { width: number; height: number },
   ): boolean {
     const renderer = this.maskedEffectRenderer;
     const source = this.effectSourceTexture;
@@ -2694,10 +2720,12 @@ export class TrackRenderEngine {
       return false;
     }
 
-    const contentSize =
-      clip.type === "text"
-        ? logicalDimensions
-        : { width: source.width, height: source.height };
+    const contentSize = resolveClipTransformContentSize(
+      clip,
+      logicalDimensions,
+      contentSizeOverride,
+      { width: source.width, height: source.height },
+    )!;
     const stackTime = rawTime + (clip.transformedOffset || 0);
     const { lookup: filterOpLookup, sourceTimeTicks } =
       buildResolvedFilterOpLookupWithTime(

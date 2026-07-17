@@ -93,9 +93,10 @@ function copyAndValidateFrame(frame: CompositePixelFrame): CompositePixelFrame {
 }
 
 /**
- * Captures all three equivalence stages through narrow adapters. Phase 2 will
- * supply the live RenderTexture adapter; export supplies the pre-encode frame,
- * and a headed decoder fixture supplies the decoded bake.
+ * Captures all three equivalence stages through narrow adapters. The live
+ * source is captured from the composite executor's pre-parent-operation
+ * texture seam; export supplies the pre-encode frame, and a headed decoder
+ * fixture supplies the decoded bake.
  */
 export async function captureCompositeParityFrames(
   sources: CompositeParityCaptureSources,
@@ -124,6 +125,18 @@ export function captureExtractedCompositePixels(extract: () => {
     height: result.height,
     pixels: new Uint8ClampedArray(result.pixels),
   });
+}
+
+/** Captures a specific live RenderTexture through a Pixi-compatible extractor. */
+export function captureCompositeTexturePixels<TTexture>(
+  texture: TTexture,
+  extract: (texture: TTexture) => {
+    width: number;
+    height: number;
+    pixels: Uint8Array | Uint8ClampedArray;
+  },
+): CompositePixelFrame {
+  return captureExtractedCompositePixels(() => extract(texture));
 }
 
 /** Adapts a headed decoded-video canvas to the parity frame contract. */

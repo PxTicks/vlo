@@ -22,6 +22,8 @@ interface ColorTaggedVideoEncoderConfig extends VideoEncoderConfig {
 }
 const addCalls: DeferredAdd[] = [];
 const canvasSourceConfigs: Array<{
+  codec?: string;
+  alpha?: "discard" | "keep";
   onEncoderConfig?: (config: VideoEncoderConfig) => void;
   onEncodedPacket?: (
     packet: unknown,
@@ -51,6 +53,7 @@ vi.mock("mediabunny", () => ({
     finalize = vi.fn().mockResolvedValue(undefined);
   },
   Mp4OutputFormat: class {},
+  WebMOutputFormat: class {},
   BufferTarget: class {
     buffer = new ArrayBuffer(1);
   },
@@ -123,6 +126,23 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     expect(f0.isDone()).toBe(true);
     expect(f1.isDone()).toBe(true);
     expect(addCalls).toHaveLength(2);
+  });
+
+  it("configures WebM caches to retain alpha side data", async () => {
+    const encoder = new TextureOutputEncoder(
+      app,
+      30,
+      [{ id: "composite", format: "webm", includeAudio: false }],
+      { encodeQueueSize: 1 },
+    );
+
+    await encoder.start();
+
+    expect(canvasSourceConfigs[0]).toMatchObject({
+      codec: "vp9",
+      alpha: "keep",
+    });
+    encoder.dispose();
   });
 
   it("tags AVC encoder and MP4 decoder metadata as BT.709/sRGB", async () => {

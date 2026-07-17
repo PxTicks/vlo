@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   MaskTimelineClip,
   StandardTimelineClip,
+  TimelineClip,
 } from "../../../../types/TimelineTypes";
 import type { Asset } from "../../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../../timeline";
@@ -162,7 +163,10 @@ vi.mock("pixi.js", async () => {
 });
 
 import { Texture } from "pixi.js";
-import { TrackRenderEngine } from "../TrackRenderEngine";
+import {
+  TrackRenderEngine,
+  resolveClipTransformContentSize,
+} from "../TrackRenderEngine";
 
 function createParentClip(
   overrides: Partial<StandardTimelineClip> = {},
@@ -229,6 +233,61 @@ describe("TrackRenderEngine masks", () => {
     sam2SetSourceSpy.mockReset();
     sam2RenderAtSpy.mockReset();
     sam2DisposeSpy.mockReset();
+  });
+
+  it("gives an explicit content size precedence for every clip type", () => {
+    const logical = { width: 1920, height: 1080 };
+    const override = { width: 640, height: 360 };
+    const source = { width: 320, height: 180 };
+    const textClip = {
+      ...createParentClip(),
+      type: "text",
+    } as unknown as TimelineClip;
+
+    expect(
+      resolveClipTransformContentSize(textClip, logical, override, source),
+    ).toBe(override);
+    expect(
+      resolveClipTransformContentSize(textClip, logical, undefined, source),
+    ).toBe(logical);
+    expect(
+      resolveClipTransformContentSize(
+        createParentClip(),
+        logical,
+        undefined,
+        source,
+      ),
+    ).toBe(source);
+  });
+
+  it("uses a centered logical-size boundary for composite parent layout", () => {
+    const engine = new TrackRenderEngine(1);
+    const internals = engine as unknown as {
+      sprite: {
+        anchor: { set: ReturnType<typeof vi.fn> };
+        position: { set: ReturnType<typeof vi.fn> };
+        scale: { set: ReturnType<typeof vi.fn> };
+      };
+      applyClipTransformsForClip: (
+        clip: StandardTimelineClip,
+        logicalDimensions: { width: number; height: number },
+        rawTime: number,
+        contentSizeOverride?: { width: number; height: number },
+      ) => void;
+    };
+    const logicalDimensions = { width: 1920, height: 1080 };
+
+    internals.applyClipTransformsForClip(
+      createParentClip(),
+      logicalDimensions,
+      0,
+      logicalDimensions,
+    );
+
+    expect(internals.sprite.anchor.set).toHaveBeenCalledWith(0.5);
+    expect(internals.sprite.position.set).toHaveBeenCalledWith(960, 540);
+    expect(internals.sprite.scale.set).toHaveBeenCalledWith(1, 1);
+    engine.dispose();
   });
 
   it("applies only masks in apply mode", () => {

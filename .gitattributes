@@ -51,6 +51,7 @@
 /frontend/src/features/renderer/services/ExportRenderer.ts extension-surface=adapter
 /frontend/src/features/renderer/services/RenderGroupOrchestrator.ts extension-surface=adapter
 /frontend/src/features/renderer/services/TemporalRenderCoordinator.ts extension-surface=adapter
+/frontend/src/features/renderer/services/TemporalFrameScopeResolver.ts extension-surface=adapter
 /frontend/src/features/renderer/services/TrackRenderEngine.ts extension-surface=adapter
 /frontend/src/features/renderer/services/framePlanning/LiveFrameGraphCoordinator.ts extension-surface=adapter
 /frontend/src/features/renderer/services/framePlanning/framePlanningTypes.ts extension-surface=adapter

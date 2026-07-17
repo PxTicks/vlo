@@ -117,6 +117,14 @@ describe("FrameResolutionGraph", () => {
     });
     expect(compositeNode?.inputs).toHaveLength(1);
     expect(effectNode?.inputs).toContain(compositeNode?.id);
+    expect(ordered.map((node) => node.kind)).toEqual([
+      "source",
+      "composite-scene",
+      "mask-sync",
+      "mask-coverage",
+      "effect-chain",
+      "clip-output",
+    ]);
   });
 
   it("rejects missing inputs", () => {

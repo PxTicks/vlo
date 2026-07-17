@@ -116,6 +116,11 @@ export class FrameJobResolver {
                 ? validity.assetId
                 : null,
           };
+          // A composite source is a project-logical layer even when its
+          // fallback codec pads the decoded texture to an even frame size.
+          // Parent fit/effect work keys must therefore never inherit decoder
+          // dimensions from the previous frame.
+          job.contentSize = input.logicalDimensions;
         }
       }
       const transitionTransforms =

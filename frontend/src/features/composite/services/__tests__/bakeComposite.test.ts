@@ -71,7 +71,7 @@ describe("bakeComposite", () => {
     vi.clearAllMocks();
     mocks.projectState.config = { aspectRatio: "16:9", fps: 24 };
     mocks.renderSelectionToVideoFile.mockResolvedValue(
-      new File(["video"], "composite.mp4", { type: "video/mp4" }),
+      new File(["video"], "composite.webm", { type: "video/webm" }),
     );
     mocks.addLocalAsset.mockResolvedValue({
       id: "baked-asset",
@@ -118,6 +118,8 @@ describe("bakeComposite", () => {
         signal: controller.signal,
         onProgress,
         filenamePrefix: "composite",
+        format: "webm",
+        preserveAlpha: true,
         onBeforeEncodeFrame,
       },
     );
@@ -130,7 +132,7 @@ describe("bakeComposite", () => {
         compositeRevision: 7,
         contentHash: "content-hash",
         bakeKey: expect.stringMatching(
-          /^v1:content-hash:30fps:1919x1079:transparent:/,
+          /^v2:content-hash:30fps:1919x1079:transparent:/,
         ),
       }),
       undefined,
@@ -141,7 +143,7 @@ describe("bakeComposite", () => {
       bakedDurationTicks: 240000,
       contentHash: "content-hash",
       bakeKey: expect.stringMatching(
-        /^v1:content-hash:30fps:1919x1079:transparent:/,
+        /^v2:content-hash:30fps:1919x1079:transparent:/,
       ),
     });
   });

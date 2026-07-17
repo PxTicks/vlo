@@ -3,6 +3,7 @@ import {
   COMPOSITE_DECODED_PIXEL_TOLERANCE,
   COMPOSITE_PREENCODE_PIXEL_TOLERANCE,
   captureCompositeParityFrames,
+  captureCompositeTexturePixels,
   captureExtractedCompositePixels,
   compareCompositePixelFrames,
   createCompositeCoordinateProbeFrame,
@@ -46,6 +47,23 @@ describe("composite parity harness", () => {
     }));
 
     expect(capture).toEqual(probe.frame);
+  });
+
+  it("captures the exact pre-parent-operation composite texture", () => {
+    const probe = createCompositeCoordinateProbeFrame(5, 5);
+    const texture = { id: "placement-texture" };
+    const extract = (target: typeof texture) => {
+      expect(target).toBe(texture);
+      return {
+        width: probe.frame.width,
+        height: probe.frame.height,
+        pixels: probe.frame.pixels,
+      };
+    };
+
+    expect(captureCompositeTexturePixels(texture, extract)).toEqual(
+      probe.frame,
+    );
   });
 
   it("keeps transparent margins and unique fixed coordinate markers", () => {

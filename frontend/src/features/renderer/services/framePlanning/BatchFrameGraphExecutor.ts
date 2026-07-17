@@ -39,7 +39,11 @@ export interface BatchFrameGraphExecutorOptions {
   onDiagnostics?: (diagnostics: FramePlanningDiagnostics) => void;
   compositeSceneRenderer?: CompositeSceneFrameRenderer;
   onCompositeSceneError?: (error: unknown, job: ResolvedClipFrameJob) => void;
-  onCompositeSceneRendered?: (job: ResolvedClipFrameJob) => void;
+  /** Pre-parent-operation seam used by diagnostics and the parity harness. */
+  onCompositeSceneRendered?: (
+    job: ResolvedClipFrameJob,
+    texture: Texture,
+  ) => void;
 }
 
 function createAbortError(message: string): Error {
@@ -272,7 +276,7 @@ export class BatchFrameGraphExecutor {
               node.jobId,
               new SharedTextureHandle(node.workKey, texture, () => {}),
             );
-            this.options.onCompositeSceneRendered?.(job);
+            this.options.onCompositeSceneRendered?.(job, texture);
           } catch (error) {
             this.options.onCompositeSceneError?.(error, job);
             if (!source.fallbackAssetId) {

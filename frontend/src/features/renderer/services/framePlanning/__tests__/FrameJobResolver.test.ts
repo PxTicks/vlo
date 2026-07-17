@@ -175,7 +175,8 @@ describe("FrameJobResolver composite sources", () => {
   it("resolves canonical content time and a validated bake fallback", () => {
     setCompositeRenderDagEnabled(true);
 
-    expect(resolve().compositeSource).toMatchObject({
+    const resolved = resolve();
+    expect(resolved.compositeSource).toMatchObject({
       compositeId: composite.id,
       placementId: placement.id,
       revision: 2,
@@ -184,6 +185,7 @@ describe("FrameJobResolver composite sources", () => {
       fps: 24,
       fallbackAssetId: asset.id,
     });
+    expect(resolved.contentSize).toEqual({ width: 1920, height: 1080 });
   });
 
   it("does not expose a stale bake as fallback", () => {

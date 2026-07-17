@@ -105,8 +105,9 @@ function buildCompositeRenderInputs(
 }
 
 /**
- * Renders composite content to a hidden video asset. Timeline placements point
- * directly at that baked asset, so playback/export use the normal video path.
+ * Renders composite content to a hidden alpha-preserving WebM asset. Timeline
+ * placements point directly at that cache, so fallback uses the normal video
+ * decode path without changing the transparent composite-layer contract.
  */
 export async function bakeComposite(
   content: CompositeContent,
@@ -156,6 +157,8 @@ export async function bakeComposite(
     signal: options.signal,
     onProgress: options.onProgress,
     filenamePrefix: "composite",
+    format: "webm",
+    preserveAlpha: true,
     ...(options.onBeforeEncodeFrame
       ? { onBeforeEncodeFrame: options.onBeforeEncodeFrame }
       : {}),

@@ -1,4 +1,5 @@
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
+import { isCompositeClip } from "../../../types/TimelineTypes";
 import { getEntryForTransform } from "./TransformationRegistry";
 import type {
   FilterRenderContext,
@@ -120,6 +121,17 @@ export function getTemporalTransformationTopologyKey(
 
 /** Source identity that must reset temporal feedback when edited in place. */
 export function getTemporalClipSourceIdentity(clip: TimelineClip): string {
+  if (isCompositeClip(clip)) {
+    return [
+      clip.id,
+      clip.type,
+      "composite",
+      clip.compositeId,
+      clip.compositeRevision ?? "legacy",
+      "fallback",
+      clip.assetId,
+    ].join(":");
+  }
   if (clip.type === "video" || clip.type === "image" || clip.type === "audio") {
     return `${clip.id}:${clip.type}:asset:${clip.assetId}`;
   }

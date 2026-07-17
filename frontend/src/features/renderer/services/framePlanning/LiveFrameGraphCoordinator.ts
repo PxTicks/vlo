@@ -6,7 +6,7 @@ import type {
   TimelineTrack,
   Transition,
 } from "../../../../types/TimelineTypes";
-import type { Renderer } from "pixi.js";
+import type { Renderer, Texture } from "pixi.js";
 import type { AdjustmentEffectResolver } from "../AdjustmentEffectResolver";
 import type { TrackRenderEngine } from "../TrackRenderEngine";
 import {
@@ -22,13 +22,9 @@ import type {
 } from "./framePlanningTypes";
 import { resolveTransitionFrame } from "../../../transitions/rendering/TransitionResolver";
 import { TemporalRenderCoordinator } from "../TemporalRenderCoordinator";
-import {
-  collectTemporalRenderingRequirements,
-  getTemporalClipSourceIdentity,
-  getTemporalTransformationTopologyKey,
-} from "../../../transformations/catalogue/temporalRenderingRequirements";
 import type { FilterRenderContext } from "../../../transformations/catalogue/types";
 import { CompositeSceneRuntimeManager } from "../CompositeSceneRuntime";
+import { collectTemporalFrameScope } from "../TemporalFrameScopeResolver";
 
 export interface LiveFrameGraphParticipant {
   trackId: string;
@@ -75,7 +71,10 @@ export interface LiveFrameGraphCoordinatorOptions {
     error: unknown,
     job: ResolvedClipFrameJob,
   ) => void;
-  onCompositeSceneRendered?: (job: ResolvedClipFrameJob) => void;
+  onCompositeSceneRendered?: (
+    job: ResolvedClipFrameJob,
+    texture: Texture,
+  ) => void;
 }
 
 /**
@@ -176,78 +175,32 @@ export class LiveFrameGraphCoordinator {
       );
       return result;
     }
-    const stableTransformationSets: TimelineClip["transformations"][] = [];
-    const activeTransformationSets: TimelineClip["transformations"][] = [];
-    const activeSourceIdentities: string[] = [];
-    const activeTemporalStartTicks: number[] = [];
-    for (const participant of this.participants.values()) {
-      const trackClips = participant.getTrackClips();
-      for (const clip of trackClips) {
-        stableTransformationSets.push(clip.transformations ?? []);
-      }
-      const active = participant.engine.resolveActiveClipAtPresentation(
-        trackClips,
-        presentationTick,
-      );
-      if (active) {
-        const transformations = active.activeClip.transformations ?? [];
-        activeTransformationSets.push(transformations);
-        activeSourceIdentities.push(
-          getTemporalClipSourceIdentity(active.activeClip),
-        );
-        if (
-          collectTemporalRenderingRequirements([transformations])
-            .timeDependency !== "none"
-        ) {
-          activeTemporalStartTicks.push(active.presentationStart);
-        }
-      }
-    }
-    for (const clip of options.clips ?? []) {
-      if (clip.type === "adjustment") {
-        stableTransformationSets.push(clip.transformations ?? []);
-      }
-    }
-    const collectGroupTransforms = (
-      groups: ReturnType<AdjustmentEffectResolver["deriveGroups"]>,
-    ): void => {
-      for (const group of groups) {
-        const transformations = group.transformations ?? [];
-        activeTransformationSets.push(transformations);
-        if (
-          collectTemporalRenderingRequirements([transformations])
-            .timeDependency !== "none"
-        ) {
-          const localElapsed = Math.max(
-            0,
-            (group.sampleTick ?? presentationTick) - group.start,
-          );
-          activeTemporalStartTicks.push(presentationTick - localElapsed);
-        }
-        collectGroupTransforms(group.children);
-      }
-    };
-    collectGroupTransforms(
-      options.adjustmentEffectResolver.deriveGroups(presentationTick),
+    const participantTracks = [...this.participants.values()].map(
+      (participant) => ({
+        trackId: participant.trackId,
+        trackClips: participant.getTrackClips(),
+        activeClipResolver: participant.engine,
+      }),
     );
-    const temporalRequirements = collectTemporalRenderingRequirements(
-      activeTransformationSets,
-    );
+    const temporalScope = collectTemporalFrameScope({
+      presentationTick,
+      tracks: participantTracks,
+      stableClips: [
+        ...participantTracks.flatMap((track) => track.trackClips),
+        ...(options.clips ?? []).filter((clip) => clip.type === "adjustment"),
+      ],
+      adjustmentEffectResolver: options.adjustmentEffectResolver,
+    });
     const temporalPlan = this.temporal.plan({
       presentationTick,
       fps: options.fps,
       mode: "preview",
-      requirements: temporalRequirements,
+      requirements: temporalScope.requirements,
       earliestTick: Math.max(
         options.earliestTick ?? 0,
-        activeTemporalStartTicks.length > 0
-          ? Math.min(...activeTemporalStartTicks)
-          : 0,
+        temporalScope.earliestTick,
       ),
-      topologyKey: [
-        getTemporalTransformationTopologyKey(stableTransformationSets),
-        ...activeSourceIdentities,
-      ].join("::"),
+      topologyKey: temporalScope.topologyKey,
     });
 
     for (const render of temporalPlan.warmup) {

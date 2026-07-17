@@ -1,4 +1,7 @@
-import { ExportRenderer } from "../ExportRenderer";
+import {
+  ExportRenderer,
+  resolveOutputDefinitions,
+} from "../ExportRenderer";
 import type { ProjectData } from "../ExportRenderer";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import type { Mock } from "vitest";
@@ -168,6 +171,7 @@ vi.mock("mediabunny", () => {
       finalize = vi.fn();
     },
     Mp4OutputFormat: class {},
+    WebMOutputFormat: class {},
     BufferTarget: class {
       buffer = new ArrayBuffer(1);
     },
@@ -260,6 +264,15 @@ describe("ExportRenderer", () => {
     audioRendererMocks.instances = [];
     offlineAudioContextMocks.instances = [];
     setCompositeRenderDagEnabled(false);
+  });
+
+  it("rejects preserveAlpha when explicit output contracts are supplied", () => {
+    expect(() =>
+      resolveOutputDefinitions({
+        preserveAlpha: true,
+        outputs: [{ id: "video", format: "mp4" }],
+      }),
+    ).toThrow(/preserveAlpha cannot be combined with explicit outputs/);
   });
 
   it("should correctly scale the stage for 4K export from 1080p logic", async () => {

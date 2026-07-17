@@ -9,6 +9,7 @@ import {
   type RenderedFramePixelCapture,
 } from "./ExportRenderer";
 import { buildProjectRenderInputs } from "./projectFrameCapture";
+import type { OutputVideoFormat } from "./TextureOutputEncoder";
 
 export interface SelectionRenderInputs {
   exportConfig: ExportConfig;
@@ -25,7 +26,10 @@ export interface RenderSelectionToVideoFileOptions {
   includeTimelineMasks?: boolean;
   signal?: AbortSignal;
   onProgress?: (percentage: number) => void;
-  /** Base name for the produced File (a `-<timestamp>.mp4` suffix is appended). */
+  /** Output container. WebM is used for alpha-preserving composite caches. */
+  format?: OutputVideoFormat;
+  preserveAlpha?: boolean;
+  /** Base name for the produced File; timestamp and extension are appended. */
   filenamePrefix?: string;
   /**
    * Invoked with the renderer immediately after creation — e.g. to register it
@@ -47,8 +51,8 @@ export interface RenderSelectionToVideoFileOptions {
 }
 
 /**
- * Single source of truth for "render a {@link TimelineSelection} to an mp4
- * File". Wraps the `ExportRenderer.create → render → File` sequence so callers
+ * Single source of truth for rendering a {@link TimelineSelection} to a video
+ * `File`. Wraps the `ExportRenderer.create → render → File` sequence so callers
  * (generation input prep, the composite bake, selection/project export)
  * don't each re-implement it. The renderer disposes itself in `render()`.
  */
@@ -80,7 +84,8 @@ export async function renderSelectionToVideoFile(
     (percentage) => options.onProgress?.(percentage),
     {
       timelineSelection: selection,
-      format: "mp4",
+      format: options.format ?? "mp4",
+      preserveAlpha: options.preserveAlpha,
       includeTimelineMasks: options.includeTimelineMasks,
       signal: options.signal,
       ...(options.onBeforeEncodeFrame
@@ -92,8 +97,10 @@ export async function renderSelectionToVideoFile(
   options.onRenderHealth?.(result.renderHealth);
 
   const prefix = options.filenamePrefix ?? "selection";
-  return new File([result.video], `${prefix}-${Date.now()}.mp4`, {
-    type: "video/mp4",
+  const format = options.format ?? "mp4";
+  const mimeType = format === "webm" ? "video/webm" : "video/mp4";
+  return new File([result.video], `${prefix}-${Date.now()}.${format}`, {
+    type: mimeType,
     lastModified: Date.now(),
   });
 }

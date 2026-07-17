@@ -14,15 +14,20 @@ import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import type { DecoderWorkerPool } from "./DecoderWorkerPool";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
+import { TemporalRenderCoordinator } from "./TemporalRenderCoordinator";
+import { collectTemporalFrameScope } from "./TemporalFrameScopeResolver";
 import { BatchFrameGraphExecutor } from "./framePlanning/BatchFrameGraphExecutor";
-import { FrameJobResolver } from "./framePlanning/FrameJobResolver";
+import {
+  FrameJobResolver,
+  type FrameJobResolutionTrack,
+} from "./framePlanning/FrameJobResolver";
 import { buildFrameResolutionGraph } from "./framePlanning/FrameResolutionGraph";
 import { buildScenePresentationPlan } from "./framePlanning/ScenePresentationPlanner";
 import type {
   FrameExecutionPolicy,
-  FrameJobResolutionTrack,
   ResolvedCompositeSource,
 } from "./framePlanning/framePlanningTypes";
+import type { FilterRenderContext } from "../../transformations/catalogue/types";
 
 export interface CompositeSceneFrameRenderer {
   renderCompositeScene(
@@ -79,6 +84,15 @@ function buildMaskLookup(clips: readonly TimelineClip[]) {
   return result;
 }
 
+function withRenderContext(
+  policy: FrameExecutionPolicy,
+  render: FilterRenderContext,
+): FrameExecutionPolicy {
+  return policy.mode === "export"
+    ? { ...policy, render }
+    : { ...policy, render };
+}
+
 class CompositePlacementRuntime {
   private readonly root = new Container();
   private readonly output: RenderTexture;
@@ -94,6 +108,7 @@ class CompositePlacementRuntime {
   private readonly transitions: Transition[];
   private readonly renderer: Renderer;
   private readonly source: ResolvedCompositeSource;
+  private readonly temporal = new TemporalRenderCoordinator();
   private epoch = 0;
 
   constructor(
@@ -167,6 +182,52 @@ class CompositePlacementRuntime {
     assets: readonly Asset[],
     policy: FrameExecutionPolicy,
   ): Promise<Texture> {
+    const temporalScope = collectTemporalFrameScope({
+      presentationTick: localPresentationTick,
+      tracks: this.resolutionTracks.map((track) => ({
+        trackId: track.trackId,
+        trackClips: track.trackClips,
+        activeClipResolver: track.engine,
+      })),
+      stableClips: this.clips,
+      adjustmentEffectResolver: this.adjustmentResolver,
+    });
+    const temporalPlan = this.temporal.plan({
+      presentationTick: localPresentationTick,
+      fps: this.source.fps,
+      mode:
+        policy.render?.mode ??
+        (policy.mode === "export" ? "export" : "preview"),
+      requirements: temporalScope.requirements,
+      earliestTick: temporalScope.earliestTick,
+      topologyKey: temporalScope.topologyKey,
+    });
+
+    try {
+      for (const warmup of temporalPlan.warmup) {
+        await this.renderFrame(
+          warmup.presentationTimeTicks,
+          assets,
+          withRenderContext(policy, warmup),
+        );
+      }
+      await this.renderFrame(
+        localPresentationTick,
+        assets,
+        withRenderContext(policy, temporalPlan.target),
+      );
+      return this.output;
+    } catch (error) {
+      this.temporal.invalidate();
+      throw error;
+    }
+  }
+
+  private async renderFrame(
+    localPresentationTick: number,
+    assets: readonly Asset[],
+    policy: FrameExecutionPolicy,
+  ): Promise<void> {
     this.epoch += 1;
     const adjustmentForest =
       this.adjustmentResolver.deriveGroups(localPresentationTick);
@@ -211,7 +272,6 @@ class CompositePlacementRuntime {
       clear: true,
       clearColor: [0, 0, 0, 0],
     });
-    return this.output;
   }
 
   dispose(): void {

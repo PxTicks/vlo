@@ -23,6 +23,10 @@ export type {
   RenderResult,
 } from "./services/ExportRenderer";
 export type { StrictRenderHealth } from "./services/TrackRenderEngine";
+export type {
+  OutputVideoDefinition,
+  OutputVideoFormat,
+} from "./services/TextureOutputEncoder";
 export { TrackAudioRenderer } from "./services/TrackAudioRenderer";
 export {
   buildProjectRenderInputs,

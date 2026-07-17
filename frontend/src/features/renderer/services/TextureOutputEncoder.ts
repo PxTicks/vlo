@@ -6,6 +6,7 @@ import {
   Mp4OutputFormat,
   Output,
   StreamTarget,
+  WebMOutputFormat,
   type StreamTargetChunk,
 } from "mediabunny";
 import {
@@ -14,7 +15,7 @@ import {
 } from "../utils/outputTransformStack";
 import { V1_COLOR_MODEL } from "../../../core/color";
 
-export type OutputVideoFormat = "mp4";
+export type OutputVideoFormat = "mp4" | "webm";
 export type OutputContentProbe = "non_black_pixels";
 
 export interface OutputVideoAnalysis {
@@ -38,7 +39,7 @@ export interface OutputVideoDefinition {
 
 interface ManagedOutput {
   definition: OutputVideoDefinition;
-  mimeType: "video/mp4";
+  mimeType: "video/mp4" | "video/webm";
   output: Output;
   target: BufferTarget | StreamTarget;
   videoSource: CanvasSource;
@@ -152,7 +153,9 @@ export class TextureOutputEncoder {
 
     this.outputs = await Promise.all(
       this.definitions.map(async (definition) => {
-        const mimeType = "video/mp4";
+        const format = definition.format ?? "mp4";
+        const isAlphaWebM = format === "webm";
+        const mimeType = isAlphaWebM ? "video/webm" : "video/mp4";
 
         let target: BufferTarget | StreamTarget;
         let fileStream: FileSystemWritableFileStream | undefined;
@@ -172,13 +175,16 @@ export class TextureOutputEncoder {
         }
 
         const output = new Output({
-          format: new Mp4OutputFormat({ fastStart: "in-memory" }),
+          format: isAlphaWebM
+            ? new WebMOutputFormat()
+            : new Mp4OutputFormat({ fastStart: "in-memory" }),
           target,
         });
 
         const videoSource = new CanvasSource(this.app.canvas, {
-          codec: "avc",
+          codec: isAlphaWebM ? "vp9" : "avc",
           bitrate: definition.bitrate ?? 6_000_000,
+          ...(isAlphaWebM ? { alpha: "keep" as const } : {}),
           latencyMode: "quality",
           hardwareAcceleration: "prefer-hardware",
           // Mediabunny 1.34 exposes the WebCodecs config immediately before it
@@ -205,7 +211,7 @@ export class TextureOutputEncoder {
         let audioSource: AudioBufferSource | null = null;
         if (definition.includeAudio) {
           audioSource = new AudioBufferSource({
-            codec: "aac",
+            codec: isAlphaWebM ? "opus" : "aac",
             bitrate: definition.audioBitrate ?? 128_000,
           });
           output.addAudioTrack(audioSource);

@@ -144,10 +144,32 @@ describe("temporal rendering requirements", () => {
       id: "clip-1",
       type: "video",
       assetId: "asset-a",
-    } as TimelineClip;
+    } as unknown as TimelineClip;
 
-    expect(
-      getTemporalClipSourceIdentity({ ...clip, assetId: "asset-b" }),
-    ).not.toBe(getTemporalClipSourceIdentity(clip));
+    const replaced = {
+      ...clip,
+      assetId: "asset-b",
+    } as unknown as TimelineClip;
+    expect(getTemporalClipSourceIdentity(replaced)).not.toBe(
+      getTemporalClipSourceIdentity(clip),
+    );
+  });
+
+  it("changes parent temporal identity when direct composite content advances", () => {
+    const clip = {
+      id: "placement",
+      type: "video",
+      assetId: "last-valid-bake",
+      compositeId: "composite",
+      compositeRevision: 1,
+    } as unknown as TimelineClip;
+
+    const nextRevision = {
+      ...clip,
+      compositeRevision: 2,
+    } as unknown as TimelineClip;
+    expect(getTemporalClipSourceIdentity(nextRevision)).not.toBe(
+      getTemporalClipSourceIdentity(clip),
+    );
   });
 });

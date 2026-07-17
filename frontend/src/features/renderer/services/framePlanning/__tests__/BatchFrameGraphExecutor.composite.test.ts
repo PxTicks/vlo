@@ -71,8 +71,10 @@ describe("BatchFrameGraphExecutor composite scenes", () => {
       renderCompositeScene: vi.fn(async () => Texture.EMPTY),
       dispose: vi.fn(),
     } satisfies CompositeSceneFrameRenderer;
+    const onCompositeSceneRendered = vi.fn();
     const executor = new BatchFrameGraphExecutor({
       compositeSceneRenderer: renderer,
+      onCompositeSceneRendered,
     });
 
     const result = await executor.execute(
@@ -85,6 +87,10 @@ describe("BatchFrameGraphExecutor composite scenes", () => {
       job.compositeSource,
       [],
       { mode: "export" },
+    );
+    expect(onCompositeSceneRendered).toHaveBeenCalledWith(
+      job,
+      Texture.EMPTY,
     );
     expect(present).toHaveBeenCalledWith(
       job,

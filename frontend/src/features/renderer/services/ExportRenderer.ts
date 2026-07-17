@@ -18,10 +18,6 @@ import {
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TemporalRenderCoordinator } from "./TemporalRenderCoordinator";
-import {
-  collectTemporalRenderingRequirements,
-  type TemporalRenderingRequirements,
-} from "../../transformations/catalogue/temporalRenderingRequirements";
 import type { FilterRenderContext } from "../../transformations/catalogue/types";
 import {
   TrackRenderEngine,
@@ -49,6 +45,7 @@ import {
   TextureOutputEncoder,
   type OutputVideoAnalysis,
   type OutputVideoDefinition,
+  type OutputVideoFormat,
 } from "./TextureOutputEncoder";
 import {
   createFilterStackTransform,
@@ -63,6 +60,10 @@ import {
 } from "./framePlanning";
 import { resolveTransitionFrame } from "../../transitions/rendering/TransitionResolver";
 import { CompositeSceneRuntimeManager } from "./CompositeSceneRuntime";
+import {
+  collectTemporalFrameScope,
+  type TemporalFrameScope,
+} from "./TemporalFrameScopeResolver";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -74,60 +75,22 @@ const AUDIO_EXPORT_CHUNK_DURATION_SEC = 10;
 const MAX_AUDIO_EXPORT_PREROLL_SEC = 30;
 const AUDIO_EXPORT_SAMPLE_RATE = 48_000;
 
-interface ActiveTemporalFrameScope {
-  requirements: TemporalRenderingRequirements;
-  earliestTick: number;
-}
-
 function collectActiveTemporalFrameScope(
   presentationTick: number,
   resolutionTracks: readonly FrameJobResolutionTrack[],
   adjustmentEffectResolver: AdjustmentEffectResolver,
-): ActiveTemporalFrameScope {
-  const transformationSets: TimelineClip["transformations"][] = [];
-  const temporalStartTicks: number[] = [];
-  for (const track of resolutionTracks) {
-    const active = track.engine.resolveActiveClipAtPresentation(
-      track.trackClips,
-      presentationTick,
-    );
-    if (!active) continue;
-    const transformations = active.activeClip.transformations ?? [];
-    transformationSets.push(transformations);
-    if (
-      collectTemporalRenderingRequirements([transformations]).timeDependency !==
-      "none"
-    ) {
-      temporalStartTicks.push(active.presentationStart);
-    }
-  }
-
-  const collectGroups = (
-    groups: ReturnType<AdjustmentEffectResolver["deriveGroups"]>,
-  ): void => {
-    for (const group of groups) {
-      const transformations = group.transformations ?? [];
-      transformationSets.push(transformations);
-      if (
-        collectTemporalRenderingRequirements([transformations])
-          .timeDependency !== "none"
-      ) {
-        const localElapsed = Math.max(
-          0,
-          (group.sampleTick ?? presentationTick) - group.start,
-        );
-        temporalStartTicks.push(presentationTick - localElapsed);
-      }
-      collectGroups(group.children);
-    }
-  };
-  collectGroups(adjustmentEffectResolver.deriveGroups(presentationTick));
-
-  return {
-    requirements: collectTemporalRenderingRequirements(transformationSets),
-    earliestTick:
-      temporalStartTicks.length > 0 ? Math.min(...temporalStartTicks) : 0,
-  };
+  stableClips: readonly TimelineClip[],
+): TemporalFrameScope {
+  return collectTemporalFrameScope({
+    presentationTick,
+    tracks: resolutionTracks.map((track) => ({
+      trackId: track.trackId,
+      trackClips: track.trackClips,
+      activeClipResolver: track.engine,
+    })),
+    stableClips,
+    adjustmentEffectResolver,
+  });
 }
 
 function estimateAudioExportPrerollSeconds(
@@ -167,7 +130,7 @@ function createAudioBufferSlice(
   return sliced;
 }
 
-function resolveOutputDefinitions(
+export function resolveOutputDefinitions(
   options: RenderOptions,
 ): OutputVideoDefinition[] {
   const fallbackFormat = options.format ?? "mp4";
@@ -186,6 +149,11 @@ function resolveOutputDefinitions(
   }
 
   if (options.outputs && options.outputs.length > 0) {
+    if (options.preserveAlpha) {
+      throw new Error(
+        "preserveAlpha cannot be combined with explicit outputs; configure each WebM output and transform stack explicitly",
+      );
+    }
     const definitions = options.outputs.map((definition, index) => {
       return {
         ...definition,
@@ -196,14 +164,22 @@ function resolveOutputDefinitions(
     return definitions;
   }
 
+  if (options.preserveAlpha && fallbackFormat !== "webm") {
+    throw new Error("Alpha-preserving video output requires WebM");
+  }
+
   const defaults: OutputVideoDefinition[] = [
     {
       id: "video",
       format: fallbackFormat,
       includeAudio: true,
-      transformStack: [
-        createFilterStackTransform([createOpaqueOutputColorMatrixFilter()]),
-      ],
+      transformStack: options.preserveAlpha
+        ? []
+        : [
+            createFilterStackTransform([
+              createOpaqueOutputColorMatrixFilter(),
+            ]),
+          ],
     },
   ];
 
@@ -332,7 +308,9 @@ export interface ProjectData {
 
 export interface RenderOptions {
   timelineSelection?: TimelineSelection;
-  format?: "mp4";
+  format?: OutputVideoFormat;
+  /** Keep transparent project pixels; requires an alpha-capable output. */
+  preserveAlpha?: boolean;
   outputs?: OutputVideoDefinition[];
   includeTimelineMasks?: boolean;
   signal?: AbortSignal;
@@ -769,6 +747,7 @@ export class ExportRenderer {
           currentTime,
           resolutionTracks,
           adjustmentEffectResolver,
+          projectData.clips,
         );
         const temporalPlan = temporalCoordinator.plan({
           presentationTick: currentTime,
@@ -776,6 +755,7 @@ export class ExportRenderer {
           mode: "export",
           requirements: temporalScope.requirements,
           earliestTick: temporalScope.earliestTick,
+          topologyKey: temporalScope.topologyKey,
         });
         for (const warmup of temporalPlan.warmup) {
           await renderTimelineFrame(warmup.presentationTimeTicks, warmup);
@@ -944,6 +924,7 @@ export class ExportRenderer {
         tick,
         resolutionTracks,
         adjustmentEffectResolver,
+        projectData.clips,
       );
       const temporalPlan = temporalCoordinator.plan({
         presentationTick: tick,
@@ -951,6 +932,7 @@ export class ExportRenderer {
         mode: "still",
         requirements: temporalScope.requirements,
         earliestTick: temporalScope.earliestTick,
+        topologyKey: temporalScope.topologyKey,
       });
       const warmupTarget =
         temporalPlan.warmup.length > 0

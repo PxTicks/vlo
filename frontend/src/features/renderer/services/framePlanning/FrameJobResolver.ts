@@ -100,6 +100,9 @@ export class FrameJobResolver {
             expectedBakeKey: bakeKey,
             availableAssetIds,
           });
+          // TODO(phase5): source policy must be passed as a frame/export
+          // snapshot. Reading the runtime force-live store here is suitable
+          // for preview but lets a UI toggle alter later frames of an export.
           const useBakedSource =
             !isCompositeForceLive(composite.id) &&
             validity.valid &&

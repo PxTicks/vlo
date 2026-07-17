@@ -145,6 +145,43 @@ describe("CompositeBakeQueue", () => {
     expect(latestCallbacks.onCompleted).toHaveBeenCalledOnce();
   });
 
+  it("does not overlap revisions of one composite when concurrency is greater than one", async () => {
+    const releases = new Map<string, (value: BakedComposite) => void>();
+    const bake = vi.fn(
+      (_content: CompositeContent, options: BakeCompositeOptions) =>
+        new Promise<BakedComposite>((resolve) => {
+          releases.set(
+            `${options.compositeAssetId}:${options.compositeRevision}`,
+            resolve,
+          );
+        }),
+    );
+    const queue = new CompositeBakeQueue({ maxConcurrent: 2, bake });
+    const staleCallbacks = callbacks();
+    const latestCallbacks = callbacks();
+
+    queue.enqueue(request("composite", 1), staleCallbacks);
+    queue.enqueue(request("blocker", 1), callbacks());
+    await vi.waitFor(() => expect(bake).toHaveBeenCalledTimes(2));
+
+    queue.enqueue(request("composite", 2), latestCallbacks);
+    releases.get("blocker:1")?.(result("asset-blocker"));
+    await vi.waitFor(() => expect(queue.activeJobCount).toBe(1));
+    expect(bake).toHaveBeenCalledTimes(2);
+
+    releases.get("composite:1")?.(result("asset-stale"));
+    await vi.waitFor(() => expect(bake).toHaveBeenCalledTimes(3));
+    expect(bake.mock.calls[2]?.[1]).toMatchObject({
+      compositeAssetId: "composite",
+      compositeRevision: 2,
+    });
+    releases.get("composite:2")?.(result("asset-latest"));
+    await queue.whenIdle();
+
+    expect(staleCallbacks.onCompleted).not.toHaveBeenCalled();
+    expect(latestCallbacks.onCompleted).toHaveBeenCalledOnce();
+  });
+
   it("reports failures but treats cancellation as non-failure", async () => {
     const failure = new Error("encoder failed");
     const failedCallbacks = callbacks();

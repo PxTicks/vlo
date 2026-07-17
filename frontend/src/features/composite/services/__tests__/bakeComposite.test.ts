@@ -175,6 +175,17 @@ describe("bakeComposite", () => {
     );
   });
 
+  it("preserves an explicitly supplied zero revision in bake metadata", async () => {
+    await bakeComposite(content(), { compositeRevision: 0 });
+
+    expect(mocks.addLocalAsset).toHaveBeenCalledWith(
+      expect.any(File),
+      expect.objectContaining({ compositeRevision: 0 }),
+      undefined,
+      expect.anything(),
+    );
+  });
+
   it("renders every playback frame without overwriting authored selection metadata", async () => {
     const authoredSelection = {
       start: 0,

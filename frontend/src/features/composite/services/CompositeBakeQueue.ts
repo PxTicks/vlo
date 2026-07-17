@@ -151,7 +151,17 @@ export class CompositeBakeQueue {
 
   private pump(): void {
     while (this.activeCount < this.maxConcurrent && this.pending.length > 0) {
-      const next = this.pending.shift();
+      const nextIndex = this.pending.findIndex(
+        (candidate) =>
+          candidate.controller.signal.aborted ||
+          this.latestByCompositeId.get(candidate.request.compositeId) !==
+            candidate ||
+          !this.activeByCompositeId.has(candidate.request.compositeId),
+      );
+      if (nextIndex < 0) {
+        break;
+      }
+      const [next] = this.pending.splice(nextIndex, 1);
       if (!next) {
         break;
       }

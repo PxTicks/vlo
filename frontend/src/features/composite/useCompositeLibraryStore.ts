@@ -195,6 +195,8 @@ async function retireBakeAssetWhenUnowned(
   // Frame jobs retain decoded texture handles rather than asset-store entries.
   // Yield once so relink subscribers can claim the replacement frame before
   // the obsolete URL and decoder source are removed.
+  // TODO(phase5): retire against a committed replacement frame epoch instead
+  // of assuming one microtask is enough for every decoder/GPU handoff.
   await Promise.resolve();
   if (!isBakeAssetReferenced(assetId)) {
     await deleteBakedAsset(assetId);

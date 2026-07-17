@@ -156,7 +156,7 @@ export async function bakeComposite(
       timelineSelection: selection,
       contentHash,
       bakeKey,
-      ...(options.compositeRevision
+      ...(options.compositeRevision != null
         ? { compositeRevision: options.compositeRevision }
         : {}),
     },

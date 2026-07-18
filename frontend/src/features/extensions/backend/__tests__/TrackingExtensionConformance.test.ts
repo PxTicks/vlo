@@ -259,6 +259,18 @@ function createConformanceApi() {
       }),
       openModal: async () => undefined,
       openWorkspace: () => false,
+      commands: {
+        register: (definition) => ({
+          id: definition.id,
+          dispose: () => undefined,
+        }),
+        registerKeybinding: (request) => ({
+          id: request.id,
+          dispose: () => undefined,
+        }),
+        execute: async () => undefined,
+        getContextKey: () => undefined,
+      },
     },
   };
   return {

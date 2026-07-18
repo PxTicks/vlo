@@ -9,6 +9,14 @@ import { create } from "zustand";
  */
 export type EditorRegion = "timeline" | "canvas" | "assetBrowser" | "inspector";
 
+/** Canonical region list for consumers that validate region names. */
+export const EDITOR_REGIONS = [
+  "timeline",
+  "canvas",
+  "assetBrowser",
+  "inspector",
+] as const satisfies readonly EditorRegion[];
+
 interface EditorFocusState {
   region: EditorRegion | null;
   setRegion: (region: EditorRegion | null) => void;

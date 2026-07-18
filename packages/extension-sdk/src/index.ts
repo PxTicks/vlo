@@ -1483,7 +1483,94 @@ export interface ExtensionPanelControlRegistration extends ExtensionDisposable {
   readonly id: string;
 }
 
+// === Commands and keybindings ===
+
+/**
+ * Declarative predicate over host-published context keys (e.g. `project.open`,
+ * `focus.region`, `selection.clipCount`). Keys are host-curated; an unknown key
+ * evaluates as `undefined`. A bare `{ key }` tests JavaScript truthiness.
+ */
+export type ExtensionContextKeyExpression =
+  | { readonly key: string }
+  | { readonly key: string; readonly equals: JsonValue }
+  | { readonly not: ExtensionContextKeyExpression }
+  | { readonly and: readonly ExtensionContextKeyExpression[] }
+  | { readonly or: readonly ExtensionContextKeyExpression[] };
+
+export type ExtensionCommandSource =
+  | "menu"
+  | "keybinding"
+  | "palette"
+  | "toolbar"
+  | "api";
+
+/**
+ * One command invocation. `subject` is the detached, JSON-serialisable subject
+ * of the invoking surface (a menu's subject, a palette argument), never a live
+ * host object.
+ */
+export interface ExtensionCommandInvocation {
+  readonly subject?: JsonValue;
+  readonly source: ExtensionCommandSource;
+}
+
+/**
+ * A declarative command in the host's single command table. Menus, keybindings,
+ * and future palette/toolbar surfaces are projections of this table. `when`
+ * gates enablement declaratively so it stays evaluable in a future restricted
+ * profile; a command whose `when` is false is not executed.
+ */
+export interface ExtensionCommandDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly title: string;
+  /** Optional trusted icon component rendered by command-projecting surfaces. */
+  readonly icon?: () => unknown;
+  readonly when?: ExtensionContextKeyExpression;
+  readonly run: (
+    invocation: ExtensionCommandInvocation,
+  ) => void | Promise<void>;
+}
+
+/**
+ * A requested chord for one of this extension's commands, e.g. "Mod+Shift+K"
+ * ("Mod" is Ctrl, or Cmd on macOS). Bindings that collide with an existing
+ * active binding — including chords the host has reserved for its own
+ * shortcuts — register as inactive with a diagnostic instead of failing
+ * activation; the host arbitrates dispatch through its editor focus regions.
+ */
+export interface ExtensionKeybindingRequest {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly chord: string;
+  /**
+   * Local command ID registered by the same extension. The command must
+   * already be registered when the keybinding is requested.
+   */
+  readonly command: string;
+  /** Editor focus regions the binding is active in; omit for global. */
+  readonly regions?: readonly string[];
+}
+
+export interface ExtensionCommandApi {
+  register(definition: ExtensionCommandDefinition): ExtensionUiRegistration;
+  registerKeybinding(
+    request: ExtensionKeybindingRequest,
+  ): ExtensionUiRegistration;
+  /**
+   * Executes one of this extension's own commands by local ID, or an
+   * explicitly allowlisted host command by its full dotted ID. Executing any
+   * other host command rejects: host commands are an authority surface, and
+   * contributing a menu item the *user* invokes is the intended path.
+   */
+  execute(commandId: string, subject?: JsonValue): Promise<void>;
+  /** Reads one host context key, detached. Unknown keys return `undefined`. */
+  getContextKey(key: string): JsonValue | undefined;
+}
+
 export interface ExtensionUiApi {
+  /** The host command table and chord requests (see `ExtensionCommandApi`). */
+  readonly commands: ExtensionCommandApi;
   /**
    * Registers a rich React control. Use it in an extension transformation's own
    * groups via a `custom` control, or place it in a host panel zone, or both.

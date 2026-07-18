@@ -41,6 +41,7 @@
 /frontend/src/features/masks/runtime/SpriteClipMaskController.ts extension-surface=adapter
 /frontend/src/features/player/Player.tsx extension-surface=adapter
 /frontend/src/features/userAssets/services/AssetService.ts extension-surface=adapter
+/frontend/src/features/editorFocus/useEditorFocusStore.ts extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
 /frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
 /frontend/src/features/project/constants.ts extension-surface=adapter
@@ -58,6 +59,7 @@
 /frontend/src/features/renderer/services/framePlanning/framePlanningTypes.ts extension-surface=adapter
 /frontend/src/features/renderer/services/projectFrameCapture.ts extension-surface=adapter
 /frontend/src/features/timeline/api.ts extension-surface=adapter
+/frontend/src/features/timeline/hostCommands.ts extension-surface=adapter
 /frontend/src/features/timeline/components/TimelineClip.tsx extension-surface=adapter
 /frontend/src/features/timeline/components/TimelineToolbar.tsx extension-surface=adapter
 /frontend/src/features/timeline/model/** extension-surface=adapter

@@ -18,6 +18,10 @@ import { createExtensionAssetApi } from "../assets/createExtensionAssetApi";
 import { createExtensionGenerationApi } from "../generation/ExtensionGenerationBridge";
 import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
 import { extensionPanelControlRegistry } from "../ui/ExtensionPanelControlRegistry";
+import { hostCommandRegistry } from "../commands/CommandRegistry";
+import { installHostContextKeyBindings } from "../commands/installHostContextKeys";
+import { installHostKeybindingReservations } from "../commands/installHostKeybindingReservations";
+import { installTimelineClipHostCommands } from "../../timeline/api";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { extensionColorApi } from "./extensionColorApi";
 import {
@@ -399,11 +403,12 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
         ...extensionTransformationRegistry.bind(scope),
         presets: extensionParameterPresetRegistry.bind(scope),
       }),
-      // Panel controls live in their own registry but are exposed on the UI
-      // domain, so an author sees one place to register UI.
+      // Panel controls and commands live in their own registries but are
+      // exposed on the UI domain, so an author sees one place to register UI.
       ui: Object.freeze({
         ...extensionUiSlotRegistry.bind(scope),
         ...extensionPanelControlRegistry.bind(scope),
+        commands: hostCommandRegistry.bind(scope),
       }),
     });
 
@@ -416,10 +421,21 @@ const frontendExtensionHost = new ExtensionHost<VloExtensionApi>({
 
 export const frontendTrustedHostEntriesRegistration =
   registerTrustedHostEntries(frontendExtensionHost);
+export const frontendHostContextKeyRegistration =
+  installHostContextKeyBindings();
+export const frontendTimelineHostCommandRegistration =
+  installTimelineClipHostCommands();
+// Reservations must exist before any extension activates so colliding
+// extension bindings are shadowed at registration, never dispatched.
+export const frontendHostKeybindingReservationRegistration =
+  installHostKeybindingReservations();
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     frontendTrustedHostEntriesRegistration.dispose();
+    void frontendHostContextKeyRegistration.dispose();
+    void frontendTimelineHostCommandRegistration.dispose();
+    void frontendHostKeybindingReservationRegistration.dispose();
   });
 }
 

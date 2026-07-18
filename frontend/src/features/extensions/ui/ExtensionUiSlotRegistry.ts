@@ -19,7 +19,10 @@ import {
   type RegisteredExtensionContribution,
 } from "../registry/ExtensionContributionRegistry";
 
-type ExtensionUiSlotApi = Omit<ExtensionUiApi, "registerPanelControl">;
+type ExtensionUiSlotApi = Omit<
+  ExtensionUiApi,
+  "registerPanelControl" | "commands"
+>;
 
 const SLOT_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
 const HOST_UI_SLOTS = [

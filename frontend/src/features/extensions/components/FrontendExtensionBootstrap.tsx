@@ -3,6 +3,7 @@ import {
   frontendExtensionRuntime,
   type FrontendExtensionStartSummary,
 } from "../services/FrontendExtensionRuntime";
+import { useCommandKeybindings } from "../commands/useCommandKeybindings";
 
 interface FrontendExtensionRuntimeStarter {
   start(): Promise<FrontendExtensionStartSummary>;
@@ -17,6 +18,7 @@ export function FrontendExtensionBootstrap({
   children,
   runtime = frontendExtensionRuntime,
 }: FrontendExtensionBootstrapProps) {
+  useCommandKeybindings();
   useEffect(() => {
     let mounted = true;
     void runtime

@@ -82,6 +82,8 @@ export function getTimelineStoreForTrustedHostAccess(): typeof useTimelineStore 
   return useTimelineStore;
 }
 
+export { installTimelineClipHostCommands } from "./hostCommands";
+
 export function useTimelineClip(
   clipId: string | null | undefined,
 ): TimelineClip | undefined {

@@ -198,4 +198,66 @@ describe("useTimelineStore.groupClipsIntoComposite", () => {
       expect.objectContaining({ id: composite.id }),
     ]);
   });
+
+  it("extracts only the selected middle of a clip and leaves both sides behind", () => {
+    const source = videoClip("source", "track-1", 0);
+    source.timelineDuration = 300;
+    source.croppedSourceDuration = 300;
+    source.sourceDuration = 300;
+    source.transformedDuration = 300;
+    const composite = compositeClip("composite-middle", "track-1", 100);
+    composite.timelineDuration = 100;
+
+    act(() => {
+      useTimelineStore.getState().replaceTimelineSnapshot({
+        tracks: [createTrack("track-1")],
+        clips: [source],
+      });
+    });
+    const beforeGrouping = structuredClone(useTimelineStore.getState().clips);
+
+    act(() => {
+      useTimelineStore.getState().groupClipsIntoComposite(
+        [source.id],
+        composite,
+        { start: 100, end: 200 },
+      );
+    });
+
+    const grouped = useTimelineStore.getState().clips;
+    expect(grouped).toHaveLength(3);
+    expect(grouped).toContainEqual(
+      expect.objectContaining({
+        id: source.id,
+        start: 0,
+        timelineDuration: 100,
+        offset: 0,
+      }),
+    );
+    expect(grouped).toContainEqual(
+      expect.objectContaining({
+        id: composite.id,
+        start: 100,
+        timelineDuration: 100,
+      }),
+    );
+    expect(grouped).toContainEqual(
+      expect.objectContaining({
+        assetId: source.assetId,
+        start: 200,
+        timelineDuration: 100,
+        offset: 200,
+      }),
+    );
+
+    act(() => {
+      expect(useTimelineStore.getState().undo()).toBe(true);
+    });
+    expect(useTimelineStore.getState().clips).toEqual(beforeGrouping);
+
+    act(() => {
+      expect(useTimelineStore.getState().redo()).toBe(true);
+    });
+    expect(useTimelineStore.getState().clips).toHaveLength(3);
+  });
 });

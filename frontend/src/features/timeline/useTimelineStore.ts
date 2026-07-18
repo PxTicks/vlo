@@ -156,16 +156,18 @@ interface TimelineState extends TimelineModelState {
     }[],
   ) => string[];
   /**
-   * Atomically replaces `sourceClipIds` (and their subordinate clips) with a
-   * single composite clip in one undoable step. The incoming clip's `start` is
-   * a presentation tick and is converted to stored track time inside the same
-   * transaction. Deliberately skips SAM2/brush post-commit cleanup: the
-   * absorbed clips' mask assets live on inside the composite's content for
-   * re-baking.
+   * Atomically extracts `sourceClipIds` into a composite in one undoable step.
+   * With an extraction range, clips crossing either boundary are split and
+   * only their intersecting segment is replaced; without one, the complete
+   * source clips are replaced. The incoming clip's `start` is a presentation
+   * tick and is converted to stored track time inside the transaction.
+   * Deliberately skips SAM2/brush post-commit cleanup because extracted mask
+   * assets remain referenced by the composite content.
    */
   groupClipsIntoComposite: (
     sourceClipIds: string[],
     compositeClip: TimelineClip,
+    extractionRange?: { start: number; end: number },
   ) => boolean;
   /** Keep persisted placement revision identity aligned with canonical content. */
   syncCompositePlacementRevision: (
@@ -465,10 +467,73 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return [];
     },
 
-    groupClipsIntoComposite: (sourceClipIds, compositeClip) => {
-      const removalPlan = planTimelineRemoval(get().clips, sourceClipIds);
+    groupClipsIntoComposite: (
+      sourceClipIds,
+      compositeClip,
+      extractionRange,
+    ) => {
       const didCommit = mutationPipeline.commitModelMutation(
         (draft) => {
+          // Add first so the target track remains valid while splitting and
+          // removing source segments, including when the selection spans every
+          // populated track.
+          addClipToDraft(draft, compositeClip);
+          const placed = draft.clips.find(
+            (clip) => clip.id === compositeClip.id,
+          );
+          if (!placed) {
+            return;
+          }
+
+          const sourceClipIdSet = new Set(sourceClipIds);
+          const segmentIdsToRemove = new Set<string>();
+          if (extractionRange && extractionRange.end > extractionRange.start) {
+            const sourceParents = draft.clips.filter(
+              (clip) => sourceClipIdSet.has(clip.id) && clip.type !== "mask",
+            );
+
+            for (const source of sourceParents) {
+              const sourceEnd = source.start + source.timelineDuration;
+              if (
+                sourceEnd <= extractionRange.start ||
+                source.start >= extractionRange.end
+              ) {
+                continue;
+              }
+
+              let extractedId = source.id;
+              if (source.start < extractionRange.start) {
+                const rightId = splitClipInDraft(
+                  draft,
+                  source.id,
+                  extractionRange.start,
+                );
+                if (!rightId) {
+                  continue;
+                }
+                extractedId = rightId;
+              }
+
+              const extracted = draft.clips.find(
+                (clip) => clip.id === extractedId,
+              );
+              if (
+                extracted &&
+                extracted.start + extracted.timelineDuration > extractionRange.end
+              ) {
+                splitClipInDraft(draft, extractedId, extractionRange.end);
+              }
+              segmentIdsToRemove.add(extractedId);
+            }
+          } else {
+            sourceClipIds.forEach((id) => segmentIdsToRemove.add(id));
+          }
+
+          const removalPlan = planTimelineRemoval(
+            draft.clips,
+            segmentIdsToRemove,
+          );
+
           // Selection boundaries are presentation ticks, while clip.start is
           // stored track time. Resolve against the final clip set so an
           // earlier ripple adjustment cannot pull the replacement composite
@@ -477,37 +542,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           const clipsAfterRemoval = draft.clips.filter(
             (clip) => !removalPlan.clipIdsToRemove.has(clip.id),
           );
-          const placedCompositeClip = {
-            ...compositeClip,
-            start: resolveStoredStartForPresentationStart(
-              draft.tracks,
-              clipsAfterRemoval,
-              compositeClip.trackId,
-              compositeClip.start,
-            ),
-          };
-
-          // Add the composite BEFORE removing the source clips. If we removed
-          // first, grouping the *entire* timeline would leave every track empty
-          // mid-mutation, at which point maybeTrimAndPadTracks rebuilds the track
-          // list with brand-new ids — deleting the very track the composite was
-          // about to land on. The composite would then be pushed onto a track
-          // that no longer exists, orphaning it and wiping the timeline. Adding
-          // first keeps the target track populated throughout, so it survives the
-          // removal.
-          addClipToDraft(draft, placedCompositeClip);
-
-          // Safety net: if the composite could not be placed (e.g. addClipToDraft
-          // rejected it on a track-type mismatch), bail out without removing
-          // anything. Returning here leaves the draft untouched, so the commit
-          // produces no patches and the timeline is left exactly as it was rather
-          // than being emptied.
-          const placed = draft.clips.some(
-            (clip) => clip.id === placedCompositeClip.id,
+          placed.start = resolveStoredStartForPresentationStart(
+            draft.tracks,
+            clipsAfterRemoval,
+            compositeClip.trackId,
+            compositeClip.start,
           );
-          if (!placed) {
-            return;
-          }
 
           removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
         },

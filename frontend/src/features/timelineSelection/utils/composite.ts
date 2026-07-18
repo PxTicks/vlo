@@ -5,6 +5,7 @@ import type {
   TimelineTrack,
 } from "../../../types/TimelineTypes";
 import { computeFurthestPresentationEnd } from "../../timeline/utils/clipPresentation";
+import { cropTimelineClipToRange } from "./clipRange";
 
 /**
  * Converters for moving timeline regions between absolute project time and
@@ -29,8 +30,9 @@ function cloneTracks(
 }
 
 /**
- * Captures a selection as composite-local content. Clips that began before the
- * selected window keep negative starts so the visible region stays unchanged.
+ * Captures only the portion of each clip inside the selection as
+ * composite-local content. Crop/source offsets are preserved by applying the
+ * same resize calculations as an interactive timeline trim.
  */
 export function selectionToCompositeContent(
   selection: TimelineSelection,
@@ -48,9 +50,14 @@ export function selectionToCompositeContent(
     );
   const durationTicks = Math.max(0, end - start);
 
+  const clips = selection.clips.flatMap((clip) => {
+    const captured = cropTimelineClipToRange(clip, start, end);
+    return captured ? [cloneClipWithStartShift(captured, -start)] : [];
+  });
+
   return {
     durationTicks,
-    clips: selection.clips.map((clip) => cloneClipWithStartShift(clip, -start)),
+    clips,
     ...(selection.tracks ? { tracks: cloneTracks(selection.tracks) } : {}),
     ...(selection.transitions
       ? { transitions: structuredClone(selection.transitions) }

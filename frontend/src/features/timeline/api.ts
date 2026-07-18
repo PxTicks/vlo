@@ -561,10 +561,11 @@ export function addTimelineClipsOnNewTracksBelow(
 export function groupTimelineClipsIntoComposite(
   sourceClipIds: string[],
   compositeClip: TimelineClip,
+  extractionRange?: { start: number; end: number },
 ): boolean {
   return useTimelineStore
     .getState()
-    .groupClipsIntoComposite(sourceClipIds, compositeClip);
+    .groupClipsIntoComposite(sourceClipIds, compositeClip, extractionRange);
 }
 
 export function syncTimelineCompositePlacementRevision(

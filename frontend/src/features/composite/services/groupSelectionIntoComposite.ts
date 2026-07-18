@@ -89,6 +89,9 @@ export async function groupSelectionIntoComposite(
   const didCommit = groupTimelineClipsIntoComposite(
     sourceClipIds,
     compositeClip,
+    selection.end === undefined
+      ? undefined
+      : { start: selection.start, end: selection.end },
   );
 
   if (!didCommit) {

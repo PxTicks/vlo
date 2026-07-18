@@ -86,7 +86,7 @@ describe("composite adapters", () => {
     expect(selection.clips[0].transformations).toHaveLength(0);
   });
 
-  it("keeps a negative start for a clip that began before the window", () => {
+  it("crops a clip that extends across both selection boundaries", () => {
     const selection: TimelineSelection = {
       start: 1000,
       end: 2000,
@@ -94,7 +94,15 @@ describe("composite adapters", () => {
     };
 
     const content = selectionToCompositeContent(selection, GRID_FPS);
-    expect(content.clips[0].start).toBe(-400);
+    expect(content.clips[0]).toEqual(
+      expect.objectContaining({
+        start: 0,
+        timelineDuration: 1000,
+        offset: 400,
+        transformedOffset: 400,
+        croppedSourceDuration: 1000,
+      }),
+    );
     expect(content.durationTicks).toBe(1000);
   });
 

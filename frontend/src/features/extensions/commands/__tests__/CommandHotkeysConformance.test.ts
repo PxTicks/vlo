@@ -1,0 +1,160 @@
+import { describe, expect, it, vi } from "vitest";
+import type {
+  ExtensionContext,
+  ExtensionResource,
+  VloExtensionApi,
+} from "../../types";
+import {
+  activate,
+  getBumpStateForConformance,
+  resetBumpStateForConformance,
+} from "../../../../../../extension-fixtures/command-hotkeys/frontend/src/index";
+import { ExtensionUiContributionRegistry } from "../../ui/ExtensionUiSlotRegistry";
+import { HostCommandRegistry } from "../CommandRegistry";
+import { HostContextKeyService } from "../contextKeys";
+import { HostKeybindingRegistry } from "../KeybindingRegistry";
+
+const CLIP_SUBJECT = {
+  slot: "timeline.clip.context",
+  clip: {
+    id: "clip-9",
+    type: "video",
+    name: "Clip",
+    trackId: "track-1",
+    startTicks: 0,
+    durationTicks: 100,
+    transformations: [],
+  },
+} as const;
+
+function keyEvent(init: KeyboardEventInit & { key: string }): KeyboardEvent {
+  return new KeyboardEvent("keydown", { cancelable: true, ...init });
+}
+
+describe("command-hotkeys conformance fixture", () => {
+  it("registers command, working chord, shadowed collision, and menu execute; disposal removes all", async () => {
+    resetBumpStateForConformance();
+    const contextKeys = new HostContextKeyService();
+    const keybindings = new HostKeybindingRegistry(() => false);
+    const commandRegistry = new HostCommandRegistry(contextKeys, keybindings);
+    const uiRegistry = new ExtensionUiContributionRegistry();
+    const report = vi.fn();
+    const resources: ExtensionResource[] = [];
+    const scope = {
+      extension: { id: "example.command-hotkeys", version: "1.0.0" },
+      signal: new AbortController().signal,
+      own: <TResource extends ExtensionResource>(resource: TResource) => {
+        resources.push(resource);
+        return resource;
+      },
+      report,
+    };
+
+    // Host side: a real command-backed default binding on Mod+Z, exactly as
+    // the production timeline installs one, for the fixture to collide with.
+    const hostUndo = vi.fn();
+    commandRegistry.registerHostCommand({
+      id: "timeline.undo",
+      title: "Undo",
+      run: hostUndo,
+    });
+    keybindings.registerHostDefault({
+      id: "host.timeline.undo",
+      chord: "Mod+Z",
+      commandId: "timeline.undo",
+    });
+    contextKeys.set("project.open", true);
+
+    const api = {
+      ui: {
+        ...uiRegistry.bind(scope),
+        commands: commandRegistry.bind(scope),
+      },
+    } as unknown as VloExtensionApi;
+    const context = {
+      extension: scope.extension,
+      sdkVersion: "1.7.0",
+      signal: scope.signal,
+      api,
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+      onDispose: (resource: ExtensionResource) => {
+        resources.push(resource);
+      },
+    } as unknown as ExtensionContext<VloExtensionApi>;
+
+    await activate(context);
+
+    // Command registered owner-qualified.
+    expect(
+      commandRegistry.getTitle("example.command-hotkeys/bump-counter"),
+    ).toBe("Bump Counter");
+
+    // The collision registered inactive with a diagnostic; activation did not
+    // fail and the working chord is active.
+    expect(
+      keybindings.list().map((entry) => [entry.id, entry.active]),
+    ).toEqual([
+      ["host.timeline.undo", true],
+      ["example.command-hotkeys/bump-key", true],
+      ["example.command-hotkeys/undo-collision", false],
+    ]);
+    expect(report).toHaveBeenCalledWith(
+      "warning",
+      expect.stringContaining("shadowed"),
+    );
+
+    const dispatch = (event: KeyboardEvent) =>
+      keybindings.dispatch(event, null, (commandId) =>
+        commandRegistry.executeCommand(commandId, { source: "keybinding" }),
+      );
+
+    // The working chord executes the fixture command.
+    expect(dispatch(keyEvent({ key: "b", ctrlKey: true, altKey: true }))).toBe(
+      true,
+    );
+    expect(getBumpStateForConformance()).toMatchObject({
+      count: 1,
+      lastInvocation: { source: "keybinding" },
+    });
+
+    // The shadowed chord still routes to the host command, never the fixture.
+    expect(dispatch(keyEvent({ key: "z", ctrlKey: true }))).toBe(true);
+    expect(hostUndo).toHaveBeenCalledTimes(1);
+    expect(getBumpStateForConformance().count).toBe(1);
+
+    // The `when` clause gates dispatch: no project, no execution, no
+    // preventDefault.
+    contextKeys.set("project.open", false);
+    const gated = keyEvent({ key: "b", ctrlKey: true, altKey: true });
+    expect(dispatch(gated)).toBe(false);
+    expect(gated.defaultPrevented).toBe(false);
+    contextKeys.set("project.open", true);
+
+    // The menu item invokes the command through execute() with the clicked
+    // clip as detached subject.
+    const menuItems = uiRegistry.listMenuItems("timeline.clip.context");
+    expect(menuItems).toHaveLength(1);
+    const definition = menuItems[0].definition;
+    if (definition.kind !== "menu-item") throw new Error("expected menu item");
+    definition.onSelect(CLIP_SUBJECT);
+    await vi.waitFor(() => {
+      expect(getBumpStateForConformance()).toMatchObject({
+        count: 2,
+        lastInvocation: { source: "api", subject: { clipId: "clip-9" } },
+      });
+    });
+
+    // Deactivation removes every owner-scoped registration.
+    for (const resource of [...resources].reverse()) {
+      if (typeof resource === "function") await resource();
+      else await resource.dispose();
+    }
+    expect(commandRegistry.has("example.command-hotkeys/bump-counter")).toBe(
+      false,
+    );
+    expect(keybindings.list().map((entry) => entry.id)).toEqual([
+      "host.timeline.undo",
+    ]);
+    expect(uiRegistry.listMenuItems("timeline.clip.context")).toEqual([]);
+  });
+});

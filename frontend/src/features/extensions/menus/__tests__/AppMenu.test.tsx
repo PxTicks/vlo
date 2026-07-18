@@ -142,6 +142,25 @@ describe("AppMenu", () => {
     );
   });
 
+  it("rejects subjects that fail the menu's catalogued schema", () => {
+    const malformed = {
+      slot: "timeline.clip.context",
+      clip: { id: "c1" },
+    } as unknown as typeof CLIP_SUBJECT;
+    expect(() =>
+      render(
+        <AppMenu
+          menuId="timeline.clip.context"
+          subject={malformed}
+          items={[]}
+          open
+          onClose={vi.fn()}
+          anchorPosition={{ top: 0, left: 0 }}
+        />,
+      ),
+    ).toThrow(/catalogued schema/);
+  });
+
   it("merges extension contributions into the trailing group with a divider and legacy test IDs", () => {
     const onSelect = vi.fn();
     const registration = extensionUiSlotRegistry

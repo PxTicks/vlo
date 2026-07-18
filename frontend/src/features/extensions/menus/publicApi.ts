@@ -10,3 +10,5 @@ export {
   type HostMenuItemDescriptor,
 } from "./menuDescriptors";
 export { HOST_MENU_IDS, type HostMenuId } from "./menuCatalogue";
+export { MenuHostMount } from "./MenuHostMount";
+export { showHostContextMenu } from "./showHostContextMenu";

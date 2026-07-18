@@ -13,7 +13,10 @@ import type {
   JsonValue,
 } from "../types";
 import { jsonValueSchema } from "../persistence/extensionPayload";
+// Value import: loading the catalogue module registers the host menus'
+// subject schemas with the shell catalog.
 import { HOST_MENU_IDS } from "../menus/menuCatalogue";
+import { hostMenuCatalog } from "../../../core/shell/hostMenuCatalog";
 import {
   ExtensionContributionRegistry,
   type ExtensionContributionDefinition,
@@ -470,7 +473,10 @@ export class ExtensionUiContributionRegistry {
     if (definition.apiVersion !== 1 || definition.kind !== "menu-item") {
       throw new Error(`UI menu item '${definition.id}' must use menu-item API 1.`);
     }
-    if (!this.declaredMenuSlots.has(definition.slot)) {
+    if (
+      !this.declaredMenuSlots.has(definition.slot) &&
+      !hostMenuCatalog.has(definition.slot)
+    ) {
       throw new Error(
         `UI menu item '${definition.id}' targets undeclared host menu '${definition.slot}'.`,
       );

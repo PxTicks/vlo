@@ -9,31 +9,26 @@ import {
  * Reserving them makes the collision guarantee real for extension bindings
  * (colliding requests register inactive with a diagnostic) without rerouting
  * the handlers themselves. When one of these handlers migrates to a real
- * host command + `registerHostDefault`, delete its reservation here.
+ * host command + `registerHostDefault`, delete its reservation here — the
+ * timeline chords already migrated (`features/timeline/hostCommands.ts`).
  *
- * Sources: TimelineContainer keydown (undo/redo global; copy/paste/delete in
- * the timeline region), useCanvasSelectionKeyboard (canvas delete),
- * AssetBrowser (library delete).
+ * Sources: useCanvasSelectionKeyboard (canvas delete), AssetBrowser
+ * (library delete), CompositeBrowser (composite delete, assetBrowser region).
  */
 const HOST_CHORD_RESERVATIONS: readonly {
   readonly id: string;
   readonly chord: string;
   readonly regions?: readonly string[];
 }[] = [
-  { id: "host.undo", chord: "Mod+Z" },
-  { id: "host.redo", chord: "Mod+Shift+Z" },
-  { id: "host.redo-y", chord: "Mod+Y" },
-  { id: "host.timeline.copy", chord: "Mod+C", regions: ["timeline"] },
-  { id: "host.timeline.paste", chord: "Mod+V", regions: ["timeline"] },
   {
     id: "host.delete",
     chord: "Delete",
-    regions: ["timeline", "canvas", "assetBrowser"],
+    regions: ["canvas", "assetBrowser"],
   },
   {
     id: "host.delete-backspace",
     chord: "Backspace",
-    regions: ["timeline", "canvas", "assetBrowser"],
+    regions: ["canvas", "assetBrowser"],
   },
 ];
 

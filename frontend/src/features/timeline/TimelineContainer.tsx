@@ -38,7 +38,6 @@ import { SamAudioExtractDialog } from "../samAudio";
 import { playbackClock } from "../../core/playback/PlaybackClock";
 import { type TimelineClip } from "../../types";
 import type { TimelineClipOverlayDefinition } from "./clipOverlayApi";
-import { useEditorFocusStore } from "../editorFocus";
 import { useTimelineSelectionStore } from "../timelineSelection";
 import { useAssetBrowserSelectionStore } from "../userAssets/useAssetBrowserSelectionStore";
 import { useAssetBrowserRevealStore } from "../userAssets/useAssetBrowserRevealStore";
@@ -83,35 +82,21 @@ function TimelineContainerComponent({
     tracks,
     clips,
     selectClip,
-    removeClips,
-    copySelectedClip,
-    pasteCopiedClipAbove,
-    undo,
-    redo,
     toggleTrackVisibility,
     toggleTrackMute,
-    selectedClipIds,
     transitions,
     selectedTransitionId,
     selectTransition,
-    removeTransition,
   } = useTimelineStore(
     useShallow((state) => ({
       tracks: state.tracks,
       clips: state.clips,
       selectClip: state.selectClip,
-      removeClips: state.removeClips,
-      copySelectedClip: state.copySelectedClip,
-      pasteCopiedClipAbove: state.pasteCopiedClipAbove,
-      undo: state.undo,
-      redo: state.redo,
       toggleTrackVisibility: state.toggleTrackVisibility,
       toggleTrackMute: state.toggleTrackMute,
-      selectedClipIds: state.selectedClipIds,
       transitions: state.transitions,
       selectedTransitionId: state.selectedTransitionId,
       selectTransition: state.selectTransition,
-      removeTransition: state.removeTransition,
     })),
   );
   const timelineClips = React.useMemo(
@@ -322,79 +307,10 @@ function TimelineContainerComponent({
       ? null
       : TRACK_HEADER_WIDTH + ticksToPx(interactionSnapTick);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) {
-        return;
-      }
-
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        (e.target instanceof HTMLElement && e.target.isContentEditable)
-      )
-        return;
-
-      const isShortcut = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
-
-      if (isShortcut && key === "z") {
-        const wasHandled = e.shiftKey ? redo() : undo();
-        if (wasHandled) e.preventDefault();
-        return;
-      }
-
-      if (isShortcut && key === "y") {
-        if (redo()) e.preventDefault();
-        return;
-      }
-
-      // Timeline-scoped shortcuts only fire when the timeline owns the
-      // keyboard. The focus authority makes the old asset-selection /
-      // canvas-selection cross-checks unnecessary: a different region owning
-      // focus means `region` simply isn't "timeline".
-      if (useEditorFocusStore.getState().region !== "timeline") {
-        return;
-      }
-
-      if (isShortcut && key === "c") {
-        if (copySelectedClip()) e.preventDefault();
-        return;
-      }
-
-      if (isShortcut && key === "v") {
-        if (pasteCopiedClipAbove()) e.preventDefault();
-        return;
-      }
-
-      if (e.key === "Delete" || e.key === "Backspace") {
-        if (selectedTransitionId) {
-          e.preventDefault();
-          removeTransition(selectedTransitionId);
-          selectTransition(null);
-          return;
-        }
-        if (selectedClipIds.length === 0) return;
-        e.preventDefault();
-        removeClips(selectedClipIds);
-        selectClip(null);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    selectedClipIds,
-    selectedTransitionId,
-    removeTransition,
-    selectTransition,
-    removeClips,
-    selectClip,
-    copySelectedClip,
-    pasteCopiedClipAbove,
-    undo,
-    redo,
-  ]);
+  // Undo/redo, copy/paste, and delete shortcuts are host keybindings routed
+  // through the command table (features/timeline/hostCommands.ts); their
+  // "only handle when applicable" semantics live in each command's `when`
+  // clause over the timeline context keys.
 
   const handleTimelineInteractionCapture = useCallback(() => {
     const assetBrowserRevealState = useAssetBrowserRevealStore.getState();

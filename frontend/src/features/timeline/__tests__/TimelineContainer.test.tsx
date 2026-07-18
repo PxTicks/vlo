@@ -13,6 +13,13 @@ import {
   revealAssetInBrowser,
   useAssetBrowserRevealStore,
 } from "../../userAssets/useAssetBrowserRevealStore";
+import { installTimelineHostCommands } from "../hostCommands";
+import {
+  hostContextKeys,
+  installTimelineContextKeys,
+  useCommandKeybindings,
+} from "../../extensions/commands/publicApi";
+import type { ExtensionDisposable } from "../../extensions/types";
 
 // --- 1. SETUP GLOBAL MOCKS ---
 globalThis.ResizeObserver = class ResizeObserver {
@@ -132,11 +139,28 @@ vi.mock("../hooks/useTimelineViewStore", () => {
 });
 
 // --- 5. TESTS ---
+/**
+ * Timeline shortcuts moved from an inline TimelineContainer keydown handler
+ * to app-level command keybinding dispatch (normally mounted by
+ * FrontendExtensionBootstrap). The keyboard specs below exercise the same
+ * window-keydown surface through this harness.
+ */
+function KeyboardDispatchHarness(props: {
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  insertGapIndex: number | null;
+}) {
+  useCommandKeybindings();
+  return <TimelineContainer {...props} />;
+}
+
 describe("TimelineContainer", () => {
   const mockScrollRef = React.createRef<HTMLDivElement>();
+  let commandWiring: ExtensionDisposable[] = [];
 
   beforeEach(() => {
     vi.clearAllMocks();
+    commandWiring = [installTimelineHostCommands(), installTimelineContextKeys()];
+    hostContextKeys.set("project.open", true);
 
     // Reset Timeline Store
     useTimelineStore.setState({
@@ -181,6 +205,10 @@ describe("TimelineContainer", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    for (const wiring of commandWiring.splice(0).reverse()) {
+      void wiring.dispose();
+    }
+    hostContextKeys.set("project.open", undefined);
   });
 
   it("renders the toolbar, ruler, and tracks", () => {
@@ -385,7 +413,7 @@ describe("TimelineContainer", () => {
     });
 
     render(
-      <TimelineContainer
+      <KeyboardDispatchHarness
         scrollContainerRef={mockScrollRef}
         insertGapIndex={null}
       />,
@@ -404,7 +432,7 @@ describe("TimelineContainer", () => {
     useEditorFocusStore.getState().setRegion("assetBrowser");
 
     render(
-      <TimelineContainer
+      <KeyboardDispatchHarness
         scrollContainerRef={mockScrollRef}
         insertGapIndex={null}
       />,
@@ -421,11 +449,13 @@ describe("TimelineContainer", () => {
     useTimelineStore.setState({
       undo,
       redo,
+      canUndo: true,
+      canRedo: true,
     });
     useEditorFocusStore.getState().setRegion("canvas");
 
     render(
-      <TimelineContainer
+      <KeyboardDispatchHarness
         scrollContainerRef={mockScrollRef}
         insertGapIndex={null}
       />,
@@ -485,7 +515,7 @@ describe("TimelineContainer", () => {
     });
 
     render(
-      <TimelineContainer
+      <KeyboardDispatchHarness
         scrollContainerRef={mockScrollRef}
         insertGapIndex={null}
       />,
@@ -502,5 +532,70 @@ describe("TimelineContainer", () => {
     expect(pastedClip?.trackId).toBe("t1");
     expect(pastedClip?.start).toBe(sourceClip.start);
     expect(pastedClip?.timelineDuration).toBe(sourceClip.timelineDuration);
+  });
+
+  it("does not swallow paste when every copied clip's source track is gone", () => {
+    const sourceClip = {
+      id: "c1",
+      trackId: "t2",
+      type: "video",
+      name: "Clip 1",
+      assetId: "asset_c1",
+      start: 100,
+      timelineDuration: 50,
+      offset: 0,
+      croppedSourceDuration: 50,
+      transformedOffset: 0,
+      sourceDuration: 50,
+      transformedDuration: 50,
+      transformations: [],
+    } as TimelineClip;
+
+    useTimelineStore.setState({
+      tracks: [
+        {
+          id: "t1",
+          label: "Track 1",
+          isVisible: true,
+          isLocked: false,
+          isMuted: false,
+        },
+        {
+          id: "t2",
+          label: "Track 2",
+          isVisible: true,
+          isLocked: false,
+          isMuted: false,
+        },
+      ],
+      clips: [sourceClip],
+      selectedClipIds: [sourceClip.id],
+      copiedClips: [],
+    });
+
+    render(
+      <KeyboardDispatchHarness
+        scrollContainerRef={mockScrollRef}
+        insertGapIndex={null}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+    // The copied clip's source track disappears before the paste.
+    useTimelineStore.setState((state) => ({
+      tracks: state.tracks.filter((track) => track.id !== "t2"),
+      clips: [],
+      selectedClipIds: [],
+    }));
+
+    // pasteCopiedClipsAboveDraft drops groups without a source track, so the
+    // command must be disabled: no paste, and — unlike a bare clipboard
+    // check — no preventDefault stealing the event from other handlers.
+    const notPrevented = fireEvent.keyDown(window, {
+      key: "v",
+      ctrlKey: true,
+    });
+    expect(notPrevented).toBe(true);
+    expect(useTimelineStore.getState().clips).toEqual([]);
   });
 });

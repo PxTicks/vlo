@@ -8,6 +8,7 @@ import {
   type MenuProps,
 } from "@mui/material";
 import type { ExtensionUiMenuItemContext } from "../types";
+import { hostMenuCatalog } from "../../../core/shell/hostMenuCatalog";
 import { hostCommandRegistry } from "../commands/CommandRegistry";
 import { hostContextKeys } from "../commands/contextKeys";
 import { useExtensionMenuItems } from "../ui/useExtensionMenuItems";
@@ -76,10 +77,11 @@ export function AppMenu<TMenuId extends HostMenuId>({
   onContextMenu,
   extensionItemTestIdPrefix = "extension-menu-item-",
 }: AppMenuProps<TMenuId>) {
-  // Statically guaranteed by HostMenuSubject; guards non-TS callers and casts.
-  if (subject.slot !== menuId) {
+  // Statically guaranteed by HostMenuSubject; the catalogued schema guards
+  // non-TS callers and stale casts (it also checks `subject.slot`).
+  if (!hostMenuCatalog.validateSubject(menuId, subject)) {
     throw new Error(
-      `AppMenu subject slot '${subject.slot}' does not match menu '${menuId}'.`,
+      `AppMenu subject for '${menuId}' failed the menu's catalogued schema.`,
     );
   }
   // Command enablement is context-key- and registry-driven; re-render on both.

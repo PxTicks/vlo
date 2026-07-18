@@ -16,6 +16,9 @@ export {
   assertContextKeyExpression,
   evaluateContextKeyExpression,
 } from "./contextKeys";
-export { installHostContextKeyBindings } from "./installHostContextKeys";
+export {
+  installHostContextKeyBindings,
+  installTimelineContextKeys,
+} from "./installHostContextKeys";
 export { installHostKeybindingReservations } from "./installHostKeybindingReservations";
 export { useCommandKeybindings } from "./useCommandKeybindings";

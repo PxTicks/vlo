@@ -21,7 +21,7 @@ import { extensionPanelControlRegistry } from "../ui/ExtensionPanelControlRegist
 import { hostCommandRegistry } from "../commands/CommandRegistry";
 import { installHostContextKeyBindings } from "../commands/installHostContextKeys";
 import { installHostKeybindingReservations } from "../commands/installHostKeybindingReservations";
-import { installTimelineClipHostCommands } from "../../timeline/api";
+import { installTimelineHostCommands } from "../../timeline/api";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { extensionColorApi } from "./extensionColorApi";
 import {
@@ -424,7 +424,7 @@ export const frontendTrustedHostEntriesRegistration =
 export const frontendHostContextKeyRegistration =
   installHostContextKeyBindings();
 export const frontendTimelineHostCommandRegistration =
-  installTimelineClipHostCommands();
+  installTimelineHostCommands();
 // Reservations must exist before any extension activates so colliding
 // extension bindings are shadowed at registration, never dispatched.
 export const frontendHostKeybindingReservationRegistration =

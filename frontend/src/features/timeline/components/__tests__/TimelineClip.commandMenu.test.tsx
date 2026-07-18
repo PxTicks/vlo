@@ -12,8 +12,11 @@ import {
 import { TimelineClipItem } from "../TimelineClip";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../../hooks/useInteractionStore";
-import { installTimelineClipHostCommands } from "../../hostCommands";
-import { hostContextKeys } from "../../../extensions/commands/publicApi";
+import { installTimelineHostCommands } from "../../hostCommands";
+import {
+  hostContextKeys,
+  installTimelineContextKeys,
+} from "../../../extensions/commands/publicApi";
 import type {
   StandardTimelineClip,
   TimelineTrack,
@@ -93,14 +96,18 @@ const track: TimelineTrack = {
 // installs at runtime bootstrap.
 describe("TimelineClip command-backed context menu items", () => {
   let commands: { dispose: () => void | Promise<void> };
+  let timelineKeys: { dispose: () => void | Promise<void> };
 
   beforeAll(() => {
-    commands = installTimelineClipHostCommands();
+    commands = installTimelineHostCommands();
+    // Live selection keys drive Copy's enablement as the right-click selects.
+    timelineKeys = installTimelineContextKeys();
     hostContextKeys.set("project.open", true);
   });
 
   afterAll(() => {
     void commands.dispose();
+    void timelineKeys.dispose();
     hostContextKeys.set("project.open", undefined);
   });
 

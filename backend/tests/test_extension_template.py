@@ -42,6 +42,9 @@ MATRIX_RAIN_FIXTURE_ROOT = (
 GRADING_TOOLS_FIXTURE_ROOT = (
     REPOSITORY_ROOT / "extension-fixtures" / "grading-tools"
 )
+COMMAND_HOTKEYS_FIXTURE_ROOT = (
+    REPOSITORY_ROOT / "extension-fixtures" / "command-hotkeys"
+)
 SDK_ROOT = REPOSITORY_ROOT / "packages" / "extension-sdk"
 NODE_EXECUTABLE = shutil.which("node")
 TYPESCRIPT_CLI = (
@@ -115,6 +118,16 @@ def _copy_filter_pack_fixture_workspace(tmp_path: Path) -> Path:
     fixture = workspace / "extension-fixtures" / "filter-pack"
     fixture.parent.mkdir(parents=True)
     shutil.copytree(FILTER_PACK_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
+
+
+def _copy_command_hotkeys_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "command-hotkeys"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(COMMAND_HOTKEYS_FIXTURE_ROOT, fixture)
     shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
     shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
     return fixture
@@ -286,6 +299,20 @@ def test_declarative_look_pack_scans_without_executable_entries(tmp_path: Path):
     assert [(lut.id, lut.path) for lut in item.lut_contributions] == [
         ("clean-warm", "luts/clean-warm.cube")
     ]
+
+
+def test_command_hotkeys_fixture_builds_as_an_ordinary_trusted_extension(
+    tmp_path: Path,
+):
+    fixture = _copy_command_hotkeys_fixture_workspace(tmp_path)
+    _build_template(fixture)
+
+    bundle = fixture / "frontend" / "dist" / "index.js"
+    assert bundle.is_file()
+    contents = bundle.read_bytes()
+    assert b"bump-counter" in contents
+    assert b"Mod+Alt+B" in contents
+    assert b"timeline.clip.context" in contents
 
 
 def test_filter_pack_fixture_builds_as_an_ordinary_trusted_extension(

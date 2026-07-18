@@ -3,6 +3,7 @@
 
 # Host implementation spine.
 /frontend/src/features/extensions/** extension-surface=host
+/frontend/src/core/shell/** extension-surface=host
 /backend/services/extensions/** extension-surface=host
 /backend/routers/extensions.py extension-surface=host
 /backend/main.py extension-surface=adapter

@@ -20,6 +20,7 @@ import { Suspense, lazy, useEffect } from "react";
 import { Box, CircularProgress, Typography } from "@mui/material";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ExtensionModalHost } from "../features/extensions/ui/publicApi";
+import { MenuHostMount } from "../features/extensions/menus/publicApi";
 
 // 1. Lazy load the heavy editor to separate it from the initial bundle
 const Editor = lazy(() =>
@@ -73,6 +74,7 @@ export function App() {
         </Suspense>
       </ErrorBoundary>
       <ExtensionModalHost />
+      <MenuHostMount />
     </ThemeProvider>
   );
 }

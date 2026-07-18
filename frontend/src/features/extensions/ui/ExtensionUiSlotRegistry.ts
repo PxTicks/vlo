@@ -13,6 +13,7 @@ import type {
   JsonValue,
 } from "../types";
 import { jsonValueSchema } from "../persistence/extensionPayload";
+import { HOST_MENU_IDS } from "../menus/menuCatalogue";
 import {
   ExtensionContributionRegistry,
   type ExtensionContributionDefinition,
@@ -32,10 +33,6 @@ const HOST_UI_SLOTS = [
   "timeline.toolbar",
 ] as const;
 const HOST_WORKSPACE_LOCATIONS = ["right-sidebar", "left-sidebar"] as const;
-const HOST_MENU_SLOTS = [
-  "timeline.clip.context",
-  "library.item.actions",
-] as const;
 
 interface RuntimeUiNoticeDefinition extends ExtensionContributionDefinition {
   readonly slot: ExtensionUiSlotId;
@@ -145,7 +142,7 @@ export class ExtensionUiContributionRegistry {
       "ui-contribution",
     );
   private readonly declaredSlots = new Set<string>(HOST_UI_SLOTS);
-  private readonly declaredMenuSlots = new Set<string>(HOST_MENU_SLOTS);
+  private readonly declaredMenuSlots = new Set<string>(HOST_MENU_IDS);
   private readonly listeners = new Set<() => void>();
   private activeModal: ActiveModalRequest | null = null;
   private modalRevision = 0;
@@ -175,6 +172,18 @@ export class ExtensionUiContributionRegistry {
       throw new Error(`Invalid host UI slot '${slot}'.`);
     }
     this.declaredSlots.add(slot);
+  }
+
+  /**
+   * Host-only menu declaration. Menus rendered through `AppMenu` belong in the
+   * static catalogue (`menus/menuCatalogue.ts`); this seam exists for host
+   * composition roots and tests.
+   */
+  declareMenu(menuId: ExtensionUiMenuSlotId): void {
+    if (!SLOT_ID_PATTERN.test(menuId)) {
+      throw new Error(`Invalid host menu '${menuId}'.`);
+    }
+    this.declaredMenuSlots.add(menuId);
   }
 
   bind(scope: ExtensionApiScope): ExtensionUiSlotApi {

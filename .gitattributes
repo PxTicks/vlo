@@ -41,6 +41,7 @@
 /frontend/src/features/masks/runtime/SpriteClipMaskController.ts extension-surface=adapter
 /frontend/src/features/player/Player.tsx extension-surface=adapter
 /frontend/src/features/userAssets/services/AssetService.ts extension-surface=adapter
+/frontend/src/features/userAssets/components/AssetCard.tsx extension-surface=adapter
 /frontend/src/features/editorFocus/useEditorFocusStore.ts extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
 /frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
@@ -118,6 +119,7 @@
 /docs/deep_dive/extensions-architecture-review.md extension-surface=governance
 /backend/config.py extension-surface=governance
 /frontend/vite.config.ts extension-surface=governance
+/frontend/eslint.config.js extension-surface=governance
 /package.json extension-surface=governance
 /scripts/check-extension-surface.mjs extension-surface=governance
 /scripts/check-extension-surface.test.mjs extension-surface=governance

@@ -1,15 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import {
-  Box,
-  Divider,
-  IconButton,
-  ListItemIcon,
-  ListItemText,
-  Menu,
-  MenuItem,
-  Paper,
-  Typography,
-} from "@mui/material";
+import { Box, IconButton, Paper, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useDraggable } from "@dnd-kit/core";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
@@ -35,8 +25,11 @@ import { useAssetStore } from "../useAssetStore";
 import { deleteAssetWithConfirmation } from "../utils/deleteAssetWithConfirmation";
 import { canRegenerateAsset, regenerateAsset } from "../assetRegenerator";
 import { toExtensionAssetSnapshot } from "../api";
-import type { ExtensionUiMenuItemContext } from "../../extensions";
-import { useExtensionMenuItems } from "../../extensions/ui/publicApi";
+import {
+  AppMenu,
+  type HostMenuItemDescriptor,
+  type HostMenuSubject,
+} from "../../extensions/menus/publicApi";
 
 interface AssetCardProps {
   asset: Asset;
@@ -224,13 +217,9 @@ function AssetCardContent({
   const canDeleteAll = Boolean(asset.familyId && onDeleteAll);
   const canShowFamily = Boolean(asset.familyId && onShowFamily);
   const isMenuOpen = Boolean(menuAnchorEl);
-  const assetMenuContext = useMemo<ExtensionUiMenuItemContext>(
+  const assetMenuContext = useMemo<HostMenuSubject<"library.item.actions">>(
     () => ({ slot: "library.item.actions", asset: toExtensionAssetSnapshot(asset) }),
     [asset],
-  );
-  const extensionMenuItems = useExtensionMenuItems(
-    "library.item.actions",
-    assetMenuContext,
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -324,6 +313,55 @@ function AssetCardContent({
     },
     [asset.id, asset.type, onRequestPreview],
   );
+
+  // Menu as data; all items remain inline actions because they are coupled to
+  // component props/callbacks (family handlers, confirmation flows).
+  const assetMenuItems: HostMenuItemDescriptor[] = [
+    ...(canRegenerate
+      ? [
+          {
+            kind: "action",
+            id: "regenerate",
+            label: "Regenerate",
+            icon: <ReplayIcon fontSize="small" />,
+            group: "1_asset",
+            run: () => void handleRegenerate(),
+          } satisfies HostMenuItemDescriptor,
+        ]
+      : []),
+    ...(timelineSelection
+      ? [
+          {
+            kind: "action",
+            id: "send-to-timeline",
+            label: "Send to Timeline",
+            icon: <TimelineIcon fontSize="small" />,
+            group: "1_asset",
+            run: handleSendToTimeline,
+          } satisfies HostMenuItemDescriptor,
+        ]
+      : []),
+    ...(canDeleteAll
+      ? [
+          {
+            kind: "action",
+            id: "delete-all",
+            label: "Delete all",
+            icon: <DeleteIcon fontSize="small" />,
+            group: "1_asset",
+            run: handleDeleteAll,
+          } satisfies HostMenuItemDescriptor,
+        ]
+      : []),
+    {
+      kind: "action",
+      id: "delete",
+      label: "Delete",
+      icon: <DeleteIcon fontSize="small" />,
+      group: "1_asset",
+      run: handleDelete,
+    },
+  ];
 
   return (
     <>
@@ -450,59 +488,18 @@ function AssetCardContent({
           </StyledMenuButton>
         ) : null}
         {!hideActions && isMenuOpen ? (
-          <Menu
-            anchorEl={menuAnchorEl}
+          <AppMenu
+            menuId="library.item.actions"
+            subject={assetMenuContext}
+            items={assetMenuItems}
             open
             onClose={handleCloseMenu}
+            anchorEl={menuAnchorEl}
             anchorOrigin={MENU_ANCHOR_ORIGIN}
             transformOrigin={MENU_TRANSFORM_ORIGIN}
             onClick={(event) => event.stopPropagation()}
-          >
-            {canRegenerate ? (
-              <MenuItem onClick={() => void handleRegenerate()}>
-                <ListItemIcon>
-                  <ReplayIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Regenerate</ListItemText>
-              </MenuItem>
-            ) : null}
-            {timelineSelection ? (
-              <MenuItem onClick={handleSendToTimeline}>
-                <ListItemIcon>
-                  <TimelineIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Send to Timeline</ListItemText>
-              </MenuItem>
-            ) : null}
-            {canDeleteAll ? (
-              <MenuItem onClick={handleDeleteAll}>
-                <ListItemIcon>
-                  <DeleteIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Delete all</ListItemText>
-              </MenuItem>
-            ) : null}
-            <MenuItem onClick={handleDelete}>
-              <ListItemIcon>
-                <DeleteIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Delete</ListItemText>
-            </MenuItem>
-            {extensionMenuItems.length > 0 ? <Divider /> : null}
-            {extensionMenuItems.map((item) => (
-              <MenuItem
-                key={item.id}
-                data-testid={`extension-asset-menu-item-${item.id}`}
-                onClick={() => {
-                  item.select();
-                  handleCloseMenu();
-                }}
-              >
-                {item.icon ? <ListItemIcon>{item.icon}</ListItemIcon> : null}
-                <ListItemText>{item.label}</ListItemText>
-              </MenuItem>
-            ))}
-          </Menu>
+            extensionItemTestIdPrefix="extension-asset-menu-item-"
+          />
         ) : null}
 
         {/* Metadata Area */}

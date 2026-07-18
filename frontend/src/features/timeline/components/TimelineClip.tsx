@@ -7,16 +7,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import {
-  Box,
-  Divider,
-  ListItemIcon,
-  ListItemText,
-  Menu,
-  MenuItem,
-  Paper,
-  Typography,
-} from "@mui/material";
+import { Box, Paper, Typography } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import GraphicEqIcon from "@mui/icons-material/GraphicEq";
@@ -42,8 +33,11 @@ import type { Asset } from "../../../types/Asset";
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
 import { toExtensionClipSnapshot } from "../api";
-import type { ExtensionUiMenuItemContext } from "../../extensions";
-import { useExtensionMenuItems } from "../../extensions/ui/publicApi";
+import {
+  AppMenu,
+  type HostMenuItemDescriptor,
+  type HostMenuSubject,
+} from "../../extensions/menus/publicApi";
 import { useAsset } from "../../userAssets/api";
 import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
@@ -174,7 +168,7 @@ function TimelineClipComponent({
   const showCompositeLabel = isCompositeClip(timelineClip) && !isOverlay;
   // Detached subject for extension context-menu commands. Non-overlay clips
   // (the only ones whose menu can open) always narrow to a full TimelineClip.
-  const clipMenuContext = useMemo<ExtensionUiMenuItemContext>(
+  const clipMenuContext = useMemo<HostMenuSubject<"timeline.clip.context">>(
     () => ({
       slot: "timeline.clip.context",
       clip:
@@ -191,10 +185,6 @@ function TimelineClipComponent({
             }),
     }),
     [clip, timelineClip, startTime],
-  );
-  const extensionMenuItems = useExtensionMenuItems(
-    "timeline.clip.context",
-    clipMenuContext,
   );
   const extensionProviderId =
     clip.type === "extension"
@@ -473,27 +463,6 @@ function TimelineClipComponent({
 
   const closeContextMenu = () => setContextMenuPos(null);
 
-  const handleContextDelete = () => {
-    const store = useTimelineStore.getState();
-    const ids =
-      store.selectedClipIds.length > 0 ? store.selectedClipIds : [clip.id];
-    store.removeClips(ids);
-    store.selectClip(null);
-    closeContextMenu();
-  };
-
-  const handleContextCopy = () => {
-    useTimelineStore.getState().copySelectedClip();
-    closeContextMenu();
-  };
-
-  const handleContextMute = () => {
-    if (canMute) {
-      useTimelineStore.getState().toggleClipMute(clip.id);
-    }
-    closeContextMenu();
-  };
-
   const handleContextRemoveBeats = () => {
     if (!beatMarkersComponent) {
       closeContextMenu();
@@ -558,6 +527,83 @@ function TimelineClipComponent({
     if (!timelineClip || !isCompositeClip(timelineClip)) return;
     useCompositeTimelineStore.getState().openCompositeClip(timelineClip.id);
   };
+
+  // Menu as data: store-level actions dispatch through the host command
+  // table; handlers still coupled to component state remain inline actions.
+  const clipMenuItems: HostMenuItemDescriptor[] = [
+    {
+      kind: "command",
+      id: "delete",
+      command: "timeline.clip.delete",
+      subject: { clipId: clip.id },
+      label: "Delete",
+      icon: <DeleteOutlineIcon fontSize="small" />,
+      group: "1_clip",
+    },
+    {
+      kind: "command",
+      id: "copy",
+      command: "timeline.clip.copy",
+      subject: { clipId: clip.id },
+      label: "Copy",
+      icon: <ContentCopyIcon fontSize="small" />,
+      group: "1_clip",
+    },
+    ...(canExtractAudio
+      ? [
+          {
+            kind: "action",
+            id: "extract-audio",
+            label: "Extract Audio",
+            icon: <GraphicEqIcon fontSize="small" />,
+            group: "1_clip",
+            run: handleExtractAudio,
+          } satisfies HostMenuItemDescriptor,
+        ]
+      : []),
+    ...(canReverseClip
+      ? [
+          {
+            kind: "action",
+            id: "reverse",
+            label: isReversingClip ? "Reversing..." : "Reverse Clip",
+            icon: <FastRewindIcon fontSize="small" />,
+            group: "1_clip",
+            disabled: isReversingClip,
+            run: () => void handleReverseClip(),
+          } satisfies HostMenuItemDescriptor,
+        ]
+      : []),
+    ...(canMute
+      ? [
+          {
+            kind: "command",
+            id: "toggle-mute",
+            command: "timeline.clip.toggle-mute",
+            subject: { clipId: clip.id },
+            label: isClipMuted ? "Unmute" : "Mute",
+            icon: isClipMuted ? (
+              <VolumeUpIcon fontSize="small" />
+            ) : (
+              <VolumeOffIcon fontSize="small" />
+            ),
+            group: "1_clip",
+          } satisfies HostMenuItemDescriptor,
+        ]
+      : []),
+    ...(canRemoveBeats
+      ? [
+          {
+            kind: "action",
+            id: "remove-beats",
+            label: "Remove Beats",
+            icon: <MusicOffIcon fontSize="small" />,
+            group: "1_clip",
+            run: handleContextRemoveBeats,
+          } satisfies HostMenuItemDescriptor,
+        ]
+      : []),
+  ];
 
   return (
     <ClipRoot
@@ -735,85 +781,23 @@ function TimelineClipComponent({
       >
         {tickToMediaSeconds(displayDuration).toFixed(2)}s
       </Typography>
-      <Menu
+      <AppMenu
+        menuId="timeline.clip.context"
+        subject={clipMenuContext}
+        items={clipMenuItems}
         open={contextMenuPos !== null}
         onClose={closeContextMenu}
-        anchorReference="anchorPosition"
         anchorPosition={
           contextMenuPos
             ? { top: contextMenuPos.y, left: contextMenuPos.x }
             : undefined
         }
         onContextMenu={(e) => e.preventDefault()}
-      >
-        <MenuItem onClick={handleContextDelete}>
-          <ListItemIcon>
-            <DeleteOutlineIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Delete</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={handleContextCopy}>
-          <ListItemIcon>
-            <ContentCopyIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Copy</ListItemText>
-        </MenuItem>
-        {canExtractAudio ? (
-          <MenuItem onClick={handleExtractAudio}>
-            <ListItemIcon>
-              <GraphicEqIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Extract Audio</ListItemText>
-          </MenuItem>
-        ) : null}
-        {canReverseClip ? (
-          <MenuItem
-            onClick={() => void handleReverseClip()}
-            disabled={isReversingClip}
-          >
-            <ListItemIcon>
-              <FastRewindIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>
-              {isReversingClip ? "Reversing..." : "Reverse Clip"}
-            </ListItemText>
-          </MenuItem>
-        ) : null}
-        {canMute && (
-          <MenuItem onClick={handleContextMute}>
-            <ListItemIcon>
-              {isClipMuted ? (
-                <VolumeUpIcon fontSize="small" />
-              ) : (
-                <VolumeOffIcon fontSize="small" />
-              )}
-            </ListItemIcon>
-            <ListItemText>{isClipMuted ? "Unmute" : "Mute"}</ListItemText>
-          </MenuItem>
-        )}
-        {canRemoveBeats && (
-          <MenuItem onClick={handleContextRemoveBeats}>
-            <ListItemIcon>
-              <MusicOffIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Remove Beats</ListItemText>
-          </MenuItem>
-        )}
-        {extensionMenuItems.length > 0 ? <Divider /> : null}
-        {extensionMenuItems.map((item) => (
-          <MenuItem
-            key={item.id}
-            data-testid={`extension-clip-menu-item-${item.id}`}
-            onClick={() => {
-              item.select();
-              closeContextMenu();
-            }}
-          >
-            {item.icon ? <ListItemIcon>{item.icon}</ListItemIcon> : null}
-            <ListItemText>{item.label}</ListItemText>
-          </MenuItem>
-        ))}
-      </Menu>
+        // Menu clicks bubble through the portal to ClipRoot's onClick and
+        // would re-select a clip the command just deleted.
+        onClick={(e) => e.stopPropagation()}
+        extensionItemTestIdPrefix="extension-clip-menu-item-"
+      />
     </ClipRoot>
   );
 }

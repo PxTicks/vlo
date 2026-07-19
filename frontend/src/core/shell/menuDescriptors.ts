@@ -2,10 +2,10 @@ import type { ReactNode } from "react";
 import type { JsonValue } from "@vlo/extension-sdk";
 
 /**
- * Ordering groups sort lexically, items by `order` within a group, and the
- * renderer inserts a divider at each group boundary. Extension contributions
- * always merge into this trailing group, so host items keep their positions
- * regardless of what is installed.
+ * Ordering groups sort lexically, items by `order` within a group (extension
+ * placements after host items at equal order), and the renderer inserts a
+ * divider at each group boundary. This is the conventional trailing group
+ * for extension placements that don't target a specific host group.
  */
 export const EXTENSION_MENU_GROUP = "9_extensions";
 

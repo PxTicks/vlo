@@ -25,11 +25,9 @@ import { useAssetStore } from "../useAssetStore";
 import { deleteAssetWithConfirmation } from "../utils/deleteAssetWithConfirmation";
 import { canRegenerateAsset, regenerateAsset } from "../assetRegenerator";
 import { toExtensionAssetSnapshot } from "../api";
-import {
-  AppMenu,
-  type HostMenuItemDescriptor,
-  type HostMenuSubject,
-} from "../../extensions/menus/publicApi";
+import { AppMenu } from "../../../core/shell/AppMenu";
+import type { HostMenuItemDescriptor } from "../../../core/shell/menuDescriptors";
+import type { HostMenuSubject } from "../../../core/shell/hostMenus";
 
 interface AssetCardProps {
   asset: Asset;

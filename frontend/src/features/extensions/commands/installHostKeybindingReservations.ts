@@ -2,7 +2,7 @@ import type { ExtensionDisposable } from "../types";
 import {
   hostKeybindingRegistry,
   type HostKeybindingRegistry,
-} from "./KeybindingRegistry";
+} from "../../../core/shell/keybindingRegistry";
 
 /**
  * Chords owned by inline host handlers that predate the command table.

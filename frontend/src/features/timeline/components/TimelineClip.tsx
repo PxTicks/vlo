@@ -33,11 +33,9 @@ import type { Asset } from "../../../types/Asset";
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
 import { toExtensionClipSnapshot } from "../api";
-import {
-  AppMenu,
-  type HostMenuItemDescriptor,
-  type HostMenuSubject,
-} from "../../extensions/menus/publicApi";
+import { AppMenu } from "../../../core/shell/AppMenu";
+import type { HostMenuItemDescriptor } from "../../../core/shell/menuDescriptors";
+import type { HostMenuSubject } from "../../../core/shell/hostMenus";
 import { useAsset } from "../../userAssets/api";
 import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";

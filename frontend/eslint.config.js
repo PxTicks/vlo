@@ -48,14 +48,14 @@ export default defineConfig([
               name: '@mui/material',
               importNames: ['Menu', 'MenuList'],
               message:
-                'Render menus through AppMenu (features/extensions/menus) so they are descriptor-driven and extension-hookable. See docs/extension-shell-surfaces-plan.md §3.',
+                'Render menus through AppMenu (core/shell) so they are descriptor-driven and extension-hookable. See docs/extension-shell-surfaces-plan.md §3.',
             },
           ],
           patterns: [
             {
               group: ['@mui/material/Menu', '@mui/material/MenuList'],
               message:
-                'Render menus through AppMenu (features/extensions/menus) so they are descriptor-driven and extension-hookable. See docs/extension-shell-surfaces-plan.md §3.',
+                'Render menus through AppMenu (core/shell) so they are descriptor-driven and extension-hookable. See docs/extension-shell-surfaces-plan.md §3.',
             },
           ],
         },

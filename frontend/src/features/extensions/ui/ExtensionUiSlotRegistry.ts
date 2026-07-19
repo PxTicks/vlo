@@ -4,8 +4,6 @@ import type {
   ExtensionTrustedUiModalDefinition,
   ExtensionTrustedUiWorkspaceDefinition,
   ExtensionUiApi,
-  ExtensionUiMenuItemDefinition,
-  ExtensionUiMenuSlotId,
   ExtensionUiNoticeDefinition,
   ExtensionUiRegistration,
   ExtensionUiSlotId,
@@ -13,10 +11,6 @@ import type {
   JsonValue,
 } from "../types";
 import { jsonValueSchema } from "../persistence/extensionPayload";
-// Value import: loading the catalogue module registers the host menus'
-// subject schemas with the shell catalog.
-import { HOST_MENU_IDS } from "../menus/menuCatalogue";
-import { hostMenuCatalog } from "../../../core/shell/hostMenuCatalog";
 import {
   ExtensionContributionRegistry,
   type ExtensionContributionDefinition,
@@ -25,7 +19,7 @@ import {
 
 type ExtensionUiSlotApi = Omit<
   ExtensionUiApi,
-  "registerPanelControl" | "commands"
+  "registerPanelControl" | "commands" | "menus"
 >;
 
 const SLOT_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
@@ -75,18 +69,6 @@ export interface RuntimeTrustedUiWorkspaceDefinition
   readonly report: ExtensionApiScope["report"];
 }
 
-export interface RuntimeUiMenuItemDefinition
-  extends ExtensionContributionDefinition {
-  readonly slot: ExtensionUiMenuSlotId;
-  readonly kind: "menu-item";
-  readonly label: string;
-  readonly order: number;
-  readonly icon?: ExtensionUiMenuItemDefinition["icon"];
-  readonly isVisible?: ExtensionUiMenuItemDefinition["isVisible"];
-  readonly onSelect: ExtensionUiMenuItemDefinition["onSelect"];
-  readonly report: ExtensionApiScope["report"];
-}
-
 type RuntimeUiSlotDefinition =
   | RuntimeUiNoticeDefinition
   | RuntimeTrustedUiComponentDefinition;
@@ -94,8 +76,7 @@ type RuntimeUiSlotDefinition =
 type RuntimeUiContributionDefinition =
   | RuntimeUiSlotDefinition
   | RuntimeTrustedUiModalDefinition
-  | RuntimeTrustedUiWorkspaceDefinition
-  | RuntimeUiMenuItemDefinition;
+  | RuntimeTrustedUiWorkspaceDefinition;
 
 interface ActiveModalRequest {
   readonly contributionId: string;
@@ -145,7 +126,6 @@ export class ExtensionUiContributionRegistry {
       "ui-contribution",
     );
   private readonly declaredSlots = new Set<string>(HOST_UI_SLOTS);
-  private readonly declaredMenuSlots = new Set<string>(HOST_MENU_IDS);
   private readonly listeners = new Set<() => void>();
   private activeModal: ActiveModalRequest | null = null;
   private modalRevision = 0;
@@ -177,18 +157,6 @@ export class ExtensionUiContributionRegistry {
     this.declaredSlots.add(slot);
   }
 
-  /**
-   * Host-only menu declaration. Menus rendered through `AppMenu` belong in the
-   * static catalogue (`menus/menuCatalogue.ts`); this seam exists for host
-   * composition roots and tests.
-   */
-  declareMenu(menuId: ExtensionUiMenuSlotId): void {
-    if (!SLOT_ID_PATTERN.test(menuId)) {
-      throw new Error(`Invalid host menu '${menuId}'.`);
-    }
-    this.declaredMenuSlots.add(menuId);
-  }
-
   bind(scope: ExtensionApiScope): ExtensionUiSlotApi {
     const bound = this.registry.bind(scope);
     return Object.freeze({
@@ -208,10 +176,6 @@ export class ExtensionUiContributionRegistry {
         definition: ExtensionTrustedUiWorkspaceDefinition,
       ): ExtensionUiRegistration =>
         bound.register(this.compileWorkspace(definition, scope.report)),
-      registerMenuItem: (
-        definition: ExtensionUiMenuItemDefinition,
-      ): ExtensionUiRegistration =>
-        bound.register(this.compileMenuItem(definition, scope.report)),
       openModal: (id: string, input?: JsonValue) =>
         this.openModal(scope, id, input),
       openWorkspace: (id: string) => this.openWorkspace(scope, id),
@@ -263,24 +227,6 @@ export class ExtensionUiContributionRegistry {
         (left, right) =>
           (left.definition as RuntimeTrustedUiWorkspaceDefinition).order -
             (right.definition as RuntimeTrustedUiWorkspaceDefinition).order ||
-          left.id.localeCompare(right.id),
-      );
-  }
-
-  listMenuItems(
-    slot: ExtensionUiMenuSlotId,
-  ): readonly RegisteredExtensionUiContribution[] {
-    return this.registry
-      .list()
-      .filter(
-        (entry) =>
-          entry.definition.kind === "menu-item" &&
-          entry.definition.slot === slot,
-      )
-      .sort(
-        (left, right) =>
-          (left.definition as RuntimeUiMenuItemDefinition).order -
-            (right.definition as RuntimeUiMenuItemDefinition).order ||
           left.id.localeCompare(right.id),
       );
   }
@@ -461,54 +407,6 @@ export class ExtensionUiContributionRegistry {
       location: definition.location,
       order: assertOrder(definition.order, definition.id),
       component: definition.component,
-      execution: "trusted",
-      report,
-    });
-  }
-
-  private compileMenuItem(
-    definition: ExtensionUiMenuItemDefinition,
-    report: ExtensionApiScope["report"],
-  ): RuntimeUiMenuItemDefinition {
-    if (definition.apiVersion !== 1 || definition.kind !== "menu-item") {
-      throw new Error(`UI menu item '${definition.id}' must use menu-item API 1.`);
-    }
-    if (
-      !this.declaredMenuSlots.has(definition.slot) &&
-      !hostMenuCatalog.has(definition.slot)
-    ) {
-      throw new Error(
-        `UI menu item '${definition.id}' targets undeclared host menu '${definition.slot}'.`,
-      );
-    }
-    if (typeof definition.onSelect !== "function") {
-      throw new TypeError(
-        `UI menu item '${definition.id}' must define onSelect().`,
-      );
-    }
-    if (definition.icon !== undefined && typeof definition.icon !== "function") {
-      throw new TypeError(
-        `UI menu item '${definition.id}' icon must be a component function.`,
-      );
-    }
-    if (
-      definition.isVisible !== undefined &&
-      typeof definition.isVisible !== "function"
-    ) {
-      throw new TypeError(
-        `UI menu item '${definition.id}' isVisible must be a function.`,
-      );
-    }
-    return Object.freeze({
-      id: definition.id,
-      apiVersion: 1,
-      slot: definition.slot,
-      kind: "menu-item",
-      label: assertText(definition.label, `UI menu item '${definition.id}' label`, 120),
-      order: assertOrder(definition.order, definition.id),
-      icon: definition.icon,
-      isVisible: definition.isVisible,
-      onSelect: definition.onSelect,
       execution: "trusted",
       report,
     });

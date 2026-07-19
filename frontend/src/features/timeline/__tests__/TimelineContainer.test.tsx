@@ -14,11 +14,9 @@ import {
   useAssetBrowserRevealStore,
 } from "../../userAssets/useAssetBrowserRevealStore";
 import { installTimelineHostCommands } from "../hostCommands";
-import {
-  hostContextKeys,
-  installTimelineContextKeys,
-  useCommandKeybindings,
-} from "../../extensions/commands/publicApi";
+import { hostContextKeys } from "../../../core/shell/contextKeys";
+import { installTimelineContextKeys } from "../../extensions/commands/installHostContextKeys";
+import { useCommandKeybindings } from "../../extensions/commands/useCommandKeybindings";
 import type { ExtensionDisposable } from "../../extensions/types";
 
 // --- 1. SETUP GLOBAL MOCKS ---

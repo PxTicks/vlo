@@ -1623,6 +1623,8 @@ export interface ExtensionCommandApi {
 export interface ExtensionUiApi {
   /** The host command table and chord requests (see `ExtensionCommandApi`). */
   readonly commands: ExtensionCommandApi;
+  /** Command placements in host menus (see `ExtensionMenuApi`). */
+  readonly menus: ExtensionMenuApi;
   /**
    * Registers a rich React control. Use it in an extension transformation's own
    * groups via a `custom` control, or place it in a host panel zone, or both.
@@ -1641,10 +1643,6 @@ export interface ExtensionUiApi {
   ): ExtensionUiRegistration;
   registerWorkspace(
     definition: ExtensionTrustedUiWorkspaceDefinition,
-  ): ExtensionUiRegistration;
-  /** Adds a command to a host-owned context/action menu (see menu slots). */
-  registerMenuItem(
-    definition: ExtensionUiMenuItemDefinition,
   ): ExtensionUiRegistration;
   /** Opens one modal registered by the calling extension. */
   openModal(id: string, input?: JsonValue): Promise<JsonValue | undefined>;
@@ -1684,49 +1682,64 @@ export interface ExtensionTrustedUiWorkspaceDefinition {
 }
 
 /**
- * Open string type; the host accepts only the menu regions it declares. Current
- * host catalogue: `timeline.clip.context` (timeline clip right-click) and
- * `library.item.actions` (asset three-dot menu).
+ * Declarative visibility predicate for one menu placement, evaluated by the
+ * host against context keys and the menu's detached subject. Menu placements
+ * never carry executable visibility callbacks, so conditions stay evaluable
+ * in a future restricted profile.
  */
-export type ExtensionUiMenuSlotId = string;
-
-/**
- * Detached, JSON-serialisable subject of the menu the user opened.
- *
- * Compatibility projection of the original v1 host menus. The host-side
- * source of truth for menu subjects is the shell's `HostMenuSubjectMap`;
- * menus added after v1 are catalogued there without widening this union
- * (how extensions type those newer subjects is tracked separately —
- * extension-shell-surfaces plan §12.0).
- */
-export type ExtensionUiMenuItemContext =
+export type ExtensionMenuCondition =
+  | { readonly context: ExtensionContextKeyExpression }
   | {
-      readonly slot: "timeline.clip.context";
-      readonly clip: ExtensionTimelineClipSnapshot;
+      readonly subject: {
+        /** JSON object path; a missing path makes the predicate false. */
+        readonly path: readonly string[];
+        readonly equals?: JsonValue; // omitted means a truthy test
+      };
     }
-  | {
-      readonly slot: "library.item.actions";
-      readonly asset: ExtensionEntityAssetSnapshot;
-    };
+  | { readonly not: ExtensionMenuCondition }
+  | { readonly all: readonly ExtensionMenuCondition[] }
+  | { readonly any: readonly ExtensionMenuCondition[] };
 
 /**
- * A declarative command in a host-owned menu. The host renders the native menu
- * item; the extension supplies the label, an optional trusted icon, and the
- * action invoked with the clicked subject. Keeping this declarative preserves
- * restricted-mode reachability.
+ * Places one of this extension's registered commands in a host menu. The host
+ * renders the native item from the command definition (title, icon,
+ * enablement via the command's `when`); invoking it executes the command with
+ * the menu's schema-validated subject as detached `JsonValue`. Registration
+ * rejects unknown menu IDs and commands not registered by the same extension;
+ * disposing the command makes a remaining placement inert with a diagnostic
+ * until the placement is disposed.
  */
-export interface ExtensionUiMenuItemDefinition {
+export interface ExtensionMenuCommandContribution {
   readonly id: string;
   readonly apiVersion: 1;
-  readonly slot: ExtensionUiMenuSlotId;
-  readonly kind: "menu-item";
-  readonly label: string;
+  /** Host menu ID; discover catalogued menus via `menus.listMenus()`. */
+  readonly menuId: string;
+  readonly kind: "command";
+  /** Local ID of a command already registered by this extension. */
+  readonly command: string;
+  /** Ordering group, e.g. "9_extensions". Groups sort lexically. */
+  readonly group: string;
   readonly order?: number;
-  /** Optional trusted icon component rendered before the label. */
-  readonly icon?: () => unknown;
-  /** Hide the item for a given subject (e.g. only for video clips). */
-  readonly isVisible?: (context: ExtensionUiMenuItemContext) => boolean;
-  readonly onSelect: (context: ExtensionUiMenuItemContext) => void;
+  /** Visibility only; command-level `when` still governs enablement everywhere. */
+  readonly when?: ExtensionMenuCondition;
+}
+
+/** One host menu extensions can contribute to, with subject discovery info. */
+export interface ExtensionMenuInfo {
+  readonly id: string;
+  /**
+   * Host-owned, serialisable structural description of the menu's detached
+   * subject (field paths to type-name strings). Documentation-grade: the
+   * host's subject schema validation is authoritative.
+   */
+  readonly subjectSchema: JsonValue;
+}
+
+export interface ExtensionMenuApi {
+  /** Place one of this extension's registered commands in a host menu. */
+  addItem(definition: ExtensionMenuCommandContribution): ExtensionUiRegistration;
+  /** Enumerate menu IDs the host has catalogued, with subject schema info. */
+  listMenus(): readonly ExtensionMenuInfo[];
 }
 
 export interface ExtensionGenerationInputSnapshot {

@@ -19,6 +19,7 @@ import { createExtensionGenerationApi } from "../generation/ExtensionGenerationB
 import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
 import { extensionPanelControlRegistry } from "../ui/ExtensionPanelControlRegistry";
 import { createExtensionCommandApi } from "../commands/CommandRegistry";
+import { extensionMenuPlacementRegistry } from "../menus/ExtensionMenuPlacementRegistry";
 import { installHostContextKeyBindings } from "../commands/installHostContextKeys";
 import { installHostKeybindingReservations } from "../commands/installHostKeybindingReservations";
 import { createExtensionStorageApi } from "../storage/createExtensionStorageApi";
@@ -406,12 +407,14 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
         ...extensionTransformationRegistry.bind(scope),
         presets: extensionParameterPresetRegistry.bind(scope),
       }),
-      // Panel controls and commands live in their own registries but are
-      // exposed on the UI domain, so an author sees one place to register UI.
+      // Panel controls, commands, and menu placements live in their own
+      // registries but are exposed on the UI domain, so an author sees one
+      // place to register UI.
       ui: Object.freeze({
         ...extensionUiSlotRegistry.bind(scope),
         ...extensionPanelControlRegistry.bind(scope),
         commands: createExtensionCommandApi(scope),
+        menus: extensionMenuPlacementRegistry.bind(scope),
       }),
     });
 

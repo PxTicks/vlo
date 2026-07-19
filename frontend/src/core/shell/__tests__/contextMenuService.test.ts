@@ -8,6 +8,7 @@ function createService() {
     id: "timeline.clip.context",
     validateSubject: (subject) =>
       typeof subject === "object" && subject !== null && "clip" in subject,
+    subjectSchema: { clip: { id: "string" } },
   });
   return { service: new ContextMenuService(catalog), catalog };
 }

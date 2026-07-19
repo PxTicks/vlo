@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { HostMenuCatalog } from "../hostMenuCatalog";
 
+const TRACK_SCHEMA = { trackId: "string" };
+
 describe("HostMenuCatalog", () => {
   it("declares menus, validates subjects, and disposes cleanly", () => {
     const catalog = new HostMenuCatalog();
@@ -10,10 +12,14 @@ describe("HostMenuCatalog", () => {
         typeof subject === "object" &&
         subject !== null &&
         "trackId" in subject,
+      subjectSchema: TRACK_SCHEMA,
     });
 
     expect(catalog.has("timeline.track.context")).toBe(true);
     expect(catalog.list()).toEqual(["timeline.track.context"]);
+    expect(catalog.describeAll()).toEqual([
+      { id: "timeline.track.context", subjectSchema: TRACK_SCHEMA },
+    ]);
     expect(
       catalog.validateSubject("timeline.track.context", { trackId: "t1" }),
     ).toBe(true);
@@ -30,25 +36,42 @@ describe("HostMenuCatalog", () => {
       validateSubject: () => {
         throw new Error("boom");
       },
+      subjectSchema: {},
     });
     expect(catalog.validateSubject("missing.menu", {})).toBe(false);
     expect(catalog.validateSubject("a.b", {})).toBe(false);
   });
 
-  it("rejects invalid IDs, duplicates, and missing validators", () => {
+  it("rejects invalid IDs, duplicates, and missing validators or schemas", () => {
     const catalog = new HostMenuCatalog();
     expect(() =>
-      catalog.declare({ id: "Bad Menu", validateSubject: () => true }),
+      catalog.declare({
+        id: "Bad Menu",
+        validateSubject: () => true,
+        subjectSchema: {},
+      }),
     ).toThrow(/Invalid host menu ID/);
-    catalog.declare({ id: "a.b", validateSubject: () => true });
+    catalog.declare({ id: "a.b", validateSubject: () => true, subjectSchema: {} });
     expect(() =>
-      catalog.declare({ id: "a.b", validateSubject: () => true }),
+      catalog.declare({
+        id: "a.b",
+        validateSubject: () => true,
+        subjectSchema: {},
+      }),
     ).toThrow(/already declared/);
     expect(() =>
       catalog.declare({
         id: "c.d",
         validateSubject: undefined as unknown as () => boolean,
+        subjectSchema: {},
       }),
     ).toThrow(/validateSubject/);
+    expect(() =>
+      catalog.declare({
+        id: "e.f",
+        validateSubject: () => true,
+        subjectSchema: undefined as unknown as Record<string, never>,
+      }),
+    ).toThrow(/subjectSchema/);
   });
 });

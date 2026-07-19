@@ -13,10 +13,8 @@ import { TimelineClipItem } from "../TimelineClip";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../../hooks/useInteractionStore";
 import { installTimelineHostCommands } from "../../hostCommands";
-import {
-  hostContextKeys,
-  installTimelineContextKeys,
-} from "../../../extensions/commands/publicApi";
+import { hostContextKeys } from "../../../../core/shell/contextKeys";
+import { installTimelineContextKeys } from "../../../extensions/commands/installHostContextKeys";
 import type {
   StandardTimelineClip,
   TimelineTrack,

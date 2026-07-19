@@ -1,7 +1,6 @@
 import type {
   ExtensionCommandInvocation,
   ExtensionModule,
-  ExtensionUiMenuItemContext,
 } from "@vlo/extension-sdk";
 
 interface BumpState {
@@ -22,7 +21,7 @@ export function resetBumpStateForConformance(): void {
 }
 
 export const activate: ExtensionModule["activate"] = (context) => {
-  const { commands } = context.api.ui;
+  const { commands, menus } = context.api.ui;
 
   commands.register({
     id: "bump-counter",
@@ -52,19 +51,30 @@ export const activate: ExtensionModule["activate"] = (context) => {
     command: "bump-counter",
   });
 
-  context.api.ui.registerMenuItem({
+  // The same command placed in both wave-1 menus: the host renders the item
+  // from the command definition and invokes it with the menu's detached
+  // subject. The clip placement carries a structured visibility condition
+  // over the subject; there are no menu-owned callbacks.
+  menus.addItem({
     id: "bump-menu",
     apiVersion: 1,
-    slot: "timeline.clip.context",
-    kind: "menu-item",
-    label: "Bump Counter",
-    onSelect: (menuContext: ExtensionUiMenuItemContext) => {
-      if (menuContext.slot !== "timeline.clip.context") return;
-      void commands.execute("bump-counter", { clipId: menuContext.clip.id });
-    },
+    menuId: "timeline.clip.context",
+    kind: "command",
+    command: "bump-counter",
+    group: "9_extensions",
+    when: { subject: { path: ["clip", "id"] } },
+  });
+  menus.addItem({
+    id: "bump-library",
+    apiVersion: 1,
+    menuId: "library.item.actions",
+    kind: "command",
+    command: "bump-counter",
+    group: "9_extensions",
   });
 
   context.logger.info("command-hotkeys fixture activated", {
     contextKeySample: commands.getContextKey("project.open") ?? null,
+    menuCatalogue: menus.listMenus().map((menu) => menu.id),
   });
 };

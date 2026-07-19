@@ -1,6 +1,7 @@
 import type {
   ExtensionEntityAssetSnapshot,
   ExtensionTimelineClipSnapshot,
+  JsonValue,
 } from "@vlo/extension-sdk";
 import { hostMenuCatalog } from "./hostMenuCatalog";
 
@@ -8,8 +9,8 @@ import { hostMenuCatalog } from "./hostMenuCatalog";
  * The host menu catalogue declarations. Every menu rendered through `AppMenu`
  * (or shown via the shell context-menu service) is declared here — one entry
  * per menu, with a structural schema for the detached subject it carries.
- * Declaring is what makes a menu a valid target for extension
- * `ui.registerMenuItem` contributions; adding a menu touches only this file,
+ * Declaring is what makes a menu a valid target for extension menu
+ * placements (`ui.menus.addItem`); adding a menu touches only this file,
  * never SDK types. Menu IDs are contract once shipped: they become
  * registration targets and documentation references, so rename them with the
  * same care as SDK types.
@@ -17,11 +18,11 @@ import { hostMenuCatalog } from "./hostMenuCatalog";
 
 /**
  * Host-side source of truth for each catalogued menu's subject type
- * (§3.10 review finding 2). The SDK's `ExtensionUiMenuItemContext` union is
- * the compatibility projection of the original v1 menus, not the authority:
- * new menus are typed by adding an entry here (plus a validator below) and
- * resolve without touching the SDK. Subjects must stay detached and
- * JSON-serialisable — they cross the extension boundary.
+ * (§3.10 review finding 2). The SDK carries no closed union of menu
+ * subjects: new menus are typed by adding an entry here (plus a validator
+ * and schema description below) and resolve without touching the SDK.
+ * Subjects must stay detached and JSON-serialisable — they cross the
+ * extension boundary as `JsonValue`.
  */
 export interface HostMenuSubjectMap {
   readonly "timeline.clip.context": {
@@ -82,6 +83,28 @@ const HOST_MENU_SUBJECT_VALIDATORS = {
   "library.item.actions": validateLibraryItemSubject,
 } satisfies Record<HostMenuId, (subject: unknown) => boolean>;
 
+// Serialisable subject descriptions surfaced through `menus.listMenus()`
+// discovery. Documentation-grade (field path → type name); the validators
+// above are authoritative.
+const HOST_MENU_SUBJECT_SCHEMAS = {
+  "timeline.clip.context": {
+    slot: "'timeline.clip.context'",
+    clip: {
+      id: "string",
+      type: "string",
+      name: "string",
+      trackId: "string",
+      startTicks: "number",
+      durationTicks: "number",
+      transformations: "array",
+    },
+  },
+  "library.item.actions": {
+    slot: "'library.item.actions'",
+    asset: { id: "string", name: "string", type: "string" },
+  },
+} satisfies Record<HostMenuId, JsonValue>;
+
 export const HOST_MENU_IDS = Object.freeze(
   Object.keys(HOST_MENU_SUBJECT_VALIDATORS) as HostMenuId[],
 );
@@ -101,6 +124,7 @@ export function declareHostMenus(): void {
     hostMenuCatalog.declare({
       id,
       validateSubject: HOST_MENU_SUBJECT_VALIDATORS[id],
+      subjectSchema: HOST_MENU_SUBJECT_SCHEMAS[id],
     });
   }
 }

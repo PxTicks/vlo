@@ -3,7 +3,10 @@ import { usePlayerStore } from "../../player";
 import { useProjectStore } from "../../project";
 import { getTimelineStoreForTrustedHostAccess } from "../../timeline/api";
 import type { ExtensionDisposable } from "../types";
-import { hostContextKeys, type HostContextKeyService } from "./contextKeys";
+import {
+  hostContextKeys,
+  type HostContextKeyService,
+} from "../../../core/shell/contextKeys";
 
 /**
  * Publishes the timeline-derived context keys. Split out so tests exercising

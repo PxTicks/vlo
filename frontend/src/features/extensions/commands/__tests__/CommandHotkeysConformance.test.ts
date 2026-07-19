@@ -13,6 +13,12 @@ import { ExtensionUiContributionRegistry } from "../../ui/ExtensionUiSlotRegistr
 import { HostCommandTable } from "../../../../core/shell/commandTable";
 import { HostContextKeyService } from "../../../../core/shell/contextKeys";
 import { HostKeybindingRegistry } from "../../../../core/shell/keybindingRegistry";
+import { hostMenuCatalog } from "../../../../core/shell/hostMenuCatalog";
+import { declareHostMenus } from "../../../../core/shell/hostMenus";
+import {
+  ExtensionMenuPlacementRegistry,
+  resolveMenuPlacements,
+} from "../../menus/ExtensionMenuPlacementRegistry";
 import { createExtensionCommandApi } from "../CommandRegistry";
 
 const CLIP_SUBJECT = {
@@ -33,12 +39,17 @@ function keyEvent(init: KeyboardEventInit & { key: string }): KeyboardEvent {
 }
 
 describe("command-hotkeys conformance fixture", () => {
-  it("registers command, working chord, shadowed collision, and menu execute; disposal removes all", async () => {
+  it("registers command, working chord, shadowed collision, and menu placements; disposal removes all", async () => {
     resetBumpStateForConformance();
+    declareHostMenus();
     const contextKeys = new HostContextKeyService();
     const keybindings = new HostKeybindingRegistry(() => false);
     const commandTable = new HostCommandTable(contextKeys);
     const uiRegistry = new ExtensionUiContributionRegistry();
+    const menuPlacements = new ExtensionMenuPlacementRegistry(
+      hostMenuCatalog,
+      commandTable,
+    );
     const report = vi.fn();
     const resources: ExtensionResource[] = [];
     const scope = {
@@ -70,6 +81,7 @@ describe("command-hotkeys conformance fixture", () => {
       ui: {
         ...uiRegistry.bind(scope),
         commands: createExtensionCommandApi(scope, commandTable, keybindings, contextKeys),
+        menus: menuPlacements.bind(scope),
       },
     } as unknown as VloExtensionApi;
     const context = {
@@ -131,17 +143,42 @@ describe("command-hotkeys conformance fixture", () => {
     expect(gated.defaultPrevented).toBe(false);
     contextKeys.set("project.open", true);
 
-    // The menu item invokes the command through execute() with the clicked
-    // clip as detached subject.
-    const menuItems = uiRegistry.listMenuItems("timeline.clip.context");
-    expect(menuItems).toHaveLength(1);
-    const definition = menuItems[0].definition;
-    if (definition.kind !== "menu-item") throw new Error("expected menu item");
-    definition.onSelect(CLIP_SUBJECT);
+    // One command, placed in both wave-1 menus through `ui.menus.addItem` —
+    // no menu-owned callbacks. The clip placement's structured subject
+    // condition passes for this subject.
+    const resolveDeps = {
+      registry: menuPlacements,
+      table: commandTable,
+      getContextKey: (key: string) => contextKeys.get(key),
+    };
+    const clipPlacements = resolveMenuPlacements(
+      "timeline.clip.context",
+      CLIP_SUBJECT,
+      resolveDeps,
+    );
+    expect(clipPlacements.map((placement) => placement.id)).toEqual([
+      "example.command-hotkeys/bump-menu",
+    ]);
+    expect(
+      resolveMenuPlacements(
+        "library.item.actions",
+        { slot: "library.item.actions", asset: { id: "a1", name: "A", type: "image" } },
+        resolveDeps,
+      ).map((placement) => placement.id),
+    ).toEqual(["example.command-hotkeys/bump-library"]);
+
+    // Invoking the placement dispatches through the command table with the
+    // menu's detached subject.
+    expect(
+      commandTable.executeCommand(clipPlacements[0].command, {
+        subject: clipPlacements[0].subject,
+        source: "menu",
+      }),
+    ).toBe(true);
     await vi.waitFor(() => {
       expect(getBumpStateForConformance()).toMatchObject({
         count: 2,
-        lastInvocation: { source: "api", subject: { clipId: "clip-9" } },
+        lastInvocation: { source: "menu", subject: CLIP_SUBJECT },
       });
     });
 
@@ -156,6 +193,7 @@ describe("command-hotkeys conformance fixture", () => {
     expect(keybindings.list().map((entry) => entry.id)).toEqual([
       "host.timeline.undo",
     ]);
-    expect(uiRegistry.listMenuItems("timeline.clip.context")).toEqual([]);
+    expect(menuPlacements.listForMenu("timeline.clip.context")).toEqual([]);
+    expect(menuPlacements.listForMenu("library.item.actions")).toEqual([]);
   });
 });

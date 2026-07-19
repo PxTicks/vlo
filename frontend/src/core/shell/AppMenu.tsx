@@ -16,10 +16,7 @@ import {
   type HostMenuSubject,
 } from "./hostMenus";
 import { getMenuContributions } from "./menuContributions";
-import {
-  EXTENSION_MENU_GROUP,
-  type HostMenuItemDescriptor,
-} from "./menuDescriptors";
+import type { HostMenuItemDescriptor } from "./menuDescriptors";
 
 // Shell-owned catalogue initialization (§3.10 review finding 1): the renderer
 // itself guarantees the declarations exist before any subject validation.
@@ -51,6 +48,8 @@ interface RenderableMenuItem {
   readonly key: string;
   readonly group: string;
   readonly order: number;
+  /** Extension items sort after host items at equal group and order. */
+  readonly contributed: boolean;
   readonly label: string;
   readonly icon: ReactNode | null;
   readonly disabled: boolean;
@@ -60,10 +59,11 @@ interface RenderableMenuItem {
 
 /**
  * The single descriptor-driven menu renderer (plan §3.2, shell-owned per
- * §3.10). Host call-sites describe their items as data; contributed items
+ * §3.10). Host call-sites describe their items as data; command placements
  * from the installed contributions source (the extensions feature, when
- * present) merge into the trailing extension group. Rendering a menu through
- * this component is what makes it part of the extensible catalogue.
+ * present) merge into their declared groups, after host items at equal
+ * order. Rendering a menu through this component is what makes it part of
+ * the extensible catalogue.
  */
 export function AppMenu<TMenuId extends HostMenuId>({
   menuId,
@@ -106,6 +106,7 @@ export function AppMenu<TMenuId extends HostMenuId>({
         key: item.id,
         group: item.group,
         order: item.order ?? index,
+        contributed: false,
         label:
           item.label ?? hostCommandTable.getTitle(item.command) ?? item.command,
         icon: item.icon ?? null,
@@ -125,6 +126,7 @@ export function AppMenu<TMenuId extends HostMenuId>({
       key: item.id,
       group: item.group,
       order: item.order ?? index,
+      contributed: false,
       label: item.label,
       icon: item.icon ?? null,
       disabled: Boolean(item.disabled),
@@ -132,16 +134,27 @@ export function AppMenu<TMenuId extends HostMenuId>({
     };
   });
 
-  for (const [index, item] of contributedItems.entries()) {
+  // Contributed command placements render through the same command-table
+  // machinery as host command items; the contribution source has already
+  // dropped orphaned or condition-hidden placements.
+  for (const item of contributedItems) {
     renderable.push({
       key: item.id,
-      group: EXTENSION_MENU_GROUP,
-      order: index,
-      label: item.label,
+      group: item.group,
+      order: item.order,
+      contributed: true,
+      label: hostCommandTable.getTitle(item.command) ?? item.command,
       icon: item.icon,
-      disabled: false,
+      disabled:
+        !hostCommandTable.has(item.command) ||
+        !hostCommandTable.isEnabled(item.command),
       testId: `${extensionItemTestIdPrefix}${item.id}`,
-      select: item.select,
+      select: () => {
+        hostCommandTable.executeCommand(item.command, {
+          subject: item.subject,
+          source: "menu",
+        });
+      },
     });
   }
 
@@ -149,6 +162,7 @@ export function AppMenu<TMenuId extends HostMenuId>({
     (left, right) =>
       left.group.localeCompare(right.group) ||
       left.order - right.order ||
+      Number(left.contributed) - Number(right.contributed) ||
       left.key.localeCompare(right.key),
   );
 

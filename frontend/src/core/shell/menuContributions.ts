@@ -1,26 +1,35 @@
 import type { ReactNode } from "react";
+import type { JsonValue } from "@vlo/extension-sdk";
 
 /**
  * Contribution seam between the shell menu renderer and the extensions
  * feature (plan §3.10): shell renders whatever the installed source returns,
- * without importing extension registries. The source is a React hook —
- * `AppMenu` calls it unconditionally on every render — so its identity must
- * never change once rendering has begun; installation latches on first use
- * and later replacement throws.
+ * without importing extension registries. Contributions are command
+ * placements — the shell resolves label and enablement from its command
+ * table and dispatches through it, so contributed items never carry
+ * selection callbacks (plan §3.3). The source is a React hook — `AppMenu`
+ * calls it unconditionally on every render — so its identity must never
+ * change once rendering has begun; installation latches on first use and
+ * later replacement throws.
  */
-export interface ContributedMenuItem {
-  /** Owner-qualified contribution ID; doubles as the test-ID suffix. */
+export interface ContributedMenuCommand {
+  /** Owner-qualified placement ID; doubles as the test-ID suffix. */
   readonly id: string;
-  readonly label: string;
+  /** Fully qualified command ID resolved in the shell command table. */
+  readonly command: string;
+  /** Ordering group; sorts lexically alongside host groups. */
+  readonly group: string;
+  readonly order: number;
+  /** Pre-wrapped, error-isolated icon element, or null when none. */
   readonly icon: ReactNode | null;
-  /** Runs the contributed action; failures must be isolated by the source. */
-  select(): void;
+  /** Detached, frozen subject clone passed to the command invocation. */
+  readonly subject: JsonValue;
 }
 
 export type MenuContributionsHook = (
   menuId: string,
   subject: unknown,
-) => readonly ContributedMenuItem[];
+) => readonly ContributedMenuCommand[];
 
 const EMPTY_SOURCE: MenuContributionsHook = () => [];
 

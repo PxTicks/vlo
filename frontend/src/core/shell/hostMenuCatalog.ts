@@ -7,6 +7,8 @@
  * declare into it, never the reverse.
  */
 
+import type { JsonValue } from "@vlo/extension-sdk";
+
 const MENU_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
 
 export interface ShellDisposable {
@@ -21,6 +23,18 @@ export interface HostMenuDeclaration {
    * contributions receive only subjects that passed it.
    */
   readonly validateSubject: (subject: unknown) => boolean;
+  /**
+   * Serialisable structural description of the subject, surfaced through
+   * extension menu discovery (`menus.listMenus()`). Documentation-grade;
+   * `validateSubject` is authoritative.
+   */
+  readonly subjectSchema: JsonValue;
+}
+
+/** Discovery projection of one declared menu. */
+export interface HostMenuDescription {
+  readonly id: string;
+  readonly subjectSchema: JsonValue;
 }
 
 export class HostMenuCatalog {
@@ -38,6 +52,9 @@ export class HostMenuCatalog {
     }
     if (typeof declaration.validateSubject !== "function") {
       throw new Error(`Host menu '${id}' must declare validateSubject().`);
+    }
+    if (declaration.subjectSchema === undefined) {
+      throw new Error(`Host menu '${id}' must declare a subjectSchema.`);
     }
     this.menus.set(id, Object.freeze({ ...declaration }));
     this.emitChange();
@@ -58,6 +75,16 @@ export class HostMenuCatalog {
 
   list(): readonly string[] {
     return [...this.menus.keys()];
+  }
+
+  /** Discovery projection for extension `menus.listMenus()`. */
+  describeAll(): readonly HostMenuDescription[] {
+    return [...this.menus.values()].map((declaration) =>
+      Object.freeze({
+        id: declaration.id,
+        subjectSchema: declaration.subjectSchema,
+      }),
+    );
   }
 
   /** False for unknown menus; validator exceptions fail closed as invalid. */

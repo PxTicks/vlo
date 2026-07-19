@@ -27,15 +27,6 @@ import {
 // Matches the contribution registries' local-ID grammar.
 const LOCAL_COMMAND_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 
-/**
- * The command table itself is shell infrastructure (plan §3.10); this module
- * is the extensions-side adapter. The singleton re-export keeps existing
- * host imports stable.
- */
-export { hostCommandTable as hostCommandRegistry };
-export type { HostCommandDefinition } from "../../../core/shell/commandTable";
-export type { HostCommandTable } from "../../../core/shell/commandTable";
-
 function cloneSubject(subject: JsonValue | undefined): JsonValue | undefined {
   if (subject === undefined) return undefined;
   const parsed = jsonValueSchema.safeParse(subject);

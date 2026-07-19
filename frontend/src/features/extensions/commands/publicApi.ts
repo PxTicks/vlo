@@ -1,7 +1,12 @@
+// Command/keybinding/context-key machinery is shell-owned (plan §3.10);
+// re-exports here keep existing imports stable through the deprecation
+// window. The owner-scoped SDK adapter and the host wiring installers remain
+// extensions-side.
 export {
-  HostCommandRegistry,
+  createExtensionCommandApi,
   hostCommandRegistry,
   type HostCommandDefinition,
+  type HostCommandTable,
 } from "./CommandRegistry";
 export {
   HostKeybindingRegistry,

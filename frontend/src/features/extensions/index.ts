@@ -5,6 +5,7 @@ export {
 } from "./registry/ExtensionContributionRegistry";
 export { ExtensionManagerDialog } from "./components/ExtensionManagerDialog";
 export { FrontendExtensionBootstrap } from "./components/FrontendExtensionBootstrap";
+export { installExtensionMenuContributions } from "./menus/menuContributionsInstall";
 export { VLO_EXTENSION_SDK_VERSION } from "./constants";
 export { ingestExtensionAsset } from "./assets/publicApi";
 export {

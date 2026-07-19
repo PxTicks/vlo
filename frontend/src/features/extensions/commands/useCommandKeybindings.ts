@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useEditorFocusStore } from "../../editorFocus/useEditorFocusStore";
-import { hostCommandRegistry } from "./CommandRegistry";
-import { hostKeybindingRegistry } from "./KeybindingRegistry";
+import { hostCommandTable } from "../../../core/shell/commandTable";
+import { hostKeybindingRegistry } from "../../../core/shell/keybindingRegistry";
 
 /**
  * Window-level dispatch for the command keybinding table. Listens in the
@@ -15,7 +15,7 @@ export function useCommandKeybindings(): void {
         event,
         useEditorFocusStore.getState().region,
         (commandId) =>
-          hostCommandRegistry.executeCommand(commandId, {
+          hostCommandTable.executeCommand(commandId, {
             source: "keybinding",
           }),
       );

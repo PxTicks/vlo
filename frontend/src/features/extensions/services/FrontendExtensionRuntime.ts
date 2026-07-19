@@ -18,7 +18,7 @@ import { createExtensionAssetApi } from "../assets/createExtensionAssetApi";
 import { createExtensionGenerationApi } from "../generation/ExtensionGenerationBridge";
 import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
 import { extensionPanelControlRegistry } from "../ui/ExtensionPanelControlRegistry";
-import { hostCommandRegistry } from "../commands/CommandRegistry";
+import { createExtensionCommandApi } from "../commands/CommandRegistry";
 import { installHostContextKeyBindings } from "../commands/installHostContextKeys";
 import { installHostKeybindingReservations } from "../commands/installHostKeybindingReservations";
 import { createExtensionStorageApi } from "../storage/createExtensionStorageApi";
@@ -411,7 +411,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
       ui: Object.freeze({
         ...extensionUiSlotRegistry.bind(scope),
         ...extensionPanelControlRegistry.bind(scope),
-        commands: hostCommandRegistry.bind(scope),
+        commands: createExtensionCommandApi(scope),
       }),
     });
 

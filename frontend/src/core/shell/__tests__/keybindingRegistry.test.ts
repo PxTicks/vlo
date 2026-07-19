@@ -1,18 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ExtensionApiScope, ExtensionResource } from "../../types";
-import { HostKeybindingRegistry, parseChord } from "../KeybindingRegistry";
-
-function createScope(
-  extensionId: string,
-  report: ExtensionApiScope["report"] = vi.fn(),
-): ExtensionApiScope {
-  return {
-    extension: { id: extensionId, version: "1.0.0" },
-    signal: new AbortController().signal,
-    own: <TResource extends ExtensionResource>(resource: TResource) => resource,
-    report,
-  };
-}
+import { HostKeybindingRegistry, parseChord } from "../keybindingRegistry";
 
 function keyEvent(init: KeyboardEventInit & { key: string }): KeyboardEvent {
   return new KeyboardEvent("keydown", { cancelable: true, ...init });
@@ -116,26 +103,26 @@ describe("HostKeybindingRegistry", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it("shadows colliding extension bindings with a diagnostic and reactivates on disposal", () => {
+  it("shadows colliding contributed bindings with a diagnostic and reactivates on disposal", () => {
     const registry = new HostKeybindingRegistry(() => false);
-    const report = vi.fn();
+    const onDiagnostic = vi.fn();
     const host = registry.registerHostDefault({
       id: "host.mute",
       chord: "M",
       commandId: "timeline.clip.toggle-mute",
     });
-    registry.registerExtensionBinding(createScope("example.keys", report), {
-      id: "mute",
+    registry.registerContributedBinding({
+      id: "example.keys/mute",
       chord: "m",
       commandId: "example.keys/mute",
+      onDiagnostic,
     });
 
     expect(registry.list().map((entry) => [entry.id, entry.active])).toEqual([
       ["host.mute", true],
       ["example.keys/mute", false],
     ]);
-    expect(report).toHaveBeenCalledWith(
-      "warning",
+    expect(onDiagnostic).toHaveBeenCalledWith(
       expect.stringContaining("shadowed"),
     );
 
@@ -145,26 +132,26 @@ describe("HostKeybindingRegistry", () => {
     ]);
   });
 
-  it("reservations shadow extension bindings but never dispatch themselves", () => {
+  it("reservations shadow contributed bindings but never dispatch themselves", () => {
     const registry = new HostKeybindingRegistry(() => false);
-    const report = vi.fn();
+    const onDiagnostic = vi.fn();
     registry.reserveHostChord({
       id: "host.undo",
       chord: "Mod+Z",
     });
-    registry.registerExtensionBinding(createScope("example.keys", report), {
-      id: "steal-undo",
+    registry.registerContributedBinding({
+      id: "example.keys/steal-undo",
       chord: "Ctrl+Z",
       commandId: "example.keys/steal-undo",
+      onDiagnostic,
     });
 
-    // The colliding extension binding is inactive with a diagnostic.
+    // The colliding contributed binding is inactive with a diagnostic.
     expect(registry.list().map((entry) => [entry.id, entry.active])).toEqual([
       ["host.undo", true],
       ["example.keys/steal-undo", false],
     ]);
-    expect(report).toHaveBeenCalledWith(
-      "warning",
+    expect(onDiagnostic).toHaveBeenCalledWith(
       expect.stringContaining("shadowed"),
     );
 
@@ -196,6 +183,15 @@ describe("HostKeybindingRegistry", () => {
     expect(() =>
       registry.reserveHostChord({ id: "host.y", chord: "G", regions: [] }),
     ).toThrow(/non-empty/);
+    // Contributed bindings arrive pre-qualified; anything else is a
+    // contributing-layer bug the shell rejects loudly.
+    expect(() =>
+      registry.registerContributedBinding({
+        id: "unqualified",
+        chord: "G",
+        commandId: "example.keys/x",
+      }),
+    ).toThrow(/owner-qualified/);
   });
 
   it("keeps disjoint-region bindings on one chord both active", () => {
@@ -206,8 +202,8 @@ describe("HostKeybindingRegistry", () => {
       commandId: "a.b",
       regions: ["timeline"],
     });
-    registry.registerExtensionBinding(createScope("example.keys"), {
-      id: "canvas",
+    registry.registerContributedBinding({
+      id: "example.keys/canvas",
       chord: "X",
       commandId: "example.keys/c",
       regions: ["canvas"],

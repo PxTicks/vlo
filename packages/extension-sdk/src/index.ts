@@ -1690,7 +1690,15 @@ export interface ExtensionTrustedUiWorkspaceDefinition {
  */
 export type ExtensionUiMenuSlotId = string;
 
-/** Detached, JSON-serialisable subject of the menu the user opened. */
+/**
+ * Detached, JSON-serialisable subject of the menu the user opened.
+ *
+ * Compatibility projection of the original v1 host menus. The host-side
+ * source of truth for menu subjects is the shell's `HostMenuSubjectMap`;
+ * menus added after v1 are catalogued there without widening this union
+ * (how extensions type those newer subjects is tracked separately —
+ * extension-shell-surfaces plan §12.0).
+ */
 export type ExtensionUiMenuItemContext =
   | {
       readonly slot: "timeline.clip.context";

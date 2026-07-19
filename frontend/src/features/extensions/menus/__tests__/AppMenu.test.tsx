@@ -9,7 +9,12 @@ import type {
 import { hostCommandRegistry } from "../../commands/CommandRegistry";
 import { extensionUiSlotRegistry } from "../../ui/ExtensionUiSlotRegistry";
 import { AppMenu } from "../AppMenu";
+import { installExtensionMenuContributions } from "../menuContributionsInstall";
 import type { HostMenuItemDescriptor } from "../menuDescriptors";
+
+// In the app this runs at the composition root (main.tsx) before the first
+// render latches the shell contribution seam.
+installExtensionMenuContributions();
 
 const CLIP_SUBJECT: ExtensionUiMenuItemContext = {
   slot: "timeline.clip.context",

@@ -86,7 +86,7 @@ export default defineConfig([
     // The descriptor renderer itself, plus legacy menus awaiting conversion
     // (waves 2-3 in docs/extension-shell-surfaces-plan.md §3.5).
     files: [
-      'src/features/extensions/menus/AppMenu.tsx',
+      'src/core/shell/AppMenu.tsx',
       'src/app/layout/ProjectSettingsMenu.tsx',
       'src/app/layout/RightSidebarPanel.tsx',
       'src/features/generation/GenerationPanel.tsx',

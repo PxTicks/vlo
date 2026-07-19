@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { ExtensionPayload, JsonValue } from "../types";
+import type { ExtensionPayload } from "../types";
+import { jsonValueSchema } from "../../../core/shell/jsonValue";
 
 const EXTENSION_IDENTIFIER_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 
@@ -8,16 +9,8 @@ const extensionIdentifierSchema = z.string().regex(
   "Expected lowercase letters, numbers, dots, underscores, or hyphens",
 );
 
-export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
-  z.union([
-    z.null(),
-    z.boolean(),
-    z.number().finite(),
-    z.string(),
-    z.array(jsonValueSchema),
-    z.record(z.string(), jsonValueSchema),
-  ]),
-);
+// Moved to the shell layer (plan §3.10); re-exported for existing imports.
+export { jsonValueSchema };
 
 export const extensionPayloadSchema = z
   .object({

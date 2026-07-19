@@ -7,15 +7,12 @@ import { create } from "zustand";
  * neutral chrome, dialogs, etc.), in which case region-scoped shortcuts such
  * as Delete must no-op.
  */
-export type EditorRegion = "timeline" | "canvas" | "assetBrowser" | "inspector";
-
-/** Canonical region list for consumers that validate region names. */
-export const EDITOR_REGIONS = [
-  "timeline",
-  "canvas",
-  "assetBrowser",
-  "inspector",
-] as const satisfies readonly EditorRegion[];
+// Region names are shell-owned (plan §3.10); re-exported for existing imports.
+export {
+  EDITOR_REGIONS,
+  type EditorRegion,
+} from "../../core/shell/editorRegions";
+import type { EditorRegion } from "../../core/shell/editorRegions";
 
 interface EditorFocusState {
   region: EditorRegion | null;

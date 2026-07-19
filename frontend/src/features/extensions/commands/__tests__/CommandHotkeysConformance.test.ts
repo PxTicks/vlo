@@ -10,9 +10,10 @@ import {
   resetBumpStateForConformance,
 } from "../../../../../../extension-fixtures/command-hotkeys/frontend/src/index";
 import { ExtensionUiContributionRegistry } from "../../ui/ExtensionUiSlotRegistry";
-import { HostCommandRegistry } from "../CommandRegistry";
-import { HostContextKeyService } from "../contextKeys";
-import { HostKeybindingRegistry } from "../KeybindingRegistry";
+import { HostCommandTable } from "../../../../core/shell/commandTable";
+import { HostContextKeyService } from "../../../../core/shell/contextKeys";
+import { HostKeybindingRegistry } from "../../../../core/shell/keybindingRegistry";
+import { createExtensionCommandApi } from "../CommandRegistry";
 
 const CLIP_SUBJECT = {
   slot: "timeline.clip.context",
@@ -36,7 +37,7 @@ describe("command-hotkeys conformance fixture", () => {
     resetBumpStateForConformance();
     const contextKeys = new HostContextKeyService();
     const keybindings = new HostKeybindingRegistry(() => false);
-    const commandRegistry = new HostCommandRegistry(contextKeys, keybindings);
+    const commandTable = new HostCommandTable(contextKeys);
     const uiRegistry = new ExtensionUiContributionRegistry();
     const report = vi.fn();
     const resources: ExtensionResource[] = [];
@@ -53,7 +54,7 @@ describe("command-hotkeys conformance fixture", () => {
     // Host side: a real command-backed default binding on Mod+Z, exactly as
     // the production timeline installs one, for the fixture to collide with.
     const hostUndo = vi.fn();
-    commandRegistry.registerHostCommand({
+    commandTable.registerHostCommand({
       id: "timeline.undo",
       title: "Undo",
       run: hostUndo,
@@ -68,7 +69,7 @@ describe("command-hotkeys conformance fixture", () => {
     const api = {
       ui: {
         ...uiRegistry.bind(scope),
-        commands: commandRegistry.bind(scope),
+        commands: createExtensionCommandApi(scope, commandTable, keybindings, contextKeys),
       },
     } as unknown as VloExtensionApi;
     const context = {
@@ -86,7 +87,7 @@ describe("command-hotkeys conformance fixture", () => {
 
     // Command registered owner-qualified.
     expect(
-      commandRegistry.getTitle("example.command-hotkeys/bump-counter"),
+      commandTable.getTitle("example.command-hotkeys/bump-counter"),
     ).toBe("Bump Counter");
 
     // The collision registered inactive with a diagnostic; activation did not
@@ -105,7 +106,7 @@ describe("command-hotkeys conformance fixture", () => {
 
     const dispatch = (event: KeyboardEvent) =>
       keybindings.dispatch(event, null, (commandId) =>
-        commandRegistry.executeCommand(commandId, { source: "keybinding" }),
+        commandTable.executeCommand(commandId, { source: "keybinding" }),
       );
 
     // The working chord executes the fixture command.
@@ -149,7 +150,7 @@ describe("command-hotkeys conformance fixture", () => {
       if (typeof resource === "function") await resource();
       else await resource.dispose();
     }
-    expect(commandRegistry.has("example.command-hotkeys/bump-counter")).toBe(
+    expect(commandTable.has("example.command-hotkeys/bump-counter")).toBe(
       false,
     );
     expect(keybindings.list().map((entry) => entry.id)).toEqual([

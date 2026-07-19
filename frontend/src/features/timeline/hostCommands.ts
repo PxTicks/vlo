@@ -1,14 +1,14 @@
 import type { JsonValue } from "@vlo/extension-sdk";
 import {
-  hostCommandRegistry,
+  hostCommandTable,
   type HostCommandDefinition,
-  type HostCommandRegistry,
-} from "../extensions/commands/CommandRegistry";
+  type HostCommandTable,
+} from "../../core/shell/commandTable";
 import {
   hostKeybindingRegistry,
   type HostKeybindingRegistry,
-} from "../extensions/commands/KeybindingRegistry";
-import type { ExtensionDisposable } from "../extensions/types";
+} from "../../core/shell/keybindingRegistry";
+import type { ShellDisposable } from "../../core/shell/hostMenuCatalog";
 import { useTimelineStore } from "./useTimelineStore";
 
 function readClipIdSubject(subject: JsonValue | undefined): string | null {
@@ -157,9 +157,9 @@ const timelineHostKeybindings: readonly {
 ];
 
 export function installTimelineHostCommands(
-  registry: HostCommandRegistry = hostCommandRegistry,
+  registry: HostCommandTable = hostCommandTable,
   keybindings: HostKeybindingRegistry = hostKeybindingRegistry,
-): ExtensionDisposable {
+): ShellDisposable {
   const registrations = [
     ...timelineHostCommands.map((definition) =>
       registry.registerHostCommand(definition),

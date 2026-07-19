@@ -97,10 +97,7 @@ import {
   ExtensionTimelineCommandError,
   type ExtensionTimelineCommand,
 } from "./model/extensionTimelineCommands";
-import {
-  buildTimelineClipPresentationIndex,
-  resolveStoredStartForPresentationStart,
-} from "./utils/clipPresentation";
+import { createTimelinePlacementMapper } from "./utils/timelinePlacementMapper";
 
 enablePatches();
 
@@ -476,14 +473,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       compositeClip,
       extractionRange,
     ) => {
+      const fps = useProjectStore.getState().config.fps;
+      const sourcePlacementMapper = createTimelinePlacementMapper({
+        tracks: get().tracks,
+        clips: get().clips,
+        fps,
+      });
       const didCommit = mutationPipeline.commitModelMutation(
         (draft) => {
-          const sourcePresentationById =
-            buildTimelineClipPresentationIndex(
-              draft.tracks,
-              draft.clips,
-              useProjectStore.getState().config.fps,
-            );
           // Add first so the target track remains valid while splitting and
           // removing source segments, including when the selection spans every
           // populated track.
@@ -503,48 +500,19 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
             );
 
             for (const source of sourceParents) {
-              const presentation = sourcePresentationById.get(source.id);
-              const sourceStart = presentation?.start ?? source.start;
-              const sourceEnd =
-                presentation?.end ?? source.start + source.timelineDuration;
-              if (
-                sourceEnd <= extractionRange.start ||
-                sourceStart >= extractionRange.end
-              ) {
-                continue;
-              }
-
-              const intersectionStart = Math.max(
-                sourceStart,
-                extractionRange.start,
-              );
-              const intersectionEnd = Math.min(
-                sourceEnd,
-                extractionRange.end,
-              );
-              const storedExtractionStart = Math.round(
-                source.start +
-                  (presentation
-                    ? presentation.mapPresentationOffsetToClipOffset(
-                        intersectionStart - presentation.start,
-                      )
-                    : intersectionStart - source.start),
-              );
-              const storedExtractionEnd = Math.round(
-                source.start +
-                  (presentation
-                    ? presentation.mapPresentationOffsetToClipOffset(
-                        intersectionEnd - presentation.start,
-                      )
-                    : intersectionEnd - source.start),
-              );
+              const segment =
+                sourcePlacementMapper.intersectClipWithPresentationRange(
+                  source.id,
+                  extractionRange,
+                );
+              if (!segment) continue;
 
               let extractedId = source.id;
-              if (storedExtractionStart > source.start) {
+              if (segment.storedStart > source.start) {
                 const rightId = splitClipInDraft(
                   draft,
                   source.id,
-                  storedExtractionStart,
+                  segment.storedStart,
                 );
                 if (!rightId) {
                   continue;
@@ -558,9 +526,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
               if (
                 extracted &&
                 extracted.start + extracted.timelineDuration >
-                  storedExtractionEnd
+                  segment.storedEnd
               ) {
-                splitClipInDraft(draft, extractedId, storedExtractionEnd);
+                splitClipInDraft(draft, extractedId, segment.storedEnd);
               }
               segmentIdsToRemove.add(extractedId);
             }
@@ -581,9 +549,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           const clipsAfterRemoval = draft.clips.filter(
             (clip) => !removalPlan.clipIdsToRemove.has(clip.id),
           );
-          placed.start = resolveStoredStartForPresentationStart(
-            draft.tracks,
-            clipsAfterRemoval,
+          placed.start = createTimelinePlacementMapper({
+            tracks: draft.tracks,
+            clips: clipsAfterRemoval,
+            fps,
+          }).resolveStoredStart(
             compositeClip.trackId,
             compositeClip.start,
           );

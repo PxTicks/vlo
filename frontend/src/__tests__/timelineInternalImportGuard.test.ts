@@ -21,7 +21,6 @@ const LEGACY_INTERNAL_ALLOWLIST = [
   "features/renderer/services/ExportRenderer.ts -> features/timeline/utils/clipPresentation",
   "features/renderer/utils/clipLookup.ts -> features/timeline/utils/clipPresentation",
   "features/samAudio/components/SamAudioExtractDialog.tsx -> features/timeline/utils/clipAudioExtraction",
-  "features/timelineSelection/utils/composite.ts -> features/timeline/utils/clipPresentation",
   "features/transitions/components/TransitionDragOverlay.tsx -> features/timeline/hooks/useInteractionStore",
   "features/transitions/components/TransitionOverlay.tsx -> features/timeline/model/transitionModel",
   "features/transitions/components/TransitionOverlay.tsx -> features/timeline/utils/timelineGeometry",

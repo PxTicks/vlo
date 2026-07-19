@@ -1,17 +1,10 @@
 import type {
   CompositeContent,
-  MaskTimelineClip,
   TimelineClip,
   TimelineSelection,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import {
-  buildTimelineClipPresentationIndex,
-  computeFurthestPresentationEnd,
-  resolveStoredStartForPresentationStart,
-  type TimelineClipPresentation,
-} from "../../timeline/utils/clipPresentation";
-import { cropTimelineClipToOffsets } from "./clipRange";
+import { createTimelinePlacementMapper } from "../../timeline";
 
 /**
  * Converters for moving timeline regions between absolute project time and
@@ -35,120 +28,27 @@ export function selectionToCompositeContent(
   presentationContextClips: readonly TimelineClip[] = selection.clips,
 ): CompositeContent {
   const start = selection.start;
-  // Presentation-aware so a slow/fast adjustment inside the selection captures
-  // the true rendered length, not the raw stored clip ends.
+  const tracks = selection.tracks ?? [];
+  const placementMapper = createTimelinePlacementMapper({
+    tracks,
+    clips: presentationContextClips,
+    fps,
+  });
   const end =
     selection.end ??
-    computeFurthestPresentationEnd(
-      selection.tracks ?? [],
-      presentationContextClips,
-      fps,
-      selection.clips,
-    );
+    selection.clips.reduce((furthest, clip) => {
+      const footprint = placementMapper.getPresentationFootprint(clip.id);
+      return Math.max(furthest, footprint?.end ?? 0);
+    }, start);
   const durationTicks = Math.max(0, end - start);
-  const tracks = selection.tracks ?? [];
-  const contextById = new Map(
-    presentationContextClips.map((clip) => [clip.id, clip] as const),
+  const projected = placementMapper.projectRegionToLocalTimeline(
+    { start, end },
+    selection.clips.map((clip) => clip.id),
   );
-  const presentationById = buildTimelineClipPresentationIndex(
-    tracks,
-    presentationContextClips,
-    fps,
-  );
-  const targetPresentationStartById = new Map<string, number>();
-
-  const resolvePresentation = (
-    clip: TimelineClip,
-  ): TimelineClipPresentation | undefined => {
-    if (clip.type !== "mask") {
-      return presentationById.get(clip.id);
-    }
-    const parentId = (clip as MaskTimelineClip).parentClipId;
-    const parent = parentId ? contextById.get(parentId) : undefined;
-    return parent ? presentationById.get(parent.id) : undefined;
-  };
-
-  const clips = selection.clips.flatMap((clip) => {
-    const presentation = resolvePresentation(clip);
-    const presentationStart = presentation?.start ?? clip.start;
-    const presentationEnd =
-      presentation?.end ?? clip.start + clip.timelineDuration;
-    const intersectionStart = Math.max(presentationStart, start);
-    const intersectionEnd = Math.min(presentationEnd, end);
-    if (intersectionStart >= intersectionEnd) {
-      return [];
-    }
-
-    const startOffset = presentation
-      ? presentation.mapPresentationOffsetToClipOffset(
-          intersectionStart - presentation.start,
-        )
-      : intersectionStart - clip.start;
-    const endOffset = presentation
-      ? presentation.mapPresentationOffsetToClipOffset(
-          intersectionEnd - presentation.start,
-        )
-      : intersectionEnd - clip.start;
-    const captured = cropTimelineClipToOffsets(
-      clip,
-      startOffset,
-      endOffset,
-    );
-    if (!captured) {
-      return [];
-    }
-    if (captured.type === "adjustment") {
-      captured.sourceDuration = captured.croppedSourceDuration;
-    }
-    targetPresentationStartById.set(
-      captured.id,
-      intersectionStart - start,
-    );
-    return [captured];
-  });
-
-  // First place adjustment clips from outermost to innermost, then invert the
-  // resulting local ripple layout for ordinary clips. This folds ripple work
-  // completed before the selection into local clip positions while preserving
-  // adjustments that visibly continue inside the selected range.
-  const trackPositionById = new Map(
-    tracks.map((track, index) => [track.id, index] as const),
-  );
-  const adjustmentClips = clips
-    .filter((clip) => clip.type === "adjustment")
-    .sort(
-      (left, right) =>
-        (trackPositionById.get(left.trackId) ?? Number.MAX_SAFE_INTEGER) -
-        (trackPositionById.get(right.trackId) ?? Number.MAX_SAFE_INTEGER),
-    );
-  const positionClip = (clip: TimelineClip): void => {
-    const targetStart = targetPresentationStartById.get(clip.id);
-    if (targetStart === undefined) return;
-    clip.start = resolveStoredStartForPresentationStart(
-      tracks,
-      clips,
-      clip.trackId,
-      targetStart,
-    );
-  };
-  adjustmentClips.forEach(positionClip);
-  clips
-    .filter((clip) => clip.type !== "adjustment" && clip.type !== "mask")
-    .forEach(positionClip);
-
-  // Mask clips inherit their parent's placement and were cropped through the
-  // parent's presentation map above.
-  const positionedById = new Map(clips.map((clip) => [clip.id, clip] as const));
-  clips.forEach((clip) => {
-    if (clip.type !== "mask") return;
-    const parentId = (clip as MaskTimelineClip).parentClipId;
-    const parent = parentId ? positionedById.get(parentId) : undefined;
-    if (parent) clip.start = parent.start;
-  });
 
   return {
     durationTicks,
-    clips: clips.map((clip) => structuredClone(clip)),
+    clips: projected.clips,
     ...(selection.tracks ? { tracks: cloneTracks(selection.tracks) } : {}),
     ...(selection.transitions
       ? { transitions: structuredClone(selection.transitions) }

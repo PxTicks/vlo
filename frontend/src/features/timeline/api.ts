@@ -52,10 +52,8 @@ import type {
   TimelineClipShape,
   TimelineMaskUpdate,
 } from "./model/timelineCommands";
-import {
-  buildTimelineClipPresentationIndex,
-  computeFurthestPresentationEnd,
-} from "./utils/clipPresentation";
+import { computeFurthestPresentationEnd } from "./utils/clipPresentation";
+import { createTimelinePlacementMapper } from "./utils/timelinePlacementMapper";
 import { createClipFromAsset } from "./utils/clipFactory";
 import {
   insertAssetAtTime,
@@ -274,32 +272,13 @@ export function getTimelineClipsInPresentationRange(
   end?: number,
 ): TimelineClip[] {
   const { clips, tracks, fps } = getTimelinePresentationContext();
-  const presentationById = buildTimelineClipPresentationIndex(
-    tracks,
-    clips,
-    fps,
+  const mapper = createTimelinePlacementMapper({ tracks, clips, fps });
+  const selectedIds = new Set(
+    end === undefined
+      ? mapper.getClipIdsAtPresentationTick(start)
+      : mapper.getClipIdsInPresentationRange({ start, end }),
   );
-  const selectedParentIds = new Set<string>();
-
-  for (const clip of clips) {
-    if (clip.type === "mask") continue;
-    const presentation = presentationById.get(clip.id);
-    const clipStart = presentation?.start ?? clip.start;
-    const clipEnd = presentation?.end ?? clip.start + clip.timelineDuration;
-    const intersects =
-      end === undefined
-        ? clipStart <= start && start < clipEnd
-        : Math.max(clipStart, start) < Math.min(clipEnd, end);
-    if (intersects) selectedParentIds.add(clip.id);
-  }
-
-  return clips.filter(
-    (clip) =>
-      selectedParentIds.has(clip.id) ||
-      (clip.type === "mask" &&
-        typeof clip.parentClipId === "string" &&
-        selectedParentIds.has(clip.parentClipId)),
-  );
+  return clips.filter((clip) => selectedIds.has(clip.id));
 }
 
 export function getTimelineCompositeContent(): CompositeContent {

@@ -36,6 +36,10 @@ from services.extensions import (
     check_python_dependencies,
 )
 from services.extensions.frontend_artifacts import staged_package_resource_path
+from services.extensions.local_storage import (
+    ExtensionLocalStorageError,
+    ExtensionLocalStorageStore,
+)
 
 router = APIRouter(prefix="/app/extensions", tags=["extensions"])
 
@@ -53,12 +57,19 @@ class BackendJobSubmitRequest(BaseModel):
     artifacts: list[str] = Field(default_factory=list, max_length=32)
 
 
+class LocalStorageSetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: object = None
+
+
 @dataclass(frozen=True)
 class ExtensionServices:
     manager: ExtensionManager
     artifacts: FrontendArtifactStore
     backend_artifacts: BackendArtifactStore
     backend_runtime: BackendExtensionRuntime
+    local_storage: ExtensionLocalStorageStore
 
 
 _extension_manager = ExtensionManager(
@@ -79,6 +90,9 @@ _extension_services = ExtensionServices(
     backend_runtime=BackendExtensionRuntime(
         _extension_manager,
         _backend_artifacts,
+    ),
+    local_storage=ExtensionLocalStorageStore(
+        EXTENSION_STATE_DIR / "local-storage",
     ),
 )
 
@@ -420,6 +434,70 @@ async def get_backend_job_artifact(
             "ETag": f'"sha256:{record.sha256}"',
         },
     )
+
+
+def _local_storage_error_response(
+    error: ExtensionLocalStorageError,
+) -> JSONResponse:
+    return error_response(
+        error.status_code,
+        "extension_local_storage_error",
+        str(error),
+    )
+
+
+@router.get("/{extension_id}/storage/local")
+async def list_extension_local_storage_keys(
+    extension_id: str,
+    services: ExtensionServicesDependency,
+):
+    try:
+        keys = await services.local_storage.list_keys(extension_id)
+    except ExtensionLocalStorageError as exc:
+        return _local_storage_error_response(exc)
+    return {"keys": keys}
+
+
+@router.get("/{extension_id}/storage/local/{key}")
+async def get_extension_local_storage_value(
+    extension_id: str,
+    key: str,
+    services: ExtensionServicesDependency,
+):
+    try:
+        present, value = await services.local_storage.get(extension_id, key)
+    except ExtensionLocalStorageError as exc:
+        return _local_storage_error_response(exc)
+    if not present:
+        return error_response(404, "storage_key_not_found", "Key is not set.")
+    return {"value": value}
+
+
+@router.put("/{extension_id}/storage/local/{key}")
+async def set_extension_local_storage_value(
+    extension_id: str,
+    key: str,
+    request: LocalStorageSetRequest,
+    services: ExtensionServicesDependency,
+):
+    try:
+        await services.local_storage.set(extension_id, key, request.value)
+    except ExtensionLocalStorageError as exc:
+        return _local_storage_error_response(exc)
+    return Response(status_code=204)
+
+
+@router.delete("/{extension_id}/storage/local/{key}")
+async def delete_extension_local_storage_value(
+    extension_id: str,
+    key: str,
+    services: ExtensionServicesDependency,
+):
+    try:
+        await services.local_storage.delete(extension_id, key)
+    except ExtensionLocalStorageError as exc:
+        return _local_storage_error_response(exc)
+    return Response(status_code=204)
 
 
 @router.post("/{extension_id}/approve")

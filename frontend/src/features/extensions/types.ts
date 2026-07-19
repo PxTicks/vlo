@@ -41,6 +41,8 @@ export type {
   ExtensionContext,
   ExtensionContextKeyExpression,
   ExtensionKeybindingRequest,
+  ExtensionKeyValueStore,
+  ExtensionStorageApi,
   ExtensionDiagnostic,
   ExtensionDiagnosticLevel,
   ExtensionDiagnosticPhase,

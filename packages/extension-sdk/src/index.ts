@@ -463,6 +463,49 @@ export interface ExtensionAssetApi {
    * A hash match returns the existing project asset rather than a sentinel.
    */
   ingest(input: ExtensionAssetIngestInput): Promise<ExtensionEntityAssetSnapshot>;
+  /**
+   * Fires after the asset library changes. Commit-grained and payload-free:
+   * pull detached snapshots via `list()`/`get()`. Not a render-loop signal.
+   */
+  subscribe(listener: () => void): () => void;
+  /** Monotonic change token matching `subscribe` notifications. */
+  getRevision(): number;
+}
+
+// === Extension storage ===
+
+/**
+ * One key/value scope owned by this extension. Values are finite JSON,
+ * cloned in both directions. Keys are non-empty strings up to 128 chars and
+ * must not contain "/".
+ */
+export interface ExtensionKeyValueStore {
+  get(key: string): Promise<JsonValue | undefined>;
+  set(key: string, value: JsonValue): Promise<void>;
+  delete(key: string): Promise<void>;
+  keys(): Promise<readonly string[]>;
+  /**
+   * Fires after this scope changes through this API. Writes made outside the
+   * running frontend (e.g. by the extension's backend half to its local
+   * scope) do not notify.
+   */
+  subscribe(listener: () => void): () => void;
+}
+
+/**
+ * Extension-owned persistent state (extension-shell-surfaces plan §4).
+ * Neither scope participates in undo history — timeline-coupled state
+ * belongs in extension payloads, not storage.
+ */
+export interface ExtensionStorageApi {
+  /** Per-machine, per-extension; survives project switches. */
+  readonly local: ExtensionKeyValueStore;
+  /**
+   * Travels with the project; persisted beside the other project documents
+   * and retained even while the extension is uninstalled. Null when no
+   * project is open.
+   */
+  readonly project: ExtensionKeyValueStore | null;
 }
 
 export interface ExtensionEntityRenderParameters {
@@ -837,6 +880,15 @@ export interface ExtensionTimelineApi {
   registerClipOverlay(
     definition: ExtensionClipOverlayDefinition,
   ): ExtensionClipOverlayRegistration;
+  /**
+   * Fires after any committed timeline model change (undo/redo included).
+   * Commit-grained and payload-free: selection or in-progress interaction
+   * state does not signal; pull detached snapshots on demand. Per-frame and
+   * time-driven work belongs in the render contracts, not here.
+   */
+  subscribe(listener: () => void): () => void;
+  /** Monotonic change token matching `subscribe` notifications. */
+  getRevision(): number;
 }
 
 /** Restricted-ready convenience filters executed entirely by the host. */
@@ -2061,6 +2113,8 @@ export interface VloExtensionApi {
   readonly runtime: ExtensionHostRuntimeApi;
   readonly backend: ExtensionBackendApi;
   readonly assets: ExtensionAssetApi;
+  /** Extension-owned persistent key/value state (local and project scopes). */
+  readonly storage: ExtensionStorageApi;
   readonly generation: ExtensionGenerationApi;
   /** Curated color math shared with the renderer, and the V1 grade contract. */
   readonly color: ExtensionColorApi;

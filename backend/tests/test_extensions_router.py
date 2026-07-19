@@ -35,6 +35,7 @@ from services.extensions import (
     ExtensionManager,
     FrontendArtifactStore,
 )
+from services.extensions.local_storage import ExtensionLocalStorageStore
 
 
 def _create_package(extensions_root: Path, extension_id: str) -> Path:
@@ -203,6 +204,7 @@ def _create_services(
         ),
         backend_artifacts=backend_artifacts,
         backend_runtime=BackendExtensionRuntime(manager, backend_artifacts),
+        local_storage=ExtensionLocalStorageStore(state_root / "local-storage"),
     )
     return services, extensions_root, state_root
 
@@ -241,6 +243,8 @@ def test_router_registers_management_and_artifact_paths():
         "/app/extensions/{extension_id}/jobs/{job_id}/cancel",
         "/app/extensions/{extension_id}/artifacts",
         "/app/extensions/{extension_id}/artifacts/{artifact_id}",
+        "/app/extensions/{extension_id}/storage/local",
+        "/app/extensions/{extension_id}/storage/local/{key}",
     }
 
 

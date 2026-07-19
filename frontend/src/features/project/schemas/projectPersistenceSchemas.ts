@@ -22,17 +22,22 @@ import {
   ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
   ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
   COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
+  EXTENSION_STORAGE_DOCUMENT_SCHEMA_VERSION,
   PROJECT_MANIFEST_SCHEMA_VERSION,
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
 } from "../constants";
 import type { ProjectDocumentConfig } from "../types/ProjectDocument";
-import { extensionPayloadSchema } from "../../extensions/persistence/publicApi";
+import {
+  extensionPayloadSchema,
+  jsonValueSchema,
+} from "../../extensions/persistence/publicApi";
 
 const PROJECT_FILE_NAMES = {
   timeline: "timeline.json",
   assets: "assets.json",
   composites: "composites.json",
   assetMetadataDir: "asset-metadata",
+  extensionStorage: "extension-storage.json",
 } as const;
 
 export const HEAVY_ASSET_METADATA_INLINE_THRESHOLD_BYTES = 16 * 1024;
@@ -354,6 +359,22 @@ export const compositeLibraryDocumentSchema = z.object({
   updated_at: z.number(),
   composites: z.record(z.string(), compositeAssetSchema),
 });
+
+/**
+ * Extension project storage (extension-shell-surfaces plan §4): one namespace
+ * of JSON key/values per extension ID. Retention over reconstruction — the
+ * document round-trips namespaces of uninstalled extensions untouched.
+ */
+export const extensionStorageDocumentSchema = z.object({
+  documentType: z.literal("vlo.extension-storage"),
+  schemaVersion: z.literal(EXTENSION_STORAGE_DOCUMENT_SCHEMA_VERSION),
+  updated_at: z.number(),
+  storage: z.record(z.string(), z.record(z.string(), jsonValueSchema)),
+});
+
+export type ExtensionStorageDocument = z.infer<
+  typeof extensionStorageDocumentSchema
+>;
 
 /** v1 composites only carried their canonical content and legacy bake pointer. */
 export const compositeLibraryDocumentSchemaV1 = z.object({

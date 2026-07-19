@@ -21,6 +21,8 @@ import { extensionPanelControlRegistry } from "../ui/ExtensionPanelControlRegist
 import { hostCommandRegistry } from "../commands/CommandRegistry";
 import { installHostContextKeyBindings } from "../commands/installHostContextKeys";
 import { installHostKeybindingReservations } from "../commands/installHostKeybindingReservations";
+import { createExtensionStorageApi } from "../storage/createExtensionStorageApi";
+import { installExtensionProjectStorage } from "../storage/installExtensionProjectStorage";
 import { installTimelineHostCommands } from "../../timeline/api";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { extensionColorApi } from "./extensionColorApi";
@@ -391,6 +393,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
       color: extensionColorApi,
       backend: createExtensionBackendApi(scope),
       assets: createExtensionAssetApi(scope),
+      storage: createExtensionStorageApi(scope),
       generation: createExtensionGenerationApi(scope),
       animation: createExtensionAnimationApi(scope),
       payloadProviders: extensionPayloadProviderRegistry.bind(scope),
@@ -429,6 +432,8 @@ export const frontendTimelineHostCommandRegistration =
 // extension bindings are shadowed at registration, never dispatched.
 export const frontendHostKeybindingReservationRegistration =
   installHostKeybindingReservations();
+export const frontendExtensionProjectStorageRegistration =
+  installExtensionProjectStorage();
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
@@ -436,6 +441,7 @@ if (import.meta.hot) {
     void frontendHostContextKeyRegistration.dispose();
     void frontendTimelineHostCommandRegistration.dispose();
     void frontendHostKeybindingReservationRegistration.dispose();
+    void frontendExtensionProjectStorageRegistration.dispose();
   });
 }
 

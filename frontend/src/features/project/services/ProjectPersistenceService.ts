@@ -7,10 +7,12 @@ import {
 } from "../../../lib/immerLite";
 import type { Asset, CreationMetadata } from "../../../types/Asset";
 import type { TimelineTrack } from "../../../types/TimelineTypes";
+import type { JsonValue } from "@vlo/extension-sdk";
 import {
   ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
   ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
   COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
+  EXTENSION_STORAGE_DOCUMENT_SCHEMA_VERSION,
   PROJECT_MANIFEST_SCHEMA_VERSION,
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
   VLO_APP_VERSION,
@@ -29,12 +31,14 @@ import {
   compositeLibraryDocumentSchemaV1,
   legacyProjectDocumentSchema,
   projectManifestDocumentSchema,
+  extensionStorageDocumentSchema,
   timelineDocumentSchema,
   timelineDocumentSchemaV2,
   timelineDocumentSchemaV1,
   type AssetIndexDocument,
   type AssetMetadataDocument,
   type CompositeLibraryDocument,
+  type ExtensionStorageDocument,
   type LegacyProjectDocument,
   type PersistedAssetIndexEntry,
   type ProjectManifestDocument,
@@ -87,6 +91,13 @@ const COMPOSITE_LIBRARY_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
   documentType: "vlo.composites",
   documentLabel: "Composite library data",
   supportedSchemaVersion: COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
+};
+const EXTENSION_STORAGE_PATH = `${PROJECT_DIR}/${PROJECT_PERSISTENCE_FILE_NAMES.extensionStorage}`;
+const EXTENSION_STORAGE_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
+  path: EXTENSION_STORAGE_PATH,
+  documentType: "vlo.extension-storage",
+  documentLabel: "Extension storage data",
+  supportedSchemaVersion: EXTENSION_STORAGE_DOCUMENT_SCHEMA_VERSION,
 };
 
 export interface LoadedProjectPersistenceDocuments {
@@ -267,6 +278,15 @@ function createCompositeLibraryDocument(
     schemaVersion: COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
     updated_at: Date.now(),
     composites: overrides.composites ?? {},
+  };
+}
+
+function createExtensionStorageDocument(): ExtensionStorageDocument {
+  return {
+    documentType: "vlo.extension-storage",
+    schemaVersion: EXTENSION_STORAGE_DOCUMENT_SCHEMA_VERSION,
+    updated_at: Date.now(),
+    storage: {},
   };
 }
 
@@ -460,6 +480,7 @@ export class ProjectPersistenceService {
   private timelineCache: TimelineDocument | null = null;
   private assetIndexCache: AssetIndexDocument | null = null;
   private compositeLibraryCache: CompositeLibraryDocument | null = null;
+  private extensionStorageCache: ExtensionStorageDocument | null = null;
   private assetMetadataCache = new Map<string, AssetMetadataDocument | null>();
 
   private enqueue<T>(key: string, operation: () => Promise<T>): Promise<T> {
@@ -750,6 +771,56 @@ export class ProjectPersistenceService {
     });
   }
 
+  async readExtensionStorage(): Promise<ExtensionStorageDocument> {
+    if (this.extensionStorageCache) {
+      return clone(this.extensionStorageCache);
+    }
+    try {
+      const file = await fileSystemService.readFile(EXTENSION_STORAGE_PATH);
+      const raw = JSON.parse(await file.text()) as unknown;
+      throwIfNewerSchemaVersion(raw, EXTENSION_STORAGE_NEWER_SCHEMA_CHECK);
+      const document = extensionStorageDocumentSchema.parse(raw);
+      this.extensionStorageCache = document;
+      return clone(document);
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
+      const empty = createExtensionStorageDocument();
+      this.extensionStorageCache = empty;
+      return clone(empty);
+    }
+  }
+
+  /**
+   * Replaces one extension's storage namespace. Other namespaces round-trip
+   * untouched (retention over reconstruction), including those of extensions
+   * that are no longer installed. An undefined record deletes the namespace.
+   */
+  async updateExtensionStorageNamespace(
+    extensionId: string,
+    record: Record<string, JsonValue> | undefined,
+  ): Promise<ExtensionStorageDocument> {
+    return this.enqueue(EXTENSION_STORAGE_PATH, async () => {
+      const current = await this.readExtensionStorage();
+      const next = produce(current, (draft) => {
+        if (record === undefined) {
+          delete draft.storage[extensionId];
+        } else {
+          draft.storage[extensionId] = clone(record);
+        }
+        draft.updated_at = Date.now();
+      });
+      await writeJson(
+        EXTENSION_STORAGE_PATH,
+        next,
+        extensionStorageDocumentSchema,
+      );
+      this.extensionStorageCache = next;
+      return clone(next);
+    });
+  }
+
   async readAssetMetadata(
     assetId: string,
     metadataRef?: string,
@@ -1017,6 +1088,7 @@ export class ProjectPersistenceService {
     this.timelineCache = null;
     this.assetIndexCache = null;
     this.compositeLibraryCache = null;
+    this.extensionStorageCache = null;
     this.assetMetadataCache.clear();
   }
 

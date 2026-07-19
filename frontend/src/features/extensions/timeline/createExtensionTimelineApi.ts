@@ -18,9 +18,12 @@ import {
   getExtensionTimelineEntities,
   getExtensionTimelineTransitions,
   getTimelineClipById,
+  getTimelineStoreForTrustedHostAccess,
   getTimelineTransitions,
   type ExtensionTimelineCommand,
 } from "../../timeline/api";
+import { createRevisionRelay } from "../../../core/shell/revisionRelay";
+import { bindOwnerScopedSubscribe } from "../utils/ownerScopedSubscribe";
 import {
   extensionPayloadSchema,
   jsonValueSchema,
@@ -38,6 +41,14 @@ import { extensionTransitionRegistry } from "../../transitions/extensions/Extens
 import type { Transition } from "../../../types/TimelineTypes";
 
 const MAX_TRANSACTION_LABEL_LENGTH = 120;
+
+// Commit-grained model signal: selection and interaction updates keep these
+// references stable, so only committed timeline changes (undo/redo included)
+// bump the revision.
+const timelineRevisionRelay = createRevisionRelay(
+  getTimelineStoreForTrustedHostAccess(),
+  (state) => [state.clips, state.tracks, state.transitions],
+);
 
 function assertPositiveFinite(value: number, label: string): void {
   if (!Number.isFinite(value) || value <= 0) {
@@ -598,6 +609,12 @@ export function createExtensionTimelineApi(
     },
 
     registerClipOverlay: (definition) => boundClipOverlays.register(definition),
+    subscribe: bindOwnerScopedSubscribe(
+      scope,
+      timelineRevisionRelay,
+      "Timeline",
+    ),
+    getRevision: () => timelineRevisionRelay.getRevision(),
   };
   return Object.freeze(api);
 }

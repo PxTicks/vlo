@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "example.tagging",
+  "name": "Tagging Storage Conformance Fixture",
+  "version": "1.0.0",
+  "sdk": ">=1.7.0 <2.0.0",
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "backend": {
+    "mode": "in_process",
+    "entry": "backend.extension:create_extension"
+  },
+  "capabilities": ["assets.read", "backend.jobs", "ui.custom"]
+}

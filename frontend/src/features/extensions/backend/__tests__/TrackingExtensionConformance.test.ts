@@ -154,6 +154,18 @@ function createConformanceApi() {
       ingest: async () => {
         throw new Error("Asset ingest is not used by this fixture.");
       },
+      subscribe: () => () => undefined,
+      getRevision: () => 0,
+    },
+    storage: {
+      local: {
+        get: async () => undefined,
+        set: async () => undefined,
+        delete: async () => undefined,
+        keys: async () => [],
+        subscribe: () => () => undefined,
+      },
+      project: null,
     },
     generation: {
       listInputs: () => [],
@@ -180,6 +192,8 @@ function createConformanceApi() {
       register: (definition) => ({ id: definition.id, dispose: () => undefined }),
     },
     timeline: {
+      subscribe: () => () => undefined,
+      getRevision: () => 0,
       ticksPerSecond: 96_000,
       listEntities: () => [],
       listClips: () => [clip],

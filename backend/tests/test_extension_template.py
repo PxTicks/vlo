@@ -45,6 +45,7 @@ GRADING_TOOLS_FIXTURE_ROOT = (
 COMMAND_HOTKEYS_FIXTURE_ROOT = (
     REPOSITORY_ROOT / "extension-fixtures" / "command-hotkeys"
 )
+TAGGING_FIXTURE_ROOT = REPOSITORY_ROOT / "extension-fixtures" / "tagging"
 SDK_ROOT = REPOSITORY_ROOT / "packages" / "extension-sdk"
 NODE_EXECUTABLE = shutil.which("node")
 TYPESCRIPT_CLI = (
@@ -128,6 +129,16 @@ def _copy_command_hotkeys_fixture_workspace(tmp_path: Path) -> Path:
     fixture = workspace / "extension-fixtures" / "command-hotkeys"
     fixture.parent.mkdir(parents=True)
     shutil.copytree(COMMAND_HOTKEYS_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
+
+
+def _copy_tagging_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "tagging"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(TAGGING_FIXTURE_ROOT, fixture)
     shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
     shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
     return fixture
@@ -313,6 +324,46 @@ def test_command_hotkeys_fixture_builds_as_an_ordinary_trusted_extension(
     assert b"bump-counter" in contents
     assert b"Mod+Alt+B" in contents
     assert b"timeline.clip.context" in contents
+
+
+def test_tagging_fixture_builds_with_storage_and_backend_job_contracts(
+    tmp_path: Path,
+):
+    fixture = _copy_tagging_fixture_workspace(tmp_path)
+    _build_template(fixture)
+
+    bundle = fixture / "frontend" / "dist" / "index.js"
+    assert bundle.is_file()
+    contents = bundle.read_bytes()
+    assert b"tag-index" in contents
+    assert b"tag-assets" in contents
+    assert b"storage" in contents
+
+    backend_source = fixture / "backend" / "extension" / "__init__.py"
+    namespace: dict[str, object] = {}
+    exec(
+        compile(backend_source.read_text("utf-8"), str(backend_source), "exec"),
+        namespace,
+    )
+    validate_input = namespace["_validate_input"]
+    run_tagging = namespace["_run_tagging"]
+    validate_result = namespace["_validate_result"]
+    assert callable(validate_input)
+    assert callable(run_tagging)
+    assert callable(validate_result)
+    normalized = validate_input(
+        {
+            "schemaVersion": 1,
+            "assets": [
+                {"id": "asset-1", "name": "scene-proxy.mp4", "type": "video"}
+            ],
+        }
+    )
+    result = run_tagging(None, normalized)
+    assert validate_result(result) == {
+        "schemaVersion": 1,
+        "tagsByAsset": {"asset-1": ["video", "mp4", "proxy"]},
+    }
 
 
 def test_filter_pack_fixture_builds_as_an_ordinary_trusted_extension(

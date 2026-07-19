@@ -9,14 +9,22 @@ import {
   type HostKeybindingRegistry,
 } from "../../core/shell/keybindingRegistry";
 import type { ShellDisposable } from "../../core/shell/hostMenuCatalog";
+import type { MarkersComponent } from "../../types/Components";
 import { useTimelineStore } from "./useTimelineStore";
 
-function readClipIdSubject(subject: JsonValue | undefined): string | null {
+function readSubjectField(
+  subject: JsonValue | undefined,
+  field: string,
+): string | null {
   if (typeof subject !== "object" || subject === null || Array.isArray(subject)) {
     return null;
   }
-  const clipId = (subject as Record<string, JsonValue>).clipId;
-  return typeof clipId === "string" && clipId.length > 0 ? clipId : null;
+  const value = (subject as Record<string, JsonValue>)[field];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function readClipIdSubject(subject: JsonValue | undefined): string | null {
+  return readSubjectField(subject, "clipId");
 }
 
 /**
@@ -71,6 +79,61 @@ const timelineHostCommands: readonly HostCommandDefinition[] = [
       const clipId = readClipIdSubject(subject);
       if (!clipId) return;
       useTimelineStore.getState().toggleClipMute(clipId);
+    },
+  },
+  {
+    id: "timeline.marker.delete",
+    title: "Delete marker",
+    when: { key: "project.open" },
+    run: ({ subject }) => {
+      const clipId = readClipIdSubject(subject);
+      const markerId = readSubjectField(subject, "markerId");
+      if (!clipId || !markerId) return;
+      const store = useTimelineStore.getState();
+      const clip = store.clips.find((candidate) => candidate.id === clipId);
+      if (!clip || clip.type === "mask") return;
+      const markersComponent = (clip.components ?? []).find(
+        (component): component is MarkersComponent =>
+          component.type === "markers",
+      );
+      if (!markersComponent) return;
+      const remaining = markersComponent.parameters.markers.filter(
+        (marker) => marker.id !== markerId,
+      );
+      if (remaining.length === markersComponent.parameters.markers.length) {
+        return;
+      }
+      if (remaining.length === 0) {
+        store.removeClipComponent(clip.id, markersComponent.id);
+        return;
+      }
+      store.updateClipComponent(clip.id, markersComponent.id, (component) => {
+        if (component.type !== "markers") return component;
+        return {
+          ...component,
+          parameters: { ...component.parameters, markers: remaining },
+        };
+      });
+    },
+  },
+  {
+    id: "timeline.track.toggle-visibility",
+    title: "Toggle track visibility",
+    when: { key: "project.open" },
+    run: ({ subject }) => {
+      const trackId = readSubjectField(subject, "trackId");
+      if (!trackId) return;
+      useTimelineStore.getState().toggleTrackVisibility(trackId);
+    },
+  },
+  {
+    id: "timeline.track.toggle-mute",
+    title: "Toggle track mute",
+    when: { key: "project.open" },
+    run: ({ subject }) => {
+      const trackId = readSubjectField(subject, "trackId");
+      if (!trackId) return;
+      useTimelineStore.getState().toggleTrackMute(trackId);
     },
   },
   {

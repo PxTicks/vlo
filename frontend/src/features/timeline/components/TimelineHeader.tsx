@@ -14,6 +14,8 @@ interface TimelineHeaderProps {
   color: string;
   onToggleVisibility: () => void;
   onToggleMute: () => void;
+  /** Track context menu (owned by the row, which knows the track). */
+  onContextMenu?: (event: React.MouseEvent<HTMLElement>) => void;
 }
 
 export const TimelineHeader = React.memo(function TimelineHeader({
@@ -23,6 +25,7 @@ export const TimelineHeader = React.memo(function TimelineHeader({
   color,
   onToggleVisibility,
   onToggleMute,
+  onContextMenu,
 }: TimelineHeaderProps) {
   const handleToggleMuteClick = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -47,6 +50,7 @@ export const TimelineHeader = React.memo(function TimelineHeader({
   return (
     <Box
       data-testid="timeline-track-header"
+      onContextMenu={onContextMenu}
       sx={{
         width: TRACK_HEADER_WIDTH,
         borderRight: "1px solid #333",

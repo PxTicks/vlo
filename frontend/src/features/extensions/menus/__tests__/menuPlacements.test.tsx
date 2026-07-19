@@ -221,14 +221,18 @@ describe("extension menu placements", () => {
     const scope = createScope("example.menu");
     const menus = extensionMenuPlacementRegistry.bind(scope);
     const infos = menus.listMenus();
-    expect(infos.map((info) => info.id).sort()).toEqual([
-      "library.item.actions",
-      "timeline.clip.context",
-    ]);
+    // The catalogue grows menu-by-menu; pin the wave-1 menus and the schema
+    // contract rather than the full list.
+    const ids = infos.map((info) => info.id);
+    expect(ids).toContain("timeline.clip.context");
+    expect(ids).toContain("library.item.actions");
+    for (const info of infos) {
+      expect(info.subjectSchema).toBeDefined();
+      expect(Object.isFrozen(info.subjectSchema)).toBe(true);
+    }
     const clipInfo = infos.find((info) => info.id === "timeline.clip.context");
     expect(clipInfo?.subjectSchema).toMatchObject({
       clip: { id: "string" },
     });
-    expect(Object.isFrozen(clipInfo?.subjectSchema)).toBe(true);
   });
 });

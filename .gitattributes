@@ -42,6 +42,10 @@
 /frontend/src/features/masks/runtime/OffscreenFilterApplicator.ts extension-surface=adapter
 /frontend/src/features/masks/runtime/SpriteClipMaskController.ts extension-surface=adapter
 /frontend/src/features/player/Player.tsx extension-surface=adapter
+/frontend/src/features/project/hostCommands.ts extension-surface=adapter
+/frontend/src/features/timeline/components/TimelineRow.tsx extension-surface=adapter
+/frontend/src/features/timeline/hooks/useTimelineMarkersClipOverlay.tsx extension-surface=adapter
+/frontend/src/features/userAssets/AssetBrowser.tsx extension-surface=adapter
 /frontend/src/features/userAssets/services/AssetService.ts extension-surface=adapter
 /frontend/src/features/userAssets/components/AssetCard.tsx extension-surface=adapter
 /frontend/src/features/editorFocus/useEditorFocusStore.ts extension-surface=adapter

@@ -18,6 +18,10 @@ interface HostMenuItemBase {
   readonly order?: number;
   readonly icon?: ReactNode;
   readonly disabled?: boolean;
+  /** Renders a trailing check mark (option-style menus). */
+  readonly selected?: boolean;
+  /** Rendered as `data-testid` on the menu item. */
+  readonly testId?: string;
 }
 
 /**

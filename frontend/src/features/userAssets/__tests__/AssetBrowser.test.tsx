@@ -930,4 +930,53 @@ describe("AssetBrowser Component", () => {
     expect(screen.getByText("solo.mp4")).toBeInTheDocument();
     expect(screen.queryByText("b-roll.mp4")).not.toBeInTheDocument();
   });
+
+  it("opens the catalogued browser background menu on right-click", async () => {
+    const { contextMenuService } = await import(
+      "../../../core/shell/contextMenuService"
+    );
+    render(<AssetBrowser />);
+
+    fireEvent.contextMenu(screen.getByTestId("asset-browser"), {
+      clientX: 15,
+      clientY: 25,
+    });
+    try {
+      const active = contextMenuService.getActive();
+      expect(active).toMatchObject({
+        menuId: "library.browser.context",
+        position: { x: 15, y: 25 },
+        subject: {
+          slot: "library.browser.context",
+          browser: {
+            assetType: "video",
+            showFavouritesOnly: false,
+            sortOption: "dateDesc",
+          },
+        },
+      });
+      expect(active?.items.map((item) => item.id)).toEqual([
+        "import-assets",
+        "favourites-only",
+        "sort-dateDesc",
+        "sort-dateAsc",
+        "sort-nameAsc",
+      ]);
+    } finally {
+      act(() => contextMenuService.close());
+    }
+  });
+
+  it("keeps the background menu off asset cards and interactive controls", async () => {
+    const { contextMenuService } = await import(
+      "../../../core/shell/contextMenuService"
+    );
+    render(<AssetBrowser />);
+
+    fireEvent.contextMenu(screen.getAllByTestId("asset-card")[0]);
+    expect(contextMenuService.getActive()).toBeNull();
+
+    fireEvent.contextMenu(screen.getByTestId("asset-browser-sort-button"));
+    expect(contextMenuService.getActive()).toBeNull();
+  });
 });

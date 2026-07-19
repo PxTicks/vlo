@@ -1,21 +1,14 @@
-import { useState } from "react";
-import {
-  Box,
-  Divider,
-  IconButton,
-  ListItemIcon,
-  ListItemText,
-  Menu,
-  MenuItem,
-  Typography,
-} from "@mui/material";
+import { useMemo, useState } from "react";
+import { IconButton } from "@mui/material";
 import SettingsIcon from "@mui/icons-material/Settings";
 import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
 import ViewStreamIcon from "@mui/icons-material/ViewStream";
-import CheckIcon from "@mui/icons-material/Check";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import ExtensionIcon from "@mui/icons-material/Extension";
 import SettingsApplicationsIcon from "@mui/icons-material/SettingsApplications";
+import { AppMenu } from "../../core/shell/AppMenu";
+import type { HostMenuItemDescriptor } from "../../core/shell/menuDescriptors";
+import type { HostMenuSubject } from "../../core/shell/hostMenus";
 import type {
   AspectRatio,
   AssetBrowserDisplay,
@@ -41,6 +34,17 @@ const ASPECT_RATIO_OPTIONS: Array<{ value: AspectRatio; label: string }> = [
   { value: "9:16", label: "9:16 (Story)" },
 ];
 
+const GROUP_LABELS: Readonly<Record<string, string>> = {
+  "1_layout": "LAYOUT",
+  "2_fps": "FPS",
+  "3_aspect": "ASPECT RATIO",
+  "4_fit": "FIT MODE",
+  "5_browser": "ASSET BROWSER",
+  "6_extensions": "EXTENSIONS",
+  "7_runtime": "RUNTIME",
+  "8_debug": "DEBUG",
+};
+
 export function ProjectSettingsMenu() {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [extensionManagerOpen, setExtensionManagerOpen] = useState(false);
@@ -48,61 +52,168 @@ export function ProjectSettingsMenu() {
   const open = Boolean(anchorEl);
 
   const config = useProjectStore((state) => state.config);
-  const updateConfig = useProjectStore((state) => state.updateConfig);
   const debugMode = useDebugStore((state) => state.debugMode);
   const toggleDebugMode = useDebugStore((state) => state.toggleDebugMode);
 
-  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleClose = () => {
-    setAnchorEl(null);
-  };
-
-  const handleLayoutChange = (mode: "full-height" | "compact") => {
-    void updateConfig({ layoutMode: mode });
-    handleClose();
-  };
-
-  const handleFpsChange = (fps: number) => {
-    void updateConfig({ fps });
-    handleClose();
-  };
-
-  const handleAspectRatioChange = (aspectRatio: AspectRatio) => {
-    void updateConfig({ aspectRatio });
-    handleClose();
-  };
-  const handleFitModeChange = (fitMode: ProjectFitMode) => {
-    void updateConfig({ fitMode });
-    handleClose();
-  };
-
-  const handleAssetBrowserDisplayChange = (display: AssetBrowserDisplay) => {
-    void updateConfig({ assetBrowserDisplay: display });
-    handleClose();
-  };
-
-  const handleOpenExtensionManager = () => {
-    handleClose();
-    setExtensionManagerOpen(true);
-  };
-
-  const handleOpenRuntimeSettings = () => {
-    handleClose();
-    setRuntimeSettingsOpen(true);
-  };
   const currentFitMode = config.fitMode || "contain";
   const currentLayout = config.layoutMode || "compact";
   const currentFps = config.fps || 30;
   const currentAspectRatio = config.aspectRatio || "16:9";
   const currentAssetBrowserDisplay = config.assetBrowserDisplay || "grouped";
 
+  const subject = useMemo<HostMenuSubject<"app.project.settings">>(
+    () => ({
+      slot: "app.project.settings",
+      project: {
+        fps: currentFps,
+        aspectRatio: currentAspectRatio,
+        fitMode: currentFitMode,
+        layoutMode: currentLayout,
+        assetBrowserDisplay: currentAssetBrowserDisplay,
+      },
+    }),
+    [
+      currentFps,
+      currentAspectRatio,
+      currentFitMode,
+      currentLayout,
+      currentAssetBrowserDisplay,
+    ],
+  );
+
+  const items: HostMenuItemDescriptor[] = [
+    {
+      kind: "command",
+      id: "layout-full-height",
+      command: "project.set-layout",
+      subject: { layoutMode: "full-height" },
+      label: "Full Height Sidebars",
+      group: "1_layout",
+      icon: (
+        <ViewSidebarIcon
+          fontSize="small"
+          sx={{
+            color: currentLayout === "full-height" ? "primary.main" : "white",
+          }}
+        />
+      ),
+      selected: currentLayout === "full-height",
+    },
+    {
+      kind: "command",
+      id: "layout-compact",
+      command: "project.set-layout",
+      subject: { layoutMode: "compact" },
+      label: "Classic (Wide Timeline)",
+      group: "1_layout",
+      icon: (
+        <ViewStreamIcon
+          fontSize="small"
+          sx={{
+            color: currentLayout === "compact" ? "primary.main" : "white",
+          }}
+        />
+      ),
+      selected: currentLayout === "compact",
+    },
+    ...FPS_OPTIONS.map(
+      (fps): HostMenuItemDescriptor => ({
+        kind: "command",
+        id: `fps-${fps}`,
+        command: "project.set-fps",
+        subject: { fps },
+        label: `${fps} fps`,
+        group: "2_fps",
+        selected: currentFps === fps,
+      }),
+    ),
+    ...ASPECT_RATIO_OPTIONS.map(
+      (ratio): HostMenuItemDescriptor => ({
+        kind: "command",
+        id: `aspect-${ratio.value}`,
+        command: "project.set-aspect-ratio",
+        subject: { aspectRatio: ratio.value },
+        label: ratio.label,
+        group: "3_aspect",
+        selected: currentAspectRatio === ratio.value,
+      }),
+    ),
+    ...FIT_MODE_OPTIONS.map(
+      (option): HostMenuItemDescriptor => ({
+        kind: "command",
+        id: `fit-${option.value}`,
+        command: "project.set-fit-mode",
+        subject: { fitMode: option.value },
+        label: option.label,
+        group: "4_fit",
+        selected: currentFitMode === option.value,
+      }),
+    ),
+    {
+      kind: "command",
+      id: "browser-grouped",
+      command: "project.set-asset-browser-display",
+      subject: { assetBrowserDisplay: "grouped" satisfies AssetBrowserDisplay },
+      label: "Grouped assets",
+      group: "5_browser",
+      selected: currentAssetBrowserDisplay === "grouped",
+    },
+    {
+      kind: "command",
+      id: "browser-ungrouped",
+      command: "project.set-asset-browser-display",
+      subject: {
+        assetBrowserDisplay: "ungrouped" satisfies AssetBrowserDisplay,
+      },
+      label: "Ungrouped assets",
+      group: "5_browser",
+      selected: currentAssetBrowserDisplay === "ungrouped",
+    },
+    {
+      kind: "action",
+      id: "manage-extensions",
+      label: "Manage extensions",
+      group: "6_extensions",
+      icon: <ExtensionIcon fontSize="small" sx={{ color: "white" }} />,
+      testId: "project-settings-extensions",
+      run: () => setExtensionManagerOpen(true),
+    },
+    {
+      kind: "action",
+      id: "runtime-settings",
+      label: "Runtime settings",
+      group: "7_runtime",
+      icon: (
+        <SettingsApplicationsIcon fontSize="small" sx={{ color: "white" }} />
+      ),
+      testId: "project-settings-runtime",
+      run: () => setRuntimeSettingsOpen(true),
+    },
+    ...(import.meta.env.DEV
+      ? [
+          {
+            kind: "action",
+            id: "debug-toggle",
+            label: "Debug mode",
+            group: "8_debug",
+            icon: (
+              <BugReportIcon
+                fontSize="small"
+                sx={{ color: debugMode ? "primary.main" : "white" }}
+              />
+            ),
+            selected: debugMode,
+            testId: "project-settings-debug-toggle",
+            run: toggleDebugMode,
+          } satisfies HostMenuItemDescriptor,
+        ]
+      : []),
+  ];
+
   return (
     <>
       <IconButton
-        onClick={handleClick}
+        onClick={(event) => setAnchorEl(event.currentTarget)}
         size="small"
         sx={{ ml: 1, color: "rgba(255, 255, 255, 0.7)" }}
         data-testid="project-settings-button"
@@ -110,10 +221,14 @@ export function ProjectSettingsMenu() {
       >
         <SettingsIcon fontSize="small" />
       </IconButton>
-      <Menu
-        anchorEl={anchorEl}
+      <AppMenu
+        menuId="app.project.settings"
+        subject={subject}
+        items={items}
+        groupLabels={GROUP_LABELS}
         open={open}
-        onClose={handleClose}
+        onClose={() => setAnchorEl(null)}
+        anchorEl={anchorEl}
         slotProps={{
           paper: {
             sx: {
@@ -124,174 +239,7 @@ export function ProjectSettingsMenu() {
             },
           },
         }}
-      >
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="caption" color="gray">
-            LAYOUT
-          </Typography>
-        </Box>
-        <MenuItem onClick={() => handleLayoutChange("full-height")}>
-          <ListItemIcon>
-            <ViewSidebarIcon
-              fontSize="small"
-              sx={{
-                color:
-                  currentLayout === "full-height" ? "primary.main" : "white",
-              }}
-            />
-          </ListItemIcon>
-          <ListItemText>Full Height Sidebars</ListItemText>
-          {currentLayout === "full-height" && (
-            <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
-          )}
-        </MenuItem>
-        <MenuItem onClick={() => handleLayoutChange("compact")}>
-          <ListItemIcon>
-            <ViewStreamIcon
-              fontSize="small"
-              sx={{
-                color: currentLayout === "compact" ? "primary.main" : "white",
-              }}
-            />
-          </ListItemIcon>
-          <ListItemText>Classic (Wide Timeline)</ListItemText>
-          {currentLayout === "compact" && (
-            <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
-          )}
-        </MenuItem>
-
-        <Divider sx={{ borderColor: "#333" }} />
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="caption" color="gray">
-            FPS
-          </Typography>
-        </Box>
-        {FPS_OPTIONS.map((fps) => (
-          <MenuItem key={fps} onClick={() => handleFpsChange(fps)}>
-            <ListItemText>{`${fps} fps`}</ListItemText>
-            {currentFps === fps && (
-              <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
-            )}
-          </MenuItem>
-        ))}
-
-        <Divider sx={{ borderColor: "#333" }} />
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="caption" color="gray">
-            ASPECT RATIO
-          </Typography>
-        </Box>
-        {ASPECT_RATIO_OPTIONS.map((ratio) => (
-          <MenuItem
-            key={ratio.value}
-            onClick={() => handleAspectRatioChange(ratio.value)}
-          >
-            <ListItemText>{ratio.label}</ListItemText>
-            {currentAspectRatio === ratio.value && (
-              <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
-            )}
-          </MenuItem>
-        ))}
-
-        <Divider sx={{ borderColor: "#333" }} />
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="caption" color="gray">
-            FIT MODE
-          </Typography>
-        </Box>
-        {FIT_MODE_OPTIONS.map((option) => (
-          <MenuItem
-            key={option.value}
-            onClick={() => handleFitModeChange(option.value)}
-          >
-            <ListItemText>{option.label}</ListItemText>
-            {currentFitMode === option.value && (
-              <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
-            )}
-          </MenuItem>
-        ))}
-
-        <Divider sx={{ borderColor: "#333" }} />
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="caption" color="gray">
-            ASSET BROWSER
-          </Typography>
-        </Box>
-        <MenuItem onClick={() => handleAssetBrowserDisplayChange("grouped")}>
-          <ListItemText>Grouped assets</ListItemText>
-          {currentAssetBrowserDisplay === "grouped" && (
-            <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
-          )}
-        </MenuItem>
-        <MenuItem onClick={() => handleAssetBrowserDisplayChange("ungrouped")}>
-          <ListItemText>Ungrouped assets</ListItemText>
-          {currentAssetBrowserDisplay === "ungrouped" && (
-            <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
-          )}
-        </MenuItem>
-
-        <Divider sx={{ borderColor: "#333" }} />
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="caption" color="gray">
-            EXTENSIONS
-          </Typography>
-        </Box>
-        <MenuItem
-          onClick={handleOpenExtensionManager}
-          data-testid="project-settings-extensions"
-        >
-          <ListItemIcon>
-            <ExtensionIcon fontSize="small" sx={{ color: "white" }} />
-          </ListItemIcon>
-          <ListItemText>Manage extensions</ListItemText>
-        </MenuItem>
-
-        <Divider sx={{ borderColor: "#333" }} />
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="caption" color="gray">
-            RUNTIME
-          </Typography>
-        </Box>
-        <MenuItem
-          onClick={handleOpenRuntimeSettings}
-          data-testid="project-settings-runtime"
-        >
-          <ListItemIcon>
-            <SettingsApplicationsIcon fontSize="small" sx={{ color: "white" }} />
-          </ListItemIcon>
-          <ListItemText>Runtime settings</ListItemText>
-        </MenuItem>
-
-        {import.meta.env.DEV && (
-          <Divider sx={{ borderColor: "#333" }} />
-        )}
-        {import.meta.env.DEV && (
-          <Box sx={{ px: 2, py: 1 }}>
-            <Typography variant="caption" color="gray">
-              DEBUG
-            </Typography>
-          </Box>
-        )}
-        {import.meta.env.DEV && (
-          <MenuItem
-            onClick={() => {
-              toggleDebugMode();
-            }}
-            data-testid="project-settings-debug-toggle"
-          >
-            <ListItemIcon>
-              <BugReportIcon
-                fontSize="small"
-                sx={{ color: debugMode ? "primary.main" : "white" }}
-              />
-            </ListItemIcon>
-            <ListItemText>Debug mode</ListItemText>
-            {debugMode && (
-              <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
-            )}
-          </MenuItem>
-        )}
-      </Menu>
+      />
       <ExtensionManagerDialog
         open={extensionManagerOpen}
         onClose={() => setExtensionManagerOpen(false)}

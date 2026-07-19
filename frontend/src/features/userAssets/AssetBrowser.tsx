@@ -1,4 +1,6 @@
 import React, { useState, useRef, useMemo, memo } from "react";
+import { useHostContextMenu } from "../../core/shell/useHostContextMenu";
+import type { HostMenuItemDescriptor } from "../../core/shell/menuDescriptors";
 import { isAssetBackedClip } from "../../types/TimelineTypes";
 import {
   Box,
@@ -441,6 +443,74 @@ function AssetBrowserComponent() {
     showFavouritesOnly,
   ]);
 
+  // Wave-2 browser background menu (plan §3.5, `library.browser.context`):
+  // import, filter, and sort as descriptor items; extension placements merge
+  // into the trailing group. State-coupled handlers stay `action` items.
+  // Background only: asset cards and interactive descendants keep their own
+  // context behaviour (and inputs keep the native menu), mirroring the
+  // asset-card exclusion in `handleBrowserBackgroundClick`.
+  const showContextMenu = useHostContextMenu();
+  const handleBrowserContextMenu = (event: React.MouseEvent<HTMLElement>) => {
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest(
+        '[data-testid="asset-card"], button, input, textarea, select, a, [role="button"], [role="tab"]',
+      )
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const sortItems: Array<{ option: SortOption; label: string }> = [
+      { option: "dateDesc", label: "Newest First" },
+      { option: "dateAsc", label: "Oldest First" },
+      { option: "nameAsc", label: "Name (A-Z)" },
+    ];
+    showContextMenu({
+      menuId: "library.browser.context",
+      subject: {
+        slot: "library.browser.context",
+        browser: {
+          assetType: activeTab,
+          assetCount: sortedAssets.length,
+          showFavouritesOnly,
+          sortOption,
+        },
+      },
+      items: [
+        {
+          kind: "action",
+          id: "import-assets",
+          label: "Import assets…",
+          group: "1_import",
+          icon: <UploadFileIcon fontSize="small" />,
+          disabled: isUploading,
+          run: () => fileInputRef.current?.click(),
+        },
+        {
+          kind: "action",
+          id: "favourites-only",
+          label: "Show favourites only",
+          group: "2_filter",
+          selected: showFavouritesOnly,
+          run: () => setShowFavouritesOnly((current) => !current),
+        },
+        ...sortItems.map(
+          ({ option, label }): HostMenuItemDescriptor => ({
+            kind: "action",
+            id: `sort-${option}`,
+            label,
+            group: "3_sort",
+            selected: sortOption === option,
+            run: () => setSortOption(option),
+          }),
+        ),
+      ],
+      position: { x: event.clientX, y: event.clientY },
+    });
+  };
+
   const handleShowFamily = (familyId: string) => {
     setFamilyScope({
       familyId,
@@ -758,6 +828,7 @@ function AssetBrowserComponent() {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onContextMenu={handleBrowserContextMenu}
     >
       {/* 1. Combined Header Row */}
       <Box

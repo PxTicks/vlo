@@ -25,6 +25,7 @@ import { installHostKeybindingReservations } from "../commands/installHostKeybin
 import { createExtensionStorageApi } from "../storage/createExtensionStorageApi";
 import { installExtensionProjectStorage } from "../storage/installExtensionProjectStorage";
 import { installTimelineHostCommands } from "../../timeline/api";
+import { installProjectHostCommands } from "../../project/hostCommands";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { extensionColorApi } from "./extensionColorApi";
 import {
@@ -431,6 +432,8 @@ export const frontendHostContextKeyRegistration =
   installHostContextKeyBindings();
 export const frontendTimelineHostCommandRegistration =
   installTimelineHostCommands();
+export const frontendProjectHostCommandRegistration =
+  installProjectHostCommands();
 // Reservations must exist before any extension activates so colliding
 // extension bindings are shadowed at registration, never dispatched.
 export const frontendHostKeybindingReservationRegistration =
@@ -443,6 +446,7 @@ if (import.meta.hot) {
     frontendTrustedHostEntriesRegistration.dispose();
     void frontendHostContextKeyRegistration.dispose();
     void frontendTimelineHostCommandRegistration.dispose();
+    void frontendProjectHostCommandRegistration.dispose();
     void frontendHostKeybindingReservationRegistration.dispose();
     void frontendExtensionProjectStorageRegistration.dispose();
   });

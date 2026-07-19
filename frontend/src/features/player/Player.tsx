@@ -29,6 +29,8 @@ import { useProjectStore } from "../project";
 import { audioSystem } from "./services/AudioSystem";
 import { usePlayerStore } from "./usePlayerStore";
 import { useExtractStore } from "../../core/extract/useExtractStore";
+import { useHostContextMenu } from "../../core/shell/useHostContextMenu";
+import { useCanvasSelectionStore } from "./useCanvasSelectionStore";
 import { addLocalAsset, useAssetStore } from "../userAssets";
 import { TrackLayer } from "./components/TrackLayer";
 import {
@@ -733,6 +735,63 @@ function PlayerImpl() {
     });
   }, [fitViewportToScreen]);
 
+  // Wave-2 canvas menu (plan §3.5, `player.canvas.context`). Right-click
+  // stays owned by live canvas interactions where they claim it: with a mask
+  // selected it places SAM2 negative points, and the selection/frame-capture
+  // modes have their own pointer semantics — the menu opens only outside
+  // those interactions.
+  const showContextMenu = useHostContextMenu();
+  const handleCanvasContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      event.preventDefault();
+      const maskEditing =
+        useCanvasSelectionStore.getState().activeSelection?.kind === "mask";
+      if (maskEditing || selectionMode || frameSelectionMode) return;
+      showContextMenu({
+        menuId: "player.canvas.context",
+        subject: {
+          slot: "player.canvas.context",
+          player: {
+            playing: isPlayingRef.current,
+            fullscreen: isFullscreen,
+          },
+        },
+        items: [
+          {
+            kind: "action",
+            id: "toggle-play",
+            label: isPlayingRef.current ? "Pause" : "Play",
+            group: "1_playback",
+            run: handleTogglePlay,
+          },
+          {
+            kind: "action",
+            id: "fit-view",
+            label: "Fit to screen",
+            group: "2_view",
+            run: fitViewportToScreen,
+          },
+          {
+            kind: "action",
+            id: "export",
+            label: "Export…",
+            group: "3_export",
+            run: () => useExtractStore.getState().openDialog(),
+          },
+        ],
+        position: { x: event.clientX, y: event.clientY },
+      });
+    },
+    [
+      selectionMode,
+      frameSelectionMode,
+      isFullscreen,
+      handleTogglePlay,
+      fitViewportToScreen,
+      showContextMenu,
+    ],
+  );
+
   const handleToggleFullscreen = useCallback(async () => {
     const playerRoot = playerRootRef.current;
     if (!playerRoot) return;
@@ -794,7 +853,7 @@ function PlayerImpl() {
       <Box
         ref={containerRef}
         data-testid="player-canvas-container"
-        onContextMenu={(event) => event.preventDefault()}
+        onContextMenu={handleCanvasContextMenu}
         sx={{
           flexGrow: 1,
           display: "flex",

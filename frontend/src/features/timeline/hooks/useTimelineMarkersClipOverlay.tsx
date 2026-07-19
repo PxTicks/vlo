@@ -1,17 +1,15 @@
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import {
-  Menu,
-  MenuItem,
-  ListItemIcon,
-  ListItemText,
-} from "@mui/material";
+import { contextMenuService } from "../../../core/shell/contextMenuService";
+import { useHostContextMenu } from "../../../core/shell/useHostContextMenu";
+import type { HostMenuSubject } from "../../../core/shell/hostMenus";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
 import { createSourceTimeOverlayItem } from "../clipOverlayApi";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import type { MarkersComponent } from "../../../types/Components";
 import { isBeatMarker } from "../../../types/Components";
+import { toExtensionClipSnapshot } from "../api";
 import { useTimelineStore } from "../useTimelineStore";
 import { useTimelineViewStore } from "./useTimelineViewStore";
 import { useProjectStore } from "../../project/useProjectStore";
@@ -25,12 +23,6 @@ const MARKER_ICON_FONT_SIZE = 32;
  *  up so its top edge is flush with the clip's top edge. */
 const MARKER_VERTICAL_OFFSET_PX = -12.33;
 
-interface MarkerMenuState {
-  markerId: string;
-  x: number;
-  y: number;
-}
-
 function getMarkersComponent(clip: TimelineClip): MarkersComponent | null {
   if (clip.type === "mask") return null;
   const components = clip.components ?? [];
@@ -43,6 +35,16 @@ function getMarkersComponent(clip: TimelineClip): MarkersComponent | null {
 
 const EMPTY_MARKERS: readonly never[] = [];
 
+/** The marker whose shell context menu is open for this clip, if any. */
+function getActiveMenuMarkerId(clipId: string): string | null {
+  const active = contextMenuService.getActive();
+  if (active === null || active.menuId !== "timeline.marker.context") {
+    return null;
+  }
+  const subject = active.subject as HostMenuSubject<"timeline.marker.context">;
+  return subject.clip.id === clipId ? subject.marker.id : null;
+}
+
 function useClipMarkersOverlayItems({ clip }: { clip: TimelineClip }) {
   const markersComponent = getMarkersComponent(clip);
   const markers = useMemo(
@@ -52,35 +54,22 @@ function useClipMarkersOverlayItems({ clip }: { clip: TimelineClip }) {
   const componentEnabled = markersComponent?.isEnabled !== false;
   const componentId = markersComponent?.id ?? null;
 
-  const [menuState, setMenuState] = useState<MarkerMenuState | null>(null);
-  const closeMenu = useCallback(() => setMenuState(null), []);
-
-  const handleDelete = useCallback(() => {
-    if (!menuState || !componentId || clip.type === "mask") {
-      closeMenu();
-      return;
-    }
-    const store = useTimelineStore.getState();
-    const remaining = markers.filter((m) => m.id !== menuState.markerId);
-    if (remaining.length === 0) {
-      store.removeClipComponent(clip.id, componentId);
-    } else {
-      store.updateClipComponent(clip.id, componentId, (component) => {
-        if (component.type !== "markers") return component;
-        return {
-          ...component,
-          parameters: { ...component.parameters, markers: remaining },
-        };
-      });
-    }
-    closeMenu();
-  }, [menuState, componentId, clip.id, clip.type, markers, closeMenu]);
+  // The open-menu outline follows the shell context-menu service; the menu
+  // itself renders through the app-shell MenuHostMount. The snapshot is the
+  // clip-scoped target marker (a primitive), so this per-clip hook does not
+  // re-render unaffected clips when unrelated menus open or close.
+  const menuTargetMarkerId = useSyncExternalStore(
+    (listener) => contextMenuService.subscribe(listener),
+    () => getActiveMenuMarkerId(clip.id),
+    () => getActiveMenuMarkerId(clip.id),
+  );
+  const showContextMenu = useHostContextMenu();
 
   const items = useMemo(() => {
     if (!componentEnabled || markers.length === 0 || !componentId) return [];
 
-    return markers.map((marker, index) => {
-      const isMenuTarget = menuState?.markerId === marker.id;
+    return markers.map((marker) => {
+      const isMenuTarget = menuTargetMarkerId === marker.id;
 
       const dragHandlers = buildFrameSnappedSourceTimeDrag({
         clip,
@@ -110,12 +99,6 @@ function useClipMarkersOverlayItems({ clip }: { clip: TimelineClip }) {
         },
       });
 
-      // Render the shared MUI Menu as a sibling of the FIRST marker's
-      // icon. Only one Menu instance ever mounts; it's anchored at the
-      // captured click coords via `anchorReference="anchorPosition"`,
-      // so its position is independent of which marker triggered it.
-      const isMenuRoot = index === 0;
-
       const isBeat = isBeatMarker(marker);
       const markerColor = isBeat ? BEAT_MARKER_COLOR : MARKER_COLOR;
 
@@ -125,61 +108,49 @@ function useClipMarkersOverlayItems({ clip }: { clip: TimelineClip }) {
         lane: "top",
         verticalOffsetPx: MARKER_VERTICAL_OFFSET_PX,
         onContextMenu: (event) => {
-          setMenuState({
-            markerId: marker.id,
-            x: event.clientX,
-            y: event.clientY,
+          showContextMenu({
+            menuId: "timeline.marker.context",
+            subject: {
+              slot: "timeline.marker.context",
+              marker: {
+                id: marker.id,
+                sourceTimeTicks: marker.sourceTimeTicks,
+                kind: isBeat ? "beat" : "marker",
+              },
+              clip: toExtensionClipSnapshot(clip),
+            },
+            items: [
+              {
+                kind: "command",
+                id: "delete-marker",
+                command: "timeline.marker.delete",
+                subject: { clipId: clip.id, markerId: marker.id },
+                icon: <DeleteOutlineIcon fontSize="small" />,
+                group: "1_marker",
+              },
+            ],
+            position: { x: event.clientX, y: event.clientY },
           });
         },
         drag: dragHandlers,
         content: (
-          <>
-            <ArrowDropDownIcon
-              sx={{
-                color: markerColor,
-                fontSize: MARKER_ICON_FONT_SIZE,
-                filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.6))",
-                cursor: "default",
-                outline: isMenuTarget
-                  ? `2px solid ${markerColor}`
-                  : undefined,
-                outlineOffset: 2,
-                pointerEvents: "none",
-              }}
-            />
-            {isMenuRoot && (
-              <Menu
-                open={menuState !== null}
-                onClose={closeMenu}
-                anchorReference="anchorPosition"
-                anchorPosition={
-                  menuState
-                    ? { top: menuState.y, left: menuState.x }
-                    : undefined
-                }
-                onContextMenu={(e) => e.preventDefault()}
-              >
-                <MenuItem onClick={handleDelete}>
-                  <ListItemIcon>
-                    <DeleteOutlineIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>Delete marker</ListItemText>
-                </MenuItem>
-              </Menu>
-            )}
-          </>
+          <ArrowDropDownIcon
+            sx={{
+              color: markerColor,
+              fontSize: MARKER_ICON_FONT_SIZE,
+              filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.6))",
+              cursor: "default",
+              outline: isMenuTarget
+                ? `2px solid ${markerColor}`
+                : undefined,
+              outlineOffset: 2,
+              pointerEvents: "none",
+            }}
+          />
         ),
       });
     });
-  }, [
-    clip,
-    componentEnabled,
-    componentId,
-    markers,
-    menuState,
-    closeMenu,
-    handleDelete,
-  ]);
+  }, [clip, componentEnabled, componentId, markers, menuTargetMarkerId, showContextMenu]);
 
   return items;
 }

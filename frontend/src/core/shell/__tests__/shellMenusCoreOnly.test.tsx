@@ -13,6 +13,7 @@ import { contextMenuService } from "../contextMenuService";
 import type { HostMenuSubject } from "../hostMenus";
 import { installMenuContributions } from "../menuContributions";
 import { showHostContextMenu } from "../showHostContextMenu";
+import { useHostContextMenu } from "../useHostContextMenu";
 
 const CLIP_SUBJECT: HostMenuSubject<"timeline.clip.context"> = {
   slot: "timeline.clip.context",
@@ -109,6 +110,46 @@ describe("shell menus without the extensions feature", () => {
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "Probe" }));
     expect(run).toHaveBeenCalledTimes(1);
+    expect(contextMenuService.getActive()).toBeNull();
+  });
+
+  it("binds hook-shown menus to the owning component's lifecycle", () => {
+    function Owner() {
+      const showMenu = useHostContextMenu();
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            showMenu({
+              menuId: "timeline.clip.context",
+              subject: CLIP_SUBJECT,
+              items: [
+                {
+                  kind: "action",
+                  id: "probe",
+                  label: "Probe",
+                  group: "1_clip",
+                  run: vi.fn(),
+                },
+              ],
+              position: { x: 1, y: 2 },
+            })
+          }
+        >
+          open
+        </button>
+      );
+    }
+
+    const { unmount } = render(<Owner />);
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(contextMenuService.getActive()?.menuId).toBe(
+      "timeline.clip.context",
+    );
+
+    // Unmounting the owner closes its menu, so stale closures never survive
+    // the component that created them.
+    unmount();
     expect(contextMenuService.getActive()).toBeNull();
   });
 

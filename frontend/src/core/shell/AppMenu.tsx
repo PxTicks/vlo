@@ -1,12 +1,15 @@
 import { useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
 import {
+  Box,
   Divider,
   ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
+  Typography,
   type MenuProps,
 } from "@mui/material";
+import CheckIcon from "@mui/icons-material/Check";
 import { hostCommandTable } from "./commandTable";
 import { hostContextKeys } from "./contextKeys";
 import { hostMenuCatalog } from "./hostMenuCatalog";
@@ -37,6 +40,14 @@ export interface AppMenuProps<TMenuId extends HostMenuId = HostMenuId> {
   /** Menu-root passthroughs; MUI portals bubble through the React tree. */
   readonly onClick?: (event: MouseEvent<HTMLElement>) => void;
   readonly onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
+  /** Presentation passthrough (e.g. paper styling); never behavioural. */
+  readonly slotProps?: MenuProps["slotProps"];
+  /**
+   * Caption rendered above a group's items (option-style menus). Groups
+   * without an entry render divider-separated as before; extension items
+   * merging into a labelled group inherit its caption.
+   */
+  readonly groupLabels?: Readonly<Record<string, string>>;
   /**
    * Test-ID prefix for contributed items. Defaults to the standard prefix;
    * wave-1 call-sites pass their historical prefixes.
@@ -53,6 +64,7 @@ interface RenderableMenuItem {
   readonly label: string;
   readonly icon: ReactNode | null;
   readonly disabled: boolean;
+  readonly selected: boolean;
   readonly testId?: string;
   readonly select: () => void;
 }
@@ -77,6 +89,8 @@ export function AppMenu<TMenuId extends HostMenuId>({
   transformOrigin,
   onClick,
   onContextMenu,
+  slotProps,
+  groupLabels,
   extensionItemTestIdPrefix = "extension-menu-item-",
 }: AppMenuProps<TMenuId>) {
   // Statically guaranteed by HostMenuSubject; the catalogued schema guards
@@ -114,6 +128,8 @@ export function AppMenu<TMenuId extends HostMenuId>({
           Boolean(item.disabled) ||
           !known ||
           !hostCommandTable.isEnabled(item.command),
+        selected: Boolean(item.selected),
+        testId: item.testId,
         select: () => {
           hostCommandTable.executeCommand(item.command, {
             subject: item.subject,
@@ -130,6 +146,8 @@ export function AppMenu<TMenuId extends HostMenuId>({
       label: item.label,
       icon: item.icon ?? null,
       disabled: Boolean(item.disabled),
+      selected: Boolean(item.selected),
+      testId: item.testId,
       select: item.run,
     };
   });
@@ -148,6 +166,7 @@ export function AppMenu<TMenuId extends HostMenuId>({
       disabled:
         !hostCommandTable.has(item.command) ||
         !hostCommandTable.isEnabled(item.command),
+      selected: false,
       testId: `${extensionItemTestIdPrefix}${item.id}`,
       select: () => {
         hostCommandTable.executeCommand(item.command, {
@@ -169,8 +188,20 @@ export function AppMenu<TMenuId extends HostMenuId>({
   const children: ReactNode[] = [];
   let previousGroup: string | null = null;
   for (const item of renderable) {
-    if (previousGroup !== null && previousGroup !== item.group) {
-      children.push(<Divider key={`divider-${item.group}`} />);
+    if (previousGroup !== item.group) {
+      if (previousGroup !== null) {
+        children.push(<Divider key={`divider-${item.group}`} />);
+      }
+      const groupLabel = groupLabels?.[item.group];
+      if (groupLabel !== undefined) {
+        children.push(
+          <Box key={`label-${item.group}`} sx={{ px: 2, py: 1 }}>
+            <Typography variant="caption" color="gray">
+              {groupLabel}
+            </Typography>
+          </Box>,
+        );
+      }
     }
     previousGroup = item.group;
     children.push(
@@ -185,6 +216,9 @@ export function AppMenu<TMenuId extends HostMenuId>({
       >
         {item.icon ? <ListItemIcon>{item.icon}</ListItemIcon> : null}
         <ListItemText>{item.label}</ListItemText>
+        {item.selected ? (
+          <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
+        ) : null}
       </MenuItem>,
     );
   }
@@ -200,6 +234,7 @@ export function AppMenu<TMenuId extends HostMenuId>({
       transformOrigin={transformOrigin}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      slotProps={slotProps}
     >
       {children}
     </Menu>

@@ -87,12 +87,10 @@ export default defineConfig([
     // (waves 2-3 in docs/extension-shell-surfaces-plan.md §3.5).
     files: [
       'src/core/shell/AppMenu.tsx',
-      'src/app/layout/ProjectSettingsMenu.tsx',
       'src/app/layout/RightSidebarPanel.tsx',
       'src/features/generation/GenerationPanel.tsx',
       'src/features/masks/MaskPanel.tsx',
       'src/features/masks/components/MaskEquationBuilder.tsx',
-      'src/features/timeline/hooks/useTimelineMarkersClipOverlay.tsx',
       'src/features/transformations/components/TransformationPanel.tsx',
       'src/features/userAssets/AssetBrowser.tsx',
     ],

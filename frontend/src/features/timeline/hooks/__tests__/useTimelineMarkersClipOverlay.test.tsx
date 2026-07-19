@@ -1,7 +1,8 @@
-import type { ReactElement } from "react";
-import { renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import type { MouseEvent, ReactElement } from "react";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
+import { contextMenuService } from "../../../../core/shell/contextMenuService";
 import { useProjectStore } from "../../../project/useProjectStore";
 import { useTimelineMarkersClipOverlay, MARKER_COLOR, BEAT_MARKER_COLOR } from "../useTimelineMarkersClipOverlay";
 import { useTimelineStore } from "../../useTimelineStore";
@@ -62,6 +63,10 @@ function useOverlayItems(clip: TimelineClip) {
   return overlay.useItems({ clip, isSelected: false });
 }
 
+type IconProps = {
+  sx?: { cursor?: string; color?: string; outline?: string };
+};
+
 describe("useTimelineMarkersClipOverlay", () => {
   beforeEach(() => {
     useTimelineStore.setState({
@@ -88,39 +93,64 @@ describe("useTimelineMarkersClipOverlay", () => {
     }));
   });
 
+  afterEach(() => {
+    act(() => contextMenuService.close());
+  });
+
   it("uses the default cursor for draggable clip markers", () => {
     const { result } = renderHook(() => useOverlayItems(clipWithMarker));
-    const content = result.current[0].content as ReactElement<{
-      children: [
-        ReactElement<{ sx?: { cursor?: string } }>,
-        ReactElement | undefined,
-      ];
-    }>;
-
-    expect(content.props.children[0].props.sx?.cursor).toBe("default");
+    const content = result.current[0].content as ReactElement<IconProps>;
+    expect(content.props.sx?.cursor).toBe("default");
   });
 
   it("colors standard markers with MARKER_COLOR", () => {
     const { result } = renderHook(() => useOverlayItems(clipWithMarker));
-    const content = result.current[0].content as ReactElement<{
-      children: [
-        ReactElement<{ sx?: { color?: string } }>,
-        ReactElement | undefined,
-      ];
-    }>;
-
-    expect(content.props.children[0].props.sx?.color).toBe(MARKER_COLOR);
+    const content = result.current[0].content as ReactElement<IconProps>;
+    expect(content.props.sx?.color).toBe(MARKER_COLOR);
   });
 
   it("colors beat markers with BEAT_MARKER_COLOR", () => {
     const { result } = renderHook(() => useOverlayItems(clipWithBeatMarker));
-    const content = result.current[0].content as ReactElement<{
-      children: [
-        ReactElement<{ sx?: { color?: string } }>,
-        ReactElement | undefined,
-      ];
-    }>;
+    const content = result.current[0].content as ReactElement<IconProps>;
+    expect(content.props.sx?.color).toBe(BEAT_MARKER_COLOR);
+  });
 
-    expect(content.props.children[0].props.sx?.color).toBe(BEAT_MARKER_COLOR);
+  it("shows the catalogued marker menu on right-click and outlines its marker", () => {
+    const { result } = renderHook(() => useOverlayItems(clipWithMarker));
+
+    act(() => {
+      result.current[0].onContextMenu?.({
+        clientX: 12,
+        clientY: 34,
+        preventDefault: () => undefined,
+        stopPropagation: () => undefined,
+      } as unknown as MouseEvent<HTMLDivElement>);
+    });
+
+    const active = contextMenuService.getActive();
+    expect(active).toMatchObject({
+      menuId: "timeline.marker.context",
+      position: { x: 12, y: 34 },
+      subject: {
+        slot: "timeline.marker.context",
+        marker: { id: "marker_1", sourceTimeTicks: 120, kind: "marker" },
+        clip: { id: "clip_1", trackId: "track_1" },
+      },
+    });
+    expect(active?.items).toMatchObject([
+      {
+        kind: "command",
+        command: "timeline.marker.delete",
+        subject: { clipId: "clip_1", markerId: "marker_1" },
+      },
+    ]);
+
+    // The menu-target marker gets the open-menu outline; other clips' items
+    // do not.
+    const content = result.current[0].content as ReactElement<IconProps>;
+    expect(content.props.sx?.outline).toContain(MARKER_COLOR);
+    const other = renderHook(() => useOverlayItems(clipWithBeatMarker));
+    const otherContent = other.result.current[0].content as ReactElement<IconProps>;
+    expect(otherContent.props.sx?.outline).toBeUndefined();
   });
 });

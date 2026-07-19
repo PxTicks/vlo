@@ -1,5 +1,6 @@
 export { ProjectManager } from "./components/ProjectManager";
 export { ProjectTitle } from "./components/ProjectTitle";
+export { installProjectHostCommands } from "./hostCommands";
 export { useProjectStore } from "./useProjectStore";
 export { fileSystemService } from "./services/FileSystemService";
 export { projectDocumentService } from "./services/ProjectDocumentService";

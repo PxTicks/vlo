@@ -52,7 +52,10 @@ import type {
   TimelineClipShape,
   TimelineMaskUpdate,
 } from "./model/timelineCommands";
-import { computeFurthestPresentationEnd } from "./utils/clipPresentation";
+import {
+  buildTimelineClipPresentationIndex,
+  computeFurthestPresentationEnd,
+} from "./utils/clipPresentation";
 import { createClipFromAsset } from "./utils/clipFactory";
 import {
   insertAssetAtTime,
@@ -263,6 +266,40 @@ export function getTimelinePresentationContext(): {
     tracks,
     fps: useProjectStore.getState().config.fps,
   };
+}
+
+/** Return clips whose visible presentation footprint intersects a range. */
+export function getTimelineClipsInPresentationRange(
+  start: number,
+  end?: number,
+): TimelineClip[] {
+  const { clips, tracks, fps } = getTimelinePresentationContext();
+  const presentationById = buildTimelineClipPresentationIndex(
+    tracks,
+    clips,
+    fps,
+  );
+  const selectedParentIds = new Set<string>();
+
+  for (const clip of clips) {
+    if (clip.type === "mask") continue;
+    const presentation = presentationById.get(clip.id);
+    const clipStart = presentation?.start ?? clip.start;
+    const clipEnd = presentation?.end ?? clip.start + clip.timelineDuration;
+    const intersects =
+      end === undefined
+        ? clipStart <= start && start < clipEnd
+        : Math.max(clipStart, start) < Math.min(clipEnd, end);
+    if (intersects) selectedParentIds.add(clip.id);
+  }
+
+  return clips.filter(
+    (clip) =>
+      selectedParentIds.has(clip.id) ||
+      (clip.type === "mask" &&
+        typeof clip.parentClipId === "string" &&
+        selectedParentIds.has(clip.parentClipId)),
+  );
 }
 
 export function getTimelineCompositeContent(): CompositeContent {

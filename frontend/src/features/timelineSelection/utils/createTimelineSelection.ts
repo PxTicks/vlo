@@ -3,6 +3,7 @@ import { TICKS_PER_SECOND } from "../../../core/time/constants";
 import {
   getTimelineClips,
   getTimelineDuration,
+  getTimelineClipsInPresentationRange,
   getTimelineTracks,
   getTimelineTransitions,
 } from "../../timeline/api";
@@ -15,7 +16,6 @@ import type {
 } from "../../../types/TimelineTypes";
 import { useTimelineSelectionStore } from "../useTimelineSelectionStore";
 import {
-  getClipsInSelection,
   getReferencedSubordinateClipIds,
   getTicksPerFrame,
   resolveSelectionFps,
@@ -38,7 +38,6 @@ export function createTimelineSelection(
   startTick: number,
   endTick: number,
 ): TimelineSelection {
-  const clips = getTimelineClips();
   const tracks = getTimelineTracks();
   const transitions = getTimelineTransitions();
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
@@ -55,11 +54,7 @@ export function createTimelineSelection(
     projectFps,
   );
 
-  const selectedClips = getClipsInSelection(clips, {
-    start: startTick,
-    end: endTick,
-    clips: [],
-  });
+  const selectedClips = getTimelineClipsInPresentationRange(startTick, endTick);
   const selectedClipIds = new Set(selectedClips.map((clip) => clip.id));
   const selectedTransitions = transitions.filter(
     (transition) =>
@@ -87,15 +82,11 @@ export function createTimelineSelection(
 export function createPointTimelineSelection(
   tick: number,
 ): TimelineSelection {
-  const clips = getTimelineClips();
   const tracks = getTimelineTracks();
   const transitions = getTimelineTransitions();
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
 
-  const selectedClips = getClipsInSelection(clips, {
-    start: tick,
-    clips: [],
-  });
+  const selectedClips = getTimelineClipsInPresentationRange(tick);
   const selectedClipIds = new Set(selectedClips.map((clip) => clip.id));
   const selectedTransitions = transitions.filter(
     (transition) =>

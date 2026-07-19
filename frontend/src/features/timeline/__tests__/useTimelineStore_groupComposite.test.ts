@@ -15,6 +15,7 @@ vi.mock("../../userAssets", () => ({
 }));
 
 import { useTimelineStore } from "../useTimelineStore";
+import { getTimelineClipsInPresentationRange } from "../api";
 
 const createTrack = (id: string): TimelineTrack => ({
   id,
@@ -259,5 +260,89 @@ describe("useTimelineStore.groupClipsIntoComposite", () => {
       expect(useTimelineStore.getState().redo()).toBe(true);
     });
     expect(useTimelineStore.getState().clips).toHaveLength(3);
+  });
+
+  it("splits source clips at presentation boundaries under ripple retiming", () => {
+    const adjustment = rippleAdjustmentClip();
+    const source = videoClip(
+      "ripple-source",
+      "track-1",
+      2 * TICKS_PER_SECOND,
+    );
+    source.timelineDuration = TICKS_PER_SECOND;
+    source.sourceDuration = TICKS_PER_SECOND;
+    source.croppedSourceDuration = TICKS_PER_SECOND;
+    source.transformedDuration = TICKS_PER_SECOND;
+    const selectionStart = 1.5 * TICKS_PER_SECOND;
+    const selectionEnd = 2 * TICKS_PER_SECOND;
+    const composite = compositeClip(
+      "ripple-composite",
+      "track-1",
+      selectionStart,
+    );
+    composite.timelineDuration = 0.5 * TICKS_PER_SECOND;
+
+    act(() => {
+      const adjustmentTrack = createTrack("adjustment-track");
+      adjustmentTrack.type = "adjustment";
+      useTimelineStore.getState().replaceTimelineSnapshot({
+        tracks: [adjustmentTrack, createTrack("track-1")],
+        clips: [adjustment, source],
+      });
+      useTimelineStore.getState().groupClipsIntoComposite(
+        [source.id],
+        composite,
+        { start: selectionStart, end: selectionEnd },
+      );
+    });
+
+    const { clips, tracks } = useTimelineStore.getState();
+    const remainder = clips.find((clip) => clip.id === source.id);
+    const placed = clips.find((clip) => clip.id === composite.id);
+    const presentation = buildTimelineClipPresentationIndex(
+      tracks,
+      clips,
+      TICKS_PER_SECOND,
+    );
+
+    expect(remainder).toEqual(
+      expect.objectContaining({
+        start: 2 * TICKS_PER_SECOND,
+        timelineDuration: 0.5 * TICKS_PER_SECOND,
+        offset: 0,
+      }),
+    );
+    expect(placed?.start).toBe(2.5 * TICKS_PER_SECOND);
+    expect(presentation.get(placed!.id)?.start).toBe(selectionStart);
+    expect(presentation.get(remainder!.id)?.end).toBe(selectionStart);
+  });
+
+  it("selects clips by their ripple presentation footprint", () => {
+    const adjustment = rippleAdjustmentClip();
+    const source = videoClip(
+      "presented-source",
+      "track-1",
+      2 * TICKS_PER_SECOND,
+    );
+    source.timelineDuration = TICKS_PER_SECOND;
+    source.sourceDuration = TICKS_PER_SECOND;
+    source.croppedSourceDuration = TICKS_PER_SECOND;
+    source.transformedDuration = TICKS_PER_SECOND;
+
+    act(() => {
+      const adjustmentTrack = createTrack("adjustment-track");
+      adjustmentTrack.type = "adjustment";
+      useTimelineStore.getState().replaceTimelineSnapshot({
+        tracks: [adjustmentTrack, createTrack("track-1")],
+        clips: [adjustment, source],
+      });
+    });
+
+    expect(
+      getTimelineClipsInPresentationRange(
+        1.5 * TICKS_PER_SECOND,
+        2 * TICKS_PER_SECOND,
+      ).map((clip) => clip.id),
+    ).toEqual([source.id]);
   });
 });

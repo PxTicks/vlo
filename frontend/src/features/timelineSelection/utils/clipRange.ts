@@ -2,26 +2,22 @@ import type { TimelineClip } from "../../../types/TimelineTypes";
 import { getSegmentContentDuration } from "../../transformations/utils/timeCalculation";
 
 /**
- * Returns an isolated copy of the portion of a clip inside a timeline range.
- * Source offsets and transformed crop fields follow the same calculations as
- * interactive left/right clip trimming.
+ * Crop a clip using offsets in its stored track-time domain. Source offsets
+ * and transformed crop fields follow interactive clip trimming.
  */
-export function cropTimelineClipToRange<T extends TimelineClip>(
+export function cropTimelineClipToOffsets<T extends TimelineClip>(
   clip: T,
-  rangeStart: number,
-  rangeEnd: number,
+  startOffset: number,
+  endOffset: number,
 ): T | null {
-  const intersectionStart = Math.max(clip.start, rangeStart);
-  const intersectionEnd = Math.min(
-    clip.start + clip.timelineDuration,
-    rangeEnd,
-  );
-  if (intersectionStart >= intersectionEnd) {
+  const boundedStart = Math.max(0, Math.min(clip.timelineDuration, startOffset));
+  const boundedEnd = Math.max(0, Math.min(clip.timelineDuration, endOffset));
+  if (boundedStart >= boundedEnd) {
     return null;
   }
 
   const cropped = structuredClone(clip);
-  const leftDelta = intersectionStart - cropped.start;
+  const leftDelta = boundedStart;
   if (leftDelta > 0) {
     const transformedOffset = (cropped.transformedOffset ?? 0) + leftDelta;
     const timelineDuration = cropped.timelineDuration - leftDelta;
@@ -33,7 +29,7 @@ export function cropTimelineClipToRange<T extends TimelineClip>(
       timelineDuration,
     );
     Object.assign(cropped, {
-      start: intersectionStart,
+      start: clip.start + leftDelta,
       timelineDuration,
       offset,
       transformedOffset,
@@ -41,7 +37,7 @@ export function cropTimelineClipToRange<T extends TimelineClip>(
     });
   }
 
-  const duration = intersectionEnd - cropped.start;
+  const duration = boundedEnd - boundedStart;
   if (duration < cropped.timelineDuration) {
     cropped.timelineDuration = duration;
     cropped.croppedSourceDuration = getSegmentContentDuration(

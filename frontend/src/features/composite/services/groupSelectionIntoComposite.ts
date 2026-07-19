@@ -8,6 +8,9 @@ import {
 } from "../../timelineSelection";
 import {
   getTimelineTracks,
+  getTimelineClips,
+  getTimelineClipsInPresentationRange,
+  getTimelineTransitions,
   groupTimelineClipsIntoComposite,
 } from "../../timeline/api";
 import { useProjectStore } from "../../project/useProjectStore";
@@ -55,7 +58,26 @@ export async function groupSelectionIntoComposite(
   selection: TimelineSelection,
   options: GroupSelectionOptions = {},
 ): Promise<VideoTimelineClip | null> {
-  const trackId = pickTargetTrackId(selection);
+  const presentationContextClips = getTimelineClips();
+  const selectedClips = getTimelineClipsInPresentationRange(
+    selection.start,
+    selection.end,
+  );
+  const selectedClipIds = new Set(selectedClips.map((clip) => clip.id));
+  const transitions = getTimelineTransitions().filter(
+    (transition) =>
+      selectedClipIds.has(transition.outgoingClipId) &&
+      selectedClipIds.has(transition.incomingClipId),
+  );
+  const capturedSelection: TimelineSelection = {
+    ...selection,
+    clips: selectedClips,
+    ...(transitions.length > 0 ? { transitions } : {}),
+  };
+  if (transitions.length === 0) {
+    delete capturedSelection.transitions;
+  }
+  const trackId = pickTargetTrackId(capturedSelection);
   if (!trackId) {
     return null;
   }
@@ -67,8 +89,9 @@ export async function groupSelectionIntoComposite(
   // lookup.
   const content = renamespaceCompositeContentTracks(
     selectionToCompositeContent(
-      selection,
+      capturedSelection,
       useProjectStore.getState().config.fps,
+      presentationContextClips,
     ),
   );
   const compositeAsset = await useCompositeLibraryStore
@@ -85,7 +108,7 @@ export async function groupSelectionIntoComposite(
     start: selection.start,
   });
 
-  const sourceClipIds = selection.clips.map((clip) => clip.id);
+  const sourceClipIds = capturedSelection.clips.map((clip) => clip.id);
   const didCommit = groupTimelineClipsIntoComposite(
     sourceClipIds,
     compositeClip,

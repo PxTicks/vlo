@@ -84,6 +84,7 @@ export {
   createEmptyTimelineSnapshot,
   getTimelineSnapshot,
   getTimelinePresentationContext,
+  getTimelineClipsInPresentationRange,
   getTimelineCompositeContent,
   getTimelineCompositePlacementIds,
   getTimelineMaskClipById,

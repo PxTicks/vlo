@@ -12,8 +12,10 @@ const GRID_FPS = TICKS_PER_SECOND;
 import type {
   AdjustmentTimelineClip,
   TimelineSelection,
+  TimelineTrack,
   VideoTimelineClip,
 } from "../../../../types/TimelineTypes";
+import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../../types/TimelineTypes";
 
 function videoClip(
   id: string,
@@ -104,6 +106,72 @@ describe("composite adapters", () => {
       }),
     );
     expect(content.durationTicks).toBe(1000);
+  });
+
+  it("rebases a clip from ripple presentation time into composite-local time", () => {
+    const tracks: TimelineTrack[] = [
+      {
+        id: "adjustment-track",
+        type: "adjustment",
+        label: "Adjustment",
+        isVisible: true,
+        isMuted: false,
+        isLocked: false,
+      },
+      {
+        id: "track-1",
+        type: "visual",
+        label: "Visual",
+        isVisible: true,
+        isMuted: false,
+        isLocked: false,
+      },
+    ];
+    const adjustment: AdjustmentTimelineClip = {
+      id: "ripple",
+      type: "adjustment",
+      name: "Ripple",
+      trackId: "adjustment-track",
+      start: 0,
+      timelineDuration: 100,
+      sourceDuration: 200,
+      croppedSourceDuration: 200,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      offset: 0,
+      transformations: [
+        {
+          id: "speed-2x",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 2 },
+        },
+      ],
+      depth: 1,
+      retimingMode: ADJUSTMENT_RETIMING_RIPPLE,
+    };
+    const source = videoClip("source", 200, 100);
+    const content = selectionToCompositeContent(
+      {
+        start: 150,
+        end: 200,
+        clips: [source],
+        tracks,
+      },
+      GRID_FPS,
+      [adjustment, source],
+    );
+
+    expect(content.clips).toEqual([
+      expect.objectContaining({
+        id: source.id,
+        start: 0,
+        timelineDuration: 50,
+        offset: 50,
+        transformedOffset: 50,
+        croppedSourceDuration: 50,
+      }),
+    ]);
   });
 
   it("infers duration from clip extent when end is absent", () => {

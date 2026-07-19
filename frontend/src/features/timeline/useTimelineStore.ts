@@ -21,6 +21,7 @@ import type {
 } from "@vlo/extension-sdk";
 import { isCompositeClip } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
+import { useProjectStore } from "../project/useProjectStore";
 import {
   countBrushMaskAssetConsumers,
   countSam2MaskAssetConsumers,
@@ -96,7 +97,10 @@ import {
   ExtensionTimelineCommandError,
   type ExtensionTimelineCommand,
 } from "./model/extensionTimelineCommands";
-import { resolveStoredStartForPresentationStart } from "./utils/clipPresentation";
+import {
+  buildTimelineClipPresentationIndex,
+  resolveStoredStartForPresentationStart,
+} from "./utils/clipPresentation";
 
 enablePatches();
 
@@ -474,6 +478,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     ) => {
       const didCommit = mutationPipeline.commitModelMutation(
         (draft) => {
+          const sourcePresentationById =
+            buildTimelineClipPresentationIndex(
+              draft.tracks,
+              draft.clips,
+              useProjectStore.getState().config.fps,
+            );
           // Add first so the target track remains valid while splitting and
           // removing source segments, including when the selection spans every
           // populated track.
@@ -493,20 +503,48 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
             );
 
             for (const source of sourceParents) {
-              const sourceEnd = source.start + source.timelineDuration;
+              const presentation = sourcePresentationById.get(source.id);
+              const sourceStart = presentation?.start ?? source.start;
+              const sourceEnd =
+                presentation?.end ?? source.start + source.timelineDuration;
               if (
                 sourceEnd <= extractionRange.start ||
-                source.start >= extractionRange.end
+                sourceStart >= extractionRange.end
               ) {
                 continue;
               }
 
+              const intersectionStart = Math.max(
+                sourceStart,
+                extractionRange.start,
+              );
+              const intersectionEnd = Math.min(
+                sourceEnd,
+                extractionRange.end,
+              );
+              const storedExtractionStart = Math.round(
+                source.start +
+                  (presentation
+                    ? presentation.mapPresentationOffsetToClipOffset(
+                        intersectionStart - presentation.start,
+                      )
+                    : intersectionStart - source.start),
+              );
+              const storedExtractionEnd = Math.round(
+                source.start +
+                  (presentation
+                    ? presentation.mapPresentationOffsetToClipOffset(
+                        intersectionEnd - presentation.start,
+                      )
+                    : intersectionEnd - source.start),
+              );
+
               let extractedId = source.id;
-              if (source.start < extractionRange.start) {
+              if (storedExtractionStart > source.start) {
                 const rightId = splitClipInDraft(
                   draft,
                   source.id,
-                  extractionRange.start,
+                  storedExtractionStart,
                 );
                 if (!rightId) {
                   continue;
@@ -519,9 +557,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
               );
               if (
                 extracted &&
-                extracted.start + extracted.timelineDuration > extractionRange.end
+                extracted.start + extracted.timelineDuration >
+                  storedExtractionEnd
               ) {
-                splitClipInDraft(draft, extractedId, extractionRange.end);
+                splitClipInDraft(draft, extractedId, storedExtractionEnd);
               }
               segmentIdsToRemove.add(extractedId);
             }

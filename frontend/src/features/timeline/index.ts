@@ -41,7 +41,10 @@ export {
 } from "../../core/time/pixelGrid";
 export { timelineSpanStyleX } from "./utils/timelineGeometry";
 export type { TimelineSpanStyleOptions } from "./utils/timelineGeometry";
-export { createTimelinePlacementMapper } from "./utils/timelinePlacementMapper";
+export {
+  createTimelinePlacementMapper,
+  timelinePresentationRange,
+} from "./utils/timelinePlacementMapper";
 export type {
   CreateTimelinePlacementMapperOptions,
   ProjectedTimelineClipSegment,
@@ -49,6 +52,19 @@ export type {
   TimelinePlacementMapper,
   TimelinePresentationRange,
 } from "./utils/timelinePlacementMapper";
+export {
+  clipOffsetTick,
+  presentationTick,
+  storedTrackTick,
+  timelineTickDuration,
+  timelineTimeValue,
+} from "./utils/timelineTimeDomains";
+export type {
+  ClipOffsetTick,
+  PresentationTick,
+  StoredTrackTick,
+  TimelineTickDuration,
+} from "./utils/timelineTimeDomains";
 export {
   createEndpointOverlayItem,
   createSourceTimeOverlayItem,

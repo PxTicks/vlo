@@ -9,21 +9,37 @@ import {
   type TimelineClipPresentation,
 } from "./clipPresentation";
 import { getResizedClipLeft, getResizedClipRight } from "./clipMath";
+import {
+  clipOffsetTick,
+  presentationTick,
+  storedTrackTick,
+  timelineTimeValue,
+  type ClipOffsetTick,
+  type PresentationTick,
+  type StoredTrackTick,
+} from "./timelineTimeDomains";
 
 export interface TimelinePresentationRange {
-  start: number;
-  end: number;
+  start: PresentationTick;
+  end: PresentationTick;
+}
+
+export function timelinePresentationRange(
+  start: number,
+  end: number,
+): TimelinePresentationRange {
+  return { start: presentationTick(start), end: presentationTick(end) };
 }
 
 export interface ProjectedTimelineClipSegment {
   clipId: string;
-  presentationStart: number;
-  presentationEnd: number;
-  storedStart: number;
-  storedEnd: number;
-  storedStartOffset: number;
-  storedEndOffset: number;
-  localPresentationStart: number;
+  presentationStart: PresentationTick;
+  presentationEnd: PresentationTick;
+  storedStart: StoredTrackTick;
+  storedEnd: StoredTrackTick;
+  storedStartOffset: ClipOffsetTick;
+  storedEndOffset: ClipOffsetTick;
+  localPresentationStart: PresentationTick;
 }
 
 export interface ProjectedTimelineRegion {
@@ -38,18 +54,21 @@ export interface TimelinePlacementMapper {
   ): TimelinePresentationRange | null;
   mapPresentationTickToStoredTick(
     clipId: string,
-    presentationTick: number,
-  ): number | null;
+    presentationTick: PresentationTick,
+  ): StoredTrackTick | null;
   mapStoredTickToPresentationTick(
     clipId: string,
-    storedTick: number,
-  ): number | null;
-  resolveStoredStart(trackId: string, presentationStart: number): number;
+    storedTick: StoredTrackTick,
+  ): PresentationTick | null;
+  resolveStoredStart(
+    trackId: string,
+    presentationStart: PresentationTick,
+  ): StoredTrackTick;
   intersectClipWithPresentationRange(
     clipId: string,
     range: TimelinePresentationRange,
   ): ProjectedTimelineClipSegment | null;
-  getClipIdsAtPresentationTick(presentationTick: number): string[];
+  getClipIdsAtPresentationTick(presentationTick: PresentationTick): string[];
   getClipIdsInPresentationRange(range: TimelinePresentationRange): string[];
   projectRegionToLocalTimeline(
     range: TimelinePresentationRange,
@@ -135,39 +154,46 @@ export function createTimelinePlacementMapper({
     if (!clip) return null;
     const presentation = resolvePresentation(clip);
     return presentation
-      ? { start: presentation.start, end: presentation.end }
-      : { start: clip.start, end: clip.start + clip.timelineDuration };
+      ? timelinePresentationRange(presentation.start, presentation.end)
+      : timelinePresentationRange(
+          clip.start,
+          clip.start + clip.timelineDuration,
+        );
   };
 
   const mapPresentationTickToStoredTick = (
     clipId: string,
-    presentationTick: number,
-  ): number | null => {
+    targetPresentationTick: PresentationTick,
+  ): StoredTrackTick | null => {
     const clip = clipsById.get(clipId);
     if (!clip) return null;
     const presentation = resolvePresentation(clip);
     if (!presentation) {
-      return clip.start + (presentationTick - clip.start);
+      return storedTrackTick(
+        clip.start + (timelineTimeValue(targetPresentationTick) - clip.start),
+      );
     }
-    return (
+    return storedTrackTick(
       clip.start +
       presentation.mapPresentationOffsetToClipOffset(
-        presentationTick - presentation.start,
-      )
+        timelineTimeValue(targetPresentationTick) - presentation.start,
+      ),
     );
   };
 
   const mapStoredTickToPresentationTick = (
     clipId: string,
-    storedTick: number,
-  ): number | null => {
+    targetStoredTick: StoredTrackTick,
+  ): PresentationTick | null => {
     const clip = clipsById.get(clipId);
     if (!clip) return null;
     const presentation = resolvePresentation(clip);
-    if (!presentation) return storedTick;
-    return (
+    if (!presentation) return presentationTick(targetStoredTick);
+    return presentationTick(
       presentation.start +
-      presentation.mapClipOffsetToPresentationOffset(storedTick - clip.start)
+      presentation.mapClipOffsetToPresentationOffset(
+        timelineTimeValue(targetStoredTick) - clip.start,
+      ),
     );
   };
 
@@ -185,11 +211,11 @@ export function createTimelinePlacementMapper({
 
     const mappedStart = mapPresentationTickToStoredTick(
       clipId,
-      presentationStart,
+      presentationTick(presentationStart),
     );
     const mappedEnd = mapPresentationTickToStoredTick(
       clipId,
-      presentationEnd,
+      presentationTick(presentationEnd),
     );
     if (mappedStart === null || mappedEnd === null) return null;
 
@@ -205,13 +231,15 @@ export function createTimelinePlacementMapper({
 
     return {
       clipId,
-      presentationStart,
-      presentationEnd,
-      storedStart,
-      storedEnd,
-      storedStartOffset: storedStart - clip.start,
-      storedEndOffset: storedEnd - clip.start,
-      localPresentationStart: presentationStart - range.start,
+      presentationStart: presentationTick(presentationStart),
+      presentationEnd: presentationTick(presentationEnd),
+      storedStart: storedTrackTick(storedStart),
+      storedEnd: storedTrackTick(storedEnd),
+      storedStartOffset: clipOffsetTick(storedStart - clip.start),
+      storedEndOffset: clipOffsetTick(storedEnd - clip.start),
+      localPresentationStart: presentationTick(
+        presentationStart - timelineTimeValue(range.start),
+      ),
     };
   };
 
@@ -236,7 +264,9 @@ export function createTimelinePlacementMapper({
       .map((clip) => clip.id);
   };
 
-  const getClipIdsAtPresentationTick = (presentationTick: number): string[] => {
+  const getClipIdsAtPresentationTick = (
+    targetPresentationTick: PresentationTick,
+  ): string[] => {
     const selectedParentIds = new Set(
       snapshotClips
         .filter((clip) => {
@@ -244,8 +274,8 @@ export function createTimelinePlacementMapper({
           const footprint = getPresentationFootprint(clip.id);
           return (
             footprint !== null &&
-            footprint.start <= presentationTick &&
-            presentationTick < footprint.end
+            footprint.start <= targetPresentationTick &&
+            targetPresentationTick < footprint.end
           );
         })
         .map((clip) => clip.id),
@@ -325,13 +355,13 @@ export function createTimelinePlacementMapper({
     getPresentationFootprint,
     mapPresentationTickToStoredTick,
     mapStoredTickToPresentationTick,
-    resolveStoredStart(trackId, presentationStart) {
-      return resolveStoredStartForPresentationStart(
+    resolveStoredStart(trackId, targetPresentationStart) {
+      return storedTrackTick(resolveStoredStartForPresentationStart(
         snapshotTracks,
         snapshotClips,
         trackId,
-        presentationStart,
-      );
+        targetPresentationStart,
+      ));
     },
     intersectClipWithPresentationRange,
     getClipIdsAtPresentationTick,

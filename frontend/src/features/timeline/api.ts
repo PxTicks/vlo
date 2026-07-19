@@ -53,7 +53,11 @@ import type {
   TimelineMaskUpdate,
 } from "./model/timelineCommands";
 import { computeFurthestPresentationEnd } from "./utils/clipPresentation";
-import { createTimelinePlacementMapper } from "./utils/timelinePlacementMapper";
+import {
+  createTimelinePlacementMapper,
+  timelinePresentationRange,
+} from "./utils/timelinePlacementMapper";
+import { presentationTick } from "./utils/timelineTimeDomains";
 import { createClipFromAsset } from "./utils/clipFactory";
 import {
   insertAssetAtTime,
@@ -275,8 +279,10 @@ export function getTimelineClipsInPresentationRange(
   const mapper = createTimelinePlacementMapper({ tracks, clips, fps });
   const selectedIds = new Set(
     end === undefined
-      ? mapper.getClipIdsAtPresentationTick(start)
-      : mapper.getClipIdsInPresentationRange({ start, end }),
+      ? mapper.getClipIdsAtPresentationTick(presentationTick(start))
+      : mapper.getClipIdsInPresentationRange(
+          timelinePresentationRange(start, end),
+        ),
   );
   return clips.filter((clip) => selectedIds.has(clip.id));
 }

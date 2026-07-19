@@ -97,7 +97,14 @@ import {
   ExtensionTimelineCommandError,
   type ExtensionTimelineCommand,
 } from "./model/extensionTimelineCommands";
-import { createTimelinePlacementMapper } from "./utils/timelinePlacementMapper";
+import {
+  createTimelinePlacementMapper,
+  timelinePresentationRange,
+} from "./utils/timelinePlacementMapper";
+import {
+  presentationTick,
+  timelineTimeValue,
+} from "./utils/timelineTimeDomains";
 
 enablePatches();
 
@@ -503,12 +510,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
               const segment =
                 sourcePlacementMapper.intersectClipWithPresentationRange(
                   source.id,
-                  extractionRange,
+                  timelinePresentationRange(
+                    extractionRange.start,
+                    extractionRange.end,
+                  ),
                 );
               if (!segment) continue;
 
               let extractedId = source.id;
-              if (segment.storedStart > source.start) {
+              if (timelineTimeValue(segment.storedStart) > source.start) {
                 const rightId = splitClipInDraft(
                   draft,
                   source.id,
@@ -526,7 +536,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
               if (
                 extracted &&
                 extracted.start + extracted.timelineDuration >
-                  segment.storedEnd
+                  timelineTimeValue(segment.storedEnd)
               ) {
                 splitClipInDraft(draft, extractedId, segment.storedEnd);
               }
@@ -555,7 +565,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
             fps,
           }).resolveStoredStart(
             compositeClip.trackId,
-            compositeClip.start,
+            presentationTick(compositeClip.start),
           );
 
           removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);

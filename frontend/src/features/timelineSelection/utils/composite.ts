@@ -4,7 +4,10 @@ import type {
   TimelineSelection,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import { createTimelinePlacementMapper } from "../../timeline";
+import {
+  createTimelinePlacementMapper,
+  timelinePresentationRange,
+} from "../../timeline";
 
 /**
  * Converters for moving timeline regions between absolute project time and
@@ -42,7 +45,7 @@ export function selectionToCompositeContent(
     }, start);
   const durationTicks = Math.max(0, end - start);
   const projected = placementMapper.projectRegionToLocalTimeline(
-    { start, end },
+    timelinePresentationRange(start, end),
     selection.clips.map((clip) => clip.id),
   );
 

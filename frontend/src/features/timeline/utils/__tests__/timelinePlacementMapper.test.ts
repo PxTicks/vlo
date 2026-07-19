@@ -7,7 +7,14 @@ import type {
   VideoTimelineClip,
 } from "../../../../types/TimelineTypes";
 import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../../types/TimelineTypes";
-import { createTimelinePlacementMapper } from "../timelinePlacementMapper";
+import {
+  createTimelinePlacementMapper,
+  timelinePresentationRange,
+} from "../timelinePlacementMapper";
+import {
+  presentationTick,
+  storedTrackTick,
+} from "../timelineTimeDomains";
 
 const FPS = 30;
 const HALF_SECOND = TICKS_PER_SECOND / 2;
@@ -85,7 +92,10 @@ describe("timelinePlacementMapper", () => {
       TICKS_PER_SECOND + HALF_SECOND,
       2 * TICKS_PER_SECOND,
     ]) {
-      const stored = placement.mapPresentationTickToStoredTick(source.id, tick);
+      const stored = placement.mapPresentationTickToStoredTick(
+        source.id,
+        presentationTick(tick),
+      );
       expect(stored).not.toBeNull();
       expect(
         placement.mapStoredTickToPresentationTick(source.id, stored!),
@@ -105,13 +115,13 @@ describe("timelinePlacementMapper", () => {
     expect(
       placement.mapPresentationTickToStoredTick(
         source.id,
-        TICKS_PER_SECOND + HALF_SECOND,
+        presentationTick(TICKS_PER_SECOND + HALF_SECOND),
       ),
     ).toBe(2 * TICKS_PER_SECOND + HALF_SECOND);
     expect(
       placement.mapStoredTickToPresentationTick(
         source.id,
-        2 * TICKS_PER_SECOND + HALF_SECOND,
+        storedTrackTick(2 * TICKS_PER_SECOND + HALF_SECOND),
       ),
     ).toBe(TICKS_PER_SECOND + HALF_SECOND);
   });
@@ -120,10 +130,10 @@ describe("timelinePlacementMapper", () => {
     const adjustment = rippleAdjustment();
     const source = video(2 * TICKS_PER_SECOND);
     const placement = mapper([adjustment, source]);
-    const range = {
-      start: TICKS_PER_SECOND + HALF_SECOND,
-      end: 2 * TICKS_PER_SECOND,
-    };
+    const range = timelinePresentationRange(
+      TICKS_PER_SECOND + HALF_SECOND,
+      2 * TICKS_PER_SECOND,
+    );
 
     const segment = placement.intersectClipWithPresentationRange(
       source.id,
@@ -156,7 +166,7 @@ describe("timelinePlacementMapper", () => {
     const adjustment = rippleAdjustment();
     const source = video(TICKS_PER_SECOND);
     const placement = mapper([adjustment, source]);
-    const range = { start: HALF_SECOND, end: TICKS_PER_SECOND };
+    const range = timelinePresentationRange(HALF_SECOND, TICKS_PER_SECOND);
 
     const projected = placement.projectRegionToLocalTimeline(range, [
       adjustment.id,

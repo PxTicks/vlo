@@ -29,7 +29,8 @@ type TrustedHostDiagnosticReporter = (
   detail: unknown,
 ) => void;
 
-const ENTRY_ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+const ENTRY_ID_PATTERN =
+  /^[a-z][a-zA-Z0-9]*(?:[._-][a-z][a-zA-Z0-9]*)*$/;
 
 export class TrustedHostAccessDirectory {
   private readonly entries = new Map<string, TrustedHostEntryDefinition>();

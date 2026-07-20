@@ -149,4 +149,26 @@ describe("useCanvasSelectionManager", () => {
       clipId: "clip-1",
     });
   });
+
+  it("clears and withholds host selection while an extension tool is active", () => {
+    useTimelineStore.setState({ selectedClipIds: ["clip-1"] });
+    useCanvasSelectionStore.getState().selectClip("clip-1");
+
+    const { rerender } = renderHook(
+      ({ enabled }) => useCanvasSelectionManager(null, enabled),
+      { initialProps: { enabled: false } },
+    );
+
+    expect(useCanvasSelectionStore.getState().activeSelection).toBeNull();
+    act(() => {
+      useTimelineStore.setState({ selectedClipIds: ["clip-2"] });
+    });
+    expect(useCanvasSelectionStore.getState().activeSelection).toBeNull();
+
+    rerender({ enabled: true });
+    expect(useCanvasSelectionStore.getState().activeSelection).toEqual({
+      kind: "clip",
+      clipId: "clip-2",
+    });
+  });
 });

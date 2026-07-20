@@ -72,6 +72,10 @@ describe("commitTrackingPositionPath", () => {
           createTransition: () => "unused-transition",
           updateTransitionParameters: () => undefined,
           removeTransition: () => undefined,
+          addClipMask: () => "unused-mask",
+          updateMaskParameters: () => undefined,
+          setMaskActiveRange: () => undefined,
+          removeMask: () => undefined,
         };
         callback(draft);
         return { ok: true, changed: true, label };

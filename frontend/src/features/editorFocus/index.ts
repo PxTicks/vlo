@@ -1,6 +1,7 @@
 export {
   claimEditorRegion,
   DATA_EDITOR_REGION,
+  getEditorFocusStoreForTrustedHostAccess,
   useEditorFocusReconciler,
   useEditorFocusStore,
   useRegionFocus,

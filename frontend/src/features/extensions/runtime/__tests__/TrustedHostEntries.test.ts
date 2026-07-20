@@ -5,9 +5,15 @@ import {
   setActivePixiApplication,
 } from "../../../../core/pixi/activeApplication";
 import { playbackClock } from "../../../../core/playback/PlaybackClock";
+import { useEditorFocusStore } from "../../../editorFocus";
 import { useProjectStore } from "../../../project";
+import { useTimelineSelectionStore } from "../../../timelineSelection";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { extensionTransformationRegistry } from "../../../transformations/extensionApi";
+import {
+  useAssetBrowserSelectionStore,
+  useAssetStore,
+} from "../../../userAssets";
 import { ExtensionHost } from "../../ExtensionHost";
 import type { VloExtensionApi } from "../../types";
 import { createVloExtensionApi } from "../../services/FrontendExtensionRuntime";
@@ -22,6 +28,16 @@ describe("trusted host composition roots", () => {
     expect(trustedHostAccessDirectory.get("timeline.store")).toBe(useTimelineStore);
     expect(trustedHostAccessDirectory.get("playback.clock")).toBe(playbackClock);
     expect(trustedHostAccessDirectory.get("project.store")).toBe(useProjectStore);
+    expect(trustedHostAccessDirectory.get("userAssets.store")).toBe(useAssetStore);
+    expect(trustedHostAccessDirectory.get("editor.focusStore")).toBe(
+      useEditorFocusStore,
+    );
+    expect(trustedHostAccessDirectory.get("timeline.selectionStore")).toBe(
+      useTimelineSelectionStore,
+    );
+    expect(trustedHostAccessDirectory.get("library.selectionStore")).toBe(
+      useAssetBrowserSelectionStore,
+    );
     expect(trustedHostAccessDirectory.get("transformations.registry")).toBe(
       extensionTransformationRegistry,
     );
@@ -32,6 +48,10 @@ describe("trusted host composition roots", () => {
       "timeline.store",
       "playback.clock",
       "project.store",
+      "userAssets.store",
+      "editor.focusStore",
+      "timeline.selectionStore",
+      "library.selectionStore",
       "transformations.registry",
       "extensions.runtime",
       "renderer.runtime",
@@ -62,7 +82,7 @@ describe("trusted host composition roots", () => {
     const registration = registerTrustedHostEntries(host, directory);
 
     expect(registerTrustedHostEntries(host, directory)).toBe(registration);
-    expect(directory.list()).toHaveLength(6);
+    expect(directory.list()).toHaveLength(10);
     registration.dispose();
     expect(directory.list()).toEqual([]);
 
@@ -74,7 +94,7 @@ describe("trusted host composition roots", () => {
 
     const nextRegistration = registerTrustedHostEntries(host, directory);
     expect(nextRegistration).not.toBe(registration);
-    expect(directory.list()).toHaveLength(6);
+    expect(directory.list()).toHaveLength(10);
     nextRegistration.dispose();
   });
 });

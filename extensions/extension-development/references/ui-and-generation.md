@@ -60,6 +60,22 @@ Render ordinary HTML5 canvas, SVG, WebGL, or browser controls inside a trusted s
 modal, or view. Keep host navigation, dialog close semantics, and region placement
 outside the extension component.
 
+## Contribute an exclusive player-canvas tool
+
+Register a tool with `ui.canvasTools.register`. The returned local `command` can be
+used directly in a keybinding request; the host toolbar projects the same command.
+Only one tool is active. While it is active, the host suspends canvas selection,
+mask editing, and gizmos; Escape and the Select toolbar item restore host behaviour.
+
+`activate(session)` receives a host-owned transient Pixi `overlay`, coordinate
+conversion helpers, and `targetClipId`, captured before host selection pauses. Draw
+only previews and cursors in the overlay; the host clears it on deactivation. Handle
+normalised `down`/`move`/`up`/`cancel` events in `onPointer`, and commit durable work
+through asset ingestion plus timeline entity/mask transactions. Always tolerate a
+null target clip, cancellation, contribution disposal, and asynchronous ingest
+failure. Do not attach independent listeners to the host stage unless using the
+explicit trusted escape hatch.
+
 ## Context/action menus
 
 Register a command first, then place it with

@@ -31,6 +31,7 @@ import type {
   ExtensionTimelineTransformSnapshot,
   JsonValue,
   ExtensionTimelineTransactionResult,
+  ExtensionTimelineTransactionOptions,
 } from "@vlo/extension-sdk";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import { TICKS_PER_SECOND } from "../../core/time/constants";
@@ -538,10 +539,11 @@ export function commitExtensionTimelineTransaction(
   label: string,
   ownerId: string,
   commands: readonly ExtensionTimelineCommand[],
+  options?: ExtensionTimelineTransactionOptions,
 ): ExtensionTimelineTransactionResult {
   return useTimelineStore
     .getState()
-    .commitExtensionTransaction(label, ownerId, commands);
+    .commitExtensionTransaction(label, ownerId, commands, options);
 }
 
 export function replaceTimelineSnapshot(
@@ -855,3 +857,4 @@ export type {
   UpdateTimelineClipComponentFn,
   UpdateTimelineClipTransformPayload,
 };
+export { createExtensionMaskLocalId } from "./model/extensionMaskOwnership";

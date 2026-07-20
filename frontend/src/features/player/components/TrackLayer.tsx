@@ -18,6 +18,7 @@ interface TrackLayerProps {
   orchestrator?: RenderGroupOrchestrator | null;
   adjustmentEffectResolver?: AdjustmentEffectResolver | null;
   liveFrameGraphCoordinator?: LiveFrameGraphCoordinator | null;
+  interactionsEnabled?: boolean;
 }
 
 function TrackLayerComponent({
@@ -30,6 +31,7 @@ function TrackLayerComponent({
   orchestrator,
   adjustmentEffectResolver,
   liveFrameGraphCoordinator,
+  interactionsEnabled = true,
 }: TrackLayerProps) {
   useTrackRenderer(
     trackId,
@@ -41,6 +43,7 @@ function TrackLayerComponent({
     orchestrator,
     adjustmentEffectResolver,
     liveFrameGraphCoordinator,
+    interactionsEnabled,
   );
   return null;
 }

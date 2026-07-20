@@ -12,6 +12,7 @@ import type { TimelineModelState } from "../model/timelineTrackModel";
 
 const TIMELINE_HISTORY_LIMIT = 100;
 const TIMELINE_PERSIST_DEBOUNCE_MS = 250;
+const MAX_COALESCED_COMMITS_PER_ENTRY = 256;
 type UserAssetsModule = typeof import("../../userAssets");
 
 interface TimelineHistoryEntry {
@@ -19,6 +20,8 @@ interface TimelineHistoryEntry {
   forwardPatches: Patch[];
   inversePatches: Patch[];
   trackMaskAssetCleanup: boolean;
+  openCoalesceKey: string | null;
+  coalescedCommitCount: number;
 }
 
 interface TimelineMutationState extends TimelineModelState {
@@ -52,6 +55,10 @@ export interface TimelineMutationCommitOptions {
   persist?: boolean;
   recordHistory?: boolean;
   trackMaskAssetCleanup?: boolean;
+  coalesce?: {
+    key: string;
+    end: boolean;
+  };
 }
 
 let didRegisterBeforeUnloadListener = false;
@@ -308,6 +315,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
       persist = true,
       recordHistory = true,
       trackMaskAssetCleanup = true,
+      coalesce,
     } = commitOptions ?? {};
 
     const currentModel = getCurrentModelState(get());
@@ -319,19 +327,47 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
       },
     );
 
-    if (forwardPatches.length === 0) return false;
+    if (forwardPatches.length === 0) {
+      if (recordHistory && coalesce?.end) {
+        const previous = undoStack.at(-1);
+        if (previous?.openCoalesceKey === coalesce.key) {
+          previous.openCoalesceKey = null;
+        }
+      }
+      return false;
+    }
 
     if (recordHistory) {
-      undoStack.push({
-        label,
-        forwardPatches,
-        inversePatches,
-        trackMaskAssetCleanup,
-      });
+      const previous = undoStack.at(-1);
+      if (
+        coalesce &&
+        previous?.openCoalesceKey === coalesce.key &&
+        previous.coalescedCommitCount < MAX_COALESCED_COMMITS_PER_ENTRY
+      ) {
+        previous.label = label;
+        previous.forwardPatches.push(...forwardPatches);
+        previous.inversePatches.unshift(...inversePatches);
+        previous.trackMaskAssetCleanup ||= trackMaskAssetCleanup;
+        previous.coalescedCommitCount += 1;
+        if (coalesce.end) previous.openCoalesceKey = null;
+      } else {
+        if (previous) previous.openCoalesceKey = null;
+        undoStack.push({
+          label,
+          forwardPatches,
+          inversePatches,
+          trackMaskAssetCleanup,
+          openCoalesceKey: coalesce && !coalesce.end ? coalesce.key : null,
+          coalescedCommitCount: 1,
+        });
+      }
       if (undoStack.length > TIMELINE_HISTORY_LIMIT) {
         undoStack.shift();
       }
       redoStack = [];
+    } else {
+      const previous = undoStack.at(-1);
+      if (previous) previous.openCoalesceKey = null;
     }
 
     set((state) => ({
@@ -359,6 +395,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
   const undo = (): boolean => {
     const entry = undoStack.pop();
     if (!entry) return false;
+    entry.openCoalesceKey = null;
 
     const currentModel = getCurrentModelState(get());
     const nextModel = applyPatches(
@@ -394,6 +431,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
   const redo = (): boolean => {
     const entry = redoStack.pop();
     if (!entry) return false;
+    entry.openCoalesceKey = null;
 
     const currentModel = getCurrentModelState(get());
     const nextModel = applyPatches(

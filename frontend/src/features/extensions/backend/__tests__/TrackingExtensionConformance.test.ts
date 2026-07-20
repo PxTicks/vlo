@@ -228,6 +228,10 @@ function createConformanceApi() {
           createTransition: () => "unused-transition",
           updateTransitionParameters: () => undefined,
           removeTransition: () => undefined,
+          addClipMask: () => "unused-mask",
+          updateMaskParameters: () => undefined,
+          setMaskActiveRange: () => undefined,
+          removeMask: () => undefined,
         };
         callback(transaction);
         return { ok: true, changed: true, label };
@@ -283,6 +287,13 @@ function createConformanceApi() {
         }),
         list: () => [],
         listCatalogues: () => [],
+      },
+      canvasTools: {
+        register: (definition) => ({
+          id: definition.id,
+          command: `canvas-tool.${definition.id}`,
+          dispose: () => undefined,
+        }),
       },
       commands: {
         register: (definition) => ({

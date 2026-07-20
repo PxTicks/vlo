@@ -31,6 +31,7 @@ export function useTrackRenderer(
   orchestrator?: RenderGroupOrchestrator | null,
   adjustmentEffectResolver?: AdjustmentEffectResolver | null,
   liveFrameGraphCoordinator?: LiveFrameGraphCoordinator | null,
+  interactionsEnabled: boolean = true,
 ) {
   // 1. Delegate rendering to the renderer feature
   const {
@@ -74,6 +75,7 @@ export function useTrackRenderer(
     activeClipRef,
     app,
     container,
+    interactionsEnabled,
   );
 
   // 4. Compose sprite pointer events: mask interactions first, then transform
@@ -119,15 +121,29 @@ export function useTrackRenderer(
       getClipId: () => activeClipRef.current?.id ?? null,
       getSelectionOrder: () => zIndex,
       onPointerDown: spriteInteractionHandlers.onSpritePointerDown,
-      isEnabled: () => spriteInstance.visible && !!activeClipRef.current,
+      isEnabled: () =>
+        interactionsEnabled && spriteInstance.visible && !!activeClipRef.current,
     });
-  }, [activeClipRef, spriteInstance, spriteInteractionHandlers, trackId, zIndex]);
+  }, [
+    activeClipRef,
+    interactionsEnabled,
+    spriteInstance,
+    spriteInteractionHandlers,
+    trackId,
+    zIndex,
+  ]);
 
   // 5. Wire sprite interaction and gizmo hooks
-  useSpriteInteraction(spriteInstance, spriteInteractionHandlers);
+  useSpriteInteraction(
+    spriteInstance,
+    spriteInteractionHandlers,
+    interactionsEnabled,
+  );
   useGizmoBehavior(
     spriteInstance,
-    isClipSelectionActive && !maskInteractionHandlers.isMaskGizmoVisible,
+    interactionsEnabled &&
+      isClipSelectionActive &&
+      !maskInteractionHandlers.isMaskGizmoVisible,
     app,
     container,
     transformGizmoInteractions,
@@ -138,7 +154,7 @@ export function useTrackRenderer(
   );
   useGizmoBehavior(
     maskInteractionHandlers.gizmoTarget,
-    maskInteractionHandlers.isMaskGizmoVisible,
+    interactionsEnabled && maskInteractionHandlers.isMaskGizmoVisible,
     app,
     container,
     maskGizmoInteractions,

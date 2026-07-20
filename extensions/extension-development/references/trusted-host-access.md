@@ -21,11 +21,12 @@ assertion: `list()` marks that entry unavailable and `get()` returns `undefined`
 while the host records an error diagnostic. `require()` remains the explicit loud
 path.
 
-Initial entries are `timeline.store`, `playback.clock`, `project.store`,
-`transformations.registry`, `extensions.runtime`, and availability-scoped
-`renderer.runtime`. Returned values are exact borrowed host identities. Use type-only
-imports from a matching VLO checkout to narrow them; do not runtime-import
-`frontend/src/...` or serialize returned references.
+Session entries are `timeline.store`, `playback.clock`, `project.store`,
+`userAssets.store`, `editor.focusStore`, `timeline.selectionStore`,
+`library.selectionStore`, `transformations.registry`, and `extensions.runtime`;
+`renderer.runtime` is availability-scoped. Returned values are exact borrowed host
+identities. Use type-only imports from a matching VLO checkout to narrow them; do
+not runtime-import `frontend/src/...` or serialize returned references.
 
 ## Track property patches
 

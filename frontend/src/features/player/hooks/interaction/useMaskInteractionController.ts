@@ -326,6 +326,7 @@ export function useMaskInteractionController(
   activeClipRef: React.MutableRefObject<TimelineClip | null>,
   app: Application | null,
   viewport: Container | null,
+  interactionsEnabled: boolean = true,
 ): MaskInteractionHandlers {
   const setIsPlaying = usePlayerStore((state) => state.setIsPlaying);
   const projectFps = useProjectStore((state) => state.config.fps);
@@ -1867,7 +1868,7 @@ export function useMaskInteractionController(
 
   useEffect(() => {
     const maskGraphics = maskGraphicsRef.current;
-    if (!maskGraphics) return;
+    if (!maskGraphics || !interactionsEnabled) return;
 
     // Keep direct pointer binding so Pixi hit testing can still select the
     // topmost interactive object on the canvas without depending on stage-wide
@@ -1879,7 +1880,7 @@ export function useMaskInteractionController(
     return () => {
       maskGraphics.off("pointerdown", handlers.onMaskPointerDown);
     };
-  }, [handlers.onMaskPointerDown, maskGraphicsRef, viewport]);
+  }, [handlers.onMaskPointerDown, interactionsEnabled, maskGraphicsRef, viewport]);
 
   useEffect(() => {
     const maskGraphics = maskGraphicsRef.current;
@@ -1893,10 +1894,14 @@ export function useMaskInteractionController(
       getSelectionOrder: () => trackZIndex + 0.5,
       onPointerDown: handlers.onMaskPointerDown,
       isEnabled: () =>
-        maskGraphics.visible && !!selectedClipId && !!selectedMaskId,
+        interactionsEnabled &&
+        maskGraphics.visible &&
+        !!selectedClipId &&
+        !!selectedMaskId,
     });
   }, [
     handlers.onMaskPointerDown,
+    interactionsEnabled,
     maskGraphicsRef,
     selectedClipId,
     selectedMaskId,
@@ -1918,6 +1923,7 @@ export function useMaskInteractionController(
         findEditableMaskTargetAtPoint(global) !== null,
       onPointerDown: handlers.onAnyMaskPointerDown,
       isEnabled: () =>
+        interactionsEnabled &&
         sprite.visible &&
         !!selectedClipId &&
         activeClipRef.current?.id === selectedClipId,
@@ -1926,6 +1932,7 @@ export function useMaskInteractionController(
     activeClipRef,
     findEditableMaskTargetAtPoint,
     handlers.onAnyMaskPointerDown,
+    interactionsEnabled,
     selectedClipId,
     sprite,
     trackId,
@@ -2360,6 +2367,6 @@ export function useMaskInteractionController(
     onMaskPointerDown: handlers.onMaskPointerDown,
     onHandlePointerDown: handlers.onHandlePointerDown,
     gizmoTarget,
-    isMaskGizmoVisible,
+    isMaskGizmoVisible: interactionsEnabled && isMaskGizmoVisible,
   };
 }

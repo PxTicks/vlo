@@ -35,6 +35,11 @@ export const useEditorFocusStore = create<EditorFocusState>((set) => ({
     set((state) => (state.region === region ? state : { region })),
 }));
 
+/** Canonical Zustand identity exposed only through the trusted host directory. */
+export function getEditorFocusStoreForTrustedHostAccess(): typeof useEditorFocusStore {
+  return useEditorFocusStore;
+}
+
 export const DATA_EDITOR_REGION = "data-editor-region";
 
 /**

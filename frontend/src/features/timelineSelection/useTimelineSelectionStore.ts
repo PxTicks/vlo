@@ -176,3 +176,8 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
       selectionRecommendedMaxTicks: null,
     }),
 }));
+
+/** Canonical Zustand identity exposed only through the trusted host directory. */
+export function getTimelineSelectionStoreForTrustedHostAccess(): typeof useTimelineSelectionStore {
+  return useTimelineSelectionStore;
+}

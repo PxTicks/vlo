@@ -5,7 +5,10 @@ export { AssetPreviewDialog } from "./components/AssetPreviewDialog";
 export { useTimelineAssetRevealClipOverlay } from "./hooks/useTimelineAssetRevealClipOverlay";
 export { useAssetStore } from "./useAssetStore";
 export { revealAssetInBrowser, useAssetBrowserRevealStore } from "./useAssetBrowserRevealStore";
-export { useAssetBrowserSelectionStore } from "./useAssetBrowserSelectionStore";
+export {
+  getAssetBrowserSelectionStoreForTrustedHostAccess,
+  useAssetBrowserSelectionStore,
+} from "./useAssetBrowserSelectionStore";
 export {
   canRegenerateAsset,
   regenerateAsset,
@@ -21,6 +24,7 @@ export {
   ensureAssetSourceLoaded,
   flushAllAssetPersistence,
   getAssetById,
+  getAssetStoreForTrustedHostAccess,
   getFamilyById,
   getFamilies,
   getAssetInput,

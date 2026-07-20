@@ -8,6 +8,11 @@ import type { DeleteAssetOptions } from "./useAssetStore";
 import type { AssetIngestOptions } from "./services/AssetService";
 import { mediaProcessingService } from "./services/MediaProcessingService";
 
+/** Canonical Zustand identity exposed only through the trusted host directory. */
+export function getAssetStoreForTrustedHostAccess(): typeof useAssetStore {
+  return useAssetStore;
+}
+
 function findAssetById(
   assets: readonly Asset[],
   assetId: string | null | undefined,

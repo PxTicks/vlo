@@ -28,6 +28,7 @@ import { installExtensionProjectStorage } from "../storage/installExtensionProje
 import { installTimelineHostCommands } from "../../timeline/api";
 import { installProjectHostCommands } from "../../project/hostCommands";
 import { createExtensionViewApi } from "../views/createExtensionViewApi";
+import { createExtensionCanvasToolApi } from "../canvas/ExtensionCanvasToolRegistry";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { extensionColorApi } from "./extensionColorApi";
 import {
@@ -420,6 +421,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
         commands: createExtensionCommandApi(scope),
         menus: extensionMenuPlacementRegistry.bind(scope),
         catalogues: createExtensionCatalogueApi(scope),
+        canvasTools: createExtensionCanvasToolApi(scope),
       }),
     });
 

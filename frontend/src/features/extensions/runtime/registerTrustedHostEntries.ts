@@ -3,9 +3,15 @@ import {
   subscribeActivePixiApplication,
 } from "../../../core/pixi/activeApplication";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
+import { getEditorFocusStoreForTrustedHostAccess } from "../../editorFocus";
 import { useProjectStore } from "../../project";
 import { getTimelineStoreForTrustedHostAccess } from "../../timeline/api";
+import { getTimelineSelectionStoreForTrustedHostAccess } from "../../timelineSelection";
 import { extensionTransformationRegistry } from "../../transformations/extensionApi";
+import {
+  getAssetBrowserSelectionStoreForTrustedHostAccess,
+  getAssetStoreForTrustedHostAccess,
+} from "../../userAssets";
 import type { ExtensionHost } from "../ExtensionHost";
 import type { ExtensionDisposable, VloExtensionApi } from "../types";
 import {
@@ -76,6 +82,34 @@ export function registerTrustedHostEntries(
       id: "project.store",
       lifetime: "session",
       getValue: () => useProjectStore,
+      assertValue: (value) =>
+        hasFunctions(value, ["getState", "setState", "subscribe"]),
+    });
+    register({
+      id: "userAssets.store",
+      lifetime: "session",
+      getValue: getAssetStoreForTrustedHostAccess,
+      assertValue: (value) =>
+        hasFunctions(value, ["getState", "setState", "subscribe"]),
+    });
+    register({
+      id: "editor.focusStore",
+      lifetime: "session",
+      getValue: getEditorFocusStoreForTrustedHostAccess,
+      assertValue: (value) =>
+        hasFunctions(value, ["getState", "setState", "subscribe"]),
+    });
+    register({
+      id: "timeline.selectionStore",
+      lifetime: "session",
+      getValue: getTimelineSelectionStoreForTrustedHostAccess,
+      assertValue: (value) =>
+        hasFunctions(value, ["getState", "setState", "subscribe"]),
+    });
+    register({
+      id: "library.selectionStore",
+      lifetime: "session",
+      getValue: getAssetBrowserSelectionStoreForTrustedHostAccess,
       assertValue: (value) =>
         hasFunctions(value, ["getState", "setState", "subscribe"]),
     });

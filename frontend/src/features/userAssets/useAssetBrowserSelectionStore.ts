@@ -44,3 +44,8 @@ export const useAssetBrowserSelectionStore =
       });
     },
   }));
+
+/** Canonical Zustand identity exposed only through the trusted host directory. */
+export function getAssetBrowserSelectionStoreForTrustedHostAccess(): typeof useAssetBrowserSelectionStore {
+  return useAssetBrowserSelectionStore;
+}

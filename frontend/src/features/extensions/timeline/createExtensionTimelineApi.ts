@@ -3,9 +3,11 @@ import type {
   ExtensionPayload,
   ExtensionTimelineApi,
   ExtensionTimelineEntitySnapshot,
+  ExtensionTimelineMaskCreateInput,
   ExtensionTimelineTransformInput,
   ExtensionTimelineTransaction,
   ExtensionTimelineTransactionFailureCode,
+  ExtensionTimelineTransactionOptions,
   ExtensionTimelineTransactionResult,
   ExtensionPoint2D,
   ExtensionSourceDimensions,
@@ -13,6 +15,7 @@ import type {
 } from "../types";
 import {
   commitExtensionTimelineTransaction,
+  createExtensionMaskLocalId,
   getExtensionTimelineClipMasks,
   getExtensionTimelineClips,
   getExtensionTimelineEntities,
@@ -39,8 +42,30 @@ import {
 import { extensionClipOverlayRegistry } from "./ExtensionClipOverlayRegistry";
 import { extensionTransitionRegistry } from "../../transitions/extensions/ExtensionTransitionRegistry";
 import type { Transition } from "../../../types/TimelineTypes";
+import type {
+  ClipMask,
+  ClipMaskParameters,
+  ClipMaskType,
+  MaskActiveRange,
+} from "../../../types/TimelineTypes";
+import { createMask } from "../../masks/model/maskFactory";
+import { getAssetById } from "../../userAssets/api";
 
 const MAX_TRANSACTION_LABEL_LENGTH = 120;
+const MAX_COALESCE_KEY_LENGTH = 120;
+const SUPPORTED_MASK_TYPES = new Set<ClipMaskType>([
+  "circle",
+  "rectangle",
+  "triangle",
+  "sam2",
+  "generation",
+  "brush",
+]);
+const BITMAP_MASK_TYPES = new Set<ClipMaskType>([
+  "sam2",
+  "generation",
+  "brush",
+]);
 
 // Commit-grained model signal: selection and interaction updates keep these
 // references stable, so only committed timeline changes (undo/redo included)
@@ -208,6 +233,179 @@ function cloneJsonObjectInput(
   return structuredClone(parsed.data) as Record<string, JsonValue>;
 }
 
+function cloneMaskParameters(value: unknown): ClipMaskParameters {
+  const parameters = cloneJsonObjectInput(value, "Mask parameters");
+  const baseWidth = parameters.baseWidth;
+  const baseHeight = parameters.baseHeight;
+  if (
+    typeof baseWidth !== "number" ||
+    !Number.isFinite(baseWidth) ||
+    baseWidth <= 0 ||
+    typeof baseHeight !== "number" ||
+    !Number.isFinite(baseHeight) ||
+    baseHeight <= 0
+  ) {
+    throw new InvalidExtensionTimelineCommandError(
+      "Mask parameters require positive finite baseWidth and baseHeight values.",
+    );
+  }
+  return { baseWidth, baseHeight };
+}
+
+function cloneMaskRange(
+  range: { readonly startSourceTicks: number; readonly endSourceTicks: number },
+): MaskActiveRange {
+  if (
+    !Number.isFinite(range.startSourceTicks) ||
+    !Number.isFinite(range.endSourceTicks) ||
+    range.startSourceTicks < 0 ||
+    range.endSourceTicks <= range.startSourceTicks
+  ) {
+    throw new InvalidExtensionTimelineCommandError(
+      "Mask active ranges require finite non-negative ticks with end after start.",
+    );
+  }
+  return {
+    startSourceTicks: Math.round(range.startSourceTicks),
+    endSourceTicks: Math.round(range.endSourceTicks),
+  };
+}
+
+function cloneMaskInput(
+  input: ExtensionTimelineMaskCreateInput,
+  generatedId: string,
+): { readonly mask: ClipMask; readonly name?: string } {
+  if (typeof input !== "object" || input === null) {
+    throw new InvalidExtensionTimelineCommandError(
+      "addClipMask requires an input object.",
+    );
+  }
+  const maskType = assertIdentifier(input.maskType, "Mask type") as ClipMaskType;
+  if (!SUPPORTED_MASK_TYPES.has(maskType)) {
+    throw new InvalidExtensionTimelineCommandError(
+      `Mask type '${maskType}' is not supported.`,
+      "mask_type_not_supported",
+    );
+  }
+  const name = input.name?.trim();
+  if (input.name !== undefined && (!name || name.length > 200)) {
+    throw new InvalidExtensionTimelineCommandError(
+      "Mask names must contain 1-200 characters when supplied.",
+    );
+  }
+  if (
+    input.mode !== undefined &&
+    input.mode !== "apply" &&
+    input.mode !== "preview"
+  ) {
+    throw new InvalidExtensionTimelineCommandError(
+      "Mask mode must be 'apply' or 'preview'.",
+    );
+  }
+  if (input.inverted !== undefined && typeof input.inverted !== "boolean") {
+    throw new InvalidExtensionTimelineCommandError(
+      "Mask inverted must be a boolean when supplied.",
+    );
+  }
+  const parameters = cloneMaskParameters(input.parameters);
+  const assetId = input.assetId
+    ? assertIdentifier(input.assetId, "Mask asset ID")
+    : undefined;
+  if (BITMAP_MASK_TYPES.has(maskType) && !assetId) {
+    throw new InvalidExtensionTimelineCommandError(
+      `Mask type '${maskType}' requires an ingested image assetId.`,
+    );
+  }
+  if (assetId) {
+    const asset = getAssetById(assetId);
+    if (!asset || asset.type !== "image") {
+      throw new InvalidExtensionTimelineCommandError(
+        `Mask asset '${assetId}' was not found or is not an image.`,
+      );
+    }
+  }
+  if (assetId && !BITMAP_MASK_TYPES.has(maskType)) {
+    throw new InvalidExtensionTimelineCommandError(
+      `Mask type '${maskType}' does not accept an assetId.`,
+    );
+  }
+  const paintedBounds = input.paintedBounds
+    ? {
+        x: input.paintedBounds.x,
+        y: input.paintedBounds.y,
+        width: input.paintedBounds.width,
+        height: input.paintedBounds.height,
+      }
+    : undefined;
+  if (
+    paintedBounds &&
+    (!Object.values(paintedBounds).every(Number.isFinite) ||
+      paintedBounds.width <= 0 ||
+      paintedBounds.height <= 0)
+  ) {
+    throw new InvalidExtensionTimelineCommandError(
+      "Mask painted bounds must be finite with positive width and height.",
+    );
+  }
+  if (paintedBounds && maskType !== "brush") {
+    throw new InvalidExtensionTimelineCommandError(
+      "Painted bounds are only valid for brush masks.",
+    );
+  }
+  const mask = createMask(maskType, {
+    id: generatedId,
+    mode: input.mode,
+    inverted: input.inverted,
+    parameters,
+    ...(maskType === "sam2" ? { sam2MaskAssetId: assetId } : {}),
+    ...(maskType === "brush"
+      ? { brushMaskAssetId: assetId, brushPaintedBounds: paintedBounds }
+      : {}),
+    ...(input.activeRange
+      ? { activeRange: cloneMaskRange(input.activeRange) }
+      : {}),
+  });
+  if (maskType === "generation") mask.generationMaskAssetId = assetId;
+  return { mask, ...(name ? { name } : {}) };
+}
+
+function cloneTransactionOptions(
+  options: ExtensionTimelineTransactionOptions | undefined,
+): ExtensionTimelineTransactionOptions | undefined {
+  if (options === undefined) return undefined;
+  if (typeof options !== "object" || options === null) {
+    throw new InvalidExtensionTimelineCommandError(
+      "Timeline transaction options must be an object.",
+    );
+  }
+  if (options.coalesce === undefined) return Object.freeze({});
+  if (typeof options.coalesce !== "object" || options.coalesce === null) {
+    throw new InvalidExtensionTimelineCommandError(
+      "Timeline transaction coalesce must be an object.",
+    );
+  }
+  const coalesceKey = assertIdentifier(options.coalesce.key, "Coalescing key");
+  if (coalesceKey.length > MAX_COALESCE_KEY_LENGTH) {
+    throw new InvalidExtensionTimelineCommandError(
+      `Coalescing keys must be at most ${MAX_COALESCE_KEY_LENGTH} characters.`,
+    );
+  }
+  if (
+    options.coalesce.phase !== "continue" &&
+    options.coalesce.phase !== "end"
+  ) {
+    throw new InvalidExtensionTimelineCommandError(
+      "Timeline transaction coalescing phase must be 'continue' or 'end'.",
+    );
+  }
+  return Object.freeze({
+    coalesce: Object.freeze({
+      key: coalesceKey,
+      phase: options.coalesce.phase,
+    }),
+  });
+}
+
 function clonePayload(payload: ExtensionPayload): ExtensionPayload {
   const parsed = extensionPayloadSchema.safeParse(payload);
   if (!parsed.success) {
@@ -287,7 +485,11 @@ export function createExtensionTimelineApi(
     },
     sourcePointToProject,
 
-    transaction: (label, callback): ExtensionTimelineTransactionResult => {
+    transaction: (
+      label,
+      callback,
+      options,
+    ): ExtensionTimelineTransactionResult => {
       if (typeof label !== "string") {
         return failedTransaction(
           "",
@@ -307,6 +509,13 @@ export function createExtensionTimelineApi(
             `Transaction labels must contain 1-${MAX_TRANSACTION_LABEL_LENGTH} characters.`,
           ),
         );
+      }
+
+      let normalizedOptions: ExtensionTimelineTransactionOptions | undefined;
+      try {
+        normalizedOptions = cloneTransactionOptions(options);
+      } catch (error) {
+        return failedTransaction(normalizedLabel, "invalid_command", error);
       }
 
       const commands: ExtensionTimelineCommand[] = [];
@@ -574,6 +783,48 @@ export function createExtensionTimelineApi(
             transitionId: normalizedTransitionId,
           });
         },
+        addClipMask: (clipId, input) => {
+          assertOpen();
+          const normalizedClipId = assertIdentifier(clipId, "Clip ID");
+          const generatedId = createExtensionMaskLocalId(
+            scope.extension.id,
+            crypto.randomUUID(),
+          );
+          const { mask, name } = cloneMaskInput(input, generatedId);
+          commands.push({
+            kind: "add_mask",
+            clipId: normalizedClipId,
+            mask,
+            name,
+          });
+          return generatedId;
+        },
+        updateMaskParameters: (clipId, maskId, parameters) => {
+          assertOpen();
+          commands.push({
+            kind: "update_mask_parameters",
+            clipId: assertIdentifier(clipId, "Clip ID"),
+            maskId: assertIdentifier(maskId, "Mask ID"),
+            parameters: cloneMaskParameters(parameters),
+          });
+        },
+        setMaskActiveRange: (clipId, maskId, range) => {
+          assertOpen();
+          commands.push({
+            kind: "set_mask_active_range",
+            clipId: assertIdentifier(clipId, "Clip ID"),
+            maskId: assertIdentifier(maskId, "Mask ID"),
+            range: range === null ? null : cloneMaskRange(range),
+          });
+        },
+        removeMask: (clipId, maskId) => {
+          assertOpen();
+          commands.push({
+            kind: "remove_mask",
+            clipId: assertIdentifier(clipId, "Clip ID"),
+            maskId: assertIdentifier(maskId, "Mask ID"),
+          });
+        },
       };
       Object.freeze(transaction);
 
@@ -605,6 +856,7 @@ export function createExtensionTimelineApi(
         normalizedLabel,
         scope.extension.id,
         commands,
+        normalizedOptions,
       );
     },
 

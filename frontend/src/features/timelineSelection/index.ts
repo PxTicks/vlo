@@ -1,5 +1,8 @@
 export type { TimelineSelection } from "../../types/TimelineTypes";
-export { useTimelineSelectionStore } from "./useTimelineSelectionStore";
+export {
+  getTimelineSelectionStoreForTrustedHostAccess,
+  useTimelineSelectionStore,
+} from "./useTimelineSelectionStore";
 export {
   getIncludedClipsForSelection,
   getIncludedTracksForSelection,

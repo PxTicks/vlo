@@ -71,14 +71,24 @@ const {
         enabled: true,
       },
       mockPixiApp: {
+        canvas: { style: {} },
         renderer: {},
         render: vi.fn(),
+        stage: {
+          on: vi.fn(),
+          off: vi.fn(),
+        },
         ticker: {
           start: vi.fn(),
           stop: vi.fn(),
         },
       },
       mockViewport: {
+        addChild: vi.fn(),
+        removeChild: vi.fn(),
+        destroyed: false,
+        toGlobal: vi.fn((point) => point),
+        toLocal: vi.fn((point) => point),
         moveCenter: vi.fn(),
         fit: vi.fn(),
       },

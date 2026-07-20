@@ -103,7 +103,10 @@ export function registerCanvasSelectable(
   };
 }
 
-export function useCanvasSelectionManager(app: Application | null) {
+export function useCanvasSelectionManager(
+  app: Application | null,
+  enabled: boolean = true,
+) {
   const selectedClipId = useSelectedTimelineClipId();
   const rememberedMaskId = useMaskViewStore((state) =>
     selectedClipId
@@ -129,6 +132,12 @@ export function useCanvasSelectionManager(app: Application | null) {
   useLayoutEffect(() => {
     const selectionStore = useCanvasSelectionStore.getState();
     const previous = previousSelectionRef.current;
+
+    if (!enabled) {
+      selectionStore.clearSelection();
+      previousSelectionRef.current = { clipId: null, maskId: null };
+      return;
+    }
 
     if (!selectedClipId) {
       selectionStore.clearSelection();
@@ -170,10 +179,10 @@ export function useCanvasSelectionManager(app: Application | null) {
       clipId: selectedClipId,
       maskId: selectedMaskId,
     };
-  }, [selectedClipId, selectedMaskId]);
+  }, [enabled, selectedClipId, selectedMaskId]);
 
   useEffect(() => {
-    if (!app) return;
+    if (!app || !enabled) return;
     const stage = app.stage as
       | {
           on?: (
@@ -218,7 +227,7 @@ export function useCanvasSelectionManager(app: Application | null) {
     return () => {
       stageOff("pointerdown", handlePointerDown);
     };
-  }, [app]);
+  }, [app, enabled]);
 
   useEffect(() => {
     return () => {

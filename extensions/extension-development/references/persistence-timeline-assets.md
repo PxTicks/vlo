@@ -36,18 +36,22 @@ Use canonical ticks for all timeline fields. Obtain the time base from
 
 ## Commit one synchronous transaction
 
-Use `timeline.transaction(label, callback)` for persisted writes. Keep the callback
-synchronous and inspect the structured result. Available commands currently include:
+Use `timeline.transaction(label, callback, options?)` for persisted writes. Keep the
+callback synchronous and inspect the structured result. Available commands include:
 
 - `createEntity`;
 - `updatePayload`;
 - `moveEntity`;
 - `removeEntity`;
 - `upsertTransform`;
-- `removeTransform`.
+- `removeTransform`;
 - `createTransition`;
 - `updateTransitionParameters`;
-- `removeTransition`.
+- `removeTransition`;
+- `addClipMask`;
+- `updateMaskParameters`;
+- `setMaskActiveRange`;
+- `removeMask`.
 
 Stage all related commands in one transaction so the host validates ownership and
 creates one undo entry. Do not retain the transaction object or call it after the
@@ -59,6 +63,12 @@ Creation supplies common placement and an `ExtensionPayload`; the host generates
 entity ID. Payload updates must remain compatible with the calling extension.
 Transition creation targets one of the caller's registered transition contribution
 IDs; transition updates/removal are limited to extension-owned transition types.
+Mask creation targets host-supported mask types. Bitmap-backed masks use an image
+asset ID returned by `assets.ingest`; later mask updates and removal are limited to
+the creating extension. For consecutive commits from one interaction (for example
+sub-strokes), pass `{ coalesce: { key, phase: "continue" } }`, then use phase `"end"`
+on the final commit. Keys are owner-qualified by the host, merged history entries are
+bounded, and an intervening edit splits the interaction to preserve undo order.
 
 ## Cross media and project domains
 

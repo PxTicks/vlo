@@ -702,6 +702,36 @@ export interface ExtensionTimelineTransitionCreateInput {
   readonly parameters?: Readonly<Record<string, JsonValue>>;
 }
 
+/** Creates one host-supported mask attached to an ordinary timeline clip. */
+export interface ExtensionTimelineMaskCreateInput {
+  /** Host mask type discovered through current host documentation. */
+  readonly maskType: string;
+  readonly name?: string;
+  readonly mode?: "apply" | "preview";
+  readonly inverted?: boolean;
+  /** Host-owned mask parameters; currently finite positive baseWidth/baseHeight. */
+  readonly parameters: Readonly<Record<string, JsonValue>>;
+  /** Required for bitmap-backed mask types; ingest bytes through assets first. */
+  readonly assetId?: string;
+  readonly paintedBounds?: ExtensionTimelineMaskBounds;
+  readonly activeRange?: ExtensionTimelineMaskActiveRange;
+}
+
+export interface ExtensionTimelineCoalescingOptions {
+  /** Fresh extension-local key for one interaction, such as one brush stroke. */
+  readonly key: string;
+  /** `end` closes the interaction after this transaction is committed. */
+  readonly phase: "continue" | "end";
+}
+
+export interface ExtensionTimelineTransactionOptions {
+  /**
+   * Merge consecutive commits from one interaction into a bounded undo entry.
+   * End every interaction explicitly; unrelated intervening edits split it.
+   */
+  readonly coalesce?: ExtensionTimelineCoalescingOptions;
+}
+
 export interface ExtensionTimelineTransaction {
   /** Returns the host-generated entity ID used by later commands in this transaction. */
   createEntity(input: ExtensionTimelineEntityCreateInput): string;
@@ -724,6 +754,19 @@ export interface ExtensionTimelineTransaction {
     parameters: Readonly<Record<string, JsonValue>>,
   ): void;
   removeTransition(transitionId: string): void;
+  /** Returns the host-generated mask-local ID used by later mask commands. */
+  addClipMask(clipId: string, input: ExtensionTimelineMaskCreateInput): string;
+  updateMaskParameters(
+    clipId: string,
+    maskId: string,
+    parameters: Readonly<Record<string, JsonValue>>,
+  ): void;
+  setMaskActiveRange(
+    clipId: string,
+    maskId: string,
+    range: ExtensionTimelineMaskActiveRange | null,
+  ): void;
+  removeMask(clipId: string, maskId: string): void;
 }
 
 export type ExtensionTimelineTransactionFailureCode =
@@ -734,6 +777,8 @@ export type ExtensionTimelineTransactionFailureCode =
   | "transition_not_found"
   | "transition_type_not_found"
   | "transform_not_found"
+  | "mask_not_found"
+  | "mask_type_not_supported"
   | "wrong_owner"
   | "incompatible_payload"
   | "callback_failed";
@@ -872,6 +917,7 @@ export interface ExtensionTimelineApi {
   transaction(
     label: string,
     callback: (transaction: ExtensionTimelineTransaction) => void,
+    options?: ExtensionTimelineTransactionOptions,
   ): ExtensionTimelineTransactionResult;
   /**
    * Registers a per-clip timeline overlay. The registration is owner-scoped and
@@ -1672,6 +1718,54 @@ export interface ExtensionCatalogueApi {
   listCatalogues(): readonly ExtensionCatalogueInfo[];
 }
 
+export interface ExtensionCanvasPointerEvent {
+  readonly kind: "down" | "move" | "up" | "cancel";
+  /** Project pixels in the player viewport's top-left-origin coordinate space. */
+  readonly projectPoint: ExtensionPoint2D;
+  readonly screenPoint: ExtensionPoint2D;
+  readonly pressure: number;
+  readonly buttons: number;
+  readonly modifiers: {
+    readonly shift: boolean;
+    readonly alt: boolean;
+    readonly ctrl: boolean;
+    readonly meta: boolean;
+  };
+}
+
+export interface ExtensionCanvasToolSession {
+  /** Host-owned transient Pixi container, emptied when the tool deactivates. */
+  readonly overlay: object;
+  /** Clip selected when this tool became active, before host selection paused. */
+  readonly targetClipId: string | null;
+  projectToScreen(point: ExtensionPoint2D): ExtensionPoint2D;
+  screenToProject(point: ExtensionPoint2D): ExtensionPoint2D;
+  requestRender(): void;
+}
+
+export interface ExtensionCanvasToolDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly label: string;
+  readonly icon?: () => unknown;
+  readonly cursor?: string;
+  readonly when?: ExtensionContextKeyExpression;
+  activate(session: ExtensionCanvasToolSession): void;
+  deactivate(): void;
+  onPointer(event: ExtensionCanvasPointerEvent): void;
+}
+
+export interface ExtensionCanvasToolRegistration extends ExtensionUiRegistration {
+  /** Local command ID for keybinding requests. */
+  readonly command: string;
+}
+
+export interface ExtensionCanvasToolApi {
+  register(
+    definition: ExtensionCanvasToolDefinition,
+  ): ExtensionCanvasToolRegistration;
+}
+
 export interface ExtensionUiApi {
   /** The host command table and chord requests (see `ExtensionCommandApi`). */
   readonly commands: ExtensionCommandApi;
@@ -1679,6 +1773,8 @@ export interface ExtensionUiApi {
   readonly menus: ExtensionMenuApi;
   /** Option contributions to host dropdown catalogues (see `ExtensionCatalogueApi`). */
   readonly catalogues: ExtensionCatalogueApi;
+  /** Exclusive trusted interaction modes over the player canvas. */
+  readonly canvasTools: ExtensionCanvasToolApi;
   /**
    * Registers a rich React control. Use it in an extension transformation's own
    * groups via a `custom` control, or place it in a host panel zone, or both.

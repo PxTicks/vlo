@@ -17,6 +17,7 @@ import type {
   Transition,
 } from "../../types/TimelineTypes";
 import type {
+  ExtensionTimelineTransactionOptions,
   ExtensionTimelineTransactionResult,
 } from "@vlo/extension-sdk";
 import { isCompositeClip } from "../../types/TimelineTypes";
@@ -144,6 +145,7 @@ interface TimelineState extends TimelineModelState {
     label: string,
     ownerId: string,
     commands: readonly ExtensionTimelineCommand[],
+    options?: ExtensionTimelineTransactionOptions,
   ) => ExtensionTimelineTransactionResult;
 
   duplicateClip: (clip: TimelineClip) => TimelineClip;
@@ -395,19 +397,31 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     undoLabel: null,
     redoLabel: null,
 
-    commitExtensionTransaction: (label, ownerId, commands) => {
+    commitExtensionTransaction: (label, ownerId, commands, options) => {
       const removalPlan = planTimelineRemoval(
         get().clips,
-        commands
-          .filter((command) => command.kind === "remove_entity")
-          .map((command) => command.entityId),
+        commands.flatMap((command) => {
+          if (command.kind === "remove_entity") return [command.entityId];
+          if (command.kind === "remove_mask") {
+            return [makeMaskClipId(command.clipId, command.maskId)];
+          }
+          return [];
+        }),
       );
 
       try {
         const didCommit = mutationPipeline.commitModelMutation(
           (draft) =>
             applyExtensionTimelineCommands(draft, ownerId, commands),
-          { label },
+          {
+            label,
+            coalesce: options?.coalesce
+              ? {
+                  key: `${ownerId}/${options.coalesce.key}`,
+                  end: options.coalesce.phase === "end",
+                }
+              : undefined,
+          },
         );
 
         if (didCommit && removalPlan.clipIdsToRemove.size > 0) {

@@ -46,8 +46,16 @@
 /frontend/src/features/masks/runtime/OffscreenFilterApplicator.ts extension-surface=adapter
 /frontend/src/features/masks/runtime/SpriteClipMaskController.ts extension-surface=adapter
 /frontend/src/features/player/Player.tsx extension-surface=adapter
+/frontend/src/features/player/canvasToolPresetsCatalogue.ts extension-surface=adapter
+/frontend/src/features/player/components/TrackLayer.tsx extension-surface=adapter
+/frontend/src/features/player/components/CanvasToolBar.tsx extension-surface=adapter
 /frontend/src/features/player/components/ExtractDialog.tsx extension-surface=adapter
 /frontend/src/features/player/exportFormatsCatalogue.ts extension-surface=adapter
+/frontend/src/features/player/hooks/useSpriteInteraction.ts extension-surface=adapter
+/frontend/src/features/player/hooks/useCanvasToolHost.ts extension-surface=adapter
+/frontend/src/features/player/hooks/useTrackRenderer.ts extension-surface=adapter
+/frontend/src/features/player/hooks/interaction/useCanvasSelectionManager.ts extension-surface=adapter
+/frontend/src/features/player/hooks/interaction/useMaskInteractionController.ts extension-surface=adapter
 /frontend/src/features/project/hostCommands.ts extension-surface=adapter
 /frontend/src/features/project/projectHostViews.ts extension-surface=adapter
 /frontend/src/features/project/components/ProjectManager.tsx extension-surface=adapter
@@ -61,6 +69,9 @@
 /frontend/src/features/userAssets/services/AssetService.ts extension-surface=adapter
 /frontend/src/features/userAssets/components/AssetCard.tsx extension-surface=adapter
 /frontend/src/features/editorFocus/useEditorFocusStore.ts extension-surface=adapter
+/frontend/src/features/timelineSelection/useTimelineSelectionStore.ts extension-surface=adapter
+/frontend/src/features/userAssets/api.ts extension-surface=adapter
+/frontend/src/features/userAssets/useAssetBrowserSelectionStore.ts extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
 /frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
 /frontend/src/features/project/constants.ts extension-surface=adapter
@@ -84,6 +95,7 @@
 /frontend/src/features/timeline/components/TimelineToolbar.tsx extension-surface=adapter
 /frontend/src/features/timeline/model/** extension-surface=adapter
 /frontend/src/features/timeline/useTimelineStore.ts extension-surface=adapter
+/frontend/src/features/timeline/store/timelineMutationPipeline.ts extension-surface=adapter
 /frontend/src/features/transitions/** extension-surface=adapter
 /frontend/src/features/transformations/applyGroupTransforms.ts extension-surface=adapter
 /frontend/src/features/transformations/applyTransformations.ts extension-surface=adapter

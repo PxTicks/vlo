@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "example.painting",
+  "name": "Painting Surface Conformance Fixture",
+  "version": "1.0.0",
+  "sdk": ">=1.7.0 <2.0.0",
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "capabilities": ["assets.read", "render.entity", "ui.custom"]
+}

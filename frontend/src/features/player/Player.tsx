@@ -64,6 +64,8 @@ import {
   pruneSynchronizedPlaybackQueue,
   type SynchronizedPlaybackQueueEntry,
 } from "./utils/synchronizedPlaybackQueue";
+import { CanvasToolBar } from "./components/CanvasToolBar";
+import { useCanvasToolHost } from "./hooks/useCanvasToolHost";
 
 type SynchronizedPlaybackRenderer = (time: number) => Promise<void>;
 
@@ -145,7 +147,6 @@ function PlayerImpl() {
 
   // --- Pixi Initialization ---
   const { pixiApp, canvasSize } = usePixiApp(containerRef, canvasRef);
-  useCanvasSelectionManager(pixiApp);
   useCanvasSelectionKeyboard();
 
   useEffect(() => {
@@ -162,6 +163,22 @@ function PlayerImpl() {
     logicalWidth: logicalDimensions.width,
     logicalHeight: logicalDimensions.height,
   });
+  const extensionCanvasSelectionHost = useMemo(
+    () => ({
+      captureTargetClipId: () =>
+        useCanvasSelectionStore.getState().activeSelection?.clipId ?? null,
+      clearSelection: () =>
+        useCanvasSelectionStore.getState().clearSelection(),
+    }),
+    [],
+  );
+  const activeExtensionCanvasToolId = useCanvasToolHost(
+    pixiApp,
+    viewport,
+    extensionCanvasSelectionHost,
+  );
+  const hostCanvasInteractionsEnabled = activeExtensionCanvasToolId === null;
+  useCanvasSelectionManager(pixiApp, hostCanvasInteractionsEnabled);
 
   // Keep a ref to the latest currentTime to read inside the loop without restarting it
   const currentTimeRef = useRef(playbackClock.time);
@@ -753,7 +770,14 @@ function PlayerImpl() {
       event.preventDefault();
       const maskEditing =
         useCanvasSelectionStore.getState().activeSelection?.kind === "mask";
-      if (maskEditing || selectionMode || frameSelectionMode) return;
+      if (
+        !hostCanvasInteractionsEnabled ||
+        maskEditing ||
+        selectionMode ||
+        frameSelectionMode
+      ) {
+        return;
+      }
       showContextMenu({
         menuId: "player.canvas.context",
         subject: {
@@ -792,6 +816,7 @@ function PlayerImpl() {
     [
       selectionMode,
       frameSelectionMode,
+      hostCanvasInteractionsEnabled,
       isFullscreen,
       handleTogglePlay,
       fitViewportToScreen,
@@ -902,8 +927,10 @@ function PlayerImpl() {
               orchestrator={renderGroupOrchestrator}
               adjustmentEffectResolver={adjustmentEffectResolver}
               liveFrameGraphCoordinator={liveFrameGraphCoordinator}
+              interactionsEnabled={hostCanvasInteractionsEnabled}
             />
           ))}
+        <CanvasToolBar activeToolId={activeExtensionCanvasToolId} />
         {/* Render Audio Layers (Invisible) */}
         {tracksWithAudio.map((track) => (
           <AudioTrackLayer

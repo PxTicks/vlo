@@ -8,11 +8,18 @@ interface SpriteInteractionHandlers {
 export function useSpriteInteraction(
   sprite: Sprite | null,
   interactions: SpriteInteractionHandlers,
+  enabled: boolean = true,
 ) {
   useEffect(() => {
     if (!sprite) return;
 
-    // eslint-disable-next-line react-hooks/immutability
+    if (!enabled) {
+      // eslint-disable-next-line react-hooks/immutability
+      sprite.eventMode = "passive";
+      sprite.cursor = "default";
+      return;
+    }
+
     sprite.eventMode = "static";
     sprite.cursor = "grab";
 
@@ -21,5 +28,5 @@ export function useSpriteInteraction(
     return () => {
       sprite.off("pointerdown", interactions.onSpritePointerDown);
     };
-  }, [sprite, interactions]);
+  }, [enabled, sprite, interactions]);
 }

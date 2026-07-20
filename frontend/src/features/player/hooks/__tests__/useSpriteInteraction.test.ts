@@ -33,4 +33,19 @@ describe("useSpriteInteraction", () => {
       interactions.onSpritePointerDown,
     );
   });
+
+  it("makes the sprite passive without binding while host interactions pause", () => {
+    const sprite = new Sprite();
+    sprite.on = vi.fn();
+    const interactions: TransformInteractionHandlers = {
+      onSpritePointerDown: vi.fn(),
+      onHandlePointerDown: vi.fn(),
+    };
+
+    renderHook(() => useSpriteInteraction(sprite, interactions, false));
+
+    expect(sprite.eventMode).toBe("passive");
+    expect(sprite.cursor).toBe("default");
+    expect(sprite.on).not.toHaveBeenCalled();
+  });
 });

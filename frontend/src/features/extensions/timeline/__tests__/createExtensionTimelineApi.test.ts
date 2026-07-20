@@ -13,6 +13,7 @@ import type {
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { createExtensionTimelineApi } from "../createExtensionTimelineApi";
 import { extensionTransitionRegistry } from "../../../transitions/extensions/ExtensionTransitionRegistry";
+import { useAssetStore } from "../../../userAssets";
 
 function createScope(extensionId: string): ExtensionApiScope {
   return {
@@ -111,6 +112,18 @@ describe("createExtensionTimelineApi", () => {
       transitions: [],
     });
     useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+    useAssetStore.setState({
+      assets: [
+        {
+          id: "paint-mask-asset",
+          hash: "paint-mask-hash",
+          name: "Paint mask",
+          type: "image",
+          src: "blob:paint-mask",
+          createdAt: 1,
+        },
+      ],
+    });
   });
 
   it("creates an extension entity that round-trips through undo and redo", () => {
@@ -595,6 +608,212 @@ describe("createExtensionTimelineApi", () => {
         ],
       }),
     ]);
+  });
+
+  it("creates and edits an owned bitmap mask through undoable transactions", () => {
+    const api = createExtensionTimelineApi(createScope("example.paint"));
+    let maskId = "";
+
+    expect(
+      api.transaction("Add painted mask", (transaction) => {
+        maskId = transaction.addClipMask("shape-1", {
+          maskType: "brush",
+          name: "Painted area",
+          parameters: { baseWidth: 200, baseHeight: 100 },
+          assetId: "paint-mask-asset",
+          paintedBounds: { x: 10, y: 20, width: 80, height: 40 },
+          activeRange: { startSourceTicks: 5, endSourceTicks: 95 },
+        });
+      }),
+    ).toMatchObject({ ok: true, changed: true });
+
+    expect(maskId).toMatch(/^extension\/example\.paint\//);
+    expect(api.listClipMasks("shape-1")).toContainEqual(
+      expect.objectContaining({
+        localId: maskId,
+        name: "Painted area",
+        maskType: "brush",
+        assetId: "paint-mask-asset",
+        parameters: { baseWidth: 200, baseHeight: 100 },
+        activeRange: { startSourceTicks: 5, endSourceTicks: 95 },
+      }),
+    );
+
+    expect(
+      api.transaction("Resize painted mask", (transaction) => {
+        transaction.updateMaskParameters("shape-1", maskId, {
+          baseWidth: 240,
+          baseHeight: 120,
+        });
+        transaction.setMaskActiveRange("shape-1", maskId, null);
+      }),
+    ).toMatchObject({ ok: true, changed: true });
+    const updated = api
+      .listClipMasks("shape-1")
+      .find((mask) => mask.localId === maskId);
+    expect(updated).toMatchObject({
+      parameters: { baseWidth: 240, baseHeight: 120 },
+    });
+    expect(updated?.activeRange).toBeUndefined();
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(api.listClipMasks("shape-1")).toContainEqual(
+      expect.objectContaining({
+        localId: maskId,
+        parameters: { baseWidth: 200, baseHeight: 100 },
+        activeRange: { startSourceTicks: 5, endSourceTicks: 95 },
+      }),
+    );
+  });
+
+  it("coalesces consecutive extension transactions by owner-qualified key", () => {
+    const api = createExtensionTimelineApi(createScope("example.shapes"));
+
+    for (const [index, points] of [6, 7].entries()) {
+      expect(
+        api.transaction(
+          "Paint stroke",
+          (transaction) => {
+            transaction.updatePayload("shape-1", {
+              extensionId: "example.shapes",
+              typeId: "shape",
+              schemaVersion: 1,
+              data: { points },
+            });
+          },
+          {
+            coalesce: {
+              key: "stroke-1",
+              phase: index === 1 ? "end" : "continue",
+            },
+          },
+        ),
+      ).toMatchObject({ ok: true, changed: true });
+    }
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(
+      useTimelineStore.getState().clips.find((clip) => clip.id === "shape-1"),
+    ).toMatchObject({
+      extensionPayload: { data: { points: 5 } },
+    });
+    expect(useTimelineStore.getState().undo()).toBe(false);
+  });
+
+  it("does not reopen a coalescing key after its interaction ends", () => {
+    const api = createExtensionTimelineApi(createScope("example.shapes"));
+    const update = (points: number, phase: "continue" | "end") =>
+      api.transaction(
+        "Paint stroke",
+        (transaction) => {
+          transaction.updatePayload("shape-1", {
+            extensionId: "example.shapes",
+            typeId: "shape",
+            schemaVersion: 1,
+            data: { points },
+          });
+        },
+        { coalesce: { key: "reused-key", phase } },
+      );
+
+    expect(update(6, "end")).toMatchObject({ ok: true, changed: true });
+    expect(update(7, "end")).toMatchObject({ ok: true, changed: true });
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(
+      useTimelineStore.getState().clips.find((clip) => clip.id === "shape-1"),
+    ).toMatchObject({ extensionPayload: { data: { points: 6 } } });
+    expect(useTimelineStore.getState().undo()).toBe(true);
+  });
+
+  it("bounds a coalesced interaction to finite-sized history entries", () => {
+    const api = createExtensionTimelineApi(createScope("example.shapes"));
+
+    for (let index = 0; index < 257; index += 1) {
+      expect(
+        api.transaction(
+          "Long paint stroke",
+          (transaction) => {
+            transaction.updatePayload("shape-1", {
+              extensionId: "example.shapes",
+              typeId: "shape",
+              schemaVersion: 1,
+              data: { points: index + 6 },
+            });
+          },
+          {
+            coalesce: {
+              key: "long-stroke",
+              phase: index === 256 ? "end" : "continue",
+            },
+          },
+        ),
+      ).toMatchObject({ ok: true, changed: true });
+    }
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(
+      useTimelineStore.getState().clips.find((clip) => clip.id === "shape-1"),
+    ).toMatchObject({ extensionPayload: { data: { points: 261 } } });
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(
+      useTimelineStore.getState().clips.find((clip) => clip.id === "shape-1"),
+    ).toMatchObject({ extensionPayload: { data: { points: 5 } } });
+  });
+
+  it("rejects unsupported masks and cross-owner mask edits atomically", () => {
+    const api = createExtensionTimelineApi(createScope("example.paint"));
+
+    expect(
+      api.transaction("Unsupported mask", (transaction) => {
+        transaction.addClipMask("shape-1", {
+          maskType: "future-mask",
+          parameters: { baseWidth: 10, baseHeight: 10 },
+        });
+      }),
+    ).toMatchObject({ ok: false, code: "mask_type_not_supported" });
+
+    expect(
+      api.transaction("Edit host mask", (transaction) => {
+        transaction.updateMaskParameters("shape-1", "mask-1", {
+          baseWidth: 10,
+          baseHeight: 10,
+        });
+      }),
+    ).toMatchObject({ ok: false, code: "wrong_owner" });
+    expect(api.listClipMasks("shape-1")[0]?.parameters).toEqual({
+      baseWidth: 200,
+      baseHeight: 100,
+    });
+  });
+
+  it("does not confuse an underscore-prefixed extension ID for the mask owner", () => {
+    const creator = createExtensionTimelineApi(createScope("acme.paint_pro"));
+    let maskId = "";
+    expect(
+      creator.transaction("Create owned mask", (transaction) => {
+        maskId = transaction.addClipMask("shape-1", {
+          maskType: "brush",
+          parameters: { baseWidth: 200, baseHeight: 100 },
+          assetId: "paint-mask-asset",
+        });
+      }),
+    ).toMatchObject({ ok: true, changed: true });
+
+    const prefixOwner = createExtensionTimelineApi(createScope("acme.paint"));
+    expect(
+      prefixOwner.transaction("Edit another owner mask", (transaction) => {
+        transaction.updateMaskParameters("shape-1", maskId, {
+          baseWidth: 10,
+          baseHeight: 10,
+        });
+      }),
+    ).toMatchObject({ ok: false, code: "wrong_owner" });
+    expect(
+      creator
+        .listClipMasks("shape-1")
+        .find((mask) => mask.localId === maskId)?.parameters,
+    ).toEqual({ baseWidth: 200, baseHeight: 100 });
   });
 
   it("maps source frames and pixels into canonical timeline/project domains", () => {

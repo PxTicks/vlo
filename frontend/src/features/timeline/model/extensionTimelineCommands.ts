@@ -2,7 +2,14 @@ import type {
   ExtensionPayload,
   ExtensionTimelineTransactionFailureCode,
 } from "@vlo/extension-sdk";
-import type { ClipTransform, Transition } from "../../../types/TimelineTypes";
+import type {
+  ClipMask,
+  ClipMaskParameters,
+  ClipTransform,
+  MaskActiveRange,
+  MaskTimelineClip,
+  Transition,
+} from "../../../types/TimelineTypes";
 import {
   isExtensionTimelineClip,
   type ExtensionTimelineClip,
@@ -14,9 +21,13 @@ import {
   planTimelineRemoval,
   removeClipIdsFromDraft,
   addTransitionToDraft,
+  addClipMaskToDraft,
   removeTransitionFromDraft,
+  updateClipMaskInDraft,
   updateTransitionParametersInDraft,
 } from "./timelineCommands";
+import { makeMaskClipId } from "./maskClipModel";
+import { getExtensionMaskOwnerId } from "./extensionMaskOwnership";
 import {
   createNewTrack,
   type TimelineModelState,
@@ -69,6 +80,29 @@ export type ExtensionTimelineCommand =
   | {
       kind: "remove_transition";
       transitionId: string;
+    }
+  | {
+      kind: "add_mask";
+      clipId: string;
+      mask: ClipMask;
+      name?: string;
+    }
+  | {
+      kind: "update_mask_parameters";
+      clipId: string;
+      maskId: string;
+      parameters: ClipMaskParameters;
+    }
+  | {
+      kind: "set_mask_active_range";
+      clipId: string;
+      maskId: string;
+      range: MaskActiveRange | null;
+    }
+  | {
+      kind: "remove_mask";
+      clipId: string;
+      maskId: string;
     };
 
 export class ExtensionTimelineCommandError extends Error {
@@ -168,7 +202,73 @@ export function applyExtensionTimelineCommands(
     return transition;
   };
 
+  const getOwnedMask = (clipId: string, maskId: string): MaskTimelineClip => {
+    const mask = draft.clips.find(
+      (candidate): candidate is MaskTimelineClip =>
+        candidate.id === makeMaskClipId(clipId, maskId) &&
+        candidate.type === "mask",
+    );
+    if (!mask) {
+      throw new ExtensionTimelineCommandError(
+        "mask_not_found",
+        `Mask '${maskId}' was not found on clip '${clipId}'.`,
+      );
+    }
+    if (getExtensionMaskOwnerId(maskId) !== ownerId) {
+      throw new ExtensionTimelineCommandError(
+        "wrong_owner",
+        `Extension '${ownerId}' cannot mutate mask '${maskId}'.`,
+      );
+    }
+    return mask;
+  };
+
   for (const command of commands) {
+    if (command.kind === "add_mask") {
+      getClip(command.clipId);
+      if (getExtensionMaskOwnerId(command.mask.id) !== ownerId) {
+        throw new ExtensionTimelineCommandError(
+          "wrong_owner",
+          `Extension '${ownerId}' cannot create mask '${command.mask.id}'.`,
+        );
+      }
+      addClipMaskToDraft(draft, command.clipId, structuredClone(command.mask));
+      const created = draft.clips.find(
+        (clip) => clip.id === makeMaskClipId(command.clipId, command.mask.id),
+      );
+      if (!created) {
+        throw new ExtensionTimelineCommandError(
+          "invalid_command",
+          `Mask '${command.mask.id}' could not be added to clip '${command.clipId}'.`,
+        );
+      }
+      if (command.name) created.name = command.name;
+      continue;
+    }
+
+    if (command.kind === "update_mask_parameters") {
+      getOwnedMask(command.clipId, command.maskId);
+      updateClipMaskInDraft(draft, command.clipId, command.maskId, {
+        maskParameters: structuredClone(command.parameters),
+      });
+      continue;
+    }
+
+    if (command.kind === "set_mask_active_range") {
+      getOwnedMask(command.clipId, command.maskId);
+      updateClipMaskInDraft(draft, command.clipId, command.maskId, {
+        activeRange: command.range ? structuredClone(command.range) : null,
+      });
+      continue;
+    }
+
+    if (command.kind === "remove_mask") {
+      const mask = getOwnedMask(command.clipId, command.maskId);
+      const removal = planTimelineRemoval(draft.clips, [mask.id]);
+      removeClipIdsFromDraft(draft, removal.clipIdsToRemove);
+      continue;
+    }
+
     if (command.kind === "create_transition") {
       if (!command.transition.type.startsWith(`${ownerId}/`)) {
         throw new ExtensionTimelineCommandError(

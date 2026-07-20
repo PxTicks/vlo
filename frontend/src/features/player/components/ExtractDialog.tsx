@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   Dialog,
@@ -23,6 +23,17 @@ import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { CacheProvider, type EmotionCache } from "@emotion/react";
 import createCache from "@emotion/cache";
 import type { DialogView } from "../../../core/extract/useExtractStore";
+import { hostContextKeys } from "../../../core/shell/contextKeys";
+import { hostOptionCatalog } from "../../../core/shell/optionCatalog";
+import {
+  DEFAULT_EXPORT_FORMAT_ID,
+  EXPORT_FORMATS_CATALOGUE,
+  declareExportFormats,
+  readExportFormatValue,
+  type ExportFormatValue,
+} from "../exportFormatsCatalogue";
+
+declareExportFormats();
 
 declare global {
   interface Window {
@@ -77,7 +88,7 @@ interface ExtractDialogProps {
   onCancelProcessing?: () => void;
   onExtractFrame: () => void;
   onExtractSelection: () => void;
-  onExport: (resolution: number) => void;
+  onExport: (resolution: number, format: ExportFormatValue) => void;
   onSetView: (view: DialogView) => void;
   isProcessing: boolean;
   progress: number;
@@ -115,8 +126,28 @@ export function ExtractDialog({
   progress,
 }: ExtractDialogProps) {
   const [resolution, setResolution] = useState(1080);
+  const [formatOptionId, setFormatOptionId] = useState(
+    DEFAULT_EXPORT_FORMAT_ID,
+  );
   const [pip, setPip] = useState<PipState | null>(null);
   const handleCancelProcessing = onCancelProcessing ?? onClose;
+
+  useSyncExternalStore(
+    (listener) => hostOptionCatalog.subscribe(listener),
+    () => hostOptionCatalog.getRevision(),
+    () => hostOptionCatalog.getRevision(),
+  );
+  useSyncExternalStore(
+    (listener) => hostContextKeys.subscribe(listener),
+    () => hostContextKeys.getRevision(),
+    () => hostContextKeys.getRevision(),
+  );
+  const formatOptions = hostOptionCatalog.resolveOptions(
+    EXPORT_FORMATS_CATALOGUE,
+  );
+  const selectedFormat = readExportFormatValue(
+    formatOptions.find((option) => option.id === formatOptionId),
+  );
 
   const exportInProgress = isProcessing && dialogView === "export";
 
@@ -238,20 +269,48 @@ export function ExtractDialog({
           <DialogContent>
             <Stack spacing={3} sx={{ mt: 1 }}>
               {!isProcessing ? (
-                <FormControl fullWidth size="small">
-                  <InputLabel id="export-resolution-label">Resolution</InputLabel>
-                  <Select
-                    labelId="export-resolution-label"
-                    value={resolution}
-                    label="Resolution"
-                    onChange={(e) => setResolution(Number(e.target.value))}
-                  >
-                    <MenuItem value={480}>480p (SD)</MenuItem>
-                    <MenuItem value={720}>720p (HD)</MenuItem>
-                    <MenuItem value={1080}>1080p (FHD)</MenuItem>
-                    <MenuItem value={2160}>4K (UHD)</MenuItem>
-                  </Select>
-                </FormControl>
+                <>
+                  <FormControl fullWidth size="small">
+                    <InputLabel id="export-format-label">Format</InputLabel>
+                    <Select
+                      labelId="export-format-label"
+                      value={formatOptionId}
+                      label="Format"
+                      onChange={(event) =>
+                        setFormatOptionId(event.target.value)
+                      }
+                    >
+                      {!selectedFormat ? (
+                        <MenuItem value={formatOptionId} disabled>
+                          Missing format provider
+                        </MenuItem>
+                      ) : null}
+                      {formatOptions.map((option) => (
+                        <MenuItem key={option.id} value={option.id}>
+                          {option.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl fullWidth size="small">
+                    <InputLabel id="export-resolution-label">
+                      Resolution
+                    </InputLabel>
+                    <Select
+                      labelId="export-resolution-label"
+                      value={resolution}
+                      label="Resolution"
+                      onChange={(event) =>
+                        setResolution(Number(event.target.value))
+                      }
+                    >
+                      <MenuItem value={480}>480p (SD)</MenuItem>
+                      <MenuItem value={720}>720p (HD)</MenuItem>
+                      <MenuItem value={1080}>1080p (FHD)</MenuItem>
+                      <MenuItem value={2160}>4K (UHD)</MenuItem>
+                    </Select>
+                  </FormControl>
+                </>
               ) : (
                 <Box sx={{ width: "100%", mt: 2 }}>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
@@ -273,7 +332,10 @@ export function ExtractDialog({
                   Back
                 </Button>
                 <Button
-                  onClick={() => onExport(resolution)}
+                  onClick={() => {
+                    if (selectedFormat) onExport(resolution, selectedFormat);
+                  }}
+                  disabled={!selectedFormat}
                   variant="contained"
                   color="primary"
                   size="small"

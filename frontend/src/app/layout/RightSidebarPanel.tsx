@@ -3,13 +3,12 @@ import type { ReactNode } from "react";
 import {
   Box,
   IconButton,
-  Menu,
-  MenuItem,
   Tab,
   Tabs,
   Tooltip,
 } from "@mui/material";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import { AppMenu } from "../../core/shell/AppMenu";
 import {
   useSelectedTimelineClipIds,
   useSelectedTimelineTransitionId,
@@ -233,29 +232,33 @@ function RightSidebarPanelComponent() {
                 <ArrowDropDownIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Menu
-              id="right-sidebar-workspace-menu"
-              anchorEl={workspaceMenuAnchor}
+            <AppMenu
+              menuId="app.workspace.select"
+              subject={{
+                slot: "app.workspace.select",
+                sidebar: {
+                  location: "right-sidebar",
+                  selectedWorkspaceId,
+                },
+              }}
+              items={workspaces.map((workspace, index) => ({
+                kind: "action",
+                id: `workspace-${workspace.id}`,
+                label: workspace.title,
+                group: "1_workspaces",
+                order: index,
+                selected: workspace.id === selectedWorkspaceId,
+                testId: `right-sidebar-workspace-menu-item-${workspace.id}`,
+                run: () => selectWorkspace(workspace.id),
+              }))}
               open={workspaceMenuAnchor !== null}
               onClose={() => setWorkspaceMenuAnchor(null)}
+              anchorEl={workspaceMenuAnchor}
               anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
               transformOrigin={{ vertical: "top", horizontal: "right" }}
               slotProps={{ paper: { sx: { maxHeight: 320 } } }}
-            >
-              {workspaces.map((workspace) => (
-                <MenuItem
-                  key={workspace.id}
-                  data-testid={`right-sidebar-workspace-menu-item-${workspace.id}`}
-                  selected={workspace.id === selectedWorkspaceId}
-                  onClick={() => {
-                    selectWorkspace(workspace.id);
-                    setWorkspaceMenuAnchor(null);
-                  }}
-                >
-                  {workspace.title}
-                </MenuItem>
-              ))}
-            </Menu>
+              id="right-sidebar-workspace-menu"
+            />
           </>
         ) : null}
       </Box>

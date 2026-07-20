@@ -16,3 +16,8 @@ export type {
   ResolvedAnimationPayload,
 } from "./ExtensionAnimationRegistry";
 export { TrustedSpatialPathOverlayRenderer } from "./TrustedSpatialPathOverlayRenderer";
+export {
+  ANIMATION_INTERPOLATIONS_CATALOGUE,
+  ANIMATION_SCALAR_SOURCES_CATALOGUE,
+  declareAnimationOptionCatalogues,
+} from "./animationOptionCatalogues";

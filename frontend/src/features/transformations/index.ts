@@ -70,4 +70,5 @@ export {
   extensionInterpolationRegistry,
   extensionScalarSourceRegistry,
   extensionSpatialPathRegistry,
+  declareAnimationOptionCatalogues,
 } from "./animation";

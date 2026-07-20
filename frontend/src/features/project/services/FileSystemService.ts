@@ -60,15 +60,19 @@ export class FileSystemService {
    */
   async showSaveVideoPicker(
     defaultName: string = "export.mp4",
+    format: "mp4" | "webm" = "mp4",
   ): Promise<FileSystemFileHandle> {
+    const isWebm = format === "webm";
     return await window.showSaveFilePicker({
       suggestedName: defaultName,
       startIn: "videos",
       types: [
         {
-          description: "Video files",
+          description: isWebm ? "WebM video" : "MP4 video",
           accept: {
-            "video/mp4": [".mp4"],
+            [isWebm ? "video/webm" : "video/mp4"]: [
+              isWebm ? ".webm" : ".mp4",
+            ],
           },
         },
       ],

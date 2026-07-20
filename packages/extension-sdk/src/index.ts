@@ -1620,11 +1620,62 @@ export interface ExtensionCommandApi {
   getContextKey(key: string): JsonValue | undefined;
 }
 
+/**
+ * One option contributed to a host-declared catalogue (a named, extensible
+ * option list behind a host dropdown). `value` must satisfy the catalogue's
+ * declared value schema — catalogues are not a generic data bus — and is
+ * cloned and frozen on registration. `when` gates visibility over host
+ * context keys.
+ */
+export interface ExtensionCatalogueOptionContribution {
+  /** Local ID; the host qualifies it as `extensionId/id`. */
+  readonly id: string;
+  readonly apiVersion: 1;
+  /** Host catalogue ID; discover catalogues via `catalogues.listCatalogues()`. */
+  readonly catalogueId: string;
+  readonly label: string;
+  readonly value: JsonValue;
+  readonly order?: number;
+  readonly when?: ExtensionContextKeyExpression;
+}
+
+/** A catalogue option as read back through the API, detached. */
+export interface ExtensionCatalogueOptionView {
+  readonly id: string;
+  readonly label: string;
+  readonly value: JsonValue;
+  readonly order: number;
+}
+
+/** One host catalogue extensions can contribute to, with value discovery. */
+export interface ExtensionCatalogueInfo {
+  readonly id: string;
+  /**
+   * Host-owned, serialisable structural description of the catalogue's
+   * option values. Documentation-grade: the host's value validation is
+   * authoritative.
+   */
+  readonly valueSchema: JsonValue;
+}
+
+export interface ExtensionCatalogueApi {
+  /** Contribute one option to a host catalogue. */
+  addOption(
+    option: ExtensionCatalogueOptionContribution,
+  ): ExtensionUiRegistration;
+  /** Currently visible options of one catalogue (host and extension), detached. */
+  list(catalogueId: string): readonly ExtensionCatalogueOptionView[];
+  /** Enumerate catalogue IDs the host has declared, with value schema info. */
+  listCatalogues(): readonly ExtensionCatalogueInfo[];
+}
+
 export interface ExtensionUiApi {
   /** The host command table and chord requests (see `ExtensionCommandApi`). */
   readonly commands: ExtensionCommandApi;
   /** Command placements in host menus (see `ExtensionMenuApi`). */
   readonly menus: ExtensionMenuApi;
+  /** Option contributions to host dropdown catalogues (see `ExtensionCatalogueApi`). */
+  readonly catalogues: ExtensionCatalogueApi;
   /**
    * Registers a rich React control. Use it in an extension transformation's own
    * groups via a `custom` control, or place it in a host panel zone, or both.

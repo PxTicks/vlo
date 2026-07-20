@@ -20,6 +20,7 @@ import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
 import { extensionPanelControlRegistry } from "../ui/ExtensionPanelControlRegistry";
 import { createExtensionCommandApi } from "../commands/CommandRegistry";
 import { extensionMenuPlacementRegistry } from "../menus/ExtensionMenuPlacementRegistry";
+import { createExtensionCatalogueApi } from "../catalogues/createExtensionCatalogueApi";
 import { installHostContextKeyBindings } from "../commands/installHostContextKeys";
 import { installHostKeybindingReservations } from "../commands/installHostKeybindingReservations";
 import { createExtensionStorageApi } from "../storage/createExtensionStorageApi";
@@ -416,6 +417,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
         ...extensionPanelControlRegistry.bind(scope),
         commands: createExtensionCommandApi(scope),
         menus: extensionMenuPlacementRegistry.bind(scope),
+        catalogues: createExtensionCatalogueApi(scope),
       }),
     });
 

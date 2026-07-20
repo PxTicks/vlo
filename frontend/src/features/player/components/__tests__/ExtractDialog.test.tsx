@@ -3,6 +3,12 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { ExtractDialog } from "../ExtractDialog";
 
+const MP4_FORMAT = {
+  format: "mp4",
+  extension: "mp4",
+  mimeType: "video/mp4",
+} as const;
+
 describe("ExtractDialog", () => {
   const mockOnClose = vi.fn();
   const mockOnExtractFrame = vi.fn();
@@ -97,7 +103,7 @@ describe("ExtractDialog", () => {
       const exportButton = screen.getByRole("button", { name: /Export/i });
       fireEvent.click(exportButton);
 
-      expect(mockOnExport).toHaveBeenCalledWith(1080);
+      expect(mockOnExport).toHaveBeenCalledWith(1080, MP4_FORMAT);
     });
 
     it("should show progress bar when processing", () => {
@@ -229,7 +235,7 @@ describe("ExtractDialog", () => {
       const exportButton = screen.getByRole("button", { name: /Export/i });
       fireEvent.click(exportButton);
 
-      expect(mockOnExport).toHaveBeenCalledWith(2160);
+      expect(mockOnExport).toHaveBeenCalledWith(2160, MP4_FORMAT);
     });
 
     it("should have all resolution options available", () => {
@@ -243,6 +249,24 @@ describe("ExtractDialog", () => {
       expect(screen.queryAllByText("720p (HD)").length).toBeGreaterThan(0);
       expect(screen.queryAllByText("1080p (FHD)").length).toBeGreaterThan(0);
       expect(screen.queryAllByText("4K (UHD)").length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Format selection", () => {
+    it("reads export formats from the catalogue", () => {
+      render(<ExtractDialog {...defaultProps} dialogView="export" />);
+
+      const formatSelect = screen.getByLabelText("Format");
+      expect(formatSelect).toHaveTextContent("MP4 (H.264/AAC)");
+      fireEvent.mouseDown(formatSelect);
+      fireEvent.click(screen.getByRole("option", { name: "WebM (VP9/Opus)" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Export$/i }));
+
+      expect(mockOnExport).toHaveBeenCalledWith(1080, {
+        format: "webm",
+        extension: "webm",
+        mimeType: "video/webm",
+      });
     });
   });
 });

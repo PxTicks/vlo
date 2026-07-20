@@ -28,6 +28,7 @@
 /frontend/src/core/color/gradeSchema.ts extension-surface=adapter
 /frontend/src/app/App.tsx extension-surface=adapter
 /frontend/src/app/main.tsx extension-surface=adapter
+/frontend/src/app/installHostOptionCatalogues.ts extension-surface=adapter
 /frontend/src/app/layout/EditorLeftSidebar.tsx extension-surface=adapter
 /frontend/src/app/layout/LeftSidebarPanel.tsx extension-surface=adapter
 /frontend/src/app/layout/ProjectSettingsMenu.tsx extension-surface=adapter
@@ -42,10 +43,14 @@
 /frontend/src/features/masks/runtime/OffscreenFilterApplicator.ts extension-surface=adapter
 /frontend/src/features/masks/runtime/SpriteClipMaskController.ts extension-surface=adapter
 /frontend/src/features/player/Player.tsx extension-surface=adapter
+/frontend/src/features/player/components/ExtractDialog.tsx extension-surface=adapter
+/frontend/src/features/player/exportFormatsCatalogue.ts extension-surface=adapter
 /frontend/src/features/project/hostCommands.ts extension-surface=adapter
+/frontend/src/features/project/services/FileSystemService.ts extension-surface=adapter
 /frontend/src/features/timeline/components/TimelineRow.tsx extension-surface=adapter
 /frontend/src/features/timeline/hooks/useTimelineMarkersClipOverlay.tsx extension-surface=adapter
 /frontend/src/features/userAssets/AssetBrowser.tsx extension-surface=adapter
+/frontend/src/features/userAssets/sortModesCatalogue.ts extension-surface=adapter
 /frontend/src/features/userAssets/services/AssetService.ts extension-surface=adapter
 /frontend/src/features/userAssets/components/AssetCard.tsx extension-surface=adapter
 /frontend/src/features/editorFocus/useEditorFocusStore.ts extension-surface=adapter
@@ -65,6 +70,7 @@
 /frontend/src/features/renderer/services/framePlanning/LiveFrameGraphCoordinator.ts extension-surface=adapter
 /frontend/src/features/renderer/services/framePlanning/framePlanningTypes.ts extension-surface=adapter
 /frontend/src/features/renderer/services/projectFrameCapture.ts extension-surface=adapter
+/frontend/src/features/renderer/hooks/useExportJobController.ts extension-surface=adapter
 /frontend/src/features/timeline/api.ts extension-surface=adapter
 /frontend/src/features/timeline/hostCommands.ts extension-surface=adapter
 /frontend/src/features/timeline/components/TimelineClip.tsx extension-surface=adapter
@@ -106,6 +112,7 @@
 /frontend/src/features/renderer/utils/clipLookup.ts extension-surface=adapter
 /frontend/src/features/panelUI/customControlRegistry.ts extension-surface=adapter
 /frontend/src/features/panelUI/types.ts extension-surface=adapter
+/frontend/src/features/panelUI/components/SelectControl.tsx extension-surface=adapter
 /frontend/src/types/TimelineTypes.ts extension-surface=adapter
 
 # Catalogue, checker, and architectural guidance.
@@ -122,6 +129,7 @@
 /docs/grading-extension-surface-plan.md extension-surface=governance
 /docs/skills/** extension-surface=governance
 /frontend/src/features/transformations/HOW_TO_ADD_TRANSFORMATION.md extension-surface=governance
+/frontend/src/core/shell/HOW_TO_ADD_A_MENU.md extension-surface=governance
 /frontend/src/features/transformations/README.md extension-surface=governance
 /docs/deep_dive/extensions-architecture-review.md extension-surface=governance
 /backend/config.py extension-surface=governance

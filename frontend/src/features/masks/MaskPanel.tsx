@@ -5,8 +5,6 @@ import {
   Button,
   ButtonGroup,
   Checkbox,
-  Menu,
-  MenuItem,
   Tab,
   Tabs,
   TextField,
@@ -17,6 +15,7 @@ import {
   IconButton,
   Tooltip,
 } from "@mui/material";
+import { AppMenu } from "../../core/shell/AppMenu";
 import {
   DeleteOutline,
   Add,
@@ -1052,18 +1051,27 @@ export const MaskPanel = memo(function MaskPanel() {
                   </Tooltip>
                 </Box>
               )}
-              <Menu
-                data-testid="mask-add-menu"
-                anchorEl={addMenuAnchorEl}
+              <AppMenu
+                menuId="masks.add.options"
+                subject={{
+                  slot: "masks.add.options",
+                  target: {
+                    clipId: selectedClipId ?? "",
+                    maskCount: masks.length,
+                  },
+                }}
+                items={MASK_TYPES.map((shape) => ({
+                  kind: "action",
+                  id: `add-${shape}`,
+                  label: shape[0].toUpperCase() + shape.slice(1),
+                  group: "1_shapes",
+                  run: () => handleRequestDraw(shape),
+                }))}
                 open={Boolean(addMenuAnchorEl)}
                 onClose={() => setAddMenuAnchorEl(null)}
-              >
-                {MASK_TYPES.map((shape) => (
-                  <MenuItem key={shape} onClick={() => handleRequestDraw(shape)}>
-                    {shape[0].toUpperCase() + shape.slice(1)}
-                  </MenuItem>
-                ))}
-              </Menu>
+                anchorEl={addMenuAnchorEl}
+                testId="mask-add-menu"
+              />
 
               <MaskEquationBuilder
                 masks={masks as MaskTimelineClip[]}

@@ -6,6 +6,11 @@ import type {
 } from "../../../extensions/types";
 import { createExtensionAnimationApi } from "../../animation";
 import { ExtensionAnimationSourceSelector } from "../ExtensionAnimationSourceSelector";
+import { hostOptionCatalog } from "../../../../core/shell/optionCatalog";
+import {
+  ANIMATION_INTERPOLATIONS_CATALOGUE,
+  ANIMATION_SCALAR_SOURCES_CATALOGUE,
+} from "../../animation/animationOptionCatalogues";
 
 const owned: ExtensionResource[] = [];
 
@@ -44,6 +49,11 @@ describe("ExtensionAnimationSourceSelector", () => {
         dispose: () => undefined,
       }),
     });
+    expect(
+      hostOptionCatalog
+        .listOptions(ANIMATION_SCALAR_SOURCES_CATALOGUE)
+        .map((option) => option.id),
+    ).toContain("test.selector-source/wave");
     const onChange = vi.fn();
     render(
       <ExtensionAnimationSourceSelector
@@ -87,6 +97,11 @@ describe("ExtensionAnimationSourceSelector", () => {
       validate: () => undefined,
       compile: () => ({ sample: () => 0, dispose: () => undefined }),
     });
+    expect(
+      hostOptionCatalog
+        .listOptions(ANIMATION_INTERPOLATIONS_CATALOGUE)
+        .map((option) => option.id),
+    ).toContain("test.selector-interpolation/curve");
     const onChange = vi.fn();
     render(
       <ExtensionAnimationSourceSelector

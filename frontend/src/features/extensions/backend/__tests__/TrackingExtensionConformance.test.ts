@@ -276,6 +276,14 @@ function createConformanceApi() {
         }),
         listMenus: () => [],
       },
+      catalogues: {
+        addOption: (option) => ({
+          id: option.id,
+          dispose: () => undefined,
+        }),
+        list: () => [],
+        listCatalogues: () => [],
+      },
       commands: {
         register: (definition) => ({
           id: definition.id,

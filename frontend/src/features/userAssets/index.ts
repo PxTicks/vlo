@@ -1,4 +1,5 @@
 export { AssetBrowser } from "./AssetBrowser";
+export { declareLibrarySortModes } from "./sortModesCatalogue";
 export { AssetCard } from "./components/AssetCard";
 export { AssetPreviewDialog } from "./components/AssetPreviewDialog";
 export { useTimelineAssetRevealClipOverlay } from "./hooks/useTimelineAssetRevealClipOverlay";

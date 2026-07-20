@@ -42,6 +42,10 @@ export interface AppMenuProps<TMenuId extends HostMenuId = HostMenuId> {
   readonly onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
   /** Presentation passthrough (e.g. paper styling); never behavioural. */
   readonly slotProps?: MenuProps["slotProps"];
+  /** Rendered as `data-testid` on the menu root. */
+  readonly testId?: string;
+  /** DOM id on the menu root (aria-controls targets). */
+  readonly id?: string;
   /**
    * Caption rendered above a group's items (option-style menus). Groups
    * without an entry render divider-separated as before; extension items
@@ -90,6 +94,8 @@ export function AppMenu<TMenuId extends HostMenuId>({
   onClick,
   onContextMenu,
   slotProps,
+  testId,
+  id,
   groupLabels,
   extensionItemTestIdPrefix = "extension-menu-item-",
 }: AppMenuProps<TMenuId>) {
@@ -208,6 +214,7 @@ export function AppMenu<TMenuId extends HostMenuId>({
       <MenuItem
         key={item.key}
         disabled={item.disabled}
+        selected={item.selected}
         data-testid={item.testId}
         onClick={() => {
           item.select();
@@ -235,6 +242,8 @@ export function AppMenu<TMenuId extends HostMenuId>({
       onClick={onClick}
       onContextMenu={onContextMenu}
       slotProps={slotProps}
+      data-testid={testId}
+      id={id}
     >
       {children}
     </Menu>

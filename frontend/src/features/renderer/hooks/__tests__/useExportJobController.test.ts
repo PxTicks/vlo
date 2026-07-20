@@ -195,13 +195,19 @@ describe("useExportJobController runProjectExport", () => {
 
     const { result } = makeController();
     await act(async () => {
-      await result.current.runProjectExport({ resolution: 720 });
+      await result.current.runProjectExport({
+        resolution: 720,
+        format: "webm",
+        keyFrameInterval: 2,
+      });
     });
 
     expect(deriveTrueDimensionsFromShortEdge).toHaveBeenCalledWith("16:9", 720);
     const [selection, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
     expect(selection).toMatchObject({ start: 0, end: 5000, fps: 24 });
     expect(opts!.filenamePrefix).toBe("export");
+    expect(opts!.format).toBe("webm");
+    expect(opts!.keyFrameInterval).toBe(2);
     expect(opts!.renderInputs!.exportConfig).toMatchObject({
       outputWidth: 1280,
       outputHeight: 720,

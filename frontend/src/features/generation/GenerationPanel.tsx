@@ -11,7 +11,6 @@ import {
   Box,
   Typography,
   Button,
-  Menu,
   LinearProgress,
   CircularProgress,
   Chip,
@@ -29,6 +28,8 @@ import {
   DialogContent,
   DialogActions,
 } from "@mui/material";
+import { AppMenu } from "../../core/shell/AppMenu";
+import type { HostMenuItemDescriptor } from "../../core/shell/menuDescriptors";
 
 import {
   Stop,
@@ -1299,23 +1300,34 @@ export function GenerationPanel() {
             ) : null}
           </Box>
 
-          <Menu
-            anchorEl={generateMenuAnchorEl}
+          <AppMenu
+            menuId="generation.generate.options"
+            subject={{
+              slot: "generation.generate.options",
+              generation: { workflowId: selectedWorkflowId ?? null },
+            }}
+            items={[
+              ...[2, 4, 8, 16].map(
+                (count): HostMenuItemDescriptor => ({
+                  kind: "action",
+                  id: `generate-x${count}`,
+                  label: `x ${count}`,
+                  group: "1_batch",
+                  run: () => handleSelectGenerateCount(count),
+                }),
+              ),
+              {
+                kind: "action",
+                id: "queue-custom",
+                label: "Queue custom...",
+                group: "2_custom",
+                run: handleOpenCustomGenerateDialog,
+              },
+            ]}
             open={Boolean(generateMenuAnchorEl)}
             onClose={handleCloseGenerateMenu}
-          >
-            {[2, 4, 8, 16].map((count) => (
-              <MenuItem
-                key={count}
-                onClick={() => handleSelectGenerateCount(count)}
-              >
-                {`x ${count}`}
-              </MenuItem>
-            ))}
-            <MenuItem onClick={handleOpenCustomGenerateDialog}>
-              Queue custom...
-            </MenuItem>
-          </Menu>
+            anchorEl={generateMenuAnchorEl}
+          />
 
           {/* Progress */}
           {isRunning && activeJob && (

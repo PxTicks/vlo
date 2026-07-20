@@ -1,11 +1,17 @@
 import { useSyncExternalStore } from "react";
 import { FormControl, InputLabel, MenuItem, Select } from "@mui/material";
+import { hostContextKeys } from "../../../core/shell/contextKeys";
+import {
+  hostOptionCatalog,
+  type CatalogueOptionEntry,
+} from "../../../core/shell/optionCatalog";
 import type { ExtensionPayload } from "../../extensions/types";
 import {
+  ANIMATION_INTERPOLATIONS_CATALOGUE,
+  ANIMATION_SCALAR_SOURCES_CATALOGUE,
   CORE_MONOTONE_INTERPOLATION_ID,
-  extensionInterpolationRegistry,
-  extensionScalarSourceRegistry,
 } from "../animation";
+import { readAnimationCatalogueValue } from "../animation/animationOptionCatalogues";
 import type { ScalarParameter, SplinePoint } from "../types";
 import {
   isExtensionKeyframedScalarParameter,
@@ -14,21 +20,24 @@ import {
 } from "../types";
 import { resolveScalar } from "../utils/resolveScalar";
 
-const CORE_VALUE = `interpolation:${CORE_MONOTONE_INTERPOLATION_ID}`;
+const INTERPOLATION_PREFIX = "interpolation:";
+const SOURCE_PREFIX = "source:";
 
-function payloadFor(
-  contribution: Readonly<{
-    ownerId: string;
-    localId: string;
-    definition: Readonly<{ schemaVersion: number; defaultData: ExtensionPayload["data"] }>;
-  }>,
-): ExtensionPayload {
+function payloadFor(option: CatalogueOptionEntry): ExtensionPayload | null {
+  const value = readAnimationCatalogueValue(option);
+  if (!value) return null;
+  const separator = value.providerId.indexOf("/");
+  if (separator <= 0 || separator === value.providerId.length - 1) return null;
   return {
-    extensionId: contribution.ownerId,
-    typeId: contribution.localId,
-    schemaVersion: contribution.definition.schemaVersion,
-    data: structuredClone(contribution.definition.defaultData),
+    extensionId: value.providerId.slice(0, separator),
+    typeId: value.providerId.slice(separator + 1),
+    schemaVersion: value.schemaVersion,
+    data: structuredClone(value.defaultData),
   };
+}
+
+function providerId(option: CatalogueOptionEntry): string | null {
+  return readAnimationCatalogueValue(option)?.providerId ?? null;
 }
 
 function pointsFor(
@@ -52,17 +61,52 @@ function pointsFor(
   ];
 }
 
-function selectedValue(value: ScalarParameter): string {
+function selectedProvider(value: ScalarParameter): {
+  readonly kind: "source" | "interpolation";
+  readonly id: string;
+} {
   if (isExtensionScalarSourceParameter(value)) {
-    return `source:${value.source.extensionId}/${value.source.typeId}`;
+    return {
+      kind: "source",
+      id: `${value.source.extensionId}/${value.source.typeId}`,
+    };
   }
   if (isExtensionKeyframedScalarParameter(value)) {
-    const outgoing = value.keyframes.find((keyframe) => keyframe.outgoing)?.outgoing;
+    const outgoing = value.keyframes.find(
+      (keyframe) => keyframe.outgoing,
+    )?.outgoing;
     if (outgoing) {
-      return `interpolation:${outgoing.extensionId}/${outgoing.typeId}`;
+      return {
+        kind: "interpolation",
+        id: `${outgoing.extensionId}/${outgoing.typeId}`,
+      };
     }
   }
-  return CORE_VALUE;
+  return { kind: "interpolation", id: CORE_MONOTONE_INTERPOLATION_ID };
+}
+
+function useAnimationOptions(): {
+  readonly sources: readonly CatalogueOptionEntry[];
+  readonly interpolations: readonly CatalogueOptionEntry[];
+} {
+  useSyncExternalStore(
+    (listener) => hostOptionCatalog.subscribe(listener),
+    () => hostOptionCatalog.getRevision(),
+    () => hostOptionCatalog.getRevision(),
+  );
+  useSyncExternalStore(
+    (listener) => hostContextKeys.subscribe(listener),
+    () => hostContextKeys.getRevision(),
+    () => hostContextKeys.getRevision(),
+  );
+  return {
+    sources: hostOptionCatalog.resolveOptions(
+      ANIMATION_SCALAR_SOURCES_CATALOGUE,
+    ),
+    interpolations: hostOptionCatalog.resolveOptions(
+      ANIMATION_INTERPOLATIONS_CATALOGUE,
+    ),
+  };
 }
 
 export interface ExtensionAnimationSourceSelectorProps {
@@ -78,33 +122,22 @@ export function ExtensionAnimationSourceSelector({
   duration,
   onChange,
 }: ExtensionAnimationSourceSelectorProps) {
-  useSyncExternalStore(
-    (listener) => {
-      const unsubscribeSources = extensionScalarSourceRegistry.subscribe(listener);
-      const unsubscribeInterpolations =
-        extensionInterpolationRegistry.subscribe(listener);
-      return () => {
-        unsubscribeSources();
-        unsubscribeInterpolations();
-      };
-    },
-    () =>
-      `${extensionScalarSourceRegistry.getRevision()}:${extensionInterpolationRegistry.getRevision()}`,
-    () =>
-      `${extensionScalarSourceRegistry.getRevision()}:${extensionInterpolationRegistry.getRevision()}`,
-  );
-
-  const sources = extensionScalarSourceRegistry.list();
-  const interpolations = extensionInterpolationRegistry.list();
+  const { sources, interpolations } = useAnimationOptions();
   const hasExtensionChoices =
-    sources.length > 0 || interpolations.some(({ ownerId }) => ownerId !== "vlo.core");
+    sources.length > 0 ||
+    interpolations.some(
+      (option) => providerId(option) !== CORE_MONOTONE_INTERPOLATION_ID,
+    );
   if (!hasExtensionChoices) return null;
 
-  const current = selectedValue(value);
-  const knownValues = new Set([
-    ...sources.map(({ id }) => `source:${id}`),
-    ...interpolations.map(({ id }) => `interpolation:${id}`),
-  ]);
+  const selected = selectedProvider(value);
+  const currentOption =
+    (selected.kind === "source" ? sources : interpolations).find(
+      (option) => providerId(option) === selected.id,
+    ) ?? null;
+  const current = currentOption
+    ? `${selected.kind === "source" ? SOURCE_PREFIX : INTERPOLATION_PREFIX}${currentOption.id}`
+    : `missing:${selected.kind}:${selected.id}`;
 
   return (
     <FormControl size="small" fullWidth>
@@ -115,54 +148,57 @@ export function ExtensionAnimationSourceSelector({
         label="Animation mathematics"
         onChange={(event) => {
           const next = event.target.value;
-          if (next.startsWith("source:")) {
-            const contribution = sources.find(
-              ({ id }) => `source:${id}` === next,
-            );
-            if (contribution) {
-              onChange({ type: "extension-scalar", source: payloadFor(contribution) });
-            }
+          const isSource = next.startsWith(SOURCE_PREFIX);
+          const prefix = isSource ? SOURCE_PREFIX : INTERPOLATION_PREFIX;
+          const option = (isSource ? sources : interpolations).find(
+            (candidate) => candidate.id === next.slice(prefix.length),
+          );
+          if (!option) return;
+          const payload = payloadFor(option);
+          if (!payload) return;
+          if (isSource) {
+            onChange({ type: "extension-scalar", source: payload });
             return;
           }
-
-          const contribution = interpolations.find(
-            ({ id }) => `interpolation:${id}` === next,
-          );
-          if (!contribution) return;
           const points = pointsFor(value, minTime, duration);
-          if (contribution.id === CORE_MONOTONE_INTERPOLATION_ID) {
+          if (
+            `${payload.extensionId}/${payload.typeId}` ===
+            CORE_MONOTONE_INTERPOLATION_ID
+          ) {
             onChange({ type: "spline", points });
             return;
           }
-          const outgoing = payloadFor(contribution);
           onChange({
             type: "extension-keyframed-scalar",
             keyframes: points.map((point, index) => ({
               ...point,
-              outgoing: index < points.length - 1 ? structuredClone(outgoing) : undefined,
+              outgoing:
+                index < points.length - 1
+                  ? structuredClone(payload)
+                  : undefined,
             })),
           });
         }}
       >
-        {!knownValues.has(current) && (
+        {!currentOption ? (
           <MenuItem value={current} disabled>
             Missing extension provider
           </MenuItem>
-        )}
-        {interpolations.map((contribution) => (
+        ) : null}
+        {interpolations.map((option) => (
           <MenuItem
-            key={`interpolation:${contribution.id}`}
-            value={`interpolation:${contribution.id}`}
+            key={`${INTERPOLATION_PREFIX}${option.id}`}
+            value={`${INTERPOLATION_PREFIX}${option.id}`}
           >
-            {contribution.definition.label} · keyframes
+            {option.label} · keyframes
           </MenuItem>
         ))}
-        {sources.map((contribution) => (
+        {sources.map((option) => (
           <MenuItem
-            key={`source:${contribution.id}`}
-            value={`source:${contribution.id}`}
+            key={`${SOURCE_PREFIX}${option.id}`}
+            value={`${SOURCE_PREFIX}${option.id}`}
           >
-            {contribution.definition.label} · source
+            {option.label} · source
           </MenuItem>
         ))}
       </Select>

@@ -50,9 +50,44 @@ export interface HostMenuSubjectMap {
       readonly isLocked: boolean;
     };
   };
+  readonly "masks.add.options": {
+    readonly slot: "masks.add.options";
+    /** The clip the new mask would attach to. */
+    readonly target: {
+      readonly clipId: string;
+      readonly maskCount: number;
+    };
+  };
+  readonly "transformations.path.add": {
+    readonly slot: "transformations.path.add";
+    /** The clip a position path would be created for. */
+    readonly target: {
+      readonly clipId: string;
+      readonly trackableMaskCount: number;
+    };
+  };
+  readonly "generation.generate.options": {
+    readonly slot: "generation.generate.options";
+    readonly generation: {
+      readonly workflowId: string | null;
+    };
+  };
+  readonly "app.workspace.select": {
+    readonly slot: "app.workspace.select";
+    readonly sidebar: {
+      readonly location: string;
+      readonly selectedWorkspaceId: string | null;
+    };
+  };
   readonly "library.item.actions": {
     readonly slot: "library.item.actions";
     readonly asset: ExtensionEntityAssetSnapshot;
+  };
+  readonly "library.sort.options": {
+    readonly slot: "library.sort.options";
+    readonly browser: {
+      readonly sortOption: string;
+    };
   };
   readonly "library.browser.context": {
     readonly slot: "library.browser.context";
@@ -135,6 +170,59 @@ function validateMarkerContextSubject(subject: unknown): boolean {
   );
 }
 
+/** Subject: `{ slot, target: { clipId, maskCount } }`. */
+function validateMasksAddSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "masks.add.options") return false;
+  const target = subject.target;
+  return (
+    isRecord(target) &&
+    typeof target.clipId === "string" &&
+    Number.isInteger(target.maskCount) &&
+    Number(target.maskCount) >= 0
+  );
+}
+
+/** Subject: `{ slot, target: { clipId, trackableMaskCount } }`. */
+function validatePathAddSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "transformations.path.add") {
+    return false;
+  }
+  const target = subject.target;
+  return (
+    isRecord(target) &&
+    typeof target.clipId === "string" &&
+    Number.isInteger(target.trackableMaskCount) &&
+    Number(target.trackableMaskCount) >= 0
+  );
+}
+
+/** Subject: `{ slot, generation: { workflowId } }`. */
+function validateGenerateOptionsSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "generation.generate.options") {
+    return false;
+  }
+  const generation = subject.generation;
+  return (
+    isRecord(generation) &&
+    (typeof generation.workflowId === "string" ||
+      generation.workflowId === null)
+  );
+}
+
+/** Subject: `{ slot, sidebar: { location, selectedWorkspaceId } }`. */
+function validateWorkspaceSelectSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "app.workspace.select") {
+    return false;
+  }
+  const sidebar = subject.sidebar;
+  return (
+    isRecord(sidebar) &&
+    typeof sidebar.location === "string" &&
+    (typeof sidebar.selectedWorkspaceId === "string" ||
+      sidebar.selectedWorkspaceId === null)
+  );
+}
+
 /** Subject: `{ slot, track: { id, label, type, flags } }`. */
 function validateTrackContextSubject(subject: unknown): boolean {
   if (!isRecord(subject) || subject.slot !== "timeline.track.context") {
@@ -157,6 +245,15 @@ function validateLibraryItemSubject(subject: unknown): boolean {
   }
   const asset = subject.asset;
   return isRecord(asset) && hasStringFields(asset, ["id", "name", "type"]);
+}
+
+/** Subject: `{ slot, browser: { sortOption } }`. */
+function validateLibrarySortSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "library.sort.options") {
+    return false;
+  }
+  const browser = subject.browser;
+  return isRecord(browser) && typeof browser.sortOption === "string";
 }
 
 /** Subject: `{ slot, browser: detached browser view state }`. */
@@ -210,7 +307,12 @@ const HOST_MENU_SUBJECT_VALIDATORS = {
   "timeline.clip.context": validateClipContextSubject,
   "timeline.marker.context": validateMarkerContextSubject,
   "timeline.track.context": validateTrackContextSubject,
+  "masks.add.options": validateMasksAddSubject,
+  "transformations.path.add": validatePathAddSubject,
+  "generation.generate.options": validateGenerateOptionsSubject,
+  "app.workspace.select": validateWorkspaceSelectSubject,
   "library.item.actions": validateLibraryItemSubject,
+  "library.sort.options": validateLibrarySortSubject,
   "library.browser.context": validateLibraryBrowserSubject,
   "player.canvas.context": validatePlayerCanvasSubject,
   "app.project.settings": validateProjectSettingsSubject,
@@ -254,9 +356,29 @@ const HOST_MENU_SUBJECT_SCHEMAS = {
       isLocked: "boolean",
     },
   },
+  "masks.add.options": {
+    slot: "'masks.add.options'",
+    target: { clipId: "string", maskCount: "number" },
+  },
+  "transformations.path.add": {
+    slot: "'transformations.path.add'",
+    target: { clipId: "string", trackableMaskCount: "number" },
+  },
+  "generation.generate.options": {
+    slot: "'generation.generate.options'",
+    generation: { workflowId: "string | null" },
+  },
+  "app.workspace.select": {
+    slot: "'app.workspace.select'",
+    sidebar: { location: "string", selectedWorkspaceId: "string | null" },
+  },
   "library.item.actions": {
     slot: "'library.item.actions'",
     asset: { id: "string", name: "string", type: "string" },
+  },
+  "library.sort.options": {
+    slot: "'library.sort.options'",
+    browser: { sortOption: "string" },
   },
   "library.browser.context": {
     slot: "'library.browser.context'",

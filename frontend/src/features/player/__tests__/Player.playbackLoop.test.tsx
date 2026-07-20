@@ -323,6 +323,12 @@ import { audioSystem } from "../services/AudioSystem";
 import { playbackClock, playbackFrameClock } from "../../../core/playback/PlaybackClock";
 import { addLocalAsset } from "../../userAssets";
 
+const MP4_FORMAT = {
+  format: "mp4",
+  extension: "mp4",
+  mimeType: "video/mp4",
+} as const;
+
 describe("Player playback loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -595,15 +601,18 @@ describe("Player playback loop", () => {
       await (
         extractDialogProps.current?.onExport as (
           resolution: number,
+          format: typeof MP4_FORMAT,
         ) => Promise<void>
-      )(1080);
+      )(1080, MP4_FORMAT);
     });
     expect(fileSystemService.showSaveVideoPicker).toHaveBeenCalledWith(
       "My Project.mp4",
+      "mp4",
     );
     expect(runProjectExportMock).toHaveBeenCalledWith(
       expect.objectContaining({
         resolution: 1080,
+        format: "mp4",
         fileHandle: expect.any(Object),
         onProgress: expect.any(Function),
       }),
@@ -626,10 +635,14 @@ describe("Player playback loop", () => {
       await (
         extractDialogProps.current?.onExport as (
           resolution: number,
+          format: typeof MP4_FORMAT,
         ) => Promise<void>
-      )(720);
+      )(720, MP4_FORMAT);
     });
-    expect(fileSystemService.showSaveVideoPicker).toHaveBeenCalledWith();
+    expect(fileSystemService.showSaveVideoPicker).toHaveBeenCalledWith(
+      "export.mp4",
+      "mp4",
+    );
     expect(runProjectExportMock).not.toHaveBeenCalled();
   });
 
@@ -643,8 +656,9 @@ describe("Player playback loop", () => {
       await (
         extractDialogProps.current?.onExport as (
           resolution: number,
+          format: typeof MP4_FORMAT,
         ) => Promise<void>
-      )(720);
+      )(720, MP4_FORMAT);
     });
     expect(error).toHaveBeenCalledWith(
       "Failed to open save file picker",

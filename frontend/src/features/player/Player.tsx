@@ -53,6 +53,7 @@ import {
 
 import { PlayerControls } from "./components/PlayerControls";
 import { ExtractDialog } from "./components/ExtractDialog";
+import type { ExportFormatValue } from "./exportFormatsCatalogue";
 import {
   createPointTimelineSelection,
   getDefaultSelectionEnd,
@@ -675,7 +676,7 @@ function PlayerImpl() {
   }, [isPlaying, setIsPlaying, handleConfirmSelection]);
 
   const handleExport = useCallback(
-    async (resolution: number) => {
+    async (resolution: number, format: ExportFormatValue) => {
       const { setIsProcessing, setProgress, setDialogView, closeDialog } =
         useExtractStore.getState();
 
@@ -684,11 +685,15 @@ function PlayerImpl() {
         fileHandle = (await useProjectStore.getState().project?.title)
           ? await import("../project").then((m) =>
               m.fileSystemService.showSaveVideoPicker(
-                `${useProjectStore.getState().project?.title}.mp4`,
+                `${useProjectStore.getState().project?.title}.${format.extension}`,
+                format.format,
               ),
             )
           : await import("../project").then((m) =>
-              m.fileSystemService.showSaveVideoPicker(),
+              m.fileSystemService.showSaveVideoPicker(
+                `export.${format.extension}`,
+                format.format,
+              ),
             );
       } catch (err) {
         // User cancelled the picker, abort silently.
@@ -706,6 +711,8 @@ function PlayerImpl() {
       try {
         await runProjectExport({
           resolution,
+          format: format.format,
+          keyFrameInterval: format.keyFrameInterval,
           fileHandle,
           onProgress: (progress) => {
             useExtractStore.getState().setProgress(progress);

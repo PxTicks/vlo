@@ -31,6 +31,36 @@ import {
   generateArcLengthTable,
   samplePathAtProgress,
 } from "../utils/catmullRomUtils";
+import {
+  ANIMATION_INTERPOLATIONS_CATALOGUE,
+  ANIMATION_SCALAR_SOURCES_CATALOGUE,
+  declareAnimationOptionCatalogues,
+  registerAnimationCatalogueOption,
+} from "./animationOptionCatalogues";
+
+// These declarations must exist before an extension can register providers.
+declareAnimationOptionCatalogues();
+
+function ownAnimationCatalogueOption(
+  scope: ExtensionApiScope,
+  catalogueId:
+    | typeof ANIMATION_SCALAR_SOURCES_CATALOGUE
+    | typeof ANIMATION_INTERPOLATIONS_CATALOGUE,
+  option: {
+    readonly id: string;
+    readonly label: string;
+    readonly schemaVersion: number;
+    readonly defaultData: JsonValue;
+  },
+) {
+  const pending = registerAnimationCatalogueOption(catalogueId, option);
+  try {
+    return scope.own(pending);
+  } catch (error) {
+    pending.dispose();
+    throw error;
+  }
+}
 
 const CORE_OWNER_ID = "vlo.core";
 export const CORE_MONOTONE_INTERPOLATION_ID =
@@ -233,9 +263,30 @@ export class ExtensionScalarSourceRegistry {
         const registration = bound.register(
           prepareDefinition({ ...definition, report: scope.report }),
         );
+        let catalogueRegistration: ReturnType<
+          typeof ownAnimationCatalogueOption
+        >;
+        try {
+          catalogueRegistration = ownAnimationCatalogueOption(
+            scope,
+            ANIMATION_SCALAR_SOURCES_CATALOGUE,
+            {
+              id: registration.id,
+              label: definition.label,
+              schemaVersion: definition.schemaVersion,
+              defaultData: definition.defaultData,
+            },
+          );
+        } catch (error) {
+          registration.dispose();
+          throw error;
+        }
         return Object.freeze({
           id: registration.id,
-          dispose: () => registration.dispose(),
+          dispose: () => {
+            catalogueRegistration.dispose();
+            registration.dispose();
+          },
         });
       },
     });
@@ -320,9 +371,30 @@ export class ExtensionInterpolationRegistry {
         const registration = bound.register(
           prepareDefinition({ ...definition, report: scope.report }),
         );
+        let catalogueRegistration: ReturnType<
+          typeof ownAnimationCatalogueOption
+        >;
+        try {
+          catalogueRegistration = ownAnimationCatalogueOption(
+            scope,
+            ANIMATION_INTERPOLATIONS_CATALOGUE,
+            {
+              id: registration.id,
+              label: definition.label,
+              schemaVersion: definition.schemaVersion,
+              defaultData: definition.defaultData,
+            },
+          );
+        } catch (error) {
+          registration.dispose();
+          throw error;
+        }
         return Object.freeze({
           id: registration.id,
-          dispose: () => registration.dispose(),
+          dispose: () => {
+            catalogueRegistration.dispose();
+            registration.dispose();
+          },
         });
       },
     });

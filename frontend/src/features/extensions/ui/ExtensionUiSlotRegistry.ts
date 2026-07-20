@@ -19,7 +19,7 @@ import {
 
 type ExtensionUiSlotApi = Omit<
   ExtensionUiApi,
-  "registerPanelControl" | "commands" | "menus"
+  "registerPanelControl" | "commands" | "menus" | "catalogues"
 >;
 
 const SLOT_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;

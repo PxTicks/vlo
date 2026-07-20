@@ -18,6 +18,7 @@ import {
 import { renderSelectionToVideoFile } from "../services/renderSelectionToVideoFile";
 import { deriveTrueDimensionsFromShortEdge } from "../utils/dimensions";
 import type { AspectRatio } from "../../project/useProjectStore";
+import type { OutputVideoFormat } from "../services/TextureOutputEncoder";
 import {
   getCompositeAssets,
   getCompositeForceBakedIds,
@@ -47,6 +48,8 @@ export interface SelectionExportOptions {
 
 export interface ProjectExportOptions {
   resolution: number;
+  format?: OutputVideoFormat;
+  keyFrameInterval?: number;
   fileHandle?: FileSystemFileHandle;
   onProgress?: (progress: number) => void;
 }
@@ -214,7 +217,13 @@ export function useExportJobController({
   );
 
   const runProjectExport = useCallback(
-    async ({ resolution, fileHandle, onProgress }: ProjectExportOptions) => {
+    async ({
+      resolution,
+      format,
+      keyFrameInterval,
+      fileHandle,
+      onProgress,
+    }: ProjectExportOptions) => {
       const sessionId = beginSession();
       const trueDimensions = deriveTrueDimensionsFromShortEdge(
         projectAspectRatio,
@@ -247,6 +256,8 @@ export function useExportJobController({
         await renderSelectionToVideoFile(fullTimelineSelection, {
           renderInputs: { exportConfig, projectData },
           onProgress,
+          format,
+          keyFrameInterval,
           skipNormalize: true,
           filenamePrefix: "export",
           onRendererCreated: (renderer) =>

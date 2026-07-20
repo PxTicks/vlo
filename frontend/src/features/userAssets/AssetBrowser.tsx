@@ -1,6 +1,22 @@
-import React, { useState, useRef, useMemo, memo } from "react";
+import React, {
+  useState,
+  useRef,
+  useMemo,
+  useSyncExternalStore,
+  memo,
+} from "react";
+import { AppMenu } from "../../core/shell/AppMenu";
+import { hostContextKeys } from "../../core/shell/contextKeys";
 import { useHostContextMenu } from "../../core/shell/useHostContextMenu";
 import type { HostMenuItemDescriptor } from "../../core/shell/menuDescriptors";
+import { hostOptionCatalog } from "../../core/shell/optionCatalog";
+import {
+  compareAssetsBySortValue,
+  declareLibrarySortModes,
+  DEFAULT_LIBRARY_SORT_MODE_ID,
+  isLibrarySortMode,
+  LIBRARY_SORT_MODES_CATALOGUE,
+} from "./sortModesCatalogue";
 import { isAssetBackedClip } from "../../types/TimelineTypes";
 import {
   Box,
@@ -9,8 +25,6 @@ import {
   CircularProgress,
   Typography,
   IconButton,
-  Menu,
-  MenuItem,
   Tooltip,
 } from "@mui/material";
 
@@ -52,7 +66,11 @@ import {
 import { isAssetVisibleInBrowser } from "./utils/assetVisibility";
 import { getAssetsForFamilyId, getFamilyMembers } from "./utils/familyMembers";
 
-type SortOption = "dateDesc" | "dateAsc" | "nameAsc";
+// Catalogue initialization is owned by the consuming feature and explicit
+// (the declareHostMenus pattern): rendering the browser never depends on
+// bootstrap import order.
+declareLibrarySortModes();
+
 const ASSET_TYPE_PRIORITY: AssetType[] = ["video", "image", "audio", "lut"];
 
 interface FamilyScope {
@@ -142,7 +160,9 @@ function resolveFamilyScopeForAsset(
 function AssetBrowserComponent() {
   const assetBrowserFocusProps = useRegionFocus("assetBrowser");
   const [activeTab, setActiveTab] = useState<AssetType>("video");
-  const [sortOption, setSortOption] = useState<SortOption>("dateDesc");
+  const [sortOption, setSortOption] = useState<string>(
+    DEFAULT_LIBRARY_SORT_MODE_ID,
+  );
   const [sortAnchorEl, setSortAnchorEl] = useState<null | HTMLElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showFavouritesOnly, setShowFavouritesOnly] = useState(false);
@@ -336,10 +356,39 @@ function AssetBrowserComponent() {
     setSortAnchorEl(event.currentTarget);
   };
 
-  const handleSortClose = (option?: SortOption) => {
-    if (option) setSortOption(option);
-    setSortAnchorEl(null);
-  };
+  // Sort modes come from the `library.sort-modes` catalogue (plan §3.7);
+  // both sort surfaces (dropdown + background menu) render its options.
+  const sortModeRevision = useSyncExternalStore(
+    (listener) => hostOptionCatalog.subscribe(listener),
+    () => hostOptionCatalog.getRevision(),
+    () => hostOptionCatalog.getRevision(),
+  );
+  const sortContextRevision = useSyncExternalStore(
+    (listener) => hostContextKeys.subscribe(listener),
+    () => hostContextKeys.getRevision(),
+    () => hostContextKeys.getRevision(),
+  );
+  const sortModes = hostOptionCatalog.resolveOptions(
+    LIBRARY_SORT_MODES_CATALOGUE,
+  );
+  const activeSortValue = sortModes.find(
+    (mode) => mode.id === sortOption,
+  )?.value;
+  const activeSortMode = isLibrarySortMode(activeSortValue)
+    ? activeSortValue
+    : null;
+  const missingSortModeItem: HostMenuItemDescriptor | null = activeSortMode
+    ? null
+    : {
+        kind: "action",
+        id: `missing-sort-${sortOption}`,
+        label: `Missing sort provider: ${sortOption}`,
+        group: "3_sort",
+        order: -1,
+        disabled: true,
+        selected: true,
+        run: () => undefined,
+      };
 
   const familyMembersByType = useMemo(() => {
     const membersByType = new Map<string, number>();
@@ -399,6 +448,9 @@ function AssetBrowserComponent() {
   }, [effectiveFamilyScope]);
 
   const sortedAssets = useMemo(() => {
+    // These tokens make external-store changes part of this memo's contract.
+    void sortModeRevision;
+    void sortContextRevision;
     const baseAssets = effectiveFamilyScope
       ? activeTab === effectiveFamilyScope.assetType
         ? scopedFamilyAssets
@@ -421,17 +473,15 @@ function AssetBrowserComponent() {
       (asset) => !showFavouritesOnly || asset.favourite,
     );
 
-    return filtered.sort((a, b) => {
-      switch (sortOption) {
-        case "nameAsc":
-          return a.name.localeCompare(b.name);
-        case "dateAsc":
-          return (a.createdAt || 0) - (b.createdAt || 0);
-        case "dateDesc":
-        default:
-          return (b.createdAt || 0) - (a.createdAt || 0);
-      }
-    });
+    // Pull inside the memo so its dependencies are the primitive registry,
+    // context, and selection revisions rather than a frozen JSON object whose
+    // immutability React's compiler cannot infer.
+    const sortValue = hostOptionCatalog
+      .resolveOptions(LIBRARY_SORT_MODES_CATALOGUE)
+      .find((mode) => mode.id === sortOption)?.value;
+    return filtered.sort((a, b) =>
+      compareAssetsBySortValue(sortValue, a, b),
+    );
   }, [
     assets,
     families,
@@ -440,6 +490,8 @@ function AssetBrowserComponent() {
     effectiveFamilyScope,
     scopedFamilyAssets,
     sortOption,
+    sortModeRevision,
+    sortContextRevision,
     showFavouritesOnly,
   ]);
 
@@ -462,11 +514,6 @@ function AssetBrowserComponent() {
     }
     event.preventDefault();
     event.stopPropagation();
-    const sortItems: Array<{ option: SortOption; label: string }> = [
-      { option: "dateDesc", label: "Newest First" },
-      { option: "dateAsc", label: "Oldest First" },
-      { option: "nameAsc", label: "Name (A-Z)" },
-    ];
     showContextMenu({
       menuId: "library.browser.context",
       subject: {
@@ -496,16 +543,18 @@ function AssetBrowserComponent() {
           selected: showFavouritesOnly,
           run: () => setShowFavouritesOnly((current) => !current),
         },
-        ...sortItems.map(
-          ({ option, label }): HostMenuItemDescriptor => ({
+        ...sortModes.map(
+          (mode, index): HostMenuItemDescriptor => ({
             kind: "action",
-            id: `sort-${option}`,
-            label,
+            id: `sort-${mode.id}`,
+            label: mode.label,
             group: "3_sort",
-            selected: sortOption === option,
-            run: () => setSortOption(option),
+            order: index,
+            selected: sortOption === mode.id,
+            run: () => setSortOption(mode.id),
           }),
         ),
+        ...(missingSortModeItem ? [missingSortModeItem] : []),
       ],
       position: { x: event.clientX, y: event.clientY },
     });
@@ -993,34 +1042,34 @@ function AssetBrowserComponent() {
             </IconButton>
           </Tooltip>
 
-          {/* Sort Menu */}
-          <Menu
-            anchorEl={sortAnchorEl}
-            open={Boolean(sortAnchorEl)}
-            onClose={() => handleSortClose()}
-            PaperProps={{
-              sx: { bgcolor: "#333", color: "white" },
+          {/* Sort Menu — options from the library.sort-modes catalogue */}
+          <AppMenu
+            menuId="library.sort.options"
+            subject={{
+              slot: "library.sort.options",
+              browser: { sortOption },
             }}
-          >
-            <MenuItem
-              onClick={() => handleSortClose("dateDesc")}
-              selected={sortOption === "dateDesc"}
-            >
-              Newest First
-            </MenuItem>
-            <MenuItem
-              onClick={() => handleSortClose("dateAsc")}
-              selected={sortOption === "dateAsc"}
-            >
-              Oldest First
-            </MenuItem>
-            <MenuItem
-              onClick={() => handleSortClose("nameAsc")}
-              selected={sortOption === "nameAsc"}
-            >
-              Name (A-Z)
-            </MenuItem>
-          </Menu>
+            items={[
+              ...sortModes.map((mode, index) => ({
+                kind: "action" as const,
+                id: `sort-${mode.id}`,
+                label: mode.label,
+                group: "1_sort",
+                order: index,
+                selected: sortOption === mode.id,
+                run: () => setSortOption(mode.id),
+              })),
+              ...(missingSortModeItem
+                ? [{ ...missingSortModeItem, group: "1_sort" }]
+                : []),
+            ]}
+            open={Boolean(sortAnchorEl)}
+            onClose={() => setSortAnchorEl(null)}
+            anchorEl={sortAnchorEl}
+            slotProps={{
+              paper: { sx: { bgcolor: "#333", color: "white" } },
+            }}
+          />
 
           {/* Upload Icon */}
           <input

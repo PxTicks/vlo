@@ -6,15 +6,9 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Divider,
-  Menu,
-  MenuItem,
-  Typography,
-} from "@mui/material";
+import { Alert, Box, Button, Typography } from "@mui/material";
+import { AppMenu } from "../../../core/shell/AppMenu";
+import type { HostMenuItemDescriptor } from "../../../core/shell/menuDescriptors";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import { useTransformationController } from "../hooks/useTransformationController";
 import {
@@ -732,39 +726,66 @@ export function TransformationPanelSurface({
           >
             Add Path
           </Button>
-          <Menu
-            anchorEl={pathMenuAnchorEl}
+          <AppMenu
+            menuId="transformations.path.add"
+            subject={{
+              slot: "transformations.path.add",
+              target: {
+                clipId: selectedClipId ?? "",
+                trackableMaskCount: trackableMasks.length,
+              },
+            }}
+            items={[
+              {
+                kind: "action",
+                id: "from-drag",
+                label: "From Drag",
+                group: "1_record",
+                run: handleStartRecording,
+              },
+              ...(trackableMasks.length > 0
+                ? trackableMasks.map(
+                    (mask, index): HostMenuItemDescriptor => ({
+                      kind: "action",
+                      id: `from-mask-${mask.id}`,
+                      label: getTrackingMaskMenuLabel(
+                        mask,
+                        trackableMasks.length,
+                      ),
+                      group: "2_masks",
+                      order: index,
+                      disabled: isCreatingPathFromMask,
+                      selected: mask.localId === selectedMaskIdForTracking,
+                      run: () => void handleCreatePathFromMask(mask),
+                    }),
+                  )
+                : [
+                    {
+                      kind: "action",
+                      id: "from-mask-none",
+                      label: "From Mask",
+                      group: "2_masks",
+                      disabled: true,
+                      run: () => undefined,
+                    } satisfies HostMenuItemDescriptor,
+                  ]),
+              ...(positionTransform
+                ? extensionPathProviders.map(
+                    (provider, index): HostMenuItemDescriptor => ({
+                      kind: "action",
+                      id: `provider-${provider.id}`,
+                      label: provider.definition.label,
+                      group: "3_providers",
+                      order: index,
+                      run: () => handleCreateExtensionPath(provider),
+                    }),
+                  )
+                : []),
+            ]}
             open={Boolean(pathMenuAnchorEl)}
             onClose={() => setPathMenuAnchorEl(null)}
-          >
-            <MenuItem onClick={handleStartRecording}>From Drag</MenuItem>
-            {trackableMasks.length > 0 ? (
-              trackableMasks.map((mask) => (
-                <MenuItem
-                  key={mask.id}
-                  onClick={() => void handleCreatePathFromMask(mask)}
-                  disabled={isCreatingPathFromMask}
-                  selected={mask.localId === selectedMaskIdForTracking}
-                >
-                  {getTrackingMaskMenuLabel(mask, trackableMasks.length)}
-                </MenuItem>
-              ))
-            ) : (
-              <MenuItem disabled>From Mask</MenuItem>
-            )}
-            {positionTransform && extensionPathProviders.length > 0 ? (
-              <Divider />
-            ) : null}
-            {positionTransform &&
-              extensionPathProviders.map((provider) => (
-                <MenuItem
-                  key={provider.id}
-                  onClick={() => handleCreateExtensionPath(provider)}
-                >
-                  {provider.definition.label}
-                </MenuItem>
-              ))}
-          </Menu>
+            anchorEl={pathMenuAnchorEl}
+          />
         </Box>
       );
     }

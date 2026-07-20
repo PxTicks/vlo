@@ -2,6 +2,7 @@
 export type {
   ControlType,
   ControlOption,
+  CatalogueSelectionValue,
   ControlDefinition,
   LayoutGroup,
   PanelLayoutConfig,

@@ -67,8 +67,32 @@ describe("FileSystemService", () => {
       startIn: "videos",
       types: [
         {
-          description: "Video files",
+          description: "MP4 video",
           accept: { "video/mp4": [".mp4"] },
+        },
+      ],
+    });
+  });
+
+  it("configures the native picker for WebM exports", async () => {
+    const handle = createMockFileHandle("render.webm");
+    const showSaveFilePicker = vi.fn().mockResolvedValue(handle);
+    vi.stubGlobal("window", {
+      ...globalThis.window,
+      showSaveFilePicker,
+    });
+
+    const service = new FileSystemService();
+    await expect(
+      service.showSaveVideoPicker("cut.webm", "webm"),
+    ).resolves.toBe(handle);
+    expect(showSaveFilePicker).toHaveBeenCalledWith({
+      suggestedName: "cut.webm",
+      startIn: "videos",
+      types: [
+        {
+          description: "WebM video",
+          accept: { "video/webm": [".webm"] },
         },
       ],
     });

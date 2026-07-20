@@ -951,19 +951,65 @@ describe("AssetBrowser Component", () => {
           browser: {
             assetType: "video",
             showFavouritesOnly: false,
-            sortOption: "dateDesc",
+            sortOption: "date-desc",
           },
         },
       });
       expect(active?.items.map((item) => item.id)).toEqual([
         "import-assets",
         "favourites-only",
-        "sort-dateDesc",
-        "sort-dateAsc",
-        "sort-nameAsc",
+        "sort-date-desc",
+        "sort-date-asc",
+        "sort-name-asc",
       ]);
     } finally {
       act(() => contextMenuService.close());
+    }
+  });
+
+  it("drives the sort dropdown from the library.sort-modes catalogue, including contributed modes", async () => {
+    const { hostOptionCatalog } = await import(
+      "../../../core/shell/optionCatalog"
+    );
+    const contributed = hostOptionCatalog.registerContributedOption(
+      "library.sort-modes",
+      {
+        id: "example.tags/name-desc",
+        label: "Name (Z-A)",
+        value: { field: "name", direction: "desc" },
+        order: 10,
+      },
+    );
+    try {
+      render(<AssetBrowser />);
+      fireEvent.click(screen.getByTestId("asset-browser-sort-button"));
+
+      const items = screen.getAllByRole("menuitem");
+      expect(items.map((item) => item.textContent)).toEqual([
+        "Newest First",
+        "Oldest First",
+        "Name (A-Z)",
+        "Name (Z-A)",
+      ]);
+
+      // Selecting the contributed mode re-sorts by its declared field.
+      fireEvent.click(screen.getByRole("menuitem", { name: "Name (Z-A)" }));
+      const names = screen
+        .getAllByTestId("asset-card-name")
+        .map((node) => node.textContent);
+      expect(names).toEqual([...names].sort().reverse());
+
+      // Removing the provider preserves the selected ID and makes the
+      // unavailable state explicit instead of silently selecting another mode.
+      contributed.dispose();
+      fireEvent.click(screen.getByTestId("asset-browser-sort-button"));
+      expect(
+        screen.getByRole("menuitem", {
+          name: "Missing sort provider: example.tags/name-desc",
+        }),
+      ).toHaveAttribute("aria-disabled", "true");
+    } finally {
+      contributed.dispose();
     }
   });
 

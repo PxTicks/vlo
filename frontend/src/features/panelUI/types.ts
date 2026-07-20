@@ -1,3 +1,4 @@
+import type { JsonValue } from "@vlo/extension-sdk";
 import type { ComponentType, ReactNode } from "react";
 
 // === Control definition types ===
@@ -19,6 +20,13 @@ export interface ControlOption {
   value: unknown;
 }
 
+/** Persisted, provider-independent snapshot of one catalogue selection. */
+export interface CatalogueSelectionValue {
+  readonly catalogueId: string;
+  readonly optionId: string;
+  readonly value: JsonValue;
+}
+
 export interface ControlDefinition {
   type: ControlType;
   label: string;
@@ -27,6 +35,13 @@ export interface ControlDefinition {
   defaultValue?: unknown;
   step?: number;
   options?: ControlOption[]; // For select type
+  /**
+   * For select type: also render the options of this host option catalogue
+   * (extension-shell-surfaces plan §3.7). Catalogue options commit their
+   * `{ catalogueId, optionId, value }`; a stored option whose provider is
+   * missing renders as a disabled "Missing" entry preserving that snapshot.
+   */
+  catalogueId?: string;
   min?: number;
   max?: number;
   softMin?: number;

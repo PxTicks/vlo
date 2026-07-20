@@ -28,12 +28,12 @@ describe("Wave 3 host menu subjects", () => {
       },
     ],
     [
-      "app.workspace.select",
+      "app.view.select",
       {
-        slot: "app.workspace.select",
-        sidebar: {
-          location: "right-sidebar",
-          selectedWorkspaceId: "workspace-1",
+        slot: "app.view.select",
+        region: {
+          id: "right-sidebar",
+          selectedViewId: "view-1",
         },
       },
     ],
@@ -42,6 +42,18 @@ describe("Wave 3 host menu subjects", () => {
       {
         slot: "library.sort.options",
         browser: { sortOption: "date-desc" },
+      },
+    ],
+    [
+      "projects.item.context",
+      {
+        slot: "projects.item.context",
+        project: {
+          id: "recent-1",
+          name: "Project one",
+          lastOpened: 1_700_000_000_000,
+          pathToken: "recent-1",
+        },
       },
     ],
   ] as const)("validates %s", (menuId, subject) => {
@@ -63,4 +75,3 @@ describe("Wave 3 host menu subjects", () => {
     ).toBe(false);
   });
 });
-

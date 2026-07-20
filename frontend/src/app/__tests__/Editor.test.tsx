@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Editor } from "../Editor";
+import { hostViewRegistry } from "../../core/shell/viewRegistry";
 
 const mockFetchAssets = vi.fn(() => Promise.resolve());
 const mockScanForNewAssets = vi.fn();
@@ -209,6 +210,8 @@ describe("Editor", () => {
   });
 
   afterEach(() => {
+    hostViewRegistry.clearSelection("left-sidebar");
+    hostViewRegistry.clearSelection("right-sidebar");
     consoleErrorSpy.mockRestore();
   });
 

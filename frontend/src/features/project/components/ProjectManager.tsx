@@ -1,22 +1,18 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
-import DeleteIcon from "@mui/icons-material/Delete";
+import ExtensionIcon from "@mui/icons-material/Extension";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
-import HistoryIcon from "@mui/icons-material/History";
-import VideoFileIcon from "@mui/icons-material/VideoFile";
 import {
   Alert,
   Box,
   Button,
-  CardActionArea,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  IconButton,
-  List,
-  ListItem,
+  Tab,
+  Tabs,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -25,20 +21,21 @@ import {
 import { alpha, styled } from "@mui/material/styles";
 
 import vloLogo from "../../../assets/vlo.svg";
+import { ViewLayoutButton } from "../../../core/shell/ViewLayoutButton";
+import { ViewRegionMount } from "../../../core/shell/ViewRegionMount";
+import { useViewRegion } from "../../../core/shell/useViewRegion";
 import { VLO_APP_VERSION } from "../constants";
 import { fileSystemService } from "../services/FileSystemService";
 import { newProjectDirectoryService } from "../services/NewProjectDirectoryService";
-import { ProjectSchemaVersionError } from "../services/ProjectPersistenceService";
-import {
-  recentProjectsService,
-  type RecentProject,
-} from "../services/RecentProjectsService";
+import { projectPageActions } from "../services/ProjectPageActions";
+import { declareProjectHostViews } from "../projectHostViews";
 import { useProjectStore } from "../useProjectStore";
 import type { AspectRatio } from "../useProjectStore";
 import { isNonChromiumBrowser } from "../utils/browser";
 
 const BRAND_PRIMARY = "#73CEBD";
 const BRAND_SECONDARY = "#8DA9FF";
+declareProjectHostViews();
 
 const ASPECT_RATIO_OPTIONS: Array<{
   value: AspectRatio;
@@ -54,12 +51,6 @@ const FPS_OPTIONS: Array<{ value: number; label: string; sub: string }> = [
   { value: 16, label: "16 fps", sub: "Wan" },
   { value: 24, label: "24 fps", sub: "LTX" },
 ];
-
-const recentDateFormatter = new Intl.DateTimeFormat(undefined, {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
 
 const LandingPanel = styled(Box)({
   position: "relative",
@@ -89,39 +80,7 @@ const ActionButton = styled(Button)(({ theme }) => ({
   },
 }));
 
-const RecentProjectButton = styled(CardActionArea)(({ theme }) => ({
-  flexGrow: 1,
-  borderRadius: 22,
-  padding: theme.spacing(2),
-  border: `1px solid ${alpha("#FFFFFF", 0.08)}`,
-  backgroundColor: alpha("#FFFFFF", 0.03),
-  transition: theme.transitions.create(
-    ["transform", "background-color", "border-color"],
-    {
-      duration: theme.transitions.duration.shorter,
-    },
-  ),
-  "&:hover": {
-    transform: "translateY(-1px)",
-    borderColor: alpha(BRAND_PRIMARY, 0.22),
-    backgroundColor: alpha(BRAND_PRIMARY, 0.08),
-  },
-}));
-
-function formatLastOpened(lastOpened: number): string {
-  return recentDateFormatter.format(new Date(lastOpened));
-}
-
-function getRecentProjectOpenErrorMessage(error: unknown): string {
-  if (error instanceof ProjectSchemaVersionError) {
-    return `Failed to open recent project: ${error.message}`;
-  }
-
-  return "Failed to open recent project. It may have been moved or deleted.";
-}
-
 export function ProjectManager() {
-  const [recents, setRecents] = useState<RecentProject[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
@@ -137,10 +96,10 @@ export function ProjectManager() {
 
   const loadProject = useProjectStore((state) => state.loadProject);
   const createProject = useProjectStore((state) => state.createProject);
+  const { views, selectedViewId, selectView } =
+    useViewRegion("projects-page.main");
 
   useEffect(() => {
-    void loadRecents();
-
     let isCurrent = true;
     void newProjectDirectoryService
       .getDirectory()
@@ -157,11 +116,6 @@ export function ProjectManager() {
       isCurrent = false;
     };
   }, []);
-
-  async function loadRecents() {
-    const list = await recentProjectsService.getRecents();
-    setRecents(list);
-  }
 
   async function handleOpenProject() {
     try {
@@ -183,34 +137,7 @@ export function ProjectManager() {
     }
   }
 
-  async function handleRecentClick(recent: RecentProject) {
-    try {
-      setLoading(true);
-      const hasPermission = await fileSystemService.verifyPermission(
-        recent.handle,
-        true,
-      );
-
-      if (!hasPermission) {
-        return;
-      }
-
-      await loadProject(recent.handle);
-    } catch (e: unknown) {
-      console.error(e);
-      alert(getRecentProjectOpenErrorMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleRemoveRecent(event: MouseEvent, id: string) {
-    event.stopPropagation();
-    await recentProjectsService.removeRecent(id);
-    await loadRecents();
-  }
-
-  async function handleSelectProjectDirectory() {
+  const handleSelectProjectDirectory = useCallback(async () => {
     try {
       const handle = await fileSystemService.pickDirectory({
         id: "vlo-workspace",
@@ -229,9 +156,9 @@ export function ProjectManager() {
         console.error(e);
       }
     }
-  }
+  }, []);
 
-  async function handleCreateClick() {
+  const handleCreateClick = useCallback(async () => {
     if (!parentHandle) {
       await handleSelectProjectDirectory();
       return;
@@ -254,7 +181,12 @@ export function ProjectManager() {
       console.error(err);
       alert("Failed to access project directory: " + err.message);
     }
-  }
+  }, [handleSelectProjectDirectory, parentHandle]);
+
+  useEffect(() => {
+    const registration = projectPageActions.setCreateHandler(handleCreateClick);
+    return () => registration.dispose();
+  }, [handleCreateClick]);
 
   async function handleCreateConfirm() {
     if (!parentHandle || !newProjectName.trim()) {
@@ -537,214 +469,57 @@ export function ProjectManager() {
           sx={{
             display: "flex",
             flexDirection: "column",
-            p: { xs: 3, md: 4 },
           }}
         >
           <Box
             sx={{
               display: "flex",
-              alignItems: { xs: "flex-start", sm: "center" },
-              justifyContent: "space-between",
-              gap: 2,
-              mb: 3,
+              alignItems: "center",
+              borderBottom: `1px solid ${alpha("#FFFFFF", 0.1)}`,
             }}
           >
-            <Box>
-              <Typography
-                variant="overline"
-                sx={{
-                  color: alpha("#FFFFFF", 0.54),
-                  letterSpacing: "0.16em",
-                }}
-              >
-                Workspace history
-              </Typography>
-              <Typography
-                variant="h4"
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1.25,
-                  mt: 0.75,
-                  fontWeight: 700,
-                  letterSpacing: "-0.04em",
-                }}
-              >
-                <HistoryIcon sx={{ color: BRAND_PRIMARY }} />
-                Recent Projects
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{ color: alpha("#FFFFFF", 0.64), mt: 1 }}
-              >
-                Reopen a project directory instantly or clean up stale entries.
-              </Typography>
-            </Box>
-
-            <Box
+            <Tabs
+              value={selectedViewId ?? false}
+              onChange={(_, value: string) => selectView(value)}
+              variant="scrollable"
               sx={{
-                flexShrink: 0,
-                minWidth: 72,
-                px: 2,
-                py: 1.25,
-                borderRadius: 4,
-                textAlign: "center",
-                border: `1px solid ${alpha(BRAND_SECONDARY, 0.22)}`,
-                backgroundColor: alpha(BRAND_SECONDARY, 0.08),
+                flex: 1,
+                minWidth: 0,
+                "& .MuiTab-root": { textTransform: "none" },
               }}
             >
-              <Typography variant="h5" fontWeight={700}>
-                {recents.length}
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{ color: alpha("#FFFFFF", 0.58) }}
-              >
-                saved
-              </Typography>
-            </Box>
+              {views.map((view) => (
+                <Tab
+                  key={view.id}
+                  id={`shell-view-tab-${view.id}`}
+                  aria-controls={`shell-view-panel-${view.id}`}
+                  value={view.id}
+                  label={view.title}
+                  icon={
+                    view.source === "extension" ? (
+                      <ExtensionIcon fontSize="small" />
+                    ) : undefined
+                  }
+                  iconPosition="start"
+                />
+              ))}
+            </Tabs>
+            <ViewLayoutButton region="projects-page.main" edge="right" />
           </Box>
-
           <Box
             sx={{
               flex: 1,
               minHeight: 0,
-              overflowY: "auto",
-              pr: { xs: 0.75, md: 1.5 },
-              pb: 1,
+              position: "relative",
+              overflow: "hidden",
             }}
           >
-            {recents.length === 0 ? (
-              <Box
-                sx={{
-                  height: "100%",
-                  minHeight: 280,
-                  display: "grid",
-                  placeItems: "center",
-                  borderRadius: 5,
-                  border: `1px dashed ${alpha("#FFFFFF", 0.12)}`,
-                  backgroundColor: alpha("#FFFFFF", 0.02),
-                  textAlign: "center",
-                  px: 3,
-                }}
-              >
-                <Box>
-                  <Box
-                    sx={{
-                      display: "grid",
-                      placeItems: "center",
-                      width: 72,
-                      height: 72,
-                      borderRadius: "50%",
-                      mx: "auto",
-                      mb: 2,
-                      backgroundColor: alpha(BRAND_PRIMARY, 0.12),
-                      color: BRAND_PRIMARY,
-                    }}
-                  >
-                    <HistoryIcon />
-                  </Box>
-                  <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>
-                    No recent projects yet
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{ color: alpha("#FFFFFF", 0.58), maxWidth: 360 }}
-                  >
-                    Create a new project or open an existing directory to start
-                    building your recent list.
-                  </Typography>
-                </Box>
-              </Box>
-            ) : (
-              <List disablePadding sx={{ display: "grid", gap: 1.25 }}>
-                {recents.map((recent) => (
-                  <ListItem key={recent.id} disablePadding>
-                    <Box
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1.25,
-                        width: "100%",
-                      }}
-                    >
-                      <RecentProjectButton
-                        onClick={() => handleRecentClick(recent)}
-                      >
-                        <Box
-                          sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 2,
-                            width: "100%",
-                          }}
-                        >
-                          <Box
-                            sx={{
-                              display: "grid",
-                              placeItems: "center",
-                              flexShrink: 0,
-                              width: 56,
-                              height: 56,
-                              borderRadius: 3.5,
-                              border: `1px solid ${alpha(BRAND_PRIMARY, 0.18)}`,
-                              backgroundColor: alpha(BRAND_PRIMARY, 0.1),
-                              color: BRAND_PRIMARY,
-                            }}
-                          >
-                            <VideoFileIcon />
-                          </Box>
-
-                          <Box sx={{ minWidth: 0 }}>
-                            <Typography
-                              variant="h6"
-                              sx={{
-                                fontSize: "1.15rem",
-                                fontWeight: 700,
-                                letterSpacing: "-0.02em",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {recent.name}
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              sx={{ color: alpha("#FFFFFF", 0.56), mt: 0.5 }}
-                            >
-                              Last opened {formatLastOpened(recent.lastOpened)}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      </RecentProjectButton>
-
-                      <IconButton
-                        onClick={(event) =>
-                          void handleRemoveRecent(event, recent.id)
-                        }
-                        aria-label={`Remove ${recent.name} from recents`}
-                        sx={{
-                          flexShrink: 0,
-                          width: 44,
-                          height: 44,
-                          color: alpha("#FFFFFF", 0.48),
-                          border: `1px solid ${alpha("#FFFFFF", 0.08)}`,
-                          backgroundColor: alpha("#FFFFFF", 0.02),
-                          "&:hover": {
-                            color: "#FFFFFF",
-                            borderColor: alpha("#FFFFFF", 0.16),
-                            backgroundColor: alpha("#FFFFFF", 0.06),
-                          },
-                        }}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  </ListItem>
-                ))}
-              </List>
-            )}
+            <ViewRegionMount
+              region="projects-page.main"
+              views={views}
+              activeViewId={selectedViewId}
+              layout="absolute"
+            />
           </Box>
         </LandingPanel>
       </Box>

@@ -11,6 +11,9 @@ import {
   type AssetBrowserDisplay,
   type ProjectFitMode,
 } from "./useProjectStore";
+import { fileSystemService } from "./services/FileSystemService";
+import { recentProjectsService } from "./services/RecentProjectsService";
+import { projectPageActions } from "./services/ProjectPageActions";
 
 const ASPECT_RATIOS: readonly AspectRatio[] = [
   "16:9",
@@ -52,6 +55,33 @@ function pickOption<TOption extends string>(
  * no-ops — a settings command never partially applies.
  */
 const projectHostCommands: readonly HostCommandDefinition[] = [
+  {
+    id: "projects.open",
+    title: "Open project",
+    when: { not: { key: "project.open" } },
+    run: async ({ subject }) => {
+      const recentId = readSubjectValue(subject, "recentId");
+      if (typeof recentId !== "string") return;
+      const recent = (await recentProjectsService.getRecents()).find(
+        (candidate) => candidate.id === recentId,
+      );
+      if (!recent) return;
+      const permitted = await fileSystemService.verifyPermission(
+        recent.handle,
+        true,
+      );
+      if (!permitted) return;
+      await useProjectStore.getState().loadProject(recent.handle);
+    },
+  },
+  {
+    id: "projects.create",
+    title: "Create project",
+    when: { not: { key: "project.open" } },
+    run: () => {
+      projectPageActions.requestCreate();
+    },
+  },
   {
     id: "project.set-layout",
     title: "Set layout",

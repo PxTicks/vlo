@@ -13,9 +13,11 @@ import type { TimelineClip } from "../../../types/TimelineTypes";
 import type {
   ExtensionApiScope,
   ExtensionResource,
-  ExtensionUiWorkspaceComponentProps,
+  ExtensionUiViewComponentProps,
 } from "../../../features/extensions";
-import { extensionUiSlotRegistry } from "../../../features/extensions/ui/publicApi";
+import { createExtensionViewApi } from "../../../features/extensions/views/createExtensionViewApi";
+import { hostContextKeys } from "../../../core/shell/contextKeys";
+import { hostViewRegistry } from "../../../core/shell/viewRegistry";
 
 vi.mock("../../../features/timeline/api", () => ({
   useSelectedTimelineClipIds: vi.fn(),
@@ -65,18 +67,23 @@ vi.mock("../../../features/generation", () => ({
 
 describe("RightSidebarPanel", () => {
   let selectedClipIds: string[] = [];
+  let selectedTransitionId: string | null = null;
   let clips: Array<Pick<TimelineClip, "id" | "type">> = [];
   const setMaskTabActive = vi.fn();
 
   beforeEach(() => {
     selectedClipIds = [];
+    selectedTransitionId = null;
     clips = [];
     vi.clearAllMocks();
+    hostViewRegistry.clearSelection("right-sidebar");
 
     vi.mocked(useSelectedTimelineClipIds).mockImplementation(
       () => selectedClipIds,
     );
-    vi.mocked(useSelectedTimelineTransitionId).mockReturnValue(null);
+    vi.mocked(useSelectedTimelineTransitionId).mockImplementation(
+      () => selectedTransitionId,
+    );
     vi.mocked(useTimelineClip).mockImplementation((clipId) =>
       clips.find((clip) => clip.id === clipId) as TimelineClip | undefined,
     );
@@ -89,8 +96,30 @@ describe("RightSidebarPanel", () => {
     });
   });
 
+  function syncHostContextKeys() {
+    const selectedTypes = new Set(
+      clips
+        .filter((clip) => selectedClipIds.includes(clip.id))
+        .map((clip) => clip.type),
+    );
+    hostContextKeys.set("selection.clipCount", selectedClipIds.length);
+    hostContextKeys.set(
+      "selection.clipType",
+      selectedTypes.size === 1 ? [...selectedTypes][0] : null,
+    );
+    hostContextKeys.set(
+      "selection.transitionSelected",
+      selectedTransitionId !== null,
+    );
+  }
+
+  function renderPanel() {
+    syncHostContextKeys();
+    return render(<RightSidebarPanel />);
+  }
+
   it("shows only the Generate tab and generation panel when nothing is selected", () => {
-    render(<RightSidebarPanel />);
+    renderPanel();
 
     expect(screen.getByRole("tab", { name: "Generate" })).toBeInTheDocument();
     expect(
@@ -102,7 +131,7 @@ describe("RightSidebarPanel", () => {
   it("defaults to the Adjust tab when a clip is selected", () => {
     selectedClipIds = ["clip-1"];
 
-    render(<RightSidebarPanel />);
+    renderPanel();
 
     expect(
       screen.getByRole("tab", { name: "Adjust" }),
@@ -121,7 +150,7 @@ describe("RightSidebarPanel", () => {
   it("renders Generate first so the tab order stays stable", () => {
     selectedClipIds = ["clip-1"];
 
-    render(<RightSidebarPanel />);
+    renderPanel();
 
     const tabs = screen.getAllByRole("tab");
 
@@ -137,7 +166,7 @@ describe("RightSidebarPanel", () => {
   it("shows mask panel when the Mask tab is selected", () => {
     selectedClipIds = ["clip-1"];
 
-    render(<RightSidebarPanel />);
+    renderPanel();
 
     fireEvent.click(screen.getByRole("tab", { name: "Mask" }));
 
@@ -147,7 +176,7 @@ describe("RightSidebarPanel", () => {
   it("shows the added-effects inspector in its own panel", () => {
     selectedClipIds = ["clip-1"];
 
-    render(<RightSidebarPanel />);
+    renderPanel();
     fireEvent.click(screen.getByRole("tab", { name: "Transform" }));
 
     expect(screen.getByTestId("mock-effects-panel")).toBeInTheDocument();
@@ -160,7 +189,7 @@ describe("RightSidebarPanel", () => {
   it("preserves generation input state when switching tabs", async () => {
     selectedClipIds = ["clip-1"];
 
-    render(<RightSidebarPanel />);
+    renderPanel();
 
     const input = screen.getByLabelText("Generation input");
     fireEvent.change(input, { target: { value: "persistent prompt" } });
@@ -181,9 +210,9 @@ describe("RightSidebarPanel", () => {
       own: <TResource extends ExtensionResource>(resource: TResource) => resource,
       report: vi.fn(),
     };
-    const ui = extensionUiSlotRegistry.bind(scope);
+    const ui = createExtensionViewApi(scope);
 
-    function StatefulWorkspace({ active }: ExtensionUiWorkspaceComponentProps) {
+    function StatefulView({ active }: ExtensionUiViewComponentProps) {
       const [value, setValue] = useState("");
       return (
         <label>
@@ -198,17 +227,17 @@ describe("RightSidebarPanel", () => {
         </label>
       );
     }
-    const registration = ui.registerWorkspace({
+    const registration = ui.registerView({
       id: "drawing",
       apiVersion: 1,
-      kind: "trusted-workspace",
+      kind: "trusted-view",
       title: "AI Canvas",
-      location: "right-sidebar",
-      component: StatefulWorkspace,
+      defaultRegion: "right-sidebar",
+      component: StatefulView,
     });
 
     try {
-      render(<RightSidebarPanel />);
+      renderPanel();
 
       expect(
         screen.queryByRole("tab", { name: "AI Canvas" }),
@@ -225,14 +254,14 @@ describe("RightSidebarPanel", () => {
       ).not.toBeInTheDocument();
       expect(screen.queryByLabelText("Workspace value")).not.toBeInTheDocument();
 
-      act(() => expect(ui.openWorkspace("drawing")).toBe(true));
+      act(() => expect(ui.openView("drawing")).toBe(true));
       expect(workspaceMenuButton).toHaveAttribute("aria-pressed", "true");
       expect(
         screen.getByRole("tabpanel", { name: "AI Canvas" }),
-      ).toHaveAttribute(
-        "id",
-        "extension-workspace-panel-example.canvas/drawing",
-      );
+      ).toHaveAttribute("id", "shell-view-panel-example.canvas/drawing");
+      expect(
+        screen.getByRole("tabpanel", { name: "AI Canvas" }),
+      ).not.toHaveAttribute("aria-labelledby");
       expect(screen.getByLabelText("Workspace canvas")).toBeInstanceOf(
         globalThis.HTMLCanvasElement,
       );
@@ -269,7 +298,7 @@ describe("RightSidebarPanel", () => {
   it("tracks whether the Mask tab is active", () => {
     selectedClipIds = ["clip-1"];
 
-    render(<RightSidebarPanel />);
+    renderPanel();
 
     fireEvent.click(screen.getByRole("tab", { name: "Mask" }));
     expect(setMaskTabActive).toHaveBeenCalledWith(true);
@@ -281,13 +310,11 @@ describe("RightSidebarPanel", () => {
   it("hides the Mask tab and panel for adjustment clips", () => {
     // Adjustment clips bypass applyClipTransforms entirely, so neither
     // ClipMask attachments nor range-mask components have any render-time
-    // effect. We hide the tab AND assert the panel doesn't mount —
-    // visibleTab is derived synchronously so the Tabs `value` never points
-    // at a tab whose child isn't rendered (no MUI invalid-value warning).
+    // effect. The unavailable view must neither expose a tab nor mount.
     selectedClipIds = ["adj-1"];
     clips = [{ id: "adj-1", type: "adjustment" }];
 
-    render(<RightSidebarPanel />);
+    renderPanel();
 
     expect(
       screen.getByRole("tab", { name: "Adjust" }),
@@ -296,10 +323,36 @@ describe("RightSidebarPanel", () => {
     expect(screen.queryByTestId("mock-mask-panel")).not.toBeInTheDocument();
   });
 
-  it("shows the transition panel for a selected transition", () => {
-    vi.mocked(useSelectedTimelineTransitionId).mockReturnValue("transition-1");
+  it("selects Adjust when an adjustment clip replaces a Mask-open clip", () => {
+    selectedClipIds = ["clip-1"];
+    clips = [{ id: "clip-1", type: "video" }];
+    const { rerender } = renderPanel();
 
-    render(<RightSidebarPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "Mask" }));
+    expect(screen.getByRole("tab", { name: "Mask" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    selectedClipIds = ["adj-1"];
+    clips = [{ id: "adj-1", type: "adjustment" }];
+    act(() => {
+      syncHostContextKeys();
+      rerender(<RightSidebarPanel />);
+    });
+
+    expect(screen.getByRole("tab", { name: "Adjust" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByTestId("mock-transform-panel")).toBeInTheDocument();
+    expect(hostViewRegistry.getSelected("right-sidebar")).toBe("host.adjust");
+  });
+
+  it("shows the transition panel for a selected transition", () => {
+    selectedTransitionId = "transition-1";
+
+    renderPanel();
 
     expect(screen.getByRole("tab", { name: "Transition" })).toBeInTheDocument();
     expect(screen.getByTestId("mock-transition-panel")).toBeInTheDocument();
@@ -307,5 +360,4 @@ describe("RightSidebarPanel", () => {
       screen.queryByRole("tab", { name: "Adjust" }),
     ).not.toBeInTheDocument();
   });
-
 });

@@ -1444,7 +1444,10 @@ export interface ExtensionTrustedApi {
 export type ExtensionUiSlotId = string;
 export type ExtensionUiNoticeTone = "info" | "success" | "warning";
 export type ExtensionUiModalSize = "small" | "medium" | "large";
-export type ExtensionUiWorkspaceLocation = "right-sidebar" | "left-sidebar";
+export type ExtensionUiViewRegion =
+  | "right-sidebar"
+  | "left-sidebar"
+  | "projects-page.main";
 
 export interface ExtensionUiComponentProps {
   readonly slot: ExtensionUiSlotId;
@@ -1455,11 +1458,11 @@ export interface ExtensionUiModalComponentProps {
   close(result?: JsonValue): void;
 }
 
-export interface ExtensionUiWorkspaceComponentProps {
+export interface ExtensionUiViewComponentProps {
   /** Globally owner-qualified contribution ID. */
-  readonly workspaceId: string;
-  readonly location: ExtensionUiWorkspaceLocation;
-  /** Once opened, inactive workspaces remain mounted so editor state survives. */
+  readonly viewId: string;
+  readonly region: ExtensionUiViewRegion;
+  /** Once opened, inactive views remain mounted so local state survives. */
   readonly active: boolean;
 }
 
@@ -1692,13 +1695,14 @@ export interface ExtensionUiApi {
   registerModal(
     definition: ExtensionTrustedUiModalDefinition,
   ): ExtensionUiRegistration;
-  registerWorkspace(
-    definition: ExtensionTrustedUiWorkspaceDefinition,
+  /** Registers a trusted view in one host-owned shell region. */
+  registerView(
+    definition: ExtensionTrustedUiViewDefinition,
   ): ExtensionUiRegistration;
   /** Opens one modal registered by the calling extension. */
   openModal(id: string, input?: JsonValue): Promise<JsonValue | undefined>;
-  /** Selects one workspace registered by the calling extension. */
-  openWorkspace(id: string): boolean;
+  /** Selects one visible view registered by the calling extension. */
+  openView(id: string): boolean;
 }
 
 /** Arbitrary React component rendered inside a host-owned, isolated slot. */
@@ -1721,15 +1725,17 @@ export interface ExtensionTrustedUiModalDefinition {
   readonly component: (props: ExtensionUiModalComponentProps) => unknown;
 }
 
-/** Arbitrary trusted React rendered in a host-owned editor workspace. */
-export interface ExtensionTrustedUiWorkspaceDefinition {
+/** Arbitrary trusted React rendered in a host-owned shell region. */
+export interface ExtensionTrustedUiViewDefinition {
   readonly id: string;
   readonly apiVersion: 1;
-  readonly kind: "trusted-workspace";
+  readonly kind: "trusted-view";
   readonly title: string;
-  readonly location: ExtensionUiWorkspaceLocation;
+  readonly icon?: () => unknown;
+  readonly defaultRegion: ExtensionUiViewRegion;
   readonly order?: number;
-  readonly component: (props: ExtensionUiWorkspaceComponentProps) => unknown;
+  readonly when?: ExtensionContextKeyExpression;
+  readonly component: (props: ExtensionUiViewComponentProps) => unknown;
 }
 
 /**

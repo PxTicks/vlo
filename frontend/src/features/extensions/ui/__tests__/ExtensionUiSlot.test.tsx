@@ -110,27 +110,6 @@ describe("ExtensionUiSlot", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("registers workspaces at the left-sidebar location", () => {
-    const registry = new ExtensionUiSlotRegistry();
-    const ownerApi = registry.bind(createScope("example.left"));
-    const registration = ownerApi.registerWorkspace({
-      id: "tool",
-      apiVersion: 1,
-      kind: "trusted-workspace",
-      title: "Tool",
-      location: "left-sidebar",
-      component: () => null,
-    });
-
-    expect(ownerApi.openWorkspace("tool")).toBe(true);
-    expect(registry.getSelectedWorkspaceId("left-sidebar")).toBe(
-      "example.left/tool",
-    );
-
-    registration.dispose();
-    expect(registry.getSelectedWorkspaceId("left-sidebar")).toBeNull();
-  });
-
   it("validates slot metadata before registration", () => {
     const registry = new ExtensionUiSlotRegistry();
     const api = registry.bind(createScope("example.ui"));
@@ -254,28 +233,4 @@ describe("ExtensionUiSlot", () => {
     await expect(result).resolves.toBeUndefined();
   });
 
-  it("opens workspaces through an owner-bound API and clears disposed selections", () => {
-    const registry = new ExtensionUiSlotRegistry();
-    const ownerApi = registry.bind(createScope("example.workspace"));
-    const otherApi = registry.bind(createScope("example.other"));
-    const registration = ownerApi.registerWorkspace({
-      id: "canvas",
-      apiVersion: 1,
-      kind: "trusted-workspace",
-      title: "Canvas",
-      location: "right-sidebar",
-      component: () => null,
-    });
-
-    expect(() => otherApi.openWorkspace("canvas")).toThrow(
-      /example\.other\/canvas.*not registered/,
-    );
-    expect(ownerApi.openWorkspace("canvas")).toBe(true);
-    expect(registry.getSelectedWorkspaceId("right-sidebar")).toBe(
-      "example.workspace/canvas",
-    );
-
-    registration.dispose();
-    expect(registry.getSelectedWorkspaceId("right-sidebar")).toBeNull();
-  });
 });

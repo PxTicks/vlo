@@ -5,9 +5,9 @@ import { EditorLeftSidebar } from "../EditorLeftSidebar";
 import type {
   ExtensionApiScope,
   ExtensionResource,
-  ExtensionUiWorkspaceComponentProps,
+  ExtensionUiViewComponentProps,
 } from "../../../features/extensions";
-import { extensionUiSlotRegistry } from "../../../features/extensions/ui/publicApi";
+import { createExtensionViewApi } from "../../../features/extensions/views/createExtensionViewApi";
 
 vi.mock("../../../features/userAssets", () => ({
   AssetBrowser: () => <div data-testid="mock-asset-browser">Assets</div>,
@@ -60,9 +60,9 @@ describe("EditorLeftSidebar", () => {
   });
 
   it("hosts a stateful left-sidebar extension workspace as a persistent tab", () => {
-    const ui = extensionUiSlotRegistry.bind(makeScope("example.tool"));
+    const ui = createExtensionViewApi(makeScope("example.tool"));
 
-    function StatefulWorkspace({ active }: ExtensionUiWorkspaceComponentProps) {
+    function StatefulView({ active }: ExtensionUiViewComponentProps) {
       const [value, setValue] = useState("");
       return (
         <label>
@@ -76,13 +76,13 @@ describe("EditorLeftSidebar", () => {
         </label>
       );
     }
-    const registration = ui.registerWorkspace({
+    const registration = ui.registerView({
       id: "panel",
       apiVersion: 1,
-      kind: "trusted-workspace",
+      kind: "trusted-view",
       title: "My Tool",
-      location: "left-sidebar",
-      component: StatefulWorkspace,
+      defaultRegion: "left-sidebar",
+      component: StatefulView,
     });
 
     try {
@@ -93,7 +93,7 @@ describe("EditorLeftSidebar", () => {
       // Lazily mounted: not present until first selected.
       expect(screen.queryByLabelText("Tool value")).not.toBeInTheDocument();
 
-      act(() => expect(ui.openWorkspace("panel")).toBe(true));
+      act(() => expect(ui.openView("panel")).toBe(true));
       expect(toolTab).toHaveAttribute("aria-selected", "true");
       // Extension workspace replaces the core panel.
       expect(screen.queryByTestId("mock-asset-browser")).not.toBeInTheDocument();

@@ -1,19 +1,8 @@
 import { memo } from "react";
 import { Box, Tab, Tabs, Tooltip } from "@mui/material";
-import VideoLibraryIcon from "@mui/icons-material/VideoLibrary";
-import TextFieldsIcon from "@mui/icons-material/TextFields";
-import LayersIcon from "@mui/icons-material/Layers";
-import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
-import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import ExtensionIcon from "@mui/icons-material/Extension";
-import type { ExtensionWorkspaceDescriptor } from "../../features/extensions/ui/publicApi";
-
-export type LeftSidebarTab =
-  | "assets"
-  | "text"
-  | "composite"
-  | "effects"
-  | "transitions";
+import type { ShellViewEntry } from "../../core/shell/viewRegistry";
+import { ViewLayoutButton } from "../../core/shell/ViewLayoutButton";
 
 const TAB_SX = {
   minWidth: 40,
@@ -30,16 +19,15 @@ const TAB_SX = {
 } as const;
 
 interface LeftSidebarPanelProps {
-  /** A core `LeftSidebarTab` or an extension workspace id. */
-  activeTab: string;
+  activeTab: string | null;
   onTabChange: (tab: string) => void;
-  workspaces?: readonly ExtensionWorkspaceDescriptor[];
+  views: readonly ShellViewEntry[];
 }
 
 function LeftSidebarPanelComponent({
   activeTab,
   onTabChange,
-  workspaces = [],
+  views,
 }: LeftSidebarPanelProps) {
   return (
     <Box
@@ -49,7 +37,8 @@ function LeftSidebarPanelComponent({
         borderRight: "1px solid #333",
         bgcolor: "#0d0d0d",
         display: "flex",
-        justifyContent: "center",
+        flexDirection: "column",
+        alignItems: "center",
         py: 1,
       }}
     >
@@ -57,12 +46,13 @@ function LeftSidebarPanelComponent({
         orientation="vertical"
         variant="scrollable"
         scrollButtons="auto"
-        value={activeTab}
+        value={activeTab ?? false}
         onChange={(_, value: string) => onTabChange(value)}
         aria-label="Input sources"
         sx={{
           minHeight: 0,
-          maxHeight: "100%",
+          flex: 1,
+          minWidth: 0,
           "& .MuiTabs-indicator": {
             left: 0,
             width: 3,
@@ -70,58 +60,26 @@ function LeftSidebarPanelComponent({
           },
         }}
       >
-        <Tab
-          value="assets"
-          icon={<VideoLibraryIcon fontSize="small" />}
-          aria-label="Assets"
-          data-testid="left-sidebar-tab-assets"
-          sx={TAB_SX}
-        />
-        <Tab
-          value="text"
-          icon={<TextFieldsIcon fontSize="small" />}
-          aria-label="Text"
-          data-testid="left-sidebar-tab-text"
-          sx={TAB_SX}
-        />
-        <Tab
-          value="composite"
-          icon={<LayersIcon fontSize="small" />}
-          aria-label="Composite"
-          data-testid="left-sidebar-tab-composite"
-          sx={TAB_SX}
-        />
-        <Tab
-          value="effects"
-          icon={<AutoFixHighIcon fontSize="small" />}
-          aria-label="Effects"
-          data-testid="left-sidebar-tab-effects"
-          sx={TAB_SX}
-        />
-        <Tab
-          value="transitions"
-          icon={<CompareArrowsIcon fontSize="small" />}
-          aria-label="Transitions"
-          data-testid="left-sidebar-tab-transitions"
-          sx={TAB_SX}
-        />
-        {workspaces.map((workspace) => (
+        {views.map((view) => (
           <Tab
-            key={workspace.id}
-            value={workspace.id}
-            id={`extension-workspace-tab-${workspace.id}`}
-            aria-controls={`extension-workspace-panel-${workspace.id}`}
+            key={view.id}
+            value={view.id}
+            id={`shell-view-tab-${view.id}`}
+            aria-controls={`shell-view-panel-${view.id}`}
             icon={
-              <Tooltip title={workspace.title} placement="right">
-                <ExtensionIcon fontSize="small" />
+              <Tooltip title={view.title} placement="right">
+                <span>
+                  {view.icon?.() ?? <ExtensionIcon fontSize="small" />}
+                </span>
               </Tooltip>
             }
-            aria-label={workspace.title}
-            data-testid={`left-sidebar-tab-${workspace.id}`}
+            aria-label={view.title}
+            data-testid={`left-sidebar-tab-${view.id.replace(/^host\./, "")}`}
             sx={TAB_SX}
           />
         ))}
       </Tabs>
+      <ViewLayoutButton region="left-sidebar" />
     </Box>
   );
 }

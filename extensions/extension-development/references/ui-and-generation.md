@@ -25,7 +25,7 @@ Register through `context.api.ui`:
 - `registerNotice` for host-rendered declarative information;
 - `registerComponent` for arbitrary trusted React in a declared slot;
 - `registerModal` for a host-owned MUI dialog with extension-owned contents;
-- `registerWorkspace` for a persistent extension tab in a host-owned dock.
+- `registerView` for a persistent extension tab in a host-owned shell region.
 
 Current curated component slots are:
 
@@ -42,27 +42,34 @@ Use `openModal(localId, input?)` to open only the caller's modal. Keep input and
 result finite JSON. Handle an `undefined` result as cancellation or disposal.
 Omitted modal size defaults to `medium`.
 
-Register `kind: "trusted-workspace"` at `location: "right-sidebar"` (clip/generation
-editors) or `location: "left-sidebar"` (an input-source tab alongside Assets, Text,
-Composite, Effects, and Transitions) for a larger editor. Use `openWorkspace(localId)`
-to select it. Workspaces mount lazily on first
-selection, then remain mounted to preserve state. Observe the `active` prop and pause
-animation loops, camera capture, polling, or expensive previews while hidden.
+Register `kind: "trusted-view"` at `defaultRegion: "right-sidebar"`
+(clip/generation editors), `defaultRegion: "left-sidebar"` (an input-source tab
+alongside Assets, Text, Composite, Effects, and Transitions), or
+`defaultRegion: "projects-page.main"` (a tool available before a project opens).
+Use `openView(localId)` to select it. Views mount lazily on first selection, then
+remain mounted to preserve state. Observe the `active` prop and pause animation
+loops, camera capture, polling, or expensive previews while hidden. User layout
+choices win: `openView` returns `false` when the user has hidden the view.
+
+Frontend activation happens before a project opens. Views, commands, menus,
+catalogues, backend jobs, and local storage are available there, while
+`storage.project` is `null`; timeline and asset operations fail closed. Gate
+editor-dependent commands and views with the `project.open` context key.
 
 Render ordinary HTML5 canvas, SVG, WebGL, or browser controls inside a trusted slot,
-modal, or workspace. Keep host navigation, dialog close semantics, and dock placement
+modal, or view. Keep host navigation, dialog close semantics, and region placement
 outside the extension component.
 
 ## Context/action menus
 
-`registerMenuItem({ id, slot, label, icon?, order?, isVisible?, onSelect })` adds a
-declarative command to a host-owned menu. Current menu slots are
-`timeline.clip.context` (timeline clip right-click) and `library.item.actions` (asset
-three-dot menu). The host renders the native menu item; `onSelect(context)` runs with a
-detached snapshot of the clicked subject (`context.clip` or `context.asset`, narrow on
-`context.slot`). Return `false` from `isVisible(context)` to hide the item for a given
-subject. Keeping this declarative preserves restricted-mode reachability; `onSelect`
-and `isVisible` failures are isolated and reported.
+Register a command first, then place it with
+`ui.menus.addItem({ id, apiVersion: 1, menuId, kind: "command", command, group,
+order?, when? })`. Discover current menu IDs and their documentation-grade subject
+schemas through `ui.menus.listMenus()`; this includes editor menus and the
+pre-project `projects.item.context` menu. The host renders command title/icon and
+enablement, and invocation receives the menu's schema-validated subject as detached
+JSON. Structured `when` conditions can inspect host context keys or subject paths;
+menu placements do not carry visibility or selection callbacks.
 
 ## Per-clip timeline overlays
 

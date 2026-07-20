@@ -72,11 +72,11 @@ export interface HostMenuSubjectMap {
       readonly workflowId: string | null;
     };
   };
-  readonly "app.workspace.select": {
-    readonly slot: "app.workspace.select";
-    readonly sidebar: {
-      readonly location: string;
-      readonly selectedWorkspaceId: string | null;
+  readonly "app.view.select": {
+    readonly slot: "app.view.select";
+    readonly region: {
+      readonly id: string;
+      readonly selectedViewId: string | null;
     };
   };
   readonly "library.item.actions": {
@@ -115,6 +115,16 @@ export interface HostMenuSubjectMap {
       readonly fitMode: string;
       readonly layoutMode: string;
       readonly assetBrowserDisplay: string;
+    };
+  };
+  readonly "projects.item.context": {
+    readonly slot: "projects.item.context";
+    readonly project: {
+      readonly id: string;
+      readonly name: string;
+      readonly lastOpened: number;
+      /** Opaque recent-project lookup token; never a file handle. */
+      readonly pathToken: string;
     };
   };
 }
@@ -209,17 +219,17 @@ function validateGenerateOptionsSubject(subject: unknown): boolean {
   );
 }
 
-/** Subject: `{ slot, sidebar: { location, selectedWorkspaceId } }`. */
-function validateWorkspaceSelectSubject(subject: unknown): boolean {
-  if (!isRecord(subject) || subject.slot !== "app.workspace.select") {
+/** Subject: `{ slot, region: { id, selectedViewId } }`. */
+function validateViewSelectSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "app.view.select") {
     return false;
   }
-  const sidebar = subject.sidebar;
+  const region = subject.region;
   return (
-    isRecord(sidebar) &&
-    typeof sidebar.location === "string" &&
-    (typeof sidebar.selectedWorkspaceId === "string" ||
-      sidebar.selectedWorkspaceId === null)
+    isRecord(region) &&
+    typeof region.id === "string" &&
+    (typeof region.selectedViewId === "string" ||
+      region.selectedViewId === null)
   );
 }
 
@@ -301,6 +311,20 @@ function validateProjectSettingsSubject(subject: unknown): boolean {
   );
 }
 
+/** Subject: `{ slot, project: detached recent-project descriptor }`. */
+function validateProjectsItemSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "projects.item.context") {
+    return false;
+  }
+  const project = subject.project;
+  return (
+    isRecord(project) &&
+    hasStringFields(project, ["id", "name", "pathToken"]) &&
+    typeof project.lastOpened === "number" &&
+    Number.isFinite(project.lastOpened)
+  );
+}
+
 // Exhaustive over HostMenuSubjectMap: a subject-map entry without a validator
 // (or a validator for an unmapped menu) fails to compile.
 const HOST_MENU_SUBJECT_VALIDATORS = {
@@ -310,12 +334,13 @@ const HOST_MENU_SUBJECT_VALIDATORS = {
   "masks.add.options": validateMasksAddSubject,
   "transformations.path.add": validatePathAddSubject,
   "generation.generate.options": validateGenerateOptionsSubject,
-  "app.workspace.select": validateWorkspaceSelectSubject,
+  "app.view.select": validateViewSelectSubject,
   "library.item.actions": validateLibraryItemSubject,
   "library.sort.options": validateLibrarySortSubject,
   "library.browser.context": validateLibraryBrowserSubject,
   "player.canvas.context": validatePlayerCanvasSubject,
   "app.project.settings": validateProjectSettingsSubject,
+  "projects.item.context": validateProjectsItemSubject,
 } satisfies Record<HostMenuId, (subject: unknown) => boolean>;
 
 const CLIP_SNAPSHOT_SCHEMA = {
@@ -368,9 +393,9 @@ const HOST_MENU_SUBJECT_SCHEMAS = {
     slot: "'generation.generate.options'",
     generation: { workflowId: "string | null" },
   },
-  "app.workspace.select": {
-    slot: "'app.workspace.select'",
-    sidebar: { location: "string", selectedWorkspaceId: "string | null" },
+  "app.view.select": {
+    slot: "'app.view.select'",
+    region: { id: "string", selectedViewId: "string | null" },
   },
   "library.item.actions": {
     slot: "'library.item.actions'",
@@ -401,6 +426,15 @@ const HOST_MENU_SUBJECT_SCHEMAS = {
       fitMode: "string",
       layoutMode: "string",
       assetBrowserDisplay: "string",
+    },
+  },
+  "projects.item.context": {
+    slot: "'projects.item.context'",
+    project: {
+      id: "string",
+      name: "string",
+      lastOpened: "number",
+      pathToken: "string (opaque)",
     },
   },
 } satisfies Record<HostMenuId, JsonValue>;

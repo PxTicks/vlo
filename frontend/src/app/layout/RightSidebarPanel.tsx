@@ -1,5 +1,4 @@
 import { useState, memo, useEffect } from "react";
-import type { ReactNode } from "react";
 import {
   Box,
   IconButton,
@@ -14,120 +13,54 @@ import {
   useSelectedTimelineTransitionId,
   useTimelineClip,
 } from "../../features/timeline/api";
-import {
-  EffectsPanel,
-  TransformationPanel,
-} from "../../features/transformations";
-import { GenerationPanel } from "../../features/generation";
-import { MaskPanel, useMaskViewStore } from "../../features/masks";
-import { TransitionPanel } from "../../features/transitions";
-import {
-  ExtensionWorkspaceMount,
-  useExtensionWorkspaceRegion,
-} from "../../features/extensions/ui/publicApi";
+import { useMaskViewStore } from "../../features/masks";
+import { ViewRegionMount } from "../../core/shell/ViewRegionMount";
+import { useViewRegion } from "../../core/shell/useViewRegion";
+import { ViewLayoutButton } from "../../core/shell/ViewLayoutButton";
+import { declareRightSidebarHostViews } from "./rightSidebarHostViews";
 
-type CoreRightSidebarTab =
-  | "transform"
-  | "effects"
-  | "mask"
-  | "generate"
-  | "transition";
-
-interface TabPanelProps {
-  readonly active: boolean;
-  readonly children: ReactNode;
-  readonly id?: string;
-  readonly label?: string;
-  readonly labelledBy?: string;
-  readonly keepMounted?: boolean;
-}
-
-function TabPanel({
-  active,
-  children,
-  id,
-  label,
-  labelledBy,
-  keepMounted = false,
-}: TabPanelProps) {
-  return (
-    <Box
-      id={id}
-      role="tabpanel"
-      aria-label={label}
-      aria-labelledby={labelledBy}
-      aria-hidden={!active}
-      sx={{
-        position: "absolute",
-        inset: 0,
-        height: "100%",
-        overflowY: "auto",
-        visibility: active ? "visible" : "hidden",
-        pointerEvents: active ? "auto" : "none",
-      }}
-    >
-      {active || keepMounted ? children : null}
-    </Box>
-  );
-}
+declareRightSidebarHostViews();
 
 function RightSidebarPanelComponent() {
   const selectedClipIds = useSelectedTimelineClipIds();
   const selectedTransitionId = useSelectedTimelineTransitionId();
   const hasTransitionSelection = selectedTransitionId !== null;
   const hasClipSelection = selectedClipIds.length > 0;
-  const hasSelection = hasClipSelection || hasTransitionSelection;
-  // Hide the Mask tab when an adjustment clip is the primary selection:
-  // adjustment clips bypass `applyClipTransforms`, so neither ClipMask
-  // attachments nor range-mask components have any render-time effect.
   const primarySelectedClip = useTimelineClip(selectedClipIds[0]);
   const isAdjustmentSelected = primarySelectedClip?.type === "adjustment";
-  const [activeTab, setActiveTab] = useState<CoreRightSidebarTab>("generate");
-  const [workspaceMenuAnchor, setWorkspaceMenuAnchor] =
-    useState<HTMLElement | null>(null);
-  const {
-    workspaces,
-    selectedWorkspaceId,
-    selectWorkspace,
-  } = useExtensionWorkspaceRegion("right-sidebar");
-
-  // On selection-kind changes, snap to the matching editor: Transition for a
-  // transition, Transform for a clip, and Generate when selection is cleared.
-  // A selected extension workspace remains open; the matching core tab is
-  // prepared underneath it for when the user returns to a built-in surface.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setActiveTab(
-      hasTransitionSelection
-        ? "transition"
-        : hasSelection
-          ? "transform"
-          : "generate",
-    );
-  }, [hasSelection, hasTransitionSelection]);
-
-  // Derive visibleTab synchronously so the Tabs `value` never points at a
-  // tab that isn't currently rendered: if the user had Mask open and then
-  // selected an adjustment clip, we fall through to Transform on the same
-  // render rather than via a follow-up effect (which would briefly leave
-  // value="mask" without a Mask child, triggering MUI warnings and a
-  // spurious setMaskTabActive(true) tick).
-  const visibleCoreTab = hasTransitionSelection
+  const selectionMode = hasTransitionSelection
     ? "transition"
     : !hasClipSelection
-      ? "generate"
-      : isAdjustmentSelected && activeTab === "mask"
-        ? "transform"
-        : activeTab;
-  const visibleTab = selectedWorkspaceId ?? visibleCoreTab;
-  const selectedWorkspace = workspaces.find(
-    (workspace) => workspace.id === selectedWorkspaceId,
-  );
+      ? "none"
+      : isAdjustmentSelected
+        ? "adjustment"
+        : "clip";
+  const [workspaceMenuAnchor, setWorkspaceMenuAnchor] =
+    useState<HTMLElement | null>(null);
+  const { views, selectedViewId, selectView } =
+    useViewRegion("right-sidebar");
+  const selectedEntry = views.find((view) => view.id === selectedViewId);
+  const coreViews = views.filter((view) => view.source === "host");
+  const extensionViews = views.filter((view) => view.source === "extension");
+
+  // On selection-kind changes, snap to the matching editor: Transition for a
+  // transition, Adjust for a clip, and Generate when selection is cleared.
+  // Selection changes do not displace an explicitly selected extension view.
+  useEffect(() => {
+    if (selectedEntry?.source === "extension") return;
+    const preferred =
+      selectionMode === "transition"
+        ? "host.transition"
+        : selectionMode === "none"
+          ? "host.generate"
+          : "host.adjust";
+    selectView(preferred);
+  }, [selectView, selectedEntry?.source, selectionMode]);
 
   useEffect(() => {
     const { setMaskTabActive } = useMaskViewStore.getState();
-    setMaskTabActive(visibleTab === "mask");
-  }, [visibleTab]);
+    setMaskTabActive(selectedViewId === "host.mask");
+  }, [selectedViewId]);
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -140,11 +73,8 @@ function RightSidebarPanelComponent() {
       >
         <Tabs
           data-testid="right-sidebar-tabs"
-          value={selectedWorkspaceId === null ? visibleCoreTab : false}
-          onChange={(_, value: CoreRightSidebarTab) => {
-            selectWorkspace(null);
-            setActiveTab(value);
-          }}
+          value={selectedEntry?.source === "host" ? selectedViewId : false}
+          onChange={(_, value: string) => selectView(value)}
           textColor="primary"
           indicatorColor="primary"
           variant="fullWidth"
@@ -163,43 +93,26 @@ function RightSidebarPanelComponent() {
             },
           }}
         >
-          <Tab
-            data-testid="right-sidebar-tab-generate"
-            label="Generate"
-            value="generate"
-          />
-          {hasTransitionSelection ? (
+          {coreViews.map((view) => (
             <Tab
-              data-testid="right-sidebar-tab-transition"
-              label="Transition"
-              value="transition"
+              key={view.id}
+              id={`shell-view-tab-${view.id}`}
+              aria-controls={`shell-view-panel-${view.id}`}
+              data-testid={`right-sidebar-tab-${view.id.replace(/^host\./, "")}`}
+              label={view.title}
+              value={view.id}
             />
-          ) : null}
-          {hasClipSelection ? (
-            <Tab
-              data-testid="right-sidebar-tab-transform"
-              label="Adjust"
-              value="transform"
-            />
-          ) : null}
-          {hasClipSelection ? (
-            <Tab
-              data-testid="right-sidebar-tab-effects"
-              label="Transform"
-              value="effects"
-            />
-          ) : null}
-          {hasClipSelection && !isAdjustmentSelected && (
-            <Tab
-              data-testid="right-sidebar-tab-mask"
-              label="Mask"
-              value="mask"
-            />
-          )}
+          ))}
         </Tabs>
-        {workspaces.length > 0 ? (
+        {extensionViews.length > 0 ? (
           <>
-            <Tooltip title={selectedWorkspace?.title ?? "More panels"}>
+            <Tooltip
+              title={
+                selectedEntry?.source === "extension"
+                  ? selectedEntry.title
+                  : "More panels"
+              }
+            >
               <IconButton
                 data-testid="right-sidebar-workspace-menu-button"
                 aria-label="More panels"
@@ -210,7 +123,7 @@ function RightSidebarPanelComponent() {
                     ? undefined
                     : "right-sidebar-workspace-menu"
                 }
-                aria-pressed={selectedWorkspaceId !== null}
+                aria-pressed={selectedEntry?.source === "extension"}
                 size="small"
                 onClick={(event) => setWorkspaceMenuAnchor(event.currentTarget)}
                 sx={{
@@ -220,11 +133,11 @@ function RightSidebarPanelComponent() {
                   borderLeft: "1px solid #333",
                   borderRadius: 0,
                   color:
-                    selectedWorkspaceId === null
+                    selectedEntry?.source !== "extension"
                       ? "text.secondary"
                       : "primary.main",
                   bgcolor:
-                    selectedWorkspaceId === null
+                    selectedEntry?.source !== "extension"
                       ? "transparent"
                       : "action.selected",
                 }}
@@ -233,23 +146,23 @@ function RightSidebarPanelComponent() {
               </IconButton>
             </Tooltip>
             <AppMenu
-              menuId="app.workspace.select"
+              menuId="app.view.select"
               subject={{
-                slot: "app.workspace.select",
-                sidebar: {
-                  location: "right-sidebar",
-                  selectedWorkspaceId,
+                slot: "app.view.select",
+                region: {
+                  id: "right-sidebar",
+                  selectedViewId,
                 },
               }}
-              items={workspaces.map((workspace, index) => ({
+              items={extensionViews.map((view, index) => ({
                 kind: "action",
-                id: `workspace-${workspace.id}`,
-                label: workspace.title,
-                group: "1_workspaces",
+                id: `view-${view.id}`,
+                label: view.title,
+                group: "1_views",
                 order: index,
-                selected: workspace.id === selectedWorkspaceId,
-                testId: `right-sidebar-workspace-menu-item-${workspace.id}`,
-                run: () => selectWorkspace(workspace.id),
+                selected: view.id === selectedViewId,
+                testId: `right-sidebar-workspace-menu-item-${view.id}`,
+                run: () => selectView(view.id),
               }))}
               open={workspaceMenuAnchor !== null}
               onClose={() => setWorkspaceMenuAnchor(null)}
@@ -261,46 +174,18 @@ function RightSidebarPanelComponent() {
             />
           </>
         ) : null}
+        <ViewLayoutButton region="right-sidebar" edge="right" />
       </Box>
       <Box sx={{ flexGrow: 1, position: "relative", overflow: "hidden" }}>
-        <TabPanel active={visibleTab === "generate"} keepMounted>
-          <GenerationPanel />
-        </TabPanel>
-        {hasTransitionSelection && (
-          <TabPanel active={visibleTab === "transition"}>
-            <TransitionPanel />
-          </TabPanel>
-        )}
-        {hasClipSelection && (
-          <TabPanel active={visibleTab === "transform"}>
-            <TransformationPanel />
-          </TabPanel>
-        )}
-        {hasClipSelection && (
-          <TabPanel active={visibleTab === "effects"}>
-            <EffectsPanel />
-          </TabPanel>
-        )}
-        {hasClipSelection && !isAdjustmentSelected && (
-          <TabPanel active={visibleTab === "mask"}>
-            <MaskPanel />
-          </TabPanel>
-        )}
-        {workspaces.map((workspace) => (
-          <TabPanel
-            key={workspace.id}
-            id={`extension-workspace-panel-${workspace.id}`}
-            label={workspace.title}
-            active={visibleTab === workspace.id}
-            keepMounted
-          >
-            <ExtensionWorkspaceMount
-              workspaceId={workspace.id}
-              location={workspace.location}
-              active={visibleTab === workspace.id}
-            />
-          </TabPanel>
-        ))}
+        <ViewRegionMount
+          region="right-sidebar"
+          views={views}
+          activeViewId={selectedViewId}
+          layout="absolute"
+          getTabId={(entry) =>
+            entry.source === "host" ? `shell-view-tab-${entry.id}` : undefined
+          }
+        />
       </Box>
     </Box>
   );

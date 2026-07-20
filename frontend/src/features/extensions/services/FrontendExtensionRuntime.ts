@@ -27,6 +27,7 @@ import { createExtensionStorageApi } from "../storage/createExtensionStorageApi"
 import { installExtensionProjectStorage } from "../storage/installExtensionProjectStorage";
 import { installTimelineHostCommands } from "../../timeline/api";
 import { installProjectHostCommands } from "../../project/hostCommands";
+import { createExtensionViewApi } from "../views/createExtensionViewApi";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { extensionColorApi } from "./extensionColorApi";
 import {
@@ -415,6 +416,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
       ui: Object.freeze({
         ...extensionUiSlotRegistry.bind(scope),
         ...extensionPanelControlRegistry.bind(scope),
+        ...createExtensionViewApi(scope),
         commands: createExtensionCommandApi(scope),
         menus: extensionMenuPlacementRegistry.bind(scope),
         catalogues: createExtensionCatalogueApi(scope),

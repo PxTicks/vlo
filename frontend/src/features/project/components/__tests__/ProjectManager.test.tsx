@@ -6,6 +6,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDirectoryHandle } from "../../../../testUtils/fileSystem";
+import { contextMenuService } from "../../../../core/shell/contextMenuService";
+import type {
+  ExtensionApiScope,
+  ExtensionResource,
+} from "../../../extensions";
+import { createExtensionViewApi } from "../../../extensions/views/createExtensionViewApi";
 import { ProjectManager } from "../ProjectManager";
 
 const mocks = vi.hoisted(() => {
@@ -91,6 +97,7 @@ describe("ProjectManager", () => {
   });
 
   afterEach(() => {
+    contextMenuService.close();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -106,6 +113,52 @@ describe("ProjectManager", () => {
     expect(screen.getByText("Project Two")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.queryByText("No recent projects yet")).not.toBeInTheDocument();
+  });
+
+  it("opens the detached project-card context menu", async () => {
+    const recent = recentProject("one", "Project One");
+    mocks.getRecents.mockResolvedValue([recent]);
+    render(<ProjectManager />);
+
+    const label = await screen.findByText("Project One");
+    fireEvent.contextMenu(label.closest("button")!);
+
+    expect(contextMenuService.getActive()).toMatchObject({
+      menuId: "projects.item.context",
+      subject: {
+        slot: "projects.item.context",
+        project: {
+          id: "one",
+          name: "Project One",
+          lastOpened: recent.lastOpened,
+          pathToken: "one",
+        },
+      },
+    });
+  });
+
+  it("hosts a trusted extension view before a project is open", () => {
+    const scope: ExtensionApiScope = {
+      extension: { id: "example.projects", version: "1.0.0" },
+      signal: new AbortController().signal,
+      own: <TResource extends ExtensionResource>(resource: TResource) => resource,
+      report: vi.fn(),
+    };
+    const registration = createExtensionViewApi(scope).registerView({
+      id: "importer",
+      apiVersion: 1,
+      kind: "trusted-view",
+      title: "Import projects",
+      defaultRegion: "projects-page.main",
+      component: () => <div>Extension project importer</div>,
+    });
+    try {
+      render(<ProjectManager />);
+      fireEvent.click(screen.getByRole("tab", { name: "Import projects" }));
+      expect(screen.getByText("Extension project importer")).toBeInTheDocument();
+    } finally {
+      registration.dispose();
+    }
   });
 
   it("warns non-Chromium browsers and shows the empty state", async () => {

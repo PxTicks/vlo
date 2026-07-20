@@ -2,12 +2,10 @@ import type {
   ExtensionApiScope,
   ExtensionTrustedUiComponentDefinition,
   ExtensionTrustedUiModalDefinition,
-  ExtensionTrustedUiWorkspaceDefinition,
   ExtensionUiApi,
   ExtensionUiNoticeDefinition,
   ExtensionUiRegistration,
   ExtensionUiSlotId,
-  ExtensionUiWorkspaceLocation,
   JsonValue,
 } from "../types";
 import { jsonValueSchema } from "../persistence/extensionPayload";
@@ -19,7 +17,12 @@ import {
 
 type ExtensionUiSlotApi = Omit<
   ExtensionUiApi,
-  "registerPanelControl" | "commands" | "menus" | "catalogues"
+  | "registerPanelControl"
+  | "commands"
+  | "menus"
+  | "catalogues"
+  | "registerView"
+  | "openView"
 >;
 
 const SLOT_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
@@ -29,7 +32,6 @@ const HOST_UI_SLOTS = [
   "generation.inputs.after",
   "timeline.toolbar",
 ] as const;
-const HOST_WORKSPACE_LOCATIONS = ["right-sidebar", "left-sidebar"] as const;
 
 interface RuntimeUiNoticeDefinition extends ExtensionContributionDefinition {
   readonly slot: ExtensionUiSlotId;
@@ -59,24 +61,13 @@ interface RuntimeTrustedUiModalDefinition
   readonly report: ExtensionApiScope["report"];
 }
 
-export interface RuntimeTrustedUiWorkspaceDefinition
-  extends ExtensionContributionDefinition {
-  readonly kind: "trusted-workspace";
-  readonly title: string;
-  readonly location: ExtensionUiWorkspaceLocation;
-  readonly order: number;
-  readonly component: ExtensionTrustedUiWorkspaceDefinition["component"];
-  readonly report: ExtensionApiScope["report"];
-}
-
 type RuntimeUiSlotDefinition =
   | RuntimeUiNoticeDefinition
   | RuntimeTrustedUiComponentDefinition;
 
 type RuntimeUiContributionDefinition =
   | RuntimeUiSlotDefinition
-  | RuntimeTrustedUiModalDefinition
-  | RuntimeTrustedUiWorkspaceDefinition;
+  | RuntimeTrustedUiModalDefinition;
 
 interface ActiveModalRequest {
   readonly contributionId: string;
@@ -129,11 +120,6 @@ export class ExtensionUiContributionRegistry {
   private readonly listeners = new Set<() => void>();
   private activeModal: ActiveModalRequest | null = null;
   private modalRevision = 0;
-  private readonly selectedWorkspaceIds = new Map<
-    ExtensionUiWorkspaceLocation,
-    string
-  >();
-  private workspaceRevision = 0;
 
   constructor(additionalSlots: readonly string[] = []) {
     for (const slot of additionalSlots) this.declareSlot(slot);
@@ -144,7 +130,6 @@ export class ExtensionUiContributionRegistry {
       ) {
         this.finishActiveModal(undefined);
       }
-      this.removeUnavailableWorkspaceSelections();
       this.emitChange();
     });
   }
@@ -172,13 +157,8 @@ export class ExtensionUiContributionRegistry {
         definition: ExtensionTrustedUiModalDefinition,
       ): ExtensionUiRegistration =>
         bound.register(this.compileModal(definition, scope.report)),
-      registerWorkspace: (
-        definition: ExtensionTrustedUiWorkspaceDefinition,
-      ): ExtensionUiRegistration =>
-        bound.register(this.compileWorkspace(definition, scope.report)),
       openModal: (id: string, input?: JsonValue) =>
         this.openModal(scope, id, input),
-      openWorkspace: (id: string) => this.openWorkspace(scope, id),
     });
   }
 
@@ -213,64 +193,6 @@ export class ExtensionUiContributionRegistry {
     });
   }
 
-  listWorkspaces(
-    location: ExtensionUiWorkspaceLocation,
-  ): readonly RegisteredExtensionUiContribution[] {
-    return this.registry
-      .list()
-      .filter(
-        (entry) =>
-          entry.definition.kind === "trusted-workspace" &&
-          entry.definition.location === location,
-      )
-      .sort(
-        (left, right) =>
-          (left.definition as RuntimeTrustedUiWorkspaceDefinition).order -
-            (right.definition as RuntimeTrustedUiWorkspaceDefinition).order ||
-          left.id.localeCompare(right.id),
-      );
-  }
-
-  getSelectedWorkspaceId(
-    location: ExtensionUiWorkspaceLocation,
-  ): string | null {
-    const selectedId = this.selectedWorkspaceIds.get(location);
-    if (!selectedId) return null;
-    const contribution = this.registry.get(selectedId);
-    if (
-      contribution?.definition.kind === "trusted-workspace" &&
-      contribution.definition.location === location
-    ) {
-      return selectedId;
-    }
-    return null;
-  }
-
-  /** Host navigation seam; extensions receive only owner-bound openWorkspace. */
-  selectWorkspace(
-    location: ExtensionUiWorkspaceLocation,
-    contributionId: string | null,
-  ): void {
-    if (contributionId !== null) {
-      const contribution = this.registry.get(contributionId);
-      if (
-        contribution?.definition.kind !== "trusted-workspace" ||
-        contribution.definition.location !== location
-      ) {
-        throw new Error(
-          `UI workspace '${contributionId}' is not registered at '${location}'.`,
-        );
-      }
-    }
-    if ((this.selectedWorkspaceIds.get(location) ?? null) === contributionId) {
-      return;
-    }
-    if (contributionId === null) this.selectedWorkspaceIds.delete(location);
-    else this.selectedWorkspaceIds.set(location, contributionId);
-    this.workspaceRevision += 1;
-    this.emitChange();
-  }
-
   closeActiveModal(result?: JsonValue): void {
     try {
       this.finishActiveModal(cloneJson(result));
@@ -293,11 +215,7 @@ export class ExtensionUiContributionRegistry {
   }
 
   getRevision(): number {
-    return (
-      this.registry.getRevision() +
-      this.modalRevision +
-      this.workspaceRevision
-    );
+    return this.registry.getRevision() + this.modalRevision;
   }
 
   private compileNotice(
@@ -378,40 +296,6 @@ export class ExtensionUiContributionRegistry {
     });
   }
 
-  private compileWorkspace(
-    definition: ExtensionTrustedUiWorkspaceDefinition,
-    report: ExtensionApiScope["report"],
-  ): RuntimeTrustedUiWorkspaceDefinition {
-    if (definition.apiVersion !== 1 || definition.kind !== "trusted-workspace") {
-      throw new Error(
-        `UI workspace '${definition.id}' must use trusted-workspace API 1.`,
-      );
-    }
-    if (!HOST_WORKSPACE_LOCATIONS.includes(definition.location)) {
-      throw new Error(
-        `UI workspace '${definition.id}' targets unsupported location '${definition.location}'.`,
-      );
-    }
-    if (typeof definition.component !== "function") {
-      throw new Error(`UI workspace '${definition.id}' must provide a component.`);
-    }
-    return Object.freeze({
-      id: definition.id,
-      apiVersion: 1,
-      kind: "trusted-workspace",
-      title: assertText(
-        definition.title,
-        `UI workspace '${definition.id}' title`,
-        80,
-      ),
-      location: definition.location,
-      order: assertOrder(definition.order, definition.id),
-      component: definition.component,
-      execution: "trusted",
-      report,
-    });
-  }
-
   private assertCommonSlotDefinition(
     definition: ExtensionUiNoticeDefinition | ExtensionTrustedUiComponentDefinition,
     kind: "notice" | "trusted-react",
@@ -455,31 +339,6 @@ export class ExtensionUiContributionRegistry {
       this.modalRevision += 1;
       this.emitChange();
     });
-  }
-
-  private openWorkspace(scope: ExtensionApiScope, localId: string): boolean {
-    if (scope.signal.aborted) return false;
-    const contributionId = `${scope.extension.id}/${localId}`;
-    const contribution = this.registry.get(contributionId);
-    if (!contribution || contribution.definition.kind !== "trusted-workspace") {
-      throw new Error(`UI workspace '${contributionId}' is not registered.`);
-    }
-    this.selectWorkspace(contribution.definition.location, contributionId);
-    return true;
-  }
-
-  private removeUnavailableWorkspaceSelections(): void {
-    for (const [location, contributionId] of this.selectedWorkspaceIds) {
-      const contribution = this.registry.get(contributionId);
-      if (
-        contribution?.definition.kind === "trusted-workspace" &&
-        contribution.definition.location === location
-      ) {
-        continue;
-      }
-      this.selectedWorkspaceIds.delete(location);
-      this.workspaceRevision += 1;
-    }
   }
 
   private finishActiveModal(result: JsonValue | undefined): void {

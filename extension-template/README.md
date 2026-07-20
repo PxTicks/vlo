@@ -42,12 +42,14 @@ it. The fallback is expected trusted-alpha behaviour, but it is version-coupled.
   such as `transformation-panel.before` or `generation.toolbar`; register larger
   workflows with `registerModal(...)` and open them by local id with `openModal(...)`.
   The host owns dialog placement, escape/close behaviour, lifecycle, and isolation.
-- Persistent tools can register a `trusted-workspace` at `right-sidebar` and select
-  it with `openWorkspace(localId)`. The workspace mounts lazily on first use and then
-  remains mounted while hidden, receiving an `active` prop so animation loops,
+- Persistent tools can register a `trusted-view` in `right-sidebar`,
+  `left-sidebar`, or `projects-page.main` and select it with `openView(localId)`.
+  The view mounts lazily on first use and then remains mounted while hidden,
+  receiving an `active` prop so animation loops,
   cameras, and AI previews can pause off-screen. This supports arbitrary trusted
   React content such as HTML/SVG/WebGL canvases while the host retains tab placement,
-  navigation, error isolation, and teardown.
+  navigation, error isolation, and teardown. User visibility choices take
+  precedence: `openView` returns `false` for a hidden view.
 - Generation tools can inspect the active workflow through
   `context.api.generation.listInputs()`. Put one or more prompt changes in a labelled,
   synchronous `generation.transaction(...)`; the host validates the complete batch

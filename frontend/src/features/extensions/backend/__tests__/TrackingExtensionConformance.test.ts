@@ -263,12 +263,12 @@ function createConformanceApi() {
         id: definition.id,
         dispose: () => undefined,
       }),
-      registerWorkspace: (definition) => ({
+      registerView: (definition) => ({
         id: definition.id,
         dispose: () => undefined,
       }),
       openModal: async () => undefined,
-      openWorkspace: () => false,
+      openView: () => false,
       menus: {
         addItem: (definition) => ({
           id: definition.id,

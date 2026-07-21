@@ -34,6 +34,9 @@ export function ViewLayoutButton({ region, edge }: ViewLayoutButtonProps) {
       <Tooltip title="Manage panels">
         <IconButton
           aria-label="Manage panels"
+          // Region-qualified: one of these renders per shell region, so the
+          // label alone cannot address a specific sidebar.
+          data-testid={`view-layout-button-${region}`}
           size="small"
           onClick={() => setOpen(true)}
           sx={{

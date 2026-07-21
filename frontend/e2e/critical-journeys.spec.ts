@@ -134,6 +134,7 @@ test.describe('Critical editor journeys', () => {
             rightSidebar,
             maskPanel,
             transformationPanel,
+            leftSidebar,
             fileSystem,
         } = editorWithClips;
 
@@ -143,7 +144,11 @@ test.describe('Critical editor journeys', () => {
         await maskPanel.backButton.click();
 
         await rightSidebar.switchToTab('Transform');
-        await transformationPanel.addTransform('Blur');
+        await leftSidebar.switchTo('Effects');
+        await transformationPanel.addTransform(
+            'BlurFilter',
+            timeline.clips.first(),
+        );
         await expect(transformationPanel.effectMaskButtons.first()).toBeVisible();
         await transformationPanel.effectMaskButtons.first().click();
         await expect(transformationPanel.effectMaskDialog).toBeVisible();

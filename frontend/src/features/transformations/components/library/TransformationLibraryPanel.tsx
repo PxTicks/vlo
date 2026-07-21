@@ -19,6 +19,7 @@ function TransformationLibraryPanelComponent() {
 
   return (
     <Box
+      data-testid="transformation-library-panel"
       sx={{
         height: "100%",
         minWidth: 0,

@@ -111,7 +111,14 @@ function TransformationCardComponent({ definition }: TransformationCardProps) {
   });
 
   return (
-    <Box ref={setNodeRef} {...listeners} {...attributes}>
+    // Test ID mirrors `draggableId` so end-to-end drag sources and the dnd-kit
+    // identity stay in step; keyed on transform type, not the display label.
+    <Box
+      ref={setNodeRef}
+      data-testid={`transformation-card-${transformType}`}
+      {...listeners}
+      {...attributes}
+    >
       <TransformationCardSurface
         label={definition.label}
         isDragging={isDragging}

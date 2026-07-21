@@ -1,12 +1,27 @@
 import { Page, Locator } from '@playwright/test';
 
-type SidebarTab = 'Generate' | 'Transform' | 'Mask';
+type SidebarTab = 'Generate' | 'Adjust' | 'Transform' | 'Mask';
+
+/** Sections of the Adjust tab, which owns a clip's built-in properties. */
+export type AdjustSection = 'Display' | 'Speed' | 'Audio' | 'Color';
+
+export const ADJUST_SECTIONS: readonly AdjustSection[] = [
+    'Display',
+    'Speed',
+    'Audio',
+    'Color',
+];
 
 // Test IDs derive from the shell view registry: RightSidebarPanel renders
 // `right-sidebar-tab-${view.id}` with the `host.` prefix stripped, so these must
 // track the IDs declared in app/layout/rightSidebarHostViews.ts.
+//
+// Note the two are easy to confuse: `host.adjust` ("Adjust") renders the
+// transformation panel of built-in clip properties, while `host.transformations`
+// ("Transform") renders the added-effects panel.
 const TAB_TESTIDS: Record<SidebarTab, string> = {
     Generate: 'right-sidebar-tab-generate',
+    Adjust: 'right-sidebar-tab-adjust',
     Transform: 'right-sidebar-tab-transformations',
     Mask: 'right-sidebar-tab-mask',
 };
@@ -34,5 +49,21 @@ export class RightSidebarComponent {
 
     async isTabVisible(name: SidebarTab): Promise<boolean> {
         return this.getTab(name).isVisible();
+    }
+
+    /**
+     * A section tab within the Adjust panel (Display / Speed / Audio / Color).
+     * Scoped to the panel because these names are not globally unique — "Audio"
+     * also matches the asset browser's type filter tab.
+     */
+    getAdjustSection(name: AdjustSection): Locator {
+        return this.page
+            .getByTestId('transformation-panel')
+            .getByRole('tab', { name, exact: true });
+    }
+
+    async switchToAdjustSection(name: AdjustSection) {
+        await this.switchToTab('Adjust');
+        await this.getAdjustSection(name).click();
     }
 }

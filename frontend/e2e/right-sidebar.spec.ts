@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { ADJUST_SECTIONS } from './components/RightSidebarComponent';
 
 test.describe('Right Sidebar & Transformation Panel', () => {
 
@@ -33,7 +34,11 @@ test.describe('Right Sidebar & Transformation Panel', () => {
         await rightSidebar.switchToTab('Transform');
 
         await expect(transformationPanel.panel).toBeVisible();
-        await expect(transformationPanel.addButton).toBeVisible();
+        // A freshly selected clip carries no effects; the panel no longer shows
+        // default Layout/Volume sections, only what has been added to the clip.
+        await expect(transformationPanel.panel).toContainText(
+            'No effects have been added to this clip.',
+        );
     });
 
     test('Switch to Mask tab shows panel', async ({ editorWithClips }) => {
@@ -61,33 +66,63 @@ test.describe('Right Sidebar & Transformation Panel', () => {
         await expect(rightSidebar.getTab('Mask')).toHaveCount(0);
     });
 
-    test('Add transformation from menu', async ({ editorWithClips }) => {
-        const { rightSidebar, timeline, transformationPanel } = editorWithClips;
+    test('Adjust tab exposes the built-in clip property sections', async ({
+        editorWithClips,
+    }) => {
+        const { rightSidebar, timeline } = editorWithClips;
 
         await timeline.clickClip(0);
-        await rightSidebar.switchToTab('Transform');
+        await rightSidebar.switchToTab('Adjust');
 
-        // Click the add button to open the menu
-        await transformationPanel.addButton.click();
-        await expect(transformationPanel.addMenu).toBeVisible();
-
-        // Pick a transform from the menu (e.g. Blur)
-        await editorWithClips.page.getByRole('menuitem', { name: 'Blur', exact: true }).click();
-
-        // Menu should close and a new section should appear with the transform name
-        await expect(transformationPanel.addMenu).not.toBeVisible();
-        await expect(transformationPanel.panel.getByRole('heading', { name: 'Blur' })).toBeVisible();
+        // Successor to the old "default transformation sections" coverage: the
+        // former Layout and Volume sections now live here as Display and Audio,
+        // with Layout, Fit Mode and Blend Mode unified into Display.
+        for (const section of ADJUST_SECTIONS) {
+            await expect(rightSidebar.getAdjustSection(section)).toBeVisible();
+        }
     });
 
-    test('Default transformation sections visible for video clip', async ({ editorWithClips }) => {
+    test('Adjust sections are selectable and Display is the default', async ({
+        editorWithClips,
+    }) => {
         const { rightSidebar, timeline, transformationPanel } = editorWithClips;
+
+        await timeline.clickClip(0);
+        await rightSidebar.switchToTab('Adjust');
+
+        await expect(
+            transformationPanel.panel.getByRole('heading', { name: 'Display' }),
+        ).toBeVisible();
+
+        await rightSidebar.getAdjustSection('Speed').click();
+        await expect(rightSidebar.getAdjustSection('Speed')).toHaveAttribute(
+            'aria-selected',
+            'true',
+        );
+    });
+
+    test('Add transformation by dragging from the effects library', async ({
+        editorWithClips,
+    }) => {
+        const { rightSidebar, timeline, transformationPanel, leftSidebar } =
+            editorWithClips;
 
         await timeline.clickClip(0);
         await rightSidebar.switchToTab('Transform');
 
-        // Default sections for a video clip: Layout and Volume
-        await expect(transformationPanel.panel.getByRole('heading', { name: 'Layout' })).toBeVisible();
-        await expect(transformationPanel.panel.getByRole('heading', { name: 'Volume' })).toBeVisible();
+        // The effects library lives in the left sidebar; a transform is added by
+        // dragging its card onto the target clip rather than via an add-menu.
+        await leftSidebar.switchTo('Effects');
+        await expect(transformationPanel.libraryPanel).toBeVisible();
+
+        await transformationPanel.addTransform(
+            'BlurFilter',
+            timeline.clips.first(),
+        );
+
+        await expect(
+            transformationPanel.panel.getByRole('heading', { name: 'Blur' }),
+        ).toBeVisible();
     });
 
 });

@@ -1,0 +1,220 @@
+{
+  "documentType": "vlo.composites",
+  "schemaVersion": 2,
+  "updated_at": 1784584073163,
+  "composites": {
+    "composite_effce8c8-0ef9-4e17-8482-df81b50744d8": {
+      "id": "composite_effce8c8-0ef9-4e17-8482-df81b50744d8",
+      "name": "Composite",
+      "content": {
+        "clips": [
+          {
+            "id": "clip_407f72b6-1d67-482e-ac25-ccbc5322cd1a",
+            "type": "video",
+            "trackId": "track_74631139-0cde-4a9a-98d4-4289867f017e",
+            "name": "hf_20260122_232943_45d72e1c-68cb-41b8-bdac-e275e5c91de8.mp4",
+            "sourceDuration": 1152000,
+            "transformedDuration": 1152000,
+            "transformedOffset": 0,
+            "timelineDuration": 528000,
+            "croppedSourceDuration": 528000,
+            "offset": 0,
+            "start": 0,
+            "transformations": [
+              {
+                "id": "4601a43e-a28a-4fbf-8e70-fc5a93ca21fc",
+                "type": "fitMode",
+                "isEnabled": true,
+                "parameters": {
+                  "fitMode": "cover"
+                }
+              }
+            ],
+            "assetId": "e81f97ed-3c38-4265-8f0e-3425d0bf3172"
+          },
+          {
+            "id": "clip_0930e057-3b5e-41b2-8ebe-3846a163e0a8",
+            "type": "video",
+            "trackId": "track_74631139-0cde-4a9a-98d4-4289867f017e",
+            "name": "vace_00003.mp4",
+            "sourceDuration": 366048,
+            "transformedDuration": 366048,
+            "transformedOffset": 0,
+            "timelineDuration": 366048,
+            "croppedSourceDuration": 366048,
+            "offset": 0,
+            "start": 528000,
+            "transformations": [
+              {
+                "id": "87bf04a7-f4e8-4dee-a39f-885a56e46024",
+                "type": "fitMode",
+                "isEnabled": false,
+                "parameters": {
+                  "fitMode": "cover"
+                }
+              },
+              {
+                "id": "0367ef25-c793-4235-8579-43c10265378c",
+                "type": "position",
+                "isEnabled": false,
+                "parameters": {
+                  "x": 240,
+                  "y": -141
+                }
+              },
+              {
+                "id": "5d131ec6-278d-42a5-a0a4-7af772478ff9",
+                "type": "scale",
+                "isEnabled": false,
+                "parameters": {
+                  "x": 0.739583,
+                  "y": 0.738889,
+                  "isLinked": false
+                }
+              },
+              {
+                "id": "3cb8d4e8-ca9b-45f8-81fc-be3073e6aa41",
+                "type": "rotation",
+                "isEnabled": false,
+                "parameters": {
+                  "x": 1,
+                  "y": 1,
+                  "isLinked": true,
+                  "angle": 0
+                }
+              },
+              {
+                "id": "a8a0ab0d-8161-48a6-9ab6-9b82833a0daa",
+                "type": "blendMode",
+                "isEnabled": false,
+                "parameters": {
+                  "blendMode": "normal"
+                }
+              }
+            ],
+            "assetId": "38d3c3b5-9f6a-43cd-b673-d8951f4e22e4",
+            "components": [
+              {
+                "id": "6b63a995-b164-4bd9-b4c0-7abf8dd5b352",
+                "type": "mask_ref",
+                "parameters": {
+                  "maskClipId": "clip_0930e057-3b5e-41b2-8ebe-3846a163e0a8::mask::5e73fbd8-a885-4414-a624-287104734200"
+                }
+              },
+              {
+                "id": "6244bd8a-d04b-48b7-b202-e20c8346d7da",
+                "type": "mask_composition",
+                "parameters": {
+                  "compositeTransformations": [
+                    {
+                      "id": "42984a26-1bff-4237-992b-64c7d928999d",
+                      "type": "feather",
+                      "isEnabled": true,
+                      "parameters": {
+                        "mode": "hard_outer",
+                        "amount": 30,
+                        "invert": false
+                      }
+                    }
+                  ],
+                  "expression": {
+                    "kind": "mask_ref",
+                    "maskId": "5e73fbd8-a885-4414-a624-287104734200"
+                  },
+                  "algebra": "normal",
+                  "expressionEnabled": false
+                }
+              }
+            ]
+          },
+          {
+            "id": "clip_0930e057-3b5e-41b2-8ebe-3846a163e0a8::mask::5e73fbd8-a885-4414-a624-287104734200",
+            "type": "mask",
+            "trackId": "track_74631139-0cde-4a9a-98d4-4289867f017e",
+            "name": "Mask 1",
+            "sourceDuration": 366048,
+            "transformedDuration": 366048,
+            "transformedOffset": 0,
+            "timelineDuration": 366048,
+            "croppedSourceDuration": 366048,
+            "offset": 0,
+            "start": 528000,
+            "transformations": [],
+            "parentClipId": "clip_0930e057-3b5e-41b2-8ebe-3846a163e0a8",
+            "maskType": "generation",
+            "maskMode": "apply",
+            "maskInverted": false,
+            "maskParameters": {
+              "baseWidth": 1,
+              "baseHeight": 1
+            },
+            "generationMaskAssetId": "b0b84fbe-cbdb-412f-b4f9-f4a0f3d2f8ad"
+          }
+        ],
+        "tracks": [
+          {
+            "id": "track_b6ea1c6b-dc37-4629-a93f-aa7979c7d893",
+            "label": "Track 1",
+            "isVisible": true,
+            "isMuted": false,
+            "isLocked": false
+          },
+          {
+            "id": "track_86195e57-ff87-48bc-8129-bc28664c58ea",
+            "type": "visual",
+            "label": "Track 2",
+            "isVisible": true,
+            "isMuted": false,
+            "isLocked": false
+          },
+          {
+            "id": "track_e60890c4-46b2-43d4-af41-77cdf067babb",
+            "type": "visual",
+            "label": "Track 3",
+            "isVisible": true,
+            "isMuted": false,
+            "isLocked": false
+          },
+          {
+            "id": "track_74631139-0cde-4a9a-98d4-4289867f017e",
+            "type": "visual",
+            "label": "Track 4",
+            "isVisible": true,
+            "isMuted": false,
+            "isLocked": false
+          },
+          {
+            "id": "track_f7b93fdf-a557-4ce3-9308-790903430980",
+            "type": "visual",
+            "label": "Track 5",
+            "isVisible": true,
+            "isMuted": false,
+            "isLocked": false
+          },
+          {
+            "id": "track_745990d3-c68e-4fbb-b831-9898e8f9abf5",
+            "label": "Track 6",
+            "isVisible": true,
+            "isMuted": false,
+            "isLocked": false
+          }
+        ],
+        "fps": 16,
+        "frameStep": 1,
+        "durationTicks": 900000
+      },
+      "revision": 1,
+      "bake": {
+        "status": "ready",
+        "requestedKey": "v4:4f6a0ed8:16fps:1920x1080:transparent:1s-gop:4b7d53b8",
+        "readyKey": "v4:4f6a0ed8:16fps:1920x1080:transparent:1s-gop:4b7d53b8",
+        "readyRevision": 1,
+        "assetId": "f9c53892-1f4a-412e-acfd-4fa3f1b33212",
+        "updatedAt": 1784584073163
+      },
+      "bakedAssetId": "f9c53892-1f4a-412e-acfd-4fa3f1b33212",
+      "createdAt": 1784583427021,
+      "updatedAt": 1784584073163
+    }
+  }
+}

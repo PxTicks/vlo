@@ -1,0 +1,23 @@
+{
+  "documentType": "vlo.project",
+  "schemaVersion": 3,
+  "id": "0b957e83-c51b-41a9-adbb-b2608e12f952",
+  "title": "E2E",
+  "created_at": 1784559842729,
+  "last_modified": 1784559842730,
+  "createdWithVloVersion": "0.2.0",
+  "lastSavedWithVloVersion": "0.2.0",
+  "config": {
+    "aspectRatio": "16:9",
+    "fps": 16,
+    "fitMode": "cover",
+    "layoutMode": "compact",
+    "assetBrowserDisplay": "grouped"
+  },
+  "files": {
+    "timeline": "timeline.json",
+    "assets": "assets.json",
+    "composites": "composites.json",
+    "assetMetadataDir": "asset-metadata"
+  }
+}

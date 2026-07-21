@@ -11,9 +11,12 @@ function normalizeAppVersion(value: unknown): string | null {
 }
 
 /** Unknown build metadata is explicit; it must not become compatibility data. */
-export const VLO_APP_VERSION = normalizeAppVersion(
-  import.meta.env.VITE_APP_VERSION,
-);
+const ENV_APP_VERSION =
+  typeof import.meta.env === "object"
+    ? import.meta.env.VITE_APP_VERSION
+    : undefined;
+
+export const VLO_APP_VERSION = normalizeAppVersion(ENV_APP_VERSION);
 
 export const PROJECT_MANIFEST_SCHEMA_VERSION = 3;
 export const TIMELINE_DOCUMENT_SCHEMA_VERSION = 3;

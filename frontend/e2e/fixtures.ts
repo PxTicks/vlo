@@ -38,6 +38,10 @@ export const test = base.extend<{
     editorWithClips: EditorComponent;
     /** Editor with project_v3_with_audio_track — has 2 video clips + 1 audio clip on 3 tracks. */
     editorWithAudioTrack: EditorComponent;
+    /** Editor with the real current-format project — the default for new coverage. */
+    editorCurrent: EditorComponent;
+    /** Current-format project alias for mask and mask-composition coverage. */
+    editorWithMasks: EditorComponent;
     /** Editor opened from the legacy single-document project fixture. */
     legacyEditor: EditorComponent;
     /** An EditorComponent instance without project setup — for tests that need the landing page. */
@@ -102,6 +106,18 @@ export const test = base.extend<{
     editorWithAudioTrack: async ({ page }, runFixture) => {
         const editor = new EditorComponent(page);
         await setupEditor(editor, { fixtureDir: 'project_v3_with_audio_track' });
+        await runFixture(editor);
+    },
+
+    editorCurrent: async ({ page }, runFixture) => {
+        const editor = new EditorComponent(page);
+        await setupEditor(editor, { fixtureDir: 'project_current' });
+        await runFixture(editor);
+    },
+
+    editorWithMasks: async ({ page }, runFixture) => {
+        const editor = new EditorComponent(page);
+        await setupEditor(editor, { fixtureDir: 'project_current' });
         await runFixture(editor);
     },
 

@@ -118,6 +118,13 @@ export interface InitializeProjectDocumentsInput {
   compositeLibrary?: CompositeLibraryDocument;
 }
 
+export interface ProjectPersistenceDocumentBundle {
+  manifest: ProjectManifestDocument;
+  timeline: TimelineDocument;
+  assetIndex: AssetIndexDocument;
+  compositeLibrary: CompositeLibraryDocument;
+}
+
 export interface PreparedPersistedAsset {
   entry: PersistedAssetIndexEntry;
   sidecarMetadata?: CreationMetadata;
@@ -316,6 +323,25 @@ function createManifestDocument(
       composites: PROJECT_PERSISTENCE_FILE_NAMES.composites,
       assetMetadataDir: PROJECT_PERSISTENCE_FILE_NAMES.assetMetadataDir,
     },
+  };
+}
+
+/**
+ * Builds the complete split-document set written when a project is created.
+ * Keeping this pure makes the persistence contract reusable by schema and
+ * fixture conformance tests without duplicating the writer's shape.
+ */
+export function createProjectPersistenceDocuments(
+  input: InitializeProjectDocumentsInput,
+): ProjectPersistenceDocumentBundle {
+  return {
+    assetIndex: input.assetIndex ?? createAssetIndexDocument(),
+    compositeLibrary:
+      input.compositeLibrary ?? createCompositeLibraryDocument(),
+    timeline: createTimelineDocument(
+      input.timeline ?? createDefaultTimelineSnapshot(),
+    ),
+    manifest: createManifestDocument(input),
   };
 }
 
@@ -940,13 +966,8 @@ export class ProjectPersistenceService {
   async initializeProjectDocuments(
     input: InitializeProjectDocumentsInput,
   ): Promise<ProjectManifestDocument> {
-    const assetIndex = input.assetIndex ?? createAssetIndexDocument();
-    const compositeLibrary =
-      input.compositeLibrary ?? createCompositeLibraryDocument();
-    const timeline = createTimelineDocument(
-      input.timeline ?? createDefaultTimelineSnapshot(),
-    );
-    const manifest = createManifestDocument(input);
+    const { assetIndex, compositeLibrary, timeline, manifest } =
+      createProjectPersistenceDocuments(input);
 
     await this.persistAssetIndex(assetIndex);
     await this.persistCompositeLibrary(compositeLibrary);

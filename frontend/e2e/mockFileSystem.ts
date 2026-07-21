@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page, Route } from '@playwright/test';
+import {
+    ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
+    COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
+    PROJECT_MANIFEST_SCHEMA_VERSION,
+    TIMELINE_DOCUMENT_SCHEMA_VERSION,
+} from '../src/features/project/constants';
 
 const MOCK_FS_ROUTE = '/__mock-fs/';
 const PROJECT_DIRECTORY = '.vloproject';
@@ -33,19 +39,25 @@ function parentPath(value: string): string {
     return parent === '.' ? '' : parent;
 }
 
-function detectContentType(filePath: string, body: Buffer): string {
+export function detectContentType(filePath: string, body: Buffer): string {
     const extension = path.posix.extname(filePath).toLowerCase();
     const extensionTypes: Record<string, string> = {
         '.gif': 'image/gif',
         '.jpeg': 'image/jpeg',
         '.jpg': 'image/jpeg',
         '.json': 'application/json',
+        '.m4a': 'audio/mp4',
+        '.m4v': 'video/x-m4v',
+        '.mov': 'video/quicktime',
         '.mp3': 'audio/mpeg',
         '.mp4': 'video/mp4',
+        '.ogg': 'audio/ogg',
+        '.opus': 'audio/opus',
         '.png': 'image/png',
         '.wav': 'audio/wav',
         '.webm': 'video/webm',
         '.webp': 'image/webp',
+        '.avif': 'image/avif',
     };
     const extensionType = extensionTypes[extension];
     if (extensionType) return extensionType;
@@ -74,7 +86,9 @@ function detectContentType(filePath: string, body: Buffer): string {
     return 'application/octet-stream';
 }
 
-function createCurrentProjectDocuments(legacyProject: Record<string, unknown>) {
+export function createCurrentProjectDocuments(
+    legacyProject: Record<string, unknown>,
+) {
     const now = Date.now();
     const id =
         typeof legacyProject.id === 'string'
@@ -124,7 +138,7 @@ function createCurrentProjectDocuments(legacyProject: Record<string, unknown>) {
     return {
         manifest: {
             documentType: 'vlo.project',
-            schemaVersion: 3,
+            schemaVersion: PROJECT_MANIFEST_SCHEMA_VERSION,
             id,
             title,
             created_at: createdAt,
@@ -141,21 +155,22 @@ function createCurrentProjectDocuments(legacyProject: Record<string, unknown>) {
         },
         timeline: {
             documentType: 'vlo.timeline',
-            schemaVersion: 3,
+            schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
             updated_at: now,
             tracks,
             clips: timeline.clips ?? [],
+            transitions: [],
         },
         assets: {
             documentType: 'vlo.assets',
-            schemaVersion: 1,
+            schemaVersion: ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
             updated_at: now,
             assets,
             assetFamilies,
         },
         composites: {
             documentType: 'vlo.composites',
-            schemaVersion: 1,
+            schemaVersion: COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
             updated_at: now,
             composites: {},
         },
@@ -164,6 +179,7 @@ function createCurrentProjectDocuments(legacyProject: Record<string, unknown>) {
 
 export class MockFileSystem {
     readonly rootName: string;
+    wasLegacyProjectConverted = false;
     private readonly directories = new Set<string>(['']);
     private readonly files = new Map<string, StoredFile>();
 
@@ -213,11 +229,15 @@ export class MockFileSystem {
             string,
             unknown
         >;
-        if (parsed.documentType === 'vlo.project' && parsed.schemaVersion === 3) {
+        // Split-document fixtures are real persistence artefacts. Leave them byte-for-byte
+        // intact so the application, rather than test-only conversion code, owns reading
+        // and migrating them.
+        if (parsed.documentType === 'vlo.project') {
             return;
         }
 
         const documents = createCurrentProjectDocuments(parsed);
+        this.wasLegacyProjectConverted = true;
         this.writeJson(`${PROJECT_DIRECTORY}/project.json`, documents.manifest);
         this.writeJson(`${PROJECT_DIRECTORY}/timeline.json`, documents.timeline);
         this.writeJson(`${PROJECT_DIRECTORY}/assets.json`, documents.assets);
@@ -411,6 +431,17 @@ export class MockFileSystem {
 
     list(filePath = ''): string[] {
         return this.listEntries(normalizePath(filePath)).map((entry) => entry.name);
+    }
+
+    listFiles(filePath = ''): string[] {
+        const normalized = normalizePath(filePath);
+        const prefix = normalized ? `${normalized}/` : '';
+        return [...this.files.keys()]
+            .filter(
+                (candidate) =>
+                    candidate === normalized || candidate.startsWith(prefix),
+            )
+            .sort();
     }
 }
 

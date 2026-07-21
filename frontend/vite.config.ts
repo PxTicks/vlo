@@ -176,7 +176,9 @@ export default defineConfig(({ mode }) => {
       globals: true,
       environment: "jsdom",
       setupFiles: "./src/setupTests.ts",
-      exclude: ["node_modules", "dist", "e2e/**/*"],
+      // Playwright specs stay out of Vitest, while e2e/__tests__ pins the
+      // Node-side fixture harness against production persistence schemas.
+      exclude: ["node_modules", "dist", "e2e/**/*.spec.ts"],
       coverage: {
         provider: "v8",
         include: ["src/**/*.{ts,tsx}"],

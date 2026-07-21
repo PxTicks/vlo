@@ -16,6 +16,7 @@ const SERVER_COMMAND = IS_CI
  */
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: '**/__tests__/**',
   timeout: 60000,
   fullyParallel: LOCAL_WORKERS > 1,
   forbidOnly: IS_CI,

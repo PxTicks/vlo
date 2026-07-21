@@ -204,4 +204,22 @@ describe('MockFileSystem content types', () => {
             expectedContentType,
         );
     });
+
+    /**
+     * The fixture's real .m4a opens with an `ftyp` box, which the magic-byte
+     * fallback classifies as video/mp4. Zero-filled bodies cannot express that,
+     * so this pins extension lookup as taking precedence over sniffing rather
+     * than merely pinning the map entry.
+     */
+    it('prefers the extension over ftyp sniffing for real audio containers', () => {
+        const fileSystem = new MockFileSystem(fixturePath('project_current'));
+        const audioFile = fileSystem
+            .listFiles()
+            .find((filePath) => filePath.endsWith('.m4a'));
+        expect(audioFile).toBeDefined();
+
+        const body = fileSystem.readBuffer(audioFile as string);
+        expect(body.subarray(4, 8).toString('ascii')).toBe('ftyp');
+        expect(detectContentType(audioFile as string, body)).toBe('audio/mp4');
+    });
 });

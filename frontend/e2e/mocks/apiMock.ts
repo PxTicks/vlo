@@ -212,6 +212,11 @@ export interface ApiMockOptions {
     pendingDeliveries?: Array<Record<string, unknown>>;
     /** Download bodies keyed by the final URL path segment. */
     deliveryFiles?: Record<string, Buffer | string>;
+    /**
+     * Extension inventory returned to the frontend runtime at startup. Defaults
+     * to empty so no extension activates; extension coverage supplies entries.
+     */
+    extensionInventory?: Array<Record<string, unknown>>;
 }
 
 /**
@@ -271,6 +276,20 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify(defaultRuntimeStatus),
+        });
+    });
+
+    // ── Extension inventory ──
+    // FrontendExtensionRuntime loads this during bootstrap on every page. Without
+    // a route the fetch reaches the network, fails, and the runtime logs a
+    // console error that the diagnostics fixture turns into a suite-wide failure.
+    await page.route('**/app/extensions', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                extensions: options.extensionInventory ?? [],
+            }),
         });
     });
 

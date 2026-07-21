@@ -11,6 +11,7 @@ import { MaskPanelComponent } from './MaskPanelComponent';
 import { GenerationPanelComponent } from './GenerationPanelComponent';
 import { ProjectManagerComponent } from './ProjectManagerComponent';
 import { LeftSidebarComponent } from './LeftSidebarComponent';
+import { ShellComponent } from './ShellComponent';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +38,7 @@ export class EditorComponent {
     readonly generationPanel: GenerationPanelComponent;
     readonly projectManager: ProjectManagerComponent;
     readonly leftSidebar: LeftSidebarComponent;
+    readonly shell: ShellComponent;
 
     constructor(page: Page) {
         this.page = page;
@@ -49,6 +51,7 @@ export class EditorComponent {
         this.generationPanel = new GenerationPanelComponent(page);
         this.projectManager = new ProjectManagerComponent(page);
         this.leftSidebar = new LeftSidebarComponent(page);
+        this.shell = new ShellComponent(page);
     }
 
     get fileSystem(): MockFileSystem {

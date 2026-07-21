@@ -8,3 +8,4 @@ export { MaskPanelComponent } from './MaskPanelComponent';
 export { GenerationPanelComponent } from './GenerationPanelComponent';
 export { ProjectManagerComponent } from './ProjectManagerComponent';
 export { LeftSidebarComponent } from './LeftSidebarComponent';
+export { ShellComponent } from './ShellComponent';

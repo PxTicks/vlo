@@ -10,7 +10,7 @@ const HOST_VIEW_IDS = [
   "host.generate",
   "host.transition",
   "host.adjust",
-  "host.transformations",
+  "host.effects",
   "host.mask",
 ] as const;
 

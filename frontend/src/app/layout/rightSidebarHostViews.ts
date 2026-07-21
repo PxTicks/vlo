@@ -20,7 +20,7 @@ function renderTransitionPanel() {
   return createElement(TransitionPanel);
 }
 
-function renderTransformationPanel() {
+function renderAdjustPanel() {
   return createElement(TransformationPanel);
 }
 
@@ -54,15 +54,19 @@ export function declareRightSidebarHostViews(): void {
     component: renderTransitionPanel,
   });
   hostViewRegistry.registerHostView({
+    // "Adjust" owns a clip's built-in properties (Display/Speed/Audio/Color);
+    // "Effects" owns transforms the user has added. Both render
+    // TransformationPanelSurface under different variants, so the view IDs —
+    // not the component name — are what distinguish them.
     id: "host.adjust",
     title: "Adjust",
     defaultRegion: "right-sidebar",
     order: 30,
     when: clipSelected,
-    component: renderTransformationPanel,
+    component: renderAdjustPanel,
   });
   hostViewRegistry.registerHostView({
-    id: "host.transformations",
+    id: "host.effects",
     title: "Transform",
     defaultRegion: "right-sidebar",
     order: 40,

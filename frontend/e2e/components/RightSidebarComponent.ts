@@ -16,13 +16,12 @@ export const ADJUST_SECTIONS: readonly AdjustSection[] = [
 // `right-sidebar-tab-${view.id}` with the `host.` prefix stripped, so these must
 // track the IDs declared in app/layout/rightSidebarHostViews.ts.
 //
-// Note the two are easy to confuse: `host.adjust` ("Adjust") renders the
-// transformation panel of built-in clip properties, while `host.transformations`
-// ("Transform") renders the added-effects panel.
+// `host.adjust` ("Adjust") owns a clip's built-in properties; `host.effects`
+// ("Transform") owns effects the user has added.
 const TAB_TESTIDS: Record<SidebarTab, string> = {
     Generate: 'right-sidebar-tab-generate',
     Adjust: 'right-sidebar-tab-adjust',
-    Transform: 'right-sidebar-tab-transformations',
+    Transform: 'right-sidebar-tab-effects',
     Mask: 'right-sidebar-tab-mask',
 };
 
@@ -58,7 +57,7 @@ export class RightSidebarComponent {
      */
     getAdjustSection(name: AdjustSection): Locator {
         return this.page
-            .getByTestId('transformation-panel')
+            .getByTestId('adjust-panel')
             .getByRole('tab', { name, exact: true });
     }
 

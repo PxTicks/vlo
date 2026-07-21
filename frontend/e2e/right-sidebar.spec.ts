@@ -33,10 +33,10 @@ test.describe('Right Sidebar & Transformation Panel', () => {
         await timeline.clickClip(0);
         await rightSidebar.switchToTab('Transform');
 
-        await expect(transformationPanel.panel).toBeVisible();
+        await expect(transformationPanel.effectsPanel).toBeVisible();
         // A freshly selected clip carries no effects; the panel no longer shows
         // default Layout/Volume sections, only what has been added to the clip.
-        await expect(transformationPanel.panel).toContainText(
+        await expect(transformationPanel.effectsPanel).toContainText(
             'No effects have been added to this clip.',
         );
     });
@@ -91,7 +91,7 @@ test.describe('Right Sidebar & Transformation Panel', () => {
         await rightSidebar.switchToTab('Adjust');
 
         await expect(
-            transformationPanel.panel.getByRole('heading', { name: 'Display' }),
+            transformationPanel.adjustPanel.getByRole('heading', { name: 'Display' }),
         ).toBeVisible();
 
         await rightSidebar.getAdjustSection('Speed').click();
@@ -121,7 +121,7 @@ test.describe('Right Sidebar & Transformation Panel', () => {
         );
 
         await expect(
-            transformationPanel.panel.getByRole('heading', { name: 'Blur' }),
+            transformationPanel.effectsPanel.getByRole('heading', { name: 'Blur' }),
         ).toBeVisible();
     });
 

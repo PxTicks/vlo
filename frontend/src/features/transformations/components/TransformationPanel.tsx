@@ -137,6 +137,10 @@ export function TransformationPanelSurface({
   variant,
 }: TransformationPanelSurfaceProps) {
   const effectsOnly = variant === "effects";
+  // Both sidebar views render this surface, and the shell may keep an inactive
+  // view mounted, so the variants carry distinct test IDs rather than a shared
+  // one that would become ambiguous the moment both are in the DOM.
+  const panelTestId = effectsOnly ? "effects-panel" : "adjust-panel";
   const transformationRegistryRevision = useSyncExternalStore(
     (listener) => extensionTransformationRegistry.subscribe(listener),
     () => extensionTransformationRegistry.getRevision(),
@@ -857,7 +861,7 @@ export function TransformationPanelSurface({
   if (!effectsOnly && isPathEditorOpen && activePositionPath) {
     return (
       <Box
-        data-testid="transformation-panel"
+        data-testid={panelTestId}
         sx={{
           display: "flex",
           flexDirection: "column",
@@ -889,7 +893,7 @@ export function TransformationPanelSurface({
 
   return (
     <Box
-      data-testid="transformation-panel"
+      data-testid={panelTestId}
       sx={{
         display: "flex",
         flexDirection: "column",

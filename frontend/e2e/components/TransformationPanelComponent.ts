@@ -7,11 +7,15 @@ import { performDrag } from '../helpers/drag';
  */
 export class TransformationPanelComponent {
     readonly page: Page;
-    readonly panel: Locator;
+    /** The Adjust view: a clip's built-in Display/Speed/Audio/Color properties. */
+    readonly adjustPanel: Locator;
+    /** The Transform view: effects the user has added to the clip. */
+    readonly effectsPanel: Locator;
 
     constructor(page: Page) {
         this.page = page;
-        this.panel = page.getByTestId('transformation-panel');
+        this.adjustPanel = page.getByTestId('adjust-panel');
+        this.effectsPanel = page.getByTestId('effects-panel');
     }
 
     get libraryPanel() {

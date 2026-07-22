@@ -8,7 +8,7 @@ import { test, expect } from '../fixtures';
  * launcher.
  */
 test.describe('Projects page context menu', () => {
-    test('recent project entry offers open and remove', async ({
+    test('@smoke recent project entry offers open and remove', async ({
         editorWithClips,
     }) => {
         const { shell, page } = editorWithClips;

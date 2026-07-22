@@ -127,7 +127,6 @@ export function createCurrentProjectDocuments(
             : [
                 {
                     id: 'track_e2e_default',
-                    type: 'visual',
                     label: 'Track 1',
                     isVisible: true,
                     isMuted: false,

@@ -22,7 +22,7 @@ const CORE_DOCUMENTS = [
 ] as const;
 
 test.describe('Current project format', () => {
-    test('@smoke edits and reopens a writer-produced project losslessly', async ({
+    test('@smoke retains current project documents across an edit and reopen', async ({
         editorCurrent,
     }) => {
         const { fileSystem, page } = editorCurrent;
@@ -42,7 +42,18 @@ test.describe('Current project format', () => {
         await page.getByTestId('project-title-display').click();
         const titleInput = page.getByTestId('project-title-input').locator('input');
         await titleInput.fill('Current Format Round Trip');
+        const manifestSaved = page.waitForResponse((response) => {
+            const url = new URL(response.url());
+            return (
+                response.request().method() === 'PUT' &&
+                url.pathname.endsWith(
+                    '/__mock-fs/.vloproject/project.json',
+                ) &&
+                response.status() === 204
+            );
+        });
         await titleInput.press('Enter');
+        await manifestSaved;
 
         await expect.poll(() =>
             projectManifestDocumentSchema.parse(
@@ -90,7 +101,9 @@ test.describe('Current project format', () => {
         }
 
         // Saving the manifest must retain every independent project document and
-        // auxiliary artefact (metadata, masks, proxies and thumbnails) byte-for-byte.
+        // durable auxiliary artefact (metadata, masks, proxies and thumbnails)
+        // byte-for-byte. Deferred-cleanup trash is intentionally cleared when a
+        // project is opened and is therefore not part of this retention contract.
         expect(retainedPaths).toEqual(fileSystem.listFiles(PROJECT_DIRECTORY).filter(
             (filePath) => filePath !== `${PROJECT_DIRECTORY}/project.json`,
         ));

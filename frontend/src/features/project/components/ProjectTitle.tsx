@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { Typography, TextField, Box } from "@mui/material";
 import { useProjectStore } from "../useProjectStore";
 
@@ -6,20 +6,29 @@ export function ProjectTitle() {
   const { project, updateTitle } = useProjectStore();
   const [isEditing, setIsEditing] = useState(false);
   const [tempTitle, setTempTitle] = useState(project?.title || "");
+  const saveInFlightRef = useRef(false);
 
   if (!project) return <Typography>Loading...</Typography>;
 
   const save = async () => {
+    // Enter explicitly blurs the field, which also invokes onBlur. Treat both
+    // events as one save rather than starting two concurrent persistence runs.
+    if (saveInFlightRef.current) return;
+    saveInFlightRef.current = true;
     const trimmed = tempTitle.trim();
 
-    // Only trigger update if title actually changed
-    if (trimmed && trimmed !== project.title) {
-      // This will now trigger the API call and folder rename
-      await updateTitle(trimmed);
-    } else {
-      setTempTitle(project.title);
+    try {
+      // Only trigger update if title actually changed
+      if (trimmed && trimmed !== project.title) {
+        // This will now trigger the API call and folder rename
+        await updateTitle(trimmed);
+      } else {
+        setTempTitle(project.title);
+      }
+      setIsEditing(false);
+    } finally {
+      saveInFlightRef.current = false;
     }
-    setIsEditing(false);
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

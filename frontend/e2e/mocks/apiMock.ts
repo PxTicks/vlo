@@ -30,6 +30,22 @@ function buildMockComfyFrameHtml(): string {
   <body>
     <script>
       (() => {
+        const BRIDGE_PROTOCOL = 'vlo-bridge';
+        const BRIDGE_VERSION = 2;
+        const BRIDGE_CAPABILITIES = [
+          'health',
+          'health-changed',
+          'read-active',
+          'read-pending-warnings',
+          'inject-workflow',
+          'resolve-prompt',
+          'refresh-missing-models',
+          'graph-changed',
+          'workflow-revision',
+          'drop-asset',
+        ];
+        let workflowSequence = 0;
+
         const placeholderActiveWorkflow = {
           filename: '__placeholder__.json',
           fullFilename: '__placeholder__.json',
@@ -38,6 +54,8 @@ function buildMockComfyFrameHtml(): string {
           promptWorkflow: {},
           graphNodes: [],
           pendingWarnings: null,
+          workflowInstanceId: 'mock-workflow-0',
+          revision: 0,
         };
         const workflowApi = {
           workflows: [placeholderActiveWorkflow],
@@ -125,11 +143,136 @@ function buildMockComfyFrameHtml(): string {
             promptWorkflow: promptWorkflow ?? graphData,
             graphNodes: createGraphNodes(promptWorkflow ?? graphData),
             pendingWarnings: null,
+            workflowInstanceId: 'mock-workflow-' + (++workflowSequence),
+            revision: 0,
           };
           workflowApi.workflows = [workflow];
           workflowApi.openWorkflows = [workflow];
           workflowApi.activeWorkflow = workflow;
         }
+
+        function installWorkflow(rawWorkflow, filename) {
+          const graphData = isApiWorkflow(rawWorkflow)
+            ? synthesizeGraphDataFromApiWorkflow(rawWorkflow)
+            : rawWorkflow;
+          const promptWorkflow = isApiWorkflow(rawWorkflow)
+            ? rawWorkflow
+            : graphData;
+          setActiveWorkflow(graphData, filename, promptWorkflow);
+        }
+
+        function snapshotActiveWorkflow() {
+          const workflow = workflowApi.activeWorkflow;
+          if (!workflow) return null;
+          return {
+            graphData: cloneJson(workflow.activeState),
+            filename: workflow.filename,
+            isModified: false,
+            workflowInstanceId: workflow.workflowInstanceId,
+            revision: workflow.revision,
+          };
+        }
+
+        function postBridgeMessage(channelId, message) {
+          window.parent.postMessage({
+            protocol: BRIDGE_PROTOCOL,
+            version: BRIDGE_VERSION,
+            channelId,
+            ...message,
+          }, window.location.origin);
+        }
+
+        function assertWorkflowExpectation(payload) {
+          const workflow = workflowApi.activeWorkflow;
+          if (
+            !workflow ||
+            payload.workflowInstanceId !== workflow.workflowInstanceId ||
+            payload.revision !== workflow.revision
+          ) {
+            const error = new Error('The active workflow changed');
+            error.code = 'workflow-changed';
+            throw error;
+          }
+          return workflow;
+        }
+
+        async function handleBridgeRequest(method, payload) {
+          switch (method) {
+            case 'health':
+              return { appReady: true, backendConnected: true };
+            case 'read-active':
+              return snapshotActiveWorkflow();
+            case 'inject-workflow':
+              installWorkflow(payload.graphData, payload.filename);
+              return { snapshot: snapshotActiveWorkflow(), warnings: null };
+            case 'resolve-prompt': {
+              const workflow = assertWorkflowExpectation(payload);
+              return {
+                output: buildPromptFromActiveWorkflow(workflow),
+                workflow: cloneJson(workflow.activeState),
+              };
+            }
+            case 'read-pending-warnings':
+              return null;
+            case 'refresh-missing-models':
+              return { refreshed: true };
+            case 'drop-asset':
+              return { action: 'created', nodeId: 'mock-node', classType: '' };
+            default: {
+              const error = new Error('Unknown bridge method: ' + method);
+              error.code = 'unknown-method';
+              throw error;
+            }
+          }
+        }
+
+        window.addEventListener('message', (event) => {
+          if (event.origin !== window.location.origin || event.source !== window.parent) {
+            return;
+          }
+          const message = event.data;
+          if (
+            !isRecord(message) ||
+            message.protocol !== BRIDGE_PROTOCOL ||
+            message.version !== BRIDGE_VERSION ||
+            typeof message.channelId !== 'string'
+          ) {
+            return;
+          }
+
+          if (message.type === 'hello') {
+            postBridgeMessage(message.channelId, {
+              type: 'ready',
+              capabilities: BRIDGE_CAPABILITIES,
+            });
+            return;
+          }
+          if (
+            message.type !== 'request' ||
+            typeof message.requestId !== 'string' ||
+            typeof message.method !== 'string'
+          ) {
+            return;
+          }
+
+          void handleBridgeRequest(message.method, message.payload ?? {}).then(
+            (result) => postBridgeMessage(message.channelId, {
+              type: 'response',
+              requestId: message.requestId,
+              ok: true,
+              result,
+            }),
+            (error) => postBridgeMessage(message.channelId, {
+              type: 'response',
+              requestId: message.requestId,
+              ok: false,
+              error: {
+                code: typeof error?.code === 'string' ? error.code : 'mock-error',
+                message: error instanceof Error ? error.message : String(error),
+              },
+            }),
+          );
+        });
 
         window.app = {
           canvas: {},
@@ -143,14 +286,9 @@ function buildMockComfyFrameHtml(): string {
           async handleFile(file) {
             const text = await file.text();
             const rawWorkflow = JSON.parse(text);
-            const graphData = isApiWorkflow(rawWorkflow)
-              ? synthesizeGraphDataFromApiWorkflow(rawWorkflow)
-              : rawWorkflow;
-            const promptWorkflow = isApiWorkflow(rawWorkflow) ? rawWorkflow : graphData;
-            setActiveWorkflow(
-              graphData,
+            installWorkflow(
+              rawWorkflow,
               file && 'name' in file ? file.name : 'workflow.json',
-              promptWorkflow,
             );
           },
           async graphToPrompt() {

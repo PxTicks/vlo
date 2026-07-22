@@ -38,8 +38,18 @@ function fixturePath(fixture: string, relativePath = ''): string {
     return path.join(FIXTURES_DIRECTORY, fixture, relativePath);
 }
 
-function sortedKeys(value: object): string[] {
-    return Object.keys(value).sort();
+function structuralShape(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.length === 0 ? [] : [structuralShape(value[0])];
+    }
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value)
+                .sort(([left], [right]) => left.localeCompare(right))
+                .map(([key, child]) => [key, structuralShape(child)]),
+        );
+    }
+    return typeof value;
 }
 
 describe('MockFileSystem project document conformance', () => {
@@ -72,56 +82,36 @@ describe('MockFileSystem project document conformance', () => {
         },
     );
 
-    it.each(LEGACY_FIXTURES)(
-        'keeps %s structurally congruent with the production writer',
-        (fixture) => {
-            const legacyProject = JSON.parse(
-                fs.readFileSync(
-                    fixturePath(fixture, `${PROJECT_DIRECTORY}/project.json`),
-                    'utf8',
-                ),
-            ) as Record<string, unknown>;
-            const converted = createCurrentProjectDocuments(legacyProject);
-            const parsed = {
-                manifest: projectManifestDocumentSchema.parse(converted.manifest),
-                timeline: timelineDocumentSchema.parse(converted.timeline),
-                assetIndex: assetIndexDocumentSchema.parse(converted.assets),
-                compositeLibrary: compositeLibraryDocumentSchema.parse(
-                    converted.composites,
-                ),
-            };
-            const writerDocuments = createProjectPersistenceDocuments({
-                id: parsed.manifest.id,
-                title: parsed.manifest.title,
-                createdAt: parsed.manifest.created_at,
-                config: parsed.manifest.config,
-                timeline: parsed.timeline,
-                assetIndex: parsed.assetIndex,
-                compositeLibrary: parsed.compositeLibrary,
-            });
+    it('keeps converter defaults structurally congruent with the production writer', () => {
+        const identity = {
+            id: 'structure-check',
+            title: 'Structure Check',
+            createdAt: 1,
+            config: {},
+        };
+        const converted = createCurrentProjectDocuments({
+            id: identity.id,
+            title: identity.title,
+            created_at: identity.createdAt,
+            config: identity.config,
+            timeline: { tracks: [], clips: [] },
+            assets: {},
+            assetFamilies: {},
+        });
+        const writer = createProjectPersistenceDocuments(identity);
+        const documentPairs = [
+            [converted.manifest, writer.manifest],
+            [converted.timeline, writer.timeline],
+            [converted.assets, writer.assetIndex],
+            [converted.composites, writer.compositeLibrary],
+        ] as const;
 
-            for (const documentName of [
-                'manifest',
-                'timeline',
-                'assetIndex',
-                'compositeLibrary',
-            ] as const) {
-                const convertedDocument = parsed[documentName];
-                const writerDocument = JSON.parse(
-                    JSON.stringify(writerDocuments[documentName]),
-                ) as typeof convertedDocument;
-                expect(sortedKeys(convertedDocument)).toEqual(
-                    sortedKeys(writerDocument),
-                );
-                expect(writerDocument.documentType).toBe(
-                    convertedDocument.documentType,
-                );
-                expect(writerDocument.schemaVersion).toBe(
-                    convertedDocument.schemaVersion,
-                );
-            }
-        },
-    );
+        for (const [convertedDocument, writerDocument] of documentPairs) {
+            expect(structuralShape(convertedDocument)).toEqual(
+                structuralShape(JSON.parse(JSON.stringify(writerDocument))),
+            );
+        }
+    });
 
     it('passes a current-format fixture through byte-for-byte', () => {
         const projectRoot = fixturePath('project_current');

@@ -33,6 +33,7 @@ describe("ProjectTitle", () => {
     await waitFor(() => {
       expect(mockState.updateTitle).toHaveBeenCalledWith("New title");
     });
+    expect(mockState.updateTitle).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("project-title-display")).toBeInTheDocument();
   });
 

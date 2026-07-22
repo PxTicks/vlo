@@ -48,9 +48,41 @@ jobs:
         if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'smoke')
         run: npm run test:e2e:smoke
 
+      # Nightly runs both projects in a single Playwright process: `chromium`
+      # (plan §4.4) and `browser-media` (plan §4.6). The projects already carry
+      # the boundaries that matter — launch flags, test matching, per-test
+      # timeouts, and project-qualified reporting — so a second invocation would
+      # add shared-state coordination (report folder, artifact directory, server
+      # lifecycle, step transitions) without adding test isolation.
+      #
+      # The 15-minute ceiling covers both projects deliberately. The media lane
+      # is part of the nightly cost and holds the specs most likely to grow it;
+      # a Chromium-only budget would leave the expensive half unpoliced.
+      #
+      # The suite runs to completion before the ceiling is asserted, so a breach
+      # still reports which tests failed rather than truncating the run.
       - name: Run full suite
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'full')
-        run: npm run test:e2e
+        run: |
+          set +e
+          start=$(date +%s)
+          npm run test:e2e:full
+          suite_status=$?
+          elapsed=$(( $(date +%s) - start ))
+          set -e
+
+          echo "Full suite test execution: ${elapsed}s (ceiling: 900s)"
+          echo "### Playwright full suite: ${elapsed}s / 900s ceiling" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$suite_status" -ne 0 ]; then
+            echo "::error::Full Playwright suite failed."
+            exit "$suite_status"
+          fi
+
+          if [ "$elapsed" -gt 900 ]; then
+            echo "::error::Full suite took ${elapsed}s, over the 900s ceiling (plan §4.4). Remove redundant browser coverage, or prove mock-filesystem/media/diagnostics isolation and introduce sharding, before adding more media-heavy specs."
+            exit 1
+          fi
 
       - name: Upload Playwright report
         if: always()

@@ -14,8 +14,10 @@
     "test:coverage:report": "COVERAGE_STAGE=report vitest run --coverage",
     "test:coverage:baseline": "COVERAGE_STAGE=baseline vitest run --coverage && node scripts/verify-coverage.mjs --skip-feature-floors",
     "test:ui": "vitest --ui",
-    "test:e2e": "playwright test",
-    "test:e2e:smoke": "playwright test --grep @smoke",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:full": "playwright test --project=chromium --project=browser-media",
+    "test:e2e:smoke": "playwright test --project=chromium --grep @smoke",
+    "test:e2e:media": "playwright test --project=browser-media",
     "test:e2e:ui": "playwright test --ui"
   },
   "engines": {

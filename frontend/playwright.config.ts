@@ -12,6 +12,44 @@ const SERVER_COMMAND = IS_CI
   : `npm run dev -- --host 127.0.0.1 --port ${E2E_PORT}`;
 
 /**
+ * Browser-media lane (plan §4.6).
+ *
+ * The Phase 4 A/V canary and Phase 5 pixel-parity canary must exercise
+ * Chromium's real WebGL/Pixi, WebCodecs and Web Audio paths — as opposed to
+ * jsdom, which is the claim these canaries rest on. Two supported
+ * configurations:
+ *
+ *   - Headed (`PLAYWRIGHT_MEDIA_HEADED=1`): a real display, and real GPU
+ *     drivers where the host has them. Used locally.
+ *   - Software-rasterised headless (the default, and what CI uses): ANGLE over
+ *     SwiftShader. `--enable-unsafe-swiftshader` is required because current
+ *     Chromium otherwise refuses WebGL when no GPU is present, and silently
+ *     falling back is exactly what §4.6 forbids.
+ *
+ * To be explicit about what the default configuration does and does not prove:
+ * SwiftShader is a *software* rasteriser, not a GPU. It compiles and executes
+ * real GLSL through the real WebGL entry points, so it covers the renderer
+ * pipeline, shader validity and Pixi behaviour. It does not cover
+ * hardware-GPU or driver-specific behaviour, so a parity bug that only appears
+ * on a particular vendor's driver will not be caught here. Closing that gap
+ * needs a hardware-GPU runner, which is out of scope for this lane.
+ *
+ * `e2e/media/fixtures.ts` verifies the resulting browser up front and throws
+ * rather than skipping, so a misconfigured lane cannot report as green.
+ */
+const MEDIA_LANE_HEADED = process.env.PLAYWRIGHT_MEDIA_HEADED === '1';
+const MEDIA_LANE_ARGS = [
+  '--autoplay-policy=no-user-gesture-required',
+  ...(MEDIA_LANE_HEADED
+    ? []
+    : [
+        '--use-gl=angle',
+        '--use-angle=swiftshader',
+        '--enable-unsafe-swiftshader',
+      ]),
+];
+
+/**
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
@@ -42,7 +80,25 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      // The media lane is nightly-only and needs its own launch flags; keep it
+      // out of the default suite and out of smoke.
+      testIgnore: ['**/__tests__/**', '**/media/**'],
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'browser-media',
+      testMatch: '**/media/**/*.spec.ts',
+      // Media captures decode and rasterise real frames; the default 60s
+      // budget is tight once a bake round trip is involved.
+      timeout: 120000,
+      use: {
+        ...devices['Desktop Chrome'],
+        headless: !MEDIA_LANE_HEADED,
+        launchOptions: {
+          ...(EXECUTABLE_PATH ? { executablePath: EXECUTABLE_PATH } : {}),
+          args: MEDIA_LANE_ARGS,
+        },
+      },
     },
   ],
   webServer: USE_EXTERNAL_SERVER

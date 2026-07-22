@@ -154,6 +154,33 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     encoder.dispose();
   });
 
+  it("requests no-preference hardware acceleration for both VP9 and AVC", async () => {
+    // `prefer-hardware` is not a hint as far as mediabunny is concerned: it
+    // fails closed on `isConfigSupported`, so a machine with no hardware
+    // encoder for the codec gets a hard export failure instead of the software
+    // encoder. Hardware VP9 encode is uncommon, so this broke WebM composite
+    // bakes while the H.264 path kept working and hid it.
+    const webmEncoder = new TextureOutputEncoder(app, 30, [
+      { id: "composite", format: "webm", includeAudio: false },
+    ]);
+    await webmEncoder.start();
+    expect(canvasSourceConfigs[0]).toMatchObject({
+      codec: "vp9",
+      hardwareAcceleration: "no-preference",
+    });
+    webmEncoder.dispose();
+
+    canvasSourceConfigs.length = 0;
+
+    const mp4Encoder = new TextureOutputEncoder(app, 30, [definition]);
+    await mp4Encoder.start();
+    expect(canvasSourceConfigs[0]).toMatchObject({
+      codec: "avc",
+      hardwareAcceleration: "no-preference",
+    });
+    mp4Encoder.dispose();
+  });
+
   it("tags AVC encoder and MP4 decoder metadata as BT.709/sRGB", async () => {
     const encoder = new TextureOutputEncoder(app, 30, [definition]);
     await encoder.start();

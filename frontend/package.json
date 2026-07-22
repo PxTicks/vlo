@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "verify:bundle": "node scripts/verify-production-bundle.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",

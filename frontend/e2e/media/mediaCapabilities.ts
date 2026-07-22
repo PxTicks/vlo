@@ -86,16 +86,6 @@ const REQUIRED_CONFIGS: MediaConfigSpec[] = [
         config: { codec: 'vp09.00.10.08', codedWidth: 640, codedHeight: 360 },
     },
     {
-        kind: 'video-encode',
-        label: 'VP9 bake output (Phase 5.3 bake round trip)',
-        config: {
-            codec: 'vp09.00.10.08',
-            width: 640,
-            height: 360,
-            bitrate: 6_000_000,
-        },
-    },
-    {
         kind: 'audio-decode',
         label: 'AAC source audio (Phase 4 .m4a A/V canary)',
         config: { codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 },
@@ -105,6 +95,35 @@ const REQUIRED_CONFIGS: MediaConfigSpec[] = [
         label: 'Opus baked-composite audio (Phase 4 composite-with-audio)',
         config: { codec: 'opus', sampleRate: 48000, numberOfChannels: 2 },
     },
+];
+
+/**
+ * Encode configurations, kept OUT of the lane-wide gate.
+ *
+ * Only specs that actually encode (the Phase 4.2 offline export canary and the
+ * Phase 5.3 bake round trip) depend on these, so gating every media spec on
+ * them would fail the capability and playback canaries for a capability they
+ * never touch. Specs that encode should assert these explicitly.
+ *
+ * These mirror what `TextureOutputEncoder.ts:187-192` actually issues for a
+ * 1080p WebM bake — including `hardwareAcceleration: "prefer-hardware"`, which
+ * is the whole point. An earlier version of this file probed 640x360
+ * `vp09.00.10.08` with no acceleration preference; that combination is
+ * supported in software and reported a false all-clear for a configuration the
+ * app never issues.
+ */
+export const ENCODE_CONFIGS: MediaConfigSpec[] = [
+    {
+        kind: 'video-encode',
+        label: 'VP9 1080p bake output (TextureOutputEncoder, prefer-hardware)',
+        config: {
+            codec: 'vp09.00.40.08',
+            width: 1920,
+            height: 1080,
+            bitrate: 6_000_000,
+            hardwareAcceleration: 'prefer-hardware',
+        },
+    },
     {
         kind: 'audio-encode',
         label: 'Opus bake output (Phase 5.3 bake round trip)',
@@ -113,25 +132,6 @@ const REQUIRED_CONFIGS: MediaConfigSpec[] = [
             sampleRate: 48000,
             numberOfChannels: 2,
             bitrate: 128_000,
-        },
-    },
-    {
-        // `TextureOutputEncoder.ts:190` requests `alpha: "keep"` for every WebM
-        // bake, but that string never reaches WebCodecs. mediabunny forces
-        // `alpha: "discard"` and implements alpha itself with two parallel
-        // encoders, pinning `latencyMode: "quality"` so neither drops frames
-        // (`media-source.js:367-373`). This is the configuration a Phase 5.3
-        // alpha bake genuinely issues — probing `alpha: "keep"` instead reports
-        // a failure for a request the app never makes.
-        kind: 'video-encode',
-        label: 'VP9 alpha bake (mediabunny dual-encoder path)',
-        config: {
-            codec: 'vp09.00.10.08',
-            width: 640,
-            height: 360,
-            bitrate: 6_000_000,
-            alpha: 'discard',
-            latencyMode: 'quality',
         },
     },
 ];

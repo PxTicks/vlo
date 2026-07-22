@@ -41,8 +41,15 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      # VITE_E2E_DIAGNOSTICS publishes the read-only playback bridge that the
+      # browser-media lane's live-anchor canary reads. It is build-time, so
+      # production builds (which never set it) exclude the branch entirely.
+      # Without it this preview build would omit the bridge — local runs only
+      # work because the dev server sets import.meta.env.DEV.
       - name: Build frontend
         run: npm run build
+        env:
+          VITE_E2E_DIAGNOSTICS: "true"
 
       - name: Run smoke suite
         if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'smoke')

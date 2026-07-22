@@ -5,6 +5,7 @@ import {
   installExtensionMenuContributions,
 } from "../features/extensions";
 import { App } from "./App";
+import { installE2EDiagnostics } from "./installE2EDiagnostics";
 import { installHostOptionCatalogues } from "./installHostOptionCatalogues";
 import "./index.css";
 
@@ -18,6 +19,7 @@ Symbol.asyncDispose ??= Symbol("Symbol.asyncDispose");
 // render; install the source before anything renders (plan §3.10 finding 1).
 installExtensionMenuContributions();
 installHostOptionCatalogues();
+installE2EDiagnostics();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

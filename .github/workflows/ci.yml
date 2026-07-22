@@ -61,3 +61,10 @@ jobs:
 
     - name: Build
       run: npm run build
+
+    # This build sets no VITE_E2E_DIAGNOSTICS, so it is a release bundle.
+    # Assert the E2E-only export probe was tree-shaken out — the guarantee that
+    # makes it acceptable production source. A refactor turning the build-time
+    # gate into a runtime check would fail here rather than shipping.
+    - name: Verify no E2E affordances in release bundle
+      run: npm run verify:bundle

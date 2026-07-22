@@ -108,5 +108,14 @@ export default defineConfig({
         url: E2E_BASE_URL,
         reuseExistingServer: false,
         timeout: 120 * 1000,
+        env: {
+          // The callable export probe is gated strictly on this flag — not on
+          // DEV — so a plain `npm run dev` never gains a work-performing
+          // backdoor. The Playwright-managed dev server must therefore opt in
+          // explicitly, or the media lane's offline canary finds no probe.
+          // In CI this command serves an already-built bundle, where the same
+          // flag was applied at build time (see playwright.yml).
+          VITE_E2E_DIAGNOSTICS: 'true',
+        },
       },
 });

@@ -189,7 +189,17 @@ export class TextureOutputEncoder {
           keyFrameInterval: definition.keyFrameInterval,
           ...(isAlphaWebM ? { alpha: "keep" as const } : {}),
           latencyMode: "quality",
-          hardwareAcceleration: "prefer-hardware",
+          // `no-preference`, not `prefer-hardware`. WebCodecs treats this as a
+          // hint, but mediabunny fails closed on `isConfigSupported`, so
+          // `prefer-hardware` turns "no hardware encoder for this codec" into a
+          // hard export failure even when the software encoder would work.
+          // Hardware VP9 *encode* is far less common than decode, so the WebM
+          // composite-bake path broke on such machines while the H.264 path
+          // kept working and masked it. Measured on a SwiftShader Chromium:
+          // vp09.00.40.08 1920x1080 reports unsupported with `prefer-hardware`
+          // and supported with `no-preference`. Browsers still prefer hardware
+          // when it is available.
+          hardwareAcceleration: "no-preference",
           // Mediabunny 1.34 exposes the WebCodecs config immediately before it
           // checks/configures the encoder. Supplying a complete color space
           // gives the encoder the information needed for H.264 VUI metadata.

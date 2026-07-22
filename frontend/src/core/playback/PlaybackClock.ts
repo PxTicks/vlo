@@ -39,10 +39,11 @@ export class PlaybackClock {
 
 export const playbackClock = new PlaybackClock();
 export const playbackFrameClock = new PlaybackClock();
-// DEBUG: expose for console diagnostics
-const _w = window as unknown as Record<string, unknown>;
-_w.__PLAYBACK_CLOCK__ = playbackClock;
-_w.__PLAYBACK_FRAME_CLOCK__ = playbackFrameClock;
+// These were previously published on `window` as `__PLAYBACK_CLOCK__` /
+// `__PLAYBACK_FRAME_CLOCK__` for console diagnostics, unconditionally and in
+// production. That exposed the live `setTime` mutators, so any script on the
+// page could drive the playhead. Read-only diagnostics now live behind the
+// build-time flag in `app/installE2EDiagnostics.ts`; module scope stays clean.
 
 export function alignPlaybackTickToFrame(
   time: number,

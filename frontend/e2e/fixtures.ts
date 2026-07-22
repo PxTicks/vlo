@@ -10,6 +10,12 @@ const ALLOWED_CONSOLE_ERRORS = [
     // reports the expected cancellation before the old document is discarded.
     /Error while reading response stream\. Attempting to resume/i,
     /Retrying failed fetch\. Error: TypeError: Failed to fetch/i,
+    // Reloading an open project (e.g. specs that return to the launcher) aborts
+    // the editor's in-flight asset-directory listing. `Failed to fetch` only
+    // ever means an aborted request in the mock filesystem — a live route
+    // returns a status code — so this stays scoped to the abort, not a genuine
+    // listing failure.
+    /Failed to list directory .*Failed to fetch/i,
 ];
 
 async function setupEditor(

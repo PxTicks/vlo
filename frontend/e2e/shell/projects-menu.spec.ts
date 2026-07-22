@@ -20,12 +20,6 @@ test.describe('Projects page context menu', () => {
         await shell.openContextMenu(entry);
         await expect(shell.getItem('Open project')).toBeVisible();
         await expect(shell.getItem('Remove from recents')).toBeVisible();
-
-        // Settle before teardown: the launcher lists the project directory on
-        // load, and ending the test mid-flight tears down the mock filesystem
-        // routes under that request, surfacing as a console error.
-        await shell.closeWithEscape();
-        await page.waitForLoadState('networkidle');
     });
 
     test('removing a recent dispatches and drops the entry', async ({
@@ -43,7 +37,5 @@ test.describe('Projects page context menu', () => {
         // Dispatch must reach the recents service, not merely close the menu.
         await expect(shell.menu).toHaveCount(0);
         await expect(entries).toHaveCount(0);
-
-        await page.waitForLoadState('networkidle');
     });
 });

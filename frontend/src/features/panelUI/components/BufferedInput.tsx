@@ -9,6 +9,13 @@ interface BufferedInputProps {
   disabled?: boolean;
   variant?: "standard" | "clean";
   endAdornment?: React.ReactNode;
+  /**
+   * Accessible name for the native input. The "clean" variant renders no
+   * visible `<label>` (the SliderControl draws its own), leaving the number
+   * input nameless to assistive tech and to role-based test queries alike.
+   * Passing the control's label here fixes both.
+   */
+  ariaLabel?: string;
 }
 
 /**
@@ -20,7 +27,16 @@ interface BufferedInputProps {
  */
 export const BufferedInput = forwardRef<HTMLInputElement, BufferedInputProps>(
   function BufferedInput(
-    { label, value, onCommit, step, disabled, variant = "standard", endAdornment },
+    {
+      label,
+      value,
+      onCommit,
+      step,
+      disabled,
+      variant = "standard",
+      endAdornment,
+      ariaLabel,
+    },
     ref,
   ) {
     const [localValue, setLocalValue] = useState<string>(String(value));
@@ -67,7 +83,10 @@ export const BufferedInput = forwardRef<HTMLInputElement, BufferedInputProps>(
           onBlur={commit}
           onKeyDown={handleKeyDown}
           slotProps={{
-            htmlInput: { step },
+            htmlInput: {
+              step,
+              ...(ariaLabel ? { "aria-label": ariaLabel } : {}),
+            },
             input: { disableUnderline: true } as object,
           }}
           InputProps={{ disableUnderline: true }}

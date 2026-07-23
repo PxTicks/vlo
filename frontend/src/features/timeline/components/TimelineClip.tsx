@@ -652,6 +652,7 @@ function TimelineClipComponent({
         } as React.CSSProperties
       }
       data-testid="timeline-clip"
+      data-clip-id={clip.id}
       data-selected={isSelected ? "true" : "false"}
       data-transform-drop-target={
         transformDropPreview

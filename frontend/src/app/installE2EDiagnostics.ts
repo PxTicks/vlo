@@ -1,6 +1,8 @@
 import { playbackClock, playbackFrameClock } from "../core/playback/PlaybackClock";
 import { audioSystem } from "../features/player/services/AudioSystem";
 import { usePlayerStore } from "../features/player/usePlayerStore";
+import { TRACK_HEADER_WIDTH } from "../features/timeline/constants";
+import { useTimelineViewStore } from "../features/timeline/hooks/useTimelineViewStore";
 
 /**
  * Read-only diagnostics bridge for the browser-media E2E lane (plan §4.2, §4.6).
@@ -55,10 +57,29 @@ export interface E2EPlaybackDiagnostics {
   audioSampleRate: number | null;
 }
 
+/**
+ * Timeline geometry for a given tick, so a test can click the ruler at an exact
+ * project tick instead of a brittle fraction of the ruler width.
+ *
+ * `absolutePx` comes from the production view store's `ticksToPx`, so a seek
+ * helper is anchored to the app's own tick→pixel math rather than a test-only
+ * reimplementation that could agree while the app is wrong. The header width
+ * and scroll offset (read from the DOM by the caller) still have to be applied
+ * to turn this into a click coordinate — the ruler's own scrub handler does the
+ * same: `x = ticksToPx(t) + TRACK_HEADER_WIDTH - scrollLeft`.
+ */
+export interface E2ETimelineTickGeometry {
+  absolutePx: number;
+  trackHeaderWidth: number;
+  zoomScale: number;
+  playheadTicks: number;
+}
+
 declare global {
   interface Window {
     __vloE2E?: {
       getPlaybackDiagnostics: () => E2EPlaybackDiagnostics;
+      getTimelineTickGeometry: (tick: number) => E2ETimelineTickGeometry;
       /**
        * Installed only under the strict flag. Absent in development builds and
        * tree-shaken out of production ones entirely.
@@ -114,6 +135,15 @@ export function installE2EDiagnostics(): void {
         audioContextTime: ctx?.currentTime ?? null,
         audioContextState: ctx?.state ?? null,
         audioSampleRate: ctx?.sampleRate ?? null,
+      };
+    },
+    getTimelineTickGeometry: (tick: number) => {
+      const view = useTimelineViewStore.getState();
+      return {
+        absolutePx: view.ticksToPx(tick),
+        trackHeaderWidth: TRACK_HEADER_WIDTH,
+        zoomScale: view.zoomScale,
+        playheadTicks: playbackClock.time,
       };
     },
   };

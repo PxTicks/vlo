@@ -330,6 +330,7 @@ function TimelineContainerComponent({
       <Box
         sx={scrollStyles}
         ref={setScrollRef}
+        data-testid="timeline-scroll-container"
         onClickCapture={handleTimelineInteractionCapture}
         onClick={(e) => {
           // Suppress click-to-seek in selection mode

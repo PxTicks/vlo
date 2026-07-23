@@ -83,6 +83,7 @@ function SliderControlComponent({
             <BufferedInput
               ref={inputRef}
               label=""
+              ariaLabel={label}
               value={value}
               onCommit={onInputCommit}
               step={step}

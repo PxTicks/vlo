@@ -68,3 +68,62 @@ jobs:
     # gate into a runtime check would fail here rather than shipping.
     - name: Verify no E2E affordances in release bundle
       run: npm run verify:bundle
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        # Match the developer venv (3.14). If a wheel (e.g. av, soundfile) turns
+        # out to be missing for 3.14 on the runner, fall back to "3.12" and note
+        # why here rather than letting CI and dev silently diverge.
+        python-version: "3.14"
+        cache: pip
+        cache-dependency-path: backend/requirements-test.txt
+
+    # The requirements files (including the requirements-test.txt this job
+    # installs) are generated from pyproject.toml. Fail fast if someone changed
+    # the deps without regenerating, so the declared source of truth and the CI
+    # environment cannot silently diverge. Uses stdlib only, so it runs before
+    # any install.
+    - name: Verify generated requirements are in sync
+      run: |
+        python3 scripts/sync-backend-requirements.py
+        git diff --exit-code -- \
+          backend/requirements.txt \
+          backend/requirements-dev.txt \
+          backend/requirements-test.txt
+
+    # ffmpeg un-skips the one audio-fixture test (requires_ffmpeg); without it
+    # that test would silently skip and provide no signal.
+    - name: Install ffmpeg
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+    # Install the generated lightweight set, NOT `-e ./backend[...]`: an editable
+    # install would also pull the mandatory dependencies (torch and the rest of
+    # the ML stack). `pythonpath = ["."]` in backend/pyproject.toml makes the
+    # backend importable without installing the package at all.
+    - name: Install backend test dependencies
+      run: pip install -r backend/requirements-test.txt
+
+    # Run from backend/ so pytest picks up its config and coverage discovers the
+    # [tool.coverage.*] config (both live in backend/pyproject.toml). The one
+    # torch-dependent test is deselected; every other test runs.
+    - name: Run backend tests
+      working-directory: backend
+      run: |
+        python -m pytest \
+          -m "not requires_torch" \
+          --cov --cov-report=term-missing --cov-report=xml
+
+    - name: Upload backend coverage
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-coverage
+        path: backend/coverage.xml
+        if-no-files-found: error

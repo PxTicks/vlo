@@ -1,0 +1,17 @@
+# Generated from backend/pyproject.toml by scripts/sync-backend-requirements.py.
+# Keep this file in sync with backend/pyproject.toml.
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+xxhash
+Pillow
+httpx
+websockets
+python-dotenv
+numpy
+av
+soundfile
+pytest
+pytest-cov
+anyio

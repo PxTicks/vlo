@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT_PATH = REPO_ROOT / "backend" / "pyproject.toml"
 REQUIREMENTS_PATH = REPO_ROOT / "backend" / "requirements.txt"
 DEV_REQUIREMENTS_PATH = REPO_ROOT / "backend" / "requirements-dev.txt"
+TEST_REQUIREMENTS_PATH = REPO_ROOT / "backend" / "requirements-test.txt"
 HEADER = (
     "# Generated from backend/pyproject.toml by scripts/sync-backend-requirements.py.\n"
     "# Keep this file in sync with backend/pyproject.toml.\n"
@@ -51,9 +52,16 @@ def main() -> None:
     pyproject_text = PYPROJECT_PATH.read_text(encoding="utf-8")
     default_requirements = extract_toml_array(pyproject_text, "dependencies")
     dev_requirements = extract_toml_array(pyproject_text, "dev")
+    # `test-light` lives under [tool.sync-backend-requirements], not
+    # [project.optional-dependencies], so it is not an installable extra.
+    test_light_requirements = extract_toml_array(pyproject_text, "test-light")
 
     write_requirements(REQUIREMENTS_PATH, default_requirements)
     write_requirements(DEV_REQUIREMENTS_PATH, ["-r requirements.txt", *dev_requirements])
+    # The CI test lane installs this instead of `-r requirements.txt` so it never
+    # pulls the torch/ML stack. It deliberately does NOT start with
+    # `-r requirements.txt`; it is the lightweight set plus the dev tools.
+    write_requirements(TEST_REQUIREMENTS_PATH, [*test_light_requirements, *dev_requirements])
 
 
 if __name__ == "__main__":

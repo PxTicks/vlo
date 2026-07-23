@@ -31,6 +31,31 @@ dev = [
     "anyio",
 ]
 
+# Input for scripts/sync-backend-requirements.py — NOT an installable extra.
+# This is deliberately not under [project.optional-dependencies]: `pip install
+# .[test-light]` would still pull the mandatory `dependencies` (torch and the
+# rest of the ML stack), the exact trap the CI lane avoids. It is the runtime
+# deps the test suite actually exercises, minus that ML stack (torch,
+# torchaudio, einops, soxr, rotary-embedding-torch, beat-this); only one test
+# needs the stack and it is marked `requires_torch` and deselected in CI. Keep
+# in sync with `dependencies` above when a non-ML runtime dep is added, then
+# re-run the generator.
+[tool.sync-backend-requirements]
+test-light = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "pydantic",
+    "xxhash",
+    "Pillow",
+    "httpx",
+    "websockets",
+    "python-dotenv",
+    "numpy",
+    "av",
+    "soundfile",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -24,6 +24,7 @@ def _configure_tmp_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     monkeypatch.setattr(sam_audio_service, "METADATA_DIR", metadata_dir)
 
 
+@pytest.mark.requires_torch
 def test_extract_source_window_is_sample_exact(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

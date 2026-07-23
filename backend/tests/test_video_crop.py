@@ -174,6 +174,7 @@ class TestCropVideo:
         assert width == 200
         assert height == 140
 
+    @pytest.mark.requires_ffmpeg
     def test_crop_preserves_audio_streams(self):
         mp4 = _make_mp4(320, 180, 2, with_audio=True)
         cropped = crop_video(mp4, (0, 0, 160, 90))

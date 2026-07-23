@@ -72,7 +72,7 @@ export const activate = (context) => {
 };
 `;
 
-type InventoryStatus = 'pending_approval' | 'approved';
+type InventoryStatus = 'pending_approval' | 'approved' | 'disabled';
 
 function inventoryItem(
     status: InventoryStatus,
@@ -94,14 +94,14 @@ function inventoryItem(
             capabilities: ['ui.custom'],
         },
         approval:
-            status === 'approved'
-                ? {
+            status === 'pending_approval'
+                ? null
+                : {
                       digest: EXTENSION_DIGEST,
                       version: '1.0.0',
                       approvedAt: 1,
-                      enabled: true,
-                  }
-                : null,
+                      enabled: status === 'approved',
+                  },
         backendRuntime: {
             status: 'not_declared',
             message: 'No backend entry point.',
@@ -136,6 +136,14 @@ async function installStatefulExtensionMock(
             body: JSON.stringify({ extension: inventoryItem(status) }),
         });
     });
+    await page.route(`**/app/extensions/${EXTENSION_ID}/decline`, async (route) => {
+        status = 'disabled';
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ extension: inventoryItem(status) }),
+        });
+    });
     await page.route(
         `**/app/extensions/${EXTENSION_ID}/approval`,
         async (route) => {
@@ -163,6 +171,29 @@ async function installStatefulExtensionMock(
     });
 }
 
+/** Clears the project-menu trust prompt by allowing, then restarting. */
+async function allowAtProjectMenu(page: Page) {
+    await expect(
+        page.getByRole('heading', { name: 'A new extension was found' }),
+    ).toBeVisible();
+    await page.getByTestId('extension-approval-gate-allow').click();
+    await expect(
+        page.getByRole('heading', { name: 'Restart to finish' }),
+    ).toBeVisible();
+    await page.getByTestId('extension-approval-gate-reload').click();
+    await expect(
+        page.getByTestId('extension-approval-gate'),
+    ).toHaveCount(0);
+}
+
+/** Clears the same prompt by refusing; the refusal must then be remembered. */
+async function blockAtProjectMenu(page: Page) {
+    await page.getByTestId('extension-approval-gate-block').click();
+    await expect(
+        page.getByTestId('extension-approval-gate'),
+    ).toHaveCount(0);
+}
+
 async function openExtensionManager(page: Page) {
     await page.getByTestId('project-settings-button').click();
     await page.getByTestId('project-settings-extensions').click();
@@ -184,21 +215,14 @@ test.describe('Extension browser boundary', () => {
         test.setTimeout(120_000);
         const { page } = editorNoSetup;
         await installStatefulExtensionMock(page, 'pending_approval');
-        await editorNoSetup.setup({ fixtureDir: 'project_current' });
+        // Trust is granted on the project menu, before the editor exists.
+        await editorNoSetup.setup({
+            fixtureDir: 'project_current',
+            onProjectMenu: () => allowAtProjectMenu(page),
+        });
 
         await openExtensionManager(page);
-        await page
-            .getByRole('button', { name: 'Approve current digest' })
-            .click();
-        await expect(
-            page.getByRole('heading', {
-                name: 'Trust and approve extension?',
-            }),
-        ).toBeVisible();
-        await page
-            .getByRole('button', { name: 'Approve exact digest' })
-            .click();
-        await expect(page.getByText('Approved', { exact: true })).toBeVisible();
+        await expect(page.getByText('Allowed', { exact: true })).toBeVisible();
         await page.getByRole('button', { name: 'Close' }).click();
 
         const reloadedInventory = page.waitForResponse(
@@ -250,12 +274,26 @@ test.describe('Extension browser boundary', () => {
         await expect(page.getByText('Dispatch count: 1')).toBeVisible();
 
         await openExtensionManager(page);
-        await page.getByRole('button', { name: 'Revoke approval' }).click();
+        await page.getByRole('button', { name: 'Forget my answer' }).click();
         await expect(
-            page.getByText('Approval required', { exact: true }),
+            page.getByText('Not allowed yet', { exact: true }),
         ).toBeVisible();
         await page.getByRole('button', { name: 'Close' }).click();
+
+        // Forgetting the answer makes it ask again, and refusing it there is
+        // what keeps the extension out of the editor.
+        await editorNoSetup.reopenProject({
+            onProjectMenu: () => blockAtProjectMenu(page),
+        });
+        await expect(
+            page.getByRole('button', { name: 'More panels' }),
+        ).toHaveCount(0);
+
+        // The refusal sticks: no prompt on the next launch.
         await editorNoSetup.reopenProject();
+        await expect(
+            page.getByTestId('extension-approval-gate'),
+        ).toHaveCount(0);
         await expect(
             page.getByRole('button', { name: 'More panels' }),
         ).toHaveCount(0);
@@ -271,12 +309,17 @@ test.describe('Extension browser boundary', () => {
         });
         await editorNoSetup.setup({ fixtureDir: 'project_current' });
 
+        // A package that cannot run here is never worth prompting about.
+        await expect(
+            page.getByTestId('extension-approval-gate'),
+        ).toHaveCount(0);
+
         await openExtensionManager(page);
         await expect(
-            page.getByText(/cannot activate with extension SDK/i),
+            page.getByText(/built for a different version of vlo/i),
         ).toBeVisible();
         await expect(
-            page.getByRole('button', { name: 'Approve current digest' }),
+            page.getByRole('button', { name: 'Allow' }),
         ).toHaveCount(0);
     });
 });

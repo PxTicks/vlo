@@ -235,6 +235,24 @@ export async function approveExtensionDigest(
   return response.extension;
 }
 
+export async function declineExtensionDigest(
+  extensionId: string,
+  digest: string,
+  options: ExtensionManagementRequestOptions = {},
+): Promise<ExtensionInventoryItem> {
+  const response = await requestJson(
+    extensionUrl(extensionId, "decline"),
+    extensionMutationResponseSchema,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ digest }),
+      ...(options.signal ? { signal: options.signal } : {}),
+    },
+  );
+  return response.extension;
+}
+
 export async function disableExtension(
   extensionId: string,
   options: ExtensionManagementRequestOptions = {},

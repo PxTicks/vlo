@@ -545,6 +545,48 @@ def approve_extension(
     }
 
 
+@router.post("/{extension_id}/decline")
+def decline_extension(
+    extension_id: str,
+    request: ExtensionApprovalRequest,
+    services: ExtensionServicesDependency,
+):
+    """Record a refusal of this digest so the user is not asked again.
+
+    Staged code for a refused package is dropped, except while a backend
+    session from an earlier approved digest is still running in this process.
+    """
+
+    try:
+        services.manager.decline(extension_id, request.digest)
+        services.artifacts.remove_extension(extension_id)
+        if services.backend_runtime.active_digest(extension_id) is None:
+            services.backend_artifacts.remove_extension(extension_id)
+        item = services.manager.get_item(extension_id)
+    except ExtensionInventoryError as exc:
+        return _mutation_error_response(exc)
+    except (
+        BackendArtifactError,
+        ExtensionApprovalStateError,
+        FrontendArtifactError,
+        OSError,
+    ) as exc:
+        return error_response(
+            500,
+            "extension_decision_failed",
+            "The extension decision could not be saved.",
+            retryable=True,
+            details={"reason": str(exc)},
+        )
+    return {
+        "extension": _serialize_inventory_item(
+            item,
+            services.artifacts,
+            services.backend_runtime,
+        )
+    }
+
+
 @router.post("/{extension_id}/disable")
 def disable_extension(
     extension_id: str,

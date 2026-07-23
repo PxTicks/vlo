@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   approveExtensionDigest,
+  declineExtensionDigest,
   disableExtension,
   fetchExtensionInventory,
   revokeExtensionApproval,
@@ -13,7 +14,11 @@ export type ExtensionInventoryLoadStatus =
   | "ready"
   | "error";
 
-export type ExtensionManagementAction = "approve" | "disable" | "revoke";
+export type ExtensionManagementAction =
+  | "approve"
+  | "decline"
+  | "disable"
+  | "revoke";
 
 export interface ExtensionManagementMutation {
   extensionId: string;
@@ -27,6 +32,7 @@ interface ExtensionManagementState {
   mutation: ExtensionManagementMutation | null;
   load(): Promise<void>;
   approve(extensionId: string, digest: string): Promise<boolean>;
+  decline(extensionId: string, digest: string): Promise<boolean>;
   disable(extensionId: string): Promise<boolean>;
   revoke(extensionId: string): Promise<boolean>;
   cancelPending(): void;
@@ -136,6 +142,11 @@ export const useExtensionManagementStore = create<ExtensionManagementState>(
       approve: (extensionId, digest) =>
         runMutation(extensionId, "approve", (signal) =>
           approveExtensionDigest(extensionId, digest, { signal }),
+        ),
+
+      decline: (extensionId, digest) =>
+        runMutation(extensionId, "decline", (signal) =>
+          declineExtensionDigest(extensionId, digest, { signal }),
         ),
 
       disable: (extensionId) =>

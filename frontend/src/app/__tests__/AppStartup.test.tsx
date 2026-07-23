@@ -96,6 +96,10 @@ vi.mock("../../features/userAssets", () => {
   return {
     AssetBrowser: () => <div data-testid="asset-browser">Asset Browser</div>,
     useAssetStore,
+    // App now reaches the extensions feature front door, which registers
+    // trusted host entries against this store at import time.
+    getAssetStoreForTrustedHostAccess: () => useAssetStore,
+    getAssetBrowserSelectionStoreForTrustedHostAccess: () => useAssetStore,
   };
 });
 

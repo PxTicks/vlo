@@ -50,11 +50,11 @@ interface ApprovalDialogProps {
 }
 
 const STATUS_LABELS: Record<ExtensionInventoryStatus, string> = {
-  invalid: "Invalid",
-  pending_approval: "Approval required",
-  approved: "Approved",
+  invalid: "Won't load",
+  pending_approval: "Not allowed yet",
+  approved: "Allowed",
   changed: "Changed",
-  disabled: "Disabled",
+  disabled: "Blocked",
 };
 
 function statusColor(
@@ -72,27 +72,31 @@ function statusMessage(item: ExtensionInventoryItem) {
       <Alert severity="error">
         {item.errors.length > 0
           ? item.errors.join(" ")
-          : "This package is invalid and cannot be approved."}
+          : "vlo cannot read this extension, so it cannot be allowed."}
       </Alert>
     );
   }
   if (item.status === "changed") {
     return (
       <Alert severity="warning">
-        Package bytes changed after approval. Review and approve the new digest
-        before the package can activate.
+        This extension has been altered since you last allowed it. It will not
+        run until you check that you still trust it and allow it again.
       </Alert>
     );
   }
   if (item.status === "pending_approval") {
     return (
       <Alert severity="info">
-        The package is inert until you approve this exact digest.
+        This extension is new. It will not run until you allow it.
       </Alert>
     );
   }
   if (item.status === "disabled") {
-    return <Alert severity="info">Activation is disabled.</Alert>;
+    return (
+      <Alert severity="info">
+        You blocked this extension. It will not run.
+      </Alert>
+    );
   }
   return null;
 }
@@ -110,7 +114,7 @@ function backendRuntimeMessage(item: ExtensionInventoryItem) {
           : "info";
   return (
     <Alert severity={severity}>
-      Backend runtime: {item.backendRuntime.message}
+      Background service: {item.backendRuntime.message}
     </Alert>
   );
 }
@@ -125,7 +129,7 @@ function DependencyPreflightSection({
   return (
     <Box>
       <Typography variant="caption" color="text.secondary">
-        Python dependency preflight
+        Extra software this extension needs
       </Typography>
       <Typography
         variant="caption"
@@ -133,7 +137,7 @@ function DependencyPreflightSection({
         display="block"
         sx={{ overflowWrap: "anywhere" }}
       >
-        Backend environment: {preflight.environment}
+        Checked against: {preflight.environment}
         {preflight.isolated ? "" : " (not an isolated virtual environment)"}
       </Typography>
       <Stack spacing={0.5} sx={{ mt: 0.5 }}>
@@ -170,13 +174,11 @@ function DependencyPreflightSection({
       </Stack>
       {preflight.satisfied ? (
         <Alert severity="success" sx={{ mt: 1 }}>
-          All declared Python dependencies are installed in the backend
-          environment.
+          Everything this extension needs is already installed.
         </Alert>
       ) : (
         <Alert severity="warning" sx={{ mt: 1 }}>
-          Install the missing dependencies into the backend virtual environment,
-          then restart the backend:
+          Some of it is missing. Run this to install it, then restart vlo:
           <Box
             component="pre"
             sx={{
@@ -263,15 +265,15 @@ function ExtensionCard({
 
         {sdkCompatibility && !sdkCompatibility.compatible ? (
           <Alert severity="error">
-            This package cannot activate with extension SDK {VLO_EXTENSION_SDK_VERSION}.{" "}
-            {sdkCompatibility.reason}
+            This extension was built for a different version of vlo, so it
+            cannot run here. {sdkCompatibility.reason}
           </Alert>
         ) : null}
 
         {vloCompatibility && !vloCompatibility.compatible ? (
           <Alert severity="error">
-            This package cannot activate with VLO {VLO_APP_VERSION}.{" "}
-            {vloCompatibility.reason}
+            This extension does not support vlo {VLO_APP_VERSION}, so it cannot
+            run here. {vloCompatibility.reason}
           </Alert>
         ) : null}
         {vloCompatibility?.warning ? (
@@ -280,7 +282,7 @@ function ExtensionCard({
 
         <Box>
           <Typography variant="caption" color="text.secondary">
-            Package
+            Installed at
           </Typography>
           <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
             {item.sourcePath}
@@ -290,7 +292,7 @@ function ExtensionCard({
         {item.digest ? (
           <Box>
             <Typography variant="caption" color="text.secondary">
-              Current digest
+              Exact contents (fingerprint)
             </Typography>
             <Typography
               variant="body2"
@@ -315,18 +317,18 @@ function ExtensionCard({
             ) : null}
             {[manifest.frontend?.entry, manifest.backend?.entry].some(Boolean) ? (
               <Typography variant="body2">
-                Entry points: {[manifest.frontend?.entry, manifest.backend?.entry]
+                Runs its own code: {[manifest.frontend?.entry, manifest.backend?.entry]
                   .filter((entry): entry is string => Boolean(entry))
                   .join(", ")}
               </Typography>
             ) : (
               <Typography variant="body2">
-                Declarative package; no executable entry point.
+                Adds ready-made looks and presets only. Contains no code.
               </Typography>
             )}
             <Box>
               <Typography variant="caption" color="text.secondary">
-                Requested capabilities
+                What the author says it does
               </Typography>
               <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
                 {manifest.capabilities.length > 0 ? (
@@ -340,9 +342,8 @@ function ExtensionCard({
             </Box>
             {manifest.capabilities.includes("host.raw") ? (
               <Alert severity="info">
-                This package declares intentional version-coupled host access.
-                The declaration is informational; trusted authority is granted by
-                package approval, not by this metadata.
+                This list is what the author declared, not a limit vlo enforces.
+                Allowing an extension gives it full access either way.
               </Alert>
             ) : null}
           </Stack>
@@ -357,12 +358,12 @@ function ExtensionCard({
               disabled={busy}
               onClick={() => onRevoke(item.id)}
             >
-              Revoke approval
+              Forget my answer
             </Button>
           ) : null}
           {item.status === "approved" ? (
             <Button disabled={busy} onClick={() => onDisable(item.id)}>
-              Disable on reload
+              Block
             </Button>
           ) : null}
           {canApprove ? (
@@ -371,9 +372,7 @@ function ExtensionCard({
               disabled={busy}
               onClick={() => onApprove(item)}
             >
-              {item.status === "disabled"
-                ? "Review & re-enable"
-                : "Approve current digest"}
+              {item.status === "disabled" ? "Allow again" : "Allow"}
             </Button>
           ) : null}
         </Stack>
@@ -392,30 +391,29 @@ function ExtensionApprovalDialog({
 
   return (
     <Dialog open={item !== null} onClose={onCancel} maxWidth="sm" fullWidth>
-      <DialogTitle>Trust and approve extension?</DialogTitle>
+      <DialogTitle>Allow this extension to run?</DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
           {manifest?.frontend || manifest?.backend ? (
             <Alert severity="warning">
-              Approved extensions are trusted code. Frontend code can access the
-              editor and browser context; backend code runs with the backend
-              process&apos;s authority. Capability declarations are informational,
-              not enforced permissions.
+              This extension runs its own code, with the same access that vlo
+              itself has. Only allow it if you trust whoever made it, or you
+              know what you&apos;re doing. Extensions can pose security risks.
             </Alert>
           ) : (
             <Alert severity="info">
-              This package contains declarative resources only; approval exposes
-              its exact digest to the editor but does not execute package code.
+              This extension only adds ready-made looks and presets. It contains
+              no code of its own.
             </Alert>
           )}
           <Typography>
-            Approve <strong>{manifest?.name ?? item?.id}</strong> only if you
-            trust its source and have reviewed the requested capabilities.
+            Allow <strong>{manifest?.name ?? item?.id}</strong> only if you
+            trust where it came from.
           </Typography>
           {item?.digest ? (
             <Box>
               <Typography variant="caption" color="text.secondary">
-                Exact package digest
+                Exact contents (fingerprint)
               </Typography>
               <Typography
                 variant="body2"
@@ -427,9 +425,9 @@ function ExtensionApprovalDialog({
           ) : null}
           {manifest?.backend ? (
             <Alert severity="info">
-              Backend activation requires an application restart. Approval never
-              installs dependencies; use the preflight below to prepare the
-              backend environment yourself.
+              Part of this extension runs outside the editor and only starts
+              when vlo restarts. Allowing it never installs anything for you —
+              see the list below for what it needs.
             </Alert>
           ) : null}
           {item ? (
@@ -437,20 +435,9 @@ function ExtensionApprovalDialog({
           ) : null}
           {manifest?.frontend ? (
             <Alert severity="info">
-              Approved frontend code activates at the next page load. Disabling
-              or revoking an active extension also takes full effect after reload.
+              Extensions load when vlo starts, so this takes effect after a
+              restart. Blocking one takes effect after a restart too.
             </Alert>
-          ) : null}
-          {manifest ? (
-            <Typography variant="body2" color="text.secondary">
-              Declared SDK range: {manifest.sdk}. Approval does not guarantee
-              that an incompatible package can activate.
-            </Typography>
-          ) : null}
-          {manifest?.vlo ? (
-            <Typography variant="body2" color="text.secondary">
-              Declared VLO range: {manifest.vlo}. Current host: {VLO_APP_VERSION ?? "unknown"}.
-            </Typography>
           ) : null}
         </Stack>
       </DialogContent>
@@ -466,7 +453,7 @@ function ExtensionApprovalDialog({
             if (item) onApprove(item);
           }}
         >
-          {busy ? <CircularProgress size={18} /> : "Approve exact digest"}
+          {busy ? <CircularProgress size={18} /> : "Yes, allow it"}
         </Button>
       </DialogActions>
     </Dialog>
@@ -535,14 +522,14 @@ export function ExtensionManagerDialog({
         <DialogContent>
           <Stack spacing={2}>
             <Alert severity="warning">
-              This is a trusted extension system, not a sandbox. Approval is
-              bound to the displayed package digest; any byte change requires
-              approval again. Declared capabilities are informational rather
-              than permission boundaries.
+              Extensions are not sandboxed: an extension you allow can do
+              anything vlo can do. Only allow ones you trust. Your answer covers
+              the exact contents listed here — if an extension changes, vlo asks
+              again.
             </Alert>
             <Alert severity="info">
-              Frontend activation state is established at page startup. Approval,
-              disable, and revoke changes take full effect after reload.
+              Extensions load when vlo starts, so any change you make here takes
+              effect after a restart.
             </Alert>
 
             {error ? <Alert severity="error">{error}</Alert> : null}
@@ -555,7 +542,7 @@ export function ExtensionManagerDialog({
 
             {loadStatus === "ready" && items.length === 0 ? (
               <Typography color="text.secondary">
-                No extension packages were found.
+                No extensions are installed.
               </Typography>
             ) : null}
 

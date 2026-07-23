@@ -19,6 +19,7 @@ import { useProjectStore, ProjectManager } from "../features/project";
 import { Suspense, lazy, useEffect } from "react";
 import { Box, CircularProgress, Typography } from "@mui/material";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ExtensionApprovalGate } from "../features/extensions";
 import { ExtensionModalHost } from "../features/extensions/ui/publicApi";
 import { MenuHostMount } from "../core/shell/MenuHostMount";
 
@@ -70,7 +71,17 @@ export function App() {
         resetKeys={[project?.id ?? null, Boolean(rootHandle)]}
       >
         <Suspense fallback={<LoadingScreen />}>
-          {!project || !rootHandle ? <ProjectManager /> : <Editor />}
+          {!project || !rootHandle ? (
+            <>
+              <ProjectManager />
+              {/* Trust decisions belong here: activation is fixed at page
+                  load, so this is the last point where allowing an extension
+                  can take effect without discarding editor work. */}
+              <ExtensionApprovalGate />
+            </>
+          ) : (
+            <Editor />
+          )}
         </Suspense>
       </ErrorBoundary>
       <ExtensionModalHost />

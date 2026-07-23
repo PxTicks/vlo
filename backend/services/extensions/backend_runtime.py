@@ -483,7 +483,7 @@ class BackendExtensionRuntime:
         if item.manifest is None or item.manifest.backend is None:
             return BackendExtensionRuntimeView(
                 status="not_declared",
-                message="No backend entry point is declared.",
+                message="This extension has no background service.",
             )
 
         record = self._records.get(item.extension_id)
@@ -502,19 +502,20 @@ class BackendExtensionRuntime:
             return BackendExtensionRuntimeView(
                 status="restart_required",
                 message=(
-                    "A previous approved backend digest remains active until restart."
+                    "An older version of this extension is still running. "
+                    "Restart vlo to switch to the version you allowed."
                 ),
                 digest=record.digest,
             )
         if item.status == "approved":
             return BackendExtensionRuntimeView(
                 status="restart_required",
-                message="Approved backend code will activate after restart.",
+                message="Ready to run. Restart vlo to start it.",
                 digest=item.digest,
             )
         return BackendExtensionRuntimeView(
             status="inactive",
-            message="Backend extension is not approved for activation.",
+            message="Not running, because this extension is not allowed.",
             digest=item.digest,
         )
 
@@ -633,7 +634,7 @@ class BackendExtensionRuntime:
                 extension_id=extension_id,
                 digest=digest,
                 status="active",
-                message="Backend extension is active.",
+                message="Running.",
             )
         except Exception as exc:
             self._jobs.unregister_extension(extension_id)
@@ -655,5 +656,5 @@ class BackendExtensionRuntime:
                 extension_id=extension_id,
                 digest=digest,
                 status="failed",
-                message=f"Backend activation failed: {exc}",
+                message=f"Could not start: {exc}",
             )

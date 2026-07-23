@@ -128,6 +128,26 @@ class ExtensionManager:
             item.manifest.version,
         )
 
+    def decline(self, extension_id: str, expected_digest: str) -> ExtensionApproval:
+        """Persist a refusal of exactly this digest.
+
+        Unlike approval this never checks host compatibility: refusing a
+        package must always be possible. The digest still has to match so a
+        decision cannot be recorded against contents the user never saw.
+        """
+
+        item = self.get_item(extension_id, force_digest=True)
+        if item.digest != expected_digest:
+            raise ExtensionInventoryError(
+                f"extension '{extension_id}' changed before the decision was recorded"
+            )
+        assert item.manifest is not None
+        return self._approval_store.decline(
+            extension_id,
+            expected_digest,
+            item.manifest.version,
+        )
+
     def prepare_approval(
         self,
         extension_id: str,

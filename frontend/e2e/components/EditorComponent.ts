@@ -19,6 +19,11 @@ const __dirname = path.dirname(__filename);
 interface EditorSetupOptions {
     fixtureDir?: string;
     projectFormat?: 'current' | 'legacy';
+    /**
+     * Runs on the project menu before the project is opened. Needed for flows
+     * that must clear the extension trust prompt, which blocks that screen.
+     */
+    onProjectMenu?: () => Promise<void>;
 }
 
 /**
@@ -81,12 +86,14 @@ export class EditorComponent {
         await this.mockFileSystem.install(this.page);
 
         await this.page.goto('/');
+        await normalizedOptions.onProjectMenu?.();
         await this.page.getByRole('button', { name: 'Open project' }).click();
         await this.waitUntilReady();
     }
 
-    async reopenProject() {
+    async reopenProject(options: Pick<EditorSetupOptions, 'onProjectMenu'> = {}) {
         await this.page.reload();
+        await options.onProjectMenu?.();
         await this.page.getByRole('button', { name: 'Open project' }).click();
         await this.waitUntilReady();
     }

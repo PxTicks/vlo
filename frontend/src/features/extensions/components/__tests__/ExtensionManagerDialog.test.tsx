@@ -44,8 +44,8 @@ function extensionItem(
       status: status === "approved" ? "restart_required" : "inactive",
       message:
         status === "approved"
-          ? "Approved backend code will activate after restart."
-          : "Backend extension is not approved for activation.",
+          ? "Ready to run. Restart vlo to start it."
+          : "Not running, because this extension is not allowed.",
       digest: status === "approved" ? digest : null,
     },
     frontendEntryUrl:
@@ -94,38 +94,38 @@ describe("ExtensionManagerDialog", () => {
     expect(screen.getByText("timeline.read")).toBeInTheDocument();
     expect(screen.getByText("backend.jobs")).toBeInTheDocument();
     expect(
-      screen.getByText(/trusted extension system, not a sandbox/i),
+      screen.getByText(/Extensions are not sandboxed/i),
     ).toBeInTheDocument();
 
     await user.click(
-      screen.getByRole("button", { name: "Approve current digest" }),
+      screen.getByRole("button", { name: "Allow" }),
     );
 
     expect(
-      screen.getByRole("heading", { name: "Trust and approve extension?" }),
+      screen.getByRole("heading", { name: "Allow this extension to run?" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/backend activation requires an application restart/i),
+      screen.getByText(/only starts when vlo restarts/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/frontend code activates at the next page load/i),
+      screen.getByText(/Extensions load when vlo starts, so this takes effect/i),
     ).toBeInTheDocument();
     expect(screen.getAllByText(digest)).toHaveLength(2);
 
     await user.click(
-      screen.getByRole("button", { name: "Approve exact digest" }),
+      screen.getByRole("button", { name: "Yes, allow it" }),
     );
 
     await waitFor(() => {
       expect(
         screen.queryByRole("heading", {
-          name: "Trust and approve extension?",
+          name: "Allow this extension to run?",
         }),
       ).not.toBeInTheDocument();
     });
-    expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(screen.getByText("Allowed")).toBeInTheDocument();
     expect(
-      screen.getByText(/backend runtime: approved backend code will activate/i),
+      screen.getByText(/background service: ready to run/i),
     ).toBeInTheDocument();
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
@@ -156,7 +156,7 @@ describe("ExtensionManagerDialog", () => {
     render(<ExtensionManagerDialog open onClose={vi.fn()} />);
 
     expect(
-      await screen.findByText("Python dependency preflight"),
+      await screen.findByText("Extra software this extension needs"),
     ).toBeInTheDocument();
     expect(screen.getByText("GPU inference")).toBeInTheDocument();
     expect(
@@ -183,7 +183,7 @@ describe("ExtensionManagerDialog", () => {
       await screen.findByText("Extension inventory is unavailable."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/trusted extension system, not a sandbox/i),
+      screen.getByText(/Extensions are not sandboxed/i),
     ).toBeInTheDocument();
   });
 
@@ -207,10 +207,10 @@ describe("ExtensionManagerDialog", () => {
     render(<ExtensionManagerDialog open onClose={vi.fn()} />);
     await screen.findByText("Dialog Extension");
     await user.click(
-      screen.getByRole("button", { name: "Approve current digest" }),
+      screen.getByRole("button", { name: "Allow" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Approve exact digest" }),
+      screen.getByRole("button", { name: "Yes, allow it" }),
     );
 
     const cancel = screen.getByRole("button", { name: "Cancel" });
@@ -220,7 +220,7 @@ describe("ExtensionManagerDialog", () => {
     await waitFor(() => {
       expect(
         screen.queryByRole("heading", {
-          name: "Trust and approve extension?",
+          name: "Allow this extension to run?",
         }),
       ).not.toBeInTheDocument();
     });
@@ -239,15 +239,16 @@ describe("ExtensionManagerDialog", () => {
     render(<ExtensionManagerDialog open onClose={vi.fn()} />);
 
     expect(
-      await screen.findByText(
-        new RegExp(
-          `cannot activate with extension SDK ${VLO_EXTENSION_SDK_VERSION.replace(/\./g, "\\.")}`,
-          "i",
-        ),
-      ),
+      await screen.findByText(/built for a different version of vlo/i),
     ).toBeInTheDocument();
+    // The unusable range is still stated, just not as the headline.
     expect(
-      screen.queryByRole("button", { name: "Approve current digest" }),
+      screen.getAllByText(
+        new RegExp(VLO_EXTENSION_SDK_VERSION.replace(/\./g, "\\.")),
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("button", { name: "Allow" }),
     ).not.toBeInTheDocument();
   });
 
@@ -263,9 +264,9 @@ describe("ExtensionManagerDialog", () => {
     render(<ExtensionManagerDialog open onClose={vi.fn()} />);
 
     expect(await screen.findByText("host.raw")).toBeInTheDocument();
-    expect(screen.getByText(/cannot activate with VLO/i)).toBeInTheDocument();
+    expect(screen.getByText(/does not support vlo/i)).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Approve current digest" }),
+      screen.queryByRole("button", { name: "Allow" }),
     ).not.toBeInTheDocument();
   });
 });

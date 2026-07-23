@@ -3,6 +3,7 @@ export {
   ExtensionContributionRegistry,
   InvalidExtensionContributionIdError,
 } from "./registry/ExtensionContributionRegistry";
+export { ExtensionApprovalGate } from "./components/ExtensionApprovalGate";
 export { ExtensionManagerDialog } from "./components/ExtensionManagerDialog";
 export { FrontendExtensionBootstrap } from "./components/FrontendExtensionBootstrap";
 export { installExtensionMenuContributions } from "./menus/menuContributionsInstall";

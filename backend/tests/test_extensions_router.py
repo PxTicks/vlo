@@ -19,6 +19,7 @@ from routers.extensions import (
     ExtensionApprovalRequest,
     ExtensionServices,
     approve_extension,
+    decline_extension,
     disable_extension,
     get_frontend_artifact,
     get_extension_resource,
@@ -184,9 +185,13 @@ def _create_frontend_package_with_bundled_lut(
 
 def _create_services(
     tmp_path: Path,
+    *,
+    reuse: bool = False,
 ) -> tuple[ExtensionServices, Path, Path]:
+    """Build the router's services. ``reuse`` re-opens existing state on disk."""
+
     extensions_root = tmp_path / "extensions"
-    extensions_root.mkdir()
+    extensions_root.mkdir(exist_ok=reuse)
     state_root = tmp_path / "state"
     manager = ExtensionManager(
         extensions_root,
@@ -233,6 +238,7 @@ def test_router_registers_management_and_artifact_paths():
     assert route_paths == {
         "/app/extensions",
         "/app/extensions/{extension_id}/approve",
+        "/app/extensions/{extension_id}/decline",
         "/app/extensions/{extension_id}/disable",
         "/app/extensions/{extension_id}/approval",
         "/app/extensions/{extension_id}/frontend/{digest}/{artifact_path:path}",
@@ -542,7 +548,7 @@ def test_backend_approval_stages_code_and_reports_restart_readiness(tmp_path: Pa
 
     assert approved["backendRuntime"] == {
         "status": "restart_required",
-        "message": "Approved backend code will activate after restart.",
+        "message": "Ready to run. Restart vlo to start it.",
         "digest": pending["digest"],
     }
     staged = (
@@ -560,7 +566,7 @@ def test_backend_approval_stages_code_and_reports_restart_readiness(tmp_path: Pa
     assert isinstance(active_inventory, dict)
     assert active_inventory["extensions"][0]["backendRuntime"] == {
         "status": "active",
-        "message": "Backend extension is active.",
+        "message": "Running.",
         "digest": pending["digest"],
     }
 
@@ -664,6 +670,88 @@ def test_disable_and_revoke_remove_artifact_access(tmp_path: Path):
     assert isinstance(revoked_response, dict)
     assert revoked_response["extension"]["status"] == "pending_approval"
     assert not artifact_root.exists()
+
+
+def test_declining_is_remembered_until_the_package_changes(tmp_path: Path):
+    services, extensions_root, state_root = _create_services(tmp_path)
+    package_dir = _create_package(extensions_root, "example.refused")
+    inventory = list_extensions(services)
+    assert isinstance(inventory, dict)
+    first_digest = inventory["extensions"][0]["digest"]
+
+    declined = decline_extension(
+        "example.refused",
+        ExtensionApprovalRequest(digest=first_digest),
+        services,
+    )
+    assert isinstance(declined, dict)
+    assert declined["extension"]["status"] == "disabled"
+    assert declined["extension"]["approval"]["enabled"] is False
+    assert declined["extension"]["approval"]["digest"] == first_digest
+    assert declined["extension"]["frontendEntryUrl"] is None
+    assert not (state_root / "frontend-artifacts" / "example.refused").exists()
+
+    # A refusal must survive a restart without prompting again.
+    restarted, _, _ = _create_services(tmp_path, reuse=True)
+    quiet_inventory = list_extensions(restarted)
+    assert isinstance(quiet_inventory, dict)
+    assert quiet_inventory["extensions"][0]["status"] == "disabled"
+
+    (package_dir / "frontend" / "dist" / "index.js").write_text(
+        "export function activate() { /* changed */ }\n",
+        encoding="utf-8",
+    )
+    changed_inventory = list_extensions(restarted)
+    assert isinstance(changed_inventory, dict)
+    assert changed_inventory["extensions"][0]["status"] == "changed"
+
+
+def test_declining_a_stale_digest_is_rejected(tmp_path: Path):
+    services, extensions_root, _state_root = _create_services(tmp_path)
+    _create_package(extensions_root, "example.stale")
+    stale_digest = f"sha256:{'0' * 64}"
+
+    response = decline_extension(
+        "example.stale",
+        ExtensionApprovalRequest(digest=stale_digest),
+        services,
+    )
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 409
+
+    inventory = list_extensions(services)
+    assert isinstance(inventory, dict)
+    assert inventory["extensions"][0]["status"] == "pending_approval"
+
+
+def test_declining_an_incompatible_package_is_still_allowed(tmp_path: Path):
+    services, extensions_root, _state_root = _create_services(tmp_path)
+    package_dir = _create_package(extensions_root, "example.future")
+    manifest = json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest["vlo"] = ">=99.0.0"
+    (package_dir / "manifest.json").write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+    inventory = list_extensions(services)
+    assert isinstance(inventory, dict)
+    digest = inventory["extensions"][0]["digest"]
+
+    refused = approve_extension(
+        "example.future",
+        ExtensionApprovalRequest(digest=digest),
+        services,
+    )
+    assert isinstance(refused, JSONResponse)
+    assert refused.status_code == 409
+
+    declined = decline_extension(
+        "example.future",
+        ExtensionApprovalRequest(digest=digest),
+        services,
+    )
+    assert isinstance(declined, dict)
+    assert declined["extension"]["status"] == "disabled"
 
 
 def test_reapproval_prunes_superseded_artifact_digest(tmp_path: Path):

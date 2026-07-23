@@ -49,6 +49,27 @@ class ExtensionApprovalStore:
         return self.list().get(extension_id)
 
     def approve(self, extension_id: str, digest: str, version: str) -> ExtensionApproval:
+        return self._record_decision(extension_id, digest, version, enabled=True)
+
+    def decline(self, extension_id: str, digest: str, version: str) -> ExtensionApproval:
+        """Remember a refusal for exactly this digest.
+
+        A declined package is indistinguishable from a disabled one: the user
+        knows about it and it must not activate. Binding the record to the
+        reviewed digest is what stops the prompt from returning until the
+        package changes again.
+        """
+
+        return self._record_decision(extension_id, digest, version, enabled=False)
+
+    def _record_decision(
+        self,
+        extension_id: str,
+        digest: str,
+        version: str,
+        *,
+        enabled: bool,
+    ) -> ExtensionApproval:
         if not _EXTENSION_ID_PATTERN.fullmatch(extension_id):
             raise ExtensionApprovalStateError("extension ID is invalid")
         if not is_package_digest(digest):
@@ -67,7 +88,7 @@ class ExtensionApprovalStore:
                 digest=digest,
                 version=version,
                 approved_at=approved_at,
-                enabled=True,
+                enabled=enabled,
             )
             approvals[extension_id] = approval
             self._write_unlocked(approvals)

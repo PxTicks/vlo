@@ -18,6 +18,7 @@ import {
   getTimelineDuration,
   getTimelineModelState,
   getTimelineTracks,
+  getTimelineViewGeometry,
   selectTimelineClip,
   selectPrimaryActiveClip,
   selectTimelineClipById,
@@ -40,6 +41,7 @@ import {
   useTimelineTracks,
 } from "../api";
 import { useTimelineStore } from "../useTimelineStore";
+import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { useProjectStore } from "../../project/useProjectStore";
 
 const TRACKS: TimelineTrack[] = [
@@ -150,6 +152,7 @@ describe("timeline public API", () => {
       clips: CLIPS,
       selectedClipIds: ["clip-video"],
     });
+    useTimelineViewStore.setState({ zoomScale: 1 });
     // Drive the frame grid at one tick per frame so the abstract tick fixtures
     // here are already frame-aligned (quantization is identity); the duration
     // assertions then test selector plumbing, not frame snapping.
@@ -172,6 +175,15 @@ describe("timeline public API", () => {
     expect(selectPrimaryActiveClip(state)?.id).toBe("clip-video");
     expect(getTimelineClipById("clip-audio")?.id).toBe("clip-audio");
     expect(getPrimaryActiveClip()?.id).toBe("clip-video");
+  });
+
+  it("exposes read-only timeline view geometry through the public API", () => {
+    useTimelineViewStore.getState().setZoomScale(2);
+
+    expect(getTimelineViewGeometry(TICKS_PER_SECOND)).toEqual({
+      absolutePx: 200,
+      zoomScale: 2,
+    });
   });
 
   it("exposes reactive timeline selectors through public hooks", () => {

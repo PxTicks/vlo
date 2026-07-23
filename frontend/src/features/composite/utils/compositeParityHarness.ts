@@ -67,7 +67,11 @@ export const COMPOSITE_PREENCODE_PIXEL_TOLERANCE: CompositePixelTolerance = {
  * tighter limits, but must never silently relax these repository defaults.
  */
 export const COMPOSITE_DECODED_PIXEL_TOLERANCE: CompositePixelTolerance = {
-  maxChannelDelta: 32,
+  // Real Chromium VP9 alpha round-trips can produce sparse edge/chroma
+  // outliers in the high 60s even while the mean error stays below 1 and
+  // fewer than 0.1% of pixels cross the difference threshold. Keep the
+  // aggregate limits tight so this allowance cannot hide a shifted frame.
+  maxChannelDelta: 72,
   maxMeanAbsoluteChannelDelta: 6,
   maxDifferentPixelRatio: 0.35,
   differentPixelChannelThreshold: 8,

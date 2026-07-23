@@ -260,8 +260,29 @@ function PlayerImpl() {
       onCompositeSceneError: (error, job) => {
         reportCompositeDirectRenderError(job.activeClip.id, error);
       },
-      onCompositeSceneRendered: (job) => {
+      onCompositeSceneRendered: (job, texture) => {
         clearCompositeDirectRenderError(job.activeClip.id);
+        if (
+          import.meta.env.VITE_E2E_DIAGNOSTICS === "true" &&
+          window.__vloE2E?.acceptLiveCompositeFrame &&
+          job.compositeSource
+        ) {
+          try {
+            const extracted = pixiApp.renderer.extract.pixels({
+              target: texture,
+            });
+            window.__vloE2E.acceptLiveCompositeFrame({
+              compositeId: job.compositeSource.compositeId,
+              localPresentationTick:
+                job.compositeSource.localPresentationTick,
+              width: extracted.width,
+              height: extracted.height,
+              pixels: new Uint8ClampedArray(extracted.pixels),
+            });
+          } catch (error) {
+            window.__vloE2E.rejectLiveCompositeFrame?.(String(error));
+          }
+        }
       },
     });
     // Own an external resource's lifecycle, not derived state — the setState

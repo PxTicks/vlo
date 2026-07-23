@@ -93,6 +93,7 @@ export {
 export {
   getTimelineClips,
   getTimelineStoreForTrustedHostAccess,
+  getTimelineViewGeometry,
   getTimelineModelState,
   getTimelineClipById,
   getTimelineTracks,

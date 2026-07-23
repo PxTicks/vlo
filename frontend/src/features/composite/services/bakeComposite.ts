@@ -1,5 +1,8 @@
 import type { Asset } from "../../../types/Asset";
-import type { CompositeContent } from "../../../types/TimelineTypes";
+import type {
+  CompositeContent,
+  TimelineSelection,
+} from "../../../types/TimelineTypes";
 // Renderer entry points are imported dynamically (see `bakeComposite`) so that
 // `composite` does not statically depend on the renderer feature. Composite
 // baking is a downward call into rendering, but a static edge here would close
@@ -43,6 +46,26 @@ export interface BakedComposite {
   /** Hash of the content this bake was rendered from (for staleness checks). */
   contentHash: string;
   /** Complete serialized render-contract identity for this cache asset. */
+  bakeKey: string;
+}
+
+export interface RenderCompositeFileOptions {
+  signal?: AbortSignal;
+  onProgress?: (percentage: number) => void;
+  onBeforeEncodeFrame?: (
+    frame: RenderedFramePixelCapture,
+  ) => void | Promise<void>;
+  /**
+   * Optional local-timeline range. The production bake omits this and renders
+   * the complete content; headed diagnostics use a one-frame range without
+   * registering a working asset.
+   */
+  selection?: TimelineSelection;
+}
+
+export interface RenderedCompositeFile {
+  file: File;
+  contentHash: string;
   bakeKey: string;
 }
 
@@ -90,15 +113,15 @@ function buildCompositeRenderInputs(
 }
 
 /**
- * Renders composite content to a hidden alpha-preserving WebM asset. Timeline
- * placements point directly at that cache, so fallback uses the normal video
- * decode path without changing the transparent composite-layer contract.
+ * Renders composite content to an in-memory alpha-preserving WebM without
+ * registering it as a project asset. Production baking registers the result;
+ * strict E2E diagnostics can inspect a bounded render without leaving a cache.
  */
-export async function bakeComposite(
+export async function renderCompositeToVideoFile(
   content: CompositeContent,
-  options: BakeCompositeOptions = {},
-): Promise<BakedComposite> {
-  const selection = compositeContentToSelection(content);
+  options: RenderCompositeFileOptions = {},
+): Promise<RenderedCompositeFile> {
+  const selection = options.selection ?? compositeContentToSelection(content);
   // frameStep is workflow sampling guidance, not a playback-cache cadence.
   // Composite bakes contain every frame at the resolved FPS so direct and
   // baked playback share the same frame-edge contract.
@@ -156,6 +179,26 @@ export async function bakeComposite(
       ? { onBeforeEncodeFrame: options.onBeforeEncodeFrame }
       : {}),
   });
+
+  return { file, contentHash, bakeKey };
+}
+
+export async function bakeComposite(
+  content: CompositeContent,
+  options: BakeCompositeOptions = {},
+): Promise<BakedComposite> {
+  const selection = compositeContentToSelection(content);
+  const { file, contentHash, bakeKey } = await renderCompositeToVideoFile(
+    content,
+    {
+      selection,
+      signal: options.signal,
+      onProgress: options.onProgress,
+      ...(options.onBeforeEncodeFrame
+        ? { onBeforeEncodeFrame: options.onBeforeEncodeFrame }
+        : {}),
+    },
+  );
 
   const asset = await addLocalAsset(
     file,

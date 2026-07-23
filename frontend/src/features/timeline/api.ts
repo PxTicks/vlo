@@ -44,6 +44,7 @@ import {
   selectTimelineDuration,
 } from "./selectors/timelineSelectors";
 import { useTimelineStore } from "./useTimelineStore";
+import { useTimelineViewStore } from "./hooks/useTimelineViewStore";
 import { useProjectStore } from "../project/useProjectStore";
 import type { ExtensionTimelineCommand } from "./model/extensionTimelineCommands";
 import { createDefaultTimelineSnapshot } from "./model/timelineTrackModel";
@@ -86,6 +87,20 @@ export {
 /** Host composition-root seam; ordinary feature consumers should use selectors. */
 export function getTimelineStoreForTrustedHostAccess(): typeof useTimelineStore {
   return useTimelineStore;
+}
+
+export interface TimelineViewGeometry {
+  absolutePx: number;
+  zoomScale: number;
+}
+
+/** Read-only host seam for mapping a project tick through the current view. */
+export function getTimelineViewGeometry(tick: number): TimelineViewGeometry {
+  const view = useTimelineViewStore.getState();
+  return {
+    absolutePx: view.ticksToPx(tick),
+    zoomScale: view.zoomScale,
+  };
 }
 
 export { installTimelineHostCommands } from "./hostCommands";

@@ -112,6 +112,28 @@ describe("composite parity harness", () => {
       COMPOSITE_DECODED_PIXEL_TOLERANCE,
     );
     expect(decoded.passed).toBe(true);
+
+    const sparseOutlierPixels = new Uint8ClampedArray(frame.pixels);
+    sparseOutlierPixels[0] = Math.min(255, sparseOutlierPixels[0] + 68);
+    expect(
+      compareCompositePixelFrames(
+        frame,
+        { ...frame, pixels: sparseOutlierPixels },
+        COMPOSITE_DECODED_PIXEL_TOLERANCE,
+      ).passed,
+    ).toBe(true);
+
+    const widespreadError = new Uint8ClampedArray(frame.pixels);
+    for (let index = 0; index < widespreadError.length; index += 4) {
+      widespreadError[index] = Math.min(255, widespreadError[index] + 40);
+    }
+    expect(
+      compareCompositePixelFrames(
+        frame,
+        { ...frame, pixels: widespreadError },
+        COMPOSITE_DECODED_PIXEL_TOLERANCE,
+      ).passed,
+    ).toBe(false);
   });
 
   it("rejects malformed RGBA captures", async () => {

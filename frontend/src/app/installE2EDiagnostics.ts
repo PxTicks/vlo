@@ -1,8 +1,8 @@
 import { playbackClock, playbackFrameClock } from "../core/playback/PlaybackClock";
 import { audioSystem } from "../features/player/services/AudioSystem";
 import { usePlayerStore } from "../features/player/usePlayerStore";
+import { getTimelineViewGeometry } from "../features/timeline/api";
 import { TRACK_HEADER_WIDTH } from "../features/timeline/constants";
-import { useTimelineViewStore } from "../features/timeline/hooks/useTimelineViewStore";
 
 /**
  * Read-only diagnostics bridge for the browser-media E2E lane (plan §4.2, §4.6).
@@ -88,6 +88,22 @@ declare global {
         startTick: number;
         endTick: number;
       }) => Promise<unknown>;
+      runCompositeParityProbe?: (request: {
+        compositeId: string;
+        placementTick: number;
+      }) => Promise<unknown>;
+      /**
+       * Internal synchronous receiver. The player calls it before releasing
+       * the live Pixi texture; it is present only in strict diagnostic builds.
+       */
+      acceptLiveCompositeFrame?: (frame: {
+        compositeId: string;
+        localPresentationTick: number;
+        width: number;
+        height: number;
+        pixels: Uint8ClampedArray;
+      }) => void;
+      rejectLiveCompositeFrame?: (error: string) => void;
     };
   }
 }
@@ -138,9 +154,9 @@ export function installE2EDiagnostics(): void {
       };
     },
     getTimelineTickGeometry: (tick: number) => {
-      const view = useTimelineViewStore.getState();
+      const view = getTimelineViewGeometry(tick);
       return {
-        absolutePx: view.ticksToPx(tick),
+        absolutePx: view.absolutePx,
         trackHeaderWidth: TRACK_HEADER_WIDTH,
         zoomScale: view.zoomScale,
         playheadTicks: playbackClock.time,
@@ -157,6 +173,26 @@ export function installE2EDiagnostics(): void {
       })
       .catch((error: unknown) => {
         console.error("Failed to install selection export probe", error);
+      });
+    void import("./e2e/compositeParityProbe")
+      .then(
+        ({
+          acceptLiveCompositeFrame,
+          rejectLiveCompositeFrame,
+          runCompositeParityProbe,
+        }) => {
+          if (window.__vloE2E) {
+            window.__vloE2E.acceptLiveCompositeFrame =
+              acceptLiveCompositeFrame;
+            window.__vloE2E.rejectLiveCompositeFrame =
+              rejectLiveCompositeFrame;
+            window.__vloE2E.runCompositeParityProbe =
+              runCompositeParityProbe;
+          }
+        },
+      )
+      .catch((error: unknown) => {
+        console.error("Failed to install composite parity probe", error);
       });
   }
 }

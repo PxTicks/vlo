@@ -24,6 +24,8 @@ const distDir = join(frontendRoot, "dist");
 const FORBIDDEN = [
   "runSelectionExportProbe",
   "selection export probe:",
+  "runCompositeParityProbe",
+  "composite parity probe:",
   "__PLAYBACK_CLOCK__",
   "__PLAYBACK_FRAME_CLOCK__",
 ];

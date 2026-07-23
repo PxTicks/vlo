@@ -5,6 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "npm run test --prefix frontend",
+    "test:e2e": "npm run test:e2e --prefix frontend",
+    "test:e2e:smoke": "npm run test:e2e:smoke --prefix frontend",
+    "test:e2e:media": "npm run test:e2e:media --prefix frontend",
+    "test:e2e:full": "npm run test:e2e:full --prefix frontend",
     "lint": "npm run lint --prefix frontend",
     "build": "npm run build --prefix frontend",
     "check:extension-surface": "node scripts/check-extension-surface.mjs",

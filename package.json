@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "npm run test --prefix frontend",
+    "test:backend": "cd backend && .venv/bin/python -m pytest",
+    "test:backend:coverage": "cd backend && .venv/bin/python -m pytest --cov --cov-report=term-missing",
     "test:e2e": "npm run test:e2e --prefix frontend",
     "test:e2e:smoke": "npm run test:e2e:smoke --prefix frontend",
     "test:e2e:media": "npm run test:e2e:media --prefix frontend",

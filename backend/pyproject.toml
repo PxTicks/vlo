@@ -53,3 +53,15 @@ filterwarnings = [
     "default",
     "error::pytest.PytestUnraisableExceptionWarning",
 ]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    ".venv/*",
+    "assets/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

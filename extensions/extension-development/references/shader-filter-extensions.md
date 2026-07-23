@@ -467,7 +467,7 @@ Use the commands relevant to the extension package:
 npm test --prefix extension-fixtures/<package>
 npm run typecheck --prefix extension-fixtures/<package>
 npm run build --prefix extension-fixtures/<package>
-backend/.venv/bin/python3.13 -m pytest backend/tests/test_extension_template.py -k <package>
+backend/.venv/bin/python -m pytest backend/tests/test_extension_template.py -k <package>
 npm run check:extension-surface
 ```
 

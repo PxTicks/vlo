@@ -11,7 +11,7 @@ against identical expectations:
 
 Regenerate after intentionally changing the backend math:
 
-    backend/.venv/bin/python3.13 scripts/generate_processing_parity_fixtures.py
+    backend/.venv/bin/python scripts/generate_processing_parity_fixtures.py
 """
 
 from __future__ import annotations

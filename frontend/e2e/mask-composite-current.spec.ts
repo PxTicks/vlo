@@ -189,7 +189,7 @@ test.describe('Current-project masks and composites', () => {
 
         await timeline.seekToTick(60_000);
         const innerClip = timeline.getClipById(COMPOSITE_INNER_CLIP_ID);
-        await innerClip.click({ force: true });
+        await innerClip.click();
         await timeline.deleteSelected();
         await expect(innerClip).toHaveCount(0);
 

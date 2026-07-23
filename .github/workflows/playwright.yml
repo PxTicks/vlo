@@ -70,6 +70,10 @@ jobs:
       # still reports which tests failed rather than truncating the run.
       - name: Run full suite
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'full')
+        env:
+          # Proven by a complete 114-test run: 9.4m versus 13.2m at one worker.
+          # Smoke does not set this and remains single-worker.
+          PLAYWRIGHT_WORKERS: "2"
         run: |
           set +e
           start=$(date +%s)

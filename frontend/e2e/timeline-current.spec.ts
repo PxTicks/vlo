@@ -1,6 +1,7 @@
 import { timelineDocumentSchema } from '../src/features/project/schemas/projectPersistenceSchemas';
 import type { EditorComponent } from './components';
 import { expect, test } from './fixtures';
+import { DRAG_DEFAULTS } from './helpers/drag';
 
 /**
  * Phase 4.1–4.2 — current-project timeline journeys.
@@ -84,10 +85,16 @@ async function dragClipToTrack(
     const targetY = targetBox.y + targetBox.height / 2;
     await page.mouse.move(sourceX, sourceY);
     await page.mouse.down();
-    await page.waitForTimeout(120);
-    await page.mouse.move(sourceX + 20, sourceY + 8, { steps: 8 });
-    await page.mouse.move(sourceX, targetY, { steps: 20 });
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(DRAG_DEFAULTS.preActivationDelay);
+    await page.mouse.move(
+        sourceX + DRAG_DEFAULTS.activationOffset,
+        sourceY + 8,
+        { steps: DRAG_DEFAULTS.activationSteps },
+    );
+    await page.mouse.move(sourceX, targetY, {
+        steps: DRAG_DEFAULTS.moveSteps,
+    });
+    await page.waitForTimeout(DRAG_DEFAULTS.hoverDelay);
     await page.mouse.up();
 }
 
@@ -142,7 +149,7 @@ test.describe('Current-project timeline', () => {
         editorCurrent,
     }) => {
         const editor = editorCurrent;
-        const { page, timeline, transformationPanel } = editor;
+        const { timeline, transformationPanel } = editor;
 
         await timeline.seekToTick(RIPPLE_WINDOW_START);
         await timeline.clickClipById(RIPPLE_ADJUSTMENT_ID);

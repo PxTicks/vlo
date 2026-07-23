@@ -18,7 +18,7 @@ interface DragOptions {
     activationOffset?: number;
 }
 
-const DEFAULTS: Required<DragOptions> = {
+export const DRAG_DEFAULTS: Readonly<Required<DragOptions>> = {
     activationSteps: 8,
     moveSteps: 20,
     preActivationDelay: 120,
@@ -39,7 +39,7 @@ export async function performDrag(
     target: Locator,
     options?: DragOptions,
 ): Promise<void> {
-    const opts = { ...DEFAULTS, ...options };
+    const opts = { ...DRAG_DEFAULTS, ...options };
 
     const sourceBox = await source.boundingBox();
     const targetBox = await target.boundingBox();

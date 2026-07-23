@@ -259,7 +259,7 @@ export async function runCompositeParityProbe(
     }
 
     const input = new Input({
-      source: new BlobSource(rendered.file),
+      source: new BlobSource(rendered),
       formats: ALL_FORMATS,
     });
     try {
@@ -296,8 +296,8 @@ export async function runCompositeParityProbe(
         width: preEncode.width,
         height: preEncode.height,
         localPresentationTick: live.localPresentationTick,
-        encodedBytes: rendered.file.size,
-        encodedType: rendered.file.type,
+        encodedBytes: rendered.size,
+        encodedType: rendered.type,
       };
     } finally {
       input.dispose();

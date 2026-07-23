@@ -59,7 +59,10 @@ vi.mock("../../../timeline/api", () => ({
   getTimelineTracks: mocks.getTimelineTracks,
 }));
 
-import { bakeComposite } from "../bakeComposite";
+import {
+  bakeComposite,
+  renderCompositeToVideoFile,
+} from "../bakeComposite";
 
 function content(overrides: Partial<CompositeContent> = {}): CompositeContent {
   return {
@@ -218,6 +221,22 @@ describe("bakeComposite", () => {
       expect.any(File),
       expect.objectContaining({ timelineSelection: authoredSelection }),
       undefined,
+      expect.anything(),
+    );
+  });
+
+  it("returns only bytes for a bounded render, not a canonical bake identity", async () => {
+    const renderedFile = new File(["probe"], "probe.webm", {
+      type: "video/webm",
+    });
+    mocks.renderSelectionToVideoFile.mockResolvedValueOnce(renderedFile);
+    const selection = { start: 25, end: 50, clips: [] };
+
+    const result = await renderCompositeToVideoFile(content(), { selection });
+
+    expect(result).toBe(renderedFile);
+    expect(mocks.renderSelectionToVideoFile).toHaveBeenCalledWith(
+      { ...selection, frameStep: 1 },
       expect.anything(),
     );
   });

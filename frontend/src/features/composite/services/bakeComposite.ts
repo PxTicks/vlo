@@ -63,7 +63,7 @@ export interface RenderCompositeFileOptions {
   selection?: TimelineSelection;
 }
 
-export interface RenderedCompositeFile {
+interface RenderedCompositeFile {
   file: File;
   contentHash: string;
   bakeKey: string;
@@ -117,7 +117,7 @@ function buildCompositeRenderInputs(
  * registering it as a project asset. Production baking registers the result;
  * strict E2E diagnostics can inspect a bounded render without leaving a cache.
  */
-export async function renderCompositeToVideoFile(
+async function renderCompositeFile(
   content: CompositeContent,
   options: RenderCompositeFileOptions = {},
 ): Promise<RenderedCompositeFile> {
@@ -183,12 +183,24 @@ export async function renderCompositeToVideoFile(
   return { file, contentHash, bakeKey };
 }
 
+/**
+ * Renders composite content without publishing a cache identity. A bounded
+ * selection is not a canonical bake of the content and must not be mistaken
+ * for one by callers that only need the resulting bytes.
+ */
+export async function renderCompositeToVideoFile(
+  content: CompositeContent,
+  options: RenderCompositeFileOptions = {},
+): Promise<File> {
+  return (await renderCompositeFile(content, options)).file;
+}
+
 export async function bakeComposite(
   content: CompositeContent,
   options: BakeCompositeOptions = {},
 ): Promise<BakedComposite> {
   const selection = compositeContentToSelection(content);
-  const { file, contentHash, bakeKey } = await renderCompositeToVideoFile(
+  const { file, contentHash, bakeKey } = await renderCompositeFile(
     content,
     {
       selection,

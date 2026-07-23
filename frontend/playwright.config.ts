@@ -60,7 +60,10 @@ export default defineConfig({
   forbidOnly: IS_CI,
   failOnFlakyTests: IS_CI,
   retries: IS_CI ? 1 : 0,
-  workers: IS_CI ? 1 : LOCAL_WORKERS,
+  // CI opts the nightly full suite into two workers explicitly after the
+  // mock-filesystem, browser-media and diagnostics lanes passed together.
+  // Smoke leaves PLAYWRIGHT_WORKERS unset and remains single-worker.
+  workers: LOCAL_WORKERS,
   reporter: [
     [IS_CI ? 'list' : 'line'],
     ['html', { open: 'never', outputFolder: 'playwright-report' }],

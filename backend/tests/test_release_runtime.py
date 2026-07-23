@@ -1,16 +1,12 @@
 import asyncio
 import json
-import os
-import sys
 from pathlib import Path
 
 import httpx
 from starlette.datastructures import FormData
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import main  # noqa: E402
-from routers import comfyui  # noqa: E402
+import main
+from routers import comfyui
 
 
 class DummyRequest:

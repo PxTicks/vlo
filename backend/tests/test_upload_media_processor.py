@@ -41,7 +41,7 @@ def _make_context(
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_upload_media_processor_registers_memory_loader_media_by_default():
     calls: list[str] = []
 
@@ -78,7 +78,7 @@ async def test_upload_media_processor_registers_memory_loader_media_by_default()
     assert ctx.workflow["92"]["inputs"]["image"] == "media-id-123"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_upload_media_processor_falls_back_to_file_upload_when_memory_loader_disabled():
     calls: list[str] = []
 
@@ -115,7 +115,7 @@ async def test_upload_media_processor_falls_back_to_file_upload_when_memory_load
     assert ctx.workflow["92"]["inputs"]["image"] == "frame.png"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_upload_media_processor_accepts_lowercase_vlo_memory_loader_aliases():
     calls: list[str] = []
 
@@ -152,7 +152,7 @@ async def test_upload_media_processor_accepts_lowercase_vlo_memory_loader_aliase
     assert ctx.workflow["92"]["inputs"]["image"] == "media-id-123"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_upload_media_processor_reuses_valid_cached_memory_id():
     calls: list[str] = []
 
@@ -189,7 +189,7 @@ async def test_upload_media_processor_reuses_valid_cached_memory_id():
     assert ctx.workflow["92"]["inputs"]["image"] == "cached-media-id"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_upload_media_processor_reregisters_missing_cached_memory_id():
     calls: list[str] = []
 

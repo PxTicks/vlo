@@ -1,4 +1,3 @@
-import os
 import sys
 import types
 from collections.abc import Callable
@@ -14,16 +13,14 @@ import pytest
 from fastapi import HTTPException
 from PIL import Image
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from routers import sam2 as sam2_router  # noqa: E402
-from routers.sam2 import (  # noqa: E402
+from routers import sam2 as sam2_router
+from routers.sam2 import (
     Sam2GenerateFrameRequest,
     Sam2GenerateMaskRequest,
     Sam2PointRequest,
 )
-from services.sam2 import sam2_service  # noqa: E402
-from services.sam2.sam2_service import (  # noqa: E402
+from services.sam2 import sam2_service
+from services.sam2.sam2_service import (
     Sam2GeneratedMaskFrame,
     Sam2GeneratedMaskVideo,
     Sam2Point,

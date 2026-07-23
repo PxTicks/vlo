@@ -2,15 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import sys
 from pathlib import Path
 
 import httpx
 import pytest
 from fastapi import FastAPI
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from routers.extensions import (
     ExtensionServices,

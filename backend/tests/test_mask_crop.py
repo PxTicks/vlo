@@ -1,12 +1,7 @@
-import os
-import sys
-
 import numpy as np
 import pytest
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from services.gen_pipeline.processors.utils.mask_crop import (  # noqa: E402
+from services.gen_pipeline.processors.utils.mask_crop import (
     compute_crop_region,
     compute_mask_crop,
     force_aspect_ratio,

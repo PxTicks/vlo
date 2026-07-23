@@ -1,19 +1,15 @@
-import os
-import sys
 from typing import Any
 
 import pytest
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from services.gen_pipeline import BackendPipelineContext  # noqa: E402
-from services.gen_pipeline.processors.submit_prompt import (  # noqa: E402
+from services.gen_pipeline import BackendPipelineContext
+from services.gen_pipeline.processors.submit_prompt import (
     create_submit_prompt_processor,
 )
-from services.gen_pipeline.processors.utils.graph_metadata import (  # noqa: E402
+from services.gen_pipeline.processors.utils.graph_metadata import (
     project_prompt_to_graph_data,
 )
-from services.workflow_rules.object_info import set_object_info_cache  # noqa: E402
+from services.workflow_rules.object_info import set_object_info_cache
 
 
 class _FakeResponse:

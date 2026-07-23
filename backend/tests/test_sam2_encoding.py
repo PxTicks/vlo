@@ -1,11 +1,7 @@
 from io import BytesIO
-import os
-import sys
 
 import av
 import numpy as np
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.sam2.sam2_encoding import encode_binary_masks_to_red_mp4
 

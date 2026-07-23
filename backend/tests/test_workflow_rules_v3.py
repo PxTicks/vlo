@@ -1,13 +1,9 @@
 import asyncio
 import base64
 import json
-import os
-import sys
 from pathlib import Path
 
 import httpx
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.comfyui.comfyui_generate import finalize_backend_response
 from services.gen_pipeline.context import BackendPipelineContext

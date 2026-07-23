@@ -2,16 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import sys
 import time
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import services.extensions.backend_runtime as backend_runtime_module
 

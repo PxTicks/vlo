@@ -1,16 +1,12 @@
 import math
-import os
-import sys
 from pathlib import Path
 
 import av
 import numpy as np
 import pytest
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from services.beats import beats_service  # noqa: E402
-from services.beats.beats_service import (  # noqa: E402
+from services.beats import beats_service
+from services.beats.beats_service import (
     BeatThisRuntimeError,
     BeatThisSourceNotFoundError,
 )

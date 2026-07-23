@@ -1,7 +1,5 @@
-import os
 import shutil
 import subprocess
-import sys
 from fractions import Fraction
 from io import BytesIO
 from pathlib import Path
@@ -13,9 +11,7 @@ import numpy as np
 import pytest
 from av.video.stream import VideoStream
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from services.gen_pipeline.processors.utils.video_crop import (  # noqa: E402
+from services.gen_pipeline.processors.utils.video_crop import (
     analyze_mask_video_bounds,
     crop_video,
 )

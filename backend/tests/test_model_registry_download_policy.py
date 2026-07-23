@@ -1,12 +1,8 @@
 """Workflow graphs are untrusted input, so the URLs they declare are checked
 against the same allow-list ComfyUI applies in missingModelDownload.ts."""
 
-import os
-import sys
 
 import pytest
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.model_registry import (
     _extract_workflow_models,

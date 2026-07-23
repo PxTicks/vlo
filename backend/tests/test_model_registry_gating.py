@@ -1,9 +1,5 @@
 """Tests for the gated-model detection used by the workflow download flow."""
 
-import os
-import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.model_registry import (
     _extract_workflow_models,

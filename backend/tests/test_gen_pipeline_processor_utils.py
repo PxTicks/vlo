@@ -1,19 +1,14 @@
-import os
-import sys
-
 import pytest
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from services.gen_pipeline.processors.utils.coerce import (  # noqa: E402
+from services.gen_pipeline.processors.utils.coerce import (
     coerce_bool,
     coerce_float,
     coerce_int,
     coerce_number,
     match_enum_value,
 )
-from services.gen_pipeline.processors.utils.warning import pipeline_warning  # noqa: E402
-from services.gen_pipeline.processors.utils.widget_rule_lookup import (  # noqa: E402
+from services.gen_pipeline.processors.utils.warning import pipeline_warning
+from services.gen_pipeline.processors.utils.widget_rule_lookup import (
     WidgetRuleLookup,
 )
 

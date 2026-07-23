@@ -5,14 +5,10 @@ POST /downloads/models variant plus a workflowGraph field on start/start-batch.
 These tests exercise the HTTP seam, not the registry internals.
 """
 
-import os
-import sys
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from routers import downloads
 from services import download_service

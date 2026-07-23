@@ -1,8 +1,3 @@
-import os
-import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from services.sam2.sam2_discovery import discover_sam2_models
 
 def test_discover_sam2_models_finds_models(monkeypatch, tmp_path):

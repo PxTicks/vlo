@@ -1,12 +1,8 @@
 import asyncio
 import json
-import os
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import services.comfyui.comfyui_client as comfyui_client
 
@@ -17,11 +13,6 @@ class _FakeClient:
 
     async def aclose(self) -> None:
         self.is_closed = True
-
-
-@pytest.fixture
-def anyio_backend() -> str:
-    return "asyncio"
 
 
 @pytest.mark.anyio

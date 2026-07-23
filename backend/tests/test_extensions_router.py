@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -11,8 +10,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import services.extensions.package_digest as package_digest_module
 from routers.extensions import (

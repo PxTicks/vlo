@@ -1,12 +1,8 @@
 import asyncio
 import json
-import os
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import services.generation_delivery.service as delivery_service_module
 from services.generation_delivery.service import (
@@ -100,11 +96,6 @@ def _delivery_context() -> dict:
         "uses_save_image_websocket_outputs": False,
         "replay_inputs": {"replayState": {"version": 2}},
     }
-
-
-@pytest.fixture
-def anyio_backend() -> str:
-    return "asyncio"
 
 
 @pytest.mark.anyio

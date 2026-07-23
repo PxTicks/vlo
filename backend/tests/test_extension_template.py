@@ -11,8 +11,6 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
 from services.extensions import (
     BackendArtifactStore,
     BackendExtensionRuntime,

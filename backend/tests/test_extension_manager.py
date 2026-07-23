@@ -3,12 +3,9 @@ from __future__ import annotations
 import json
 import os
 import stat
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import services.extensions.manager as extension_manager_module
 import services.extensions.package_digest as package_digest_module

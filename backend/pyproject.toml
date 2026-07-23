@@ -27,7 +27,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
-    "pytest-asyncio",
+    "pytest-cov",
+    "anyio",
 ]
 
 [build-system]
@@ -36,3 +37,19 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+strict_markers = true
+strict_config = true
+markers = [
+    "requires_torch: needs the torch/ML stack (excluded from the default CI lane)",
+    "requires_ffmpeg: needs an ffmpeg binary on PATH",
+]
+# The last matching filter wins, so the broad "default" must come first and the
+# specific escalation after it.
+filterwarnings = [
+    "default",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]

@@ -1,16 +1,11 @@
-import os
-import sys
-
 import anyio
 import pytest
 from fastapi import HTTPException
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from routers import beats as beats_router  # noqa: E402
-from routers.beats import BeatThisDetectRequest  # noqa: E402
-from services.beats import beats_service  # noqa: E402
-from services.beats.beats_service import (  # noqa: E402
+from routers import beats as beats_router
+from routers.beats import BeatThisDetectRequest
+from services.beats import beats_service
+from services.beats.beats_service import (
     BeatThisConfigError,
     BeatThisRuntimeError,
     BeatThisSourceNotFoundError,

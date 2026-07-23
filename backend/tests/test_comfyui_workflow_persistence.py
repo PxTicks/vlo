@@ -1,11 +1,7 @@
 import asyncio
 import json
-import os
-import sys
 
 import pytest
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from routers import comfyui
 from services.workflow_rules.object_info import set_object_info_cache

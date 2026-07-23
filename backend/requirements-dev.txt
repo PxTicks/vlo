@@ -2,4 +2,5 @@
 # Keep this file in sync with backend/pyproject.toml.
 -r requirements.txt
 pytest
-pytest-asyncio
+pytest-cov
+anyio

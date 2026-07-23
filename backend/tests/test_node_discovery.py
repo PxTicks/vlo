@@ -1,8 +1,3 @@
-import os
-import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from services.workflow_rules.node_discovery import has_any_input, resolve_node_policy
 from services.workflow_rules.node_parsing import build_input_node_map
 

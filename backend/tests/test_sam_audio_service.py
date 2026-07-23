@@ -1,5 +1,3 @@
-import os
-import sys
 import time
 from io import BytesIO
 from pathlib import Path
@@ -8,11 +6,9 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from services.sam_audio import sam_audio_service  # noqa: E402
-from services.sam_audio.sam_audio_encoding import encode_wav_bytes  # noqa: E402
-from services.sam_audio.sam_audio_service import (  # noqa: E402
+from services.sam_audio import sam_audio_service
+from services.sam_audio.sam_audio_encoding import encode_wav_bytes
+from services.sam_audio.sam_audio_service import (
     SAM_AUDIO_SAMPLE_RATE,
     SamAudioSeparationResult,
     SamAudioSourceMetadata,

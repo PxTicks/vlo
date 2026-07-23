@@ -1,27 +1,23 @@
 import json
-import os
-import sys
 from pathlib import Path
 from typing import Any, cast
 
 import httpx
 import pytest
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from services.comfyui.comfyui_generate import finalize_backend_response  # noqa: E402
-from routers.comfyui import _enrich_generation_metadata  # noqa: E402
-from services.gen_pipeline.context import BackendPipelineContext  # noqa: E402
-from services.gen_pipeline.processors.pipeline_stage import (  # noqa: E402
+from services.comfyui.comfyui_generate import finalize_backend_response
+from routers.comfyui import _enrich_generation_metadata
+from services.gen_pipeline.context import BackendPipelineContext
+from services.gen_pipeline.processors.pipeline_stage import (
     create_pipeline_stage_processor,
 )
-from services.gen_pipeline.processors import (  # noqa: E402
+from services.gen_pipeline.processors import (
     build_backend_dispatch_processors,
     build_backend_preprocessors,
     build_generation_processors,
 )
-from services.gen_pipeline.types import ProcessorMeta  # noqa: E402
-from services.workflow_rules.pipeline import iter_pipeline_stages  # noqa: E402
+from services.gen_pipeline.types import ProcessorMeta
+from services.workflow_rules.pipeline import iter_pipeline_stages
 
 
 async def _noop_upload_video_bytes(
@@ -249,7 +245,7 @@ class _RecordingStageProcessor:
         self._calls.append(self._name)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_pipeline_stage_before_upload_respects_aspect_ratio_dependency_order():
     calls: list[str] = []
     processor = create_pipeline_stage_processor(

@@ -1,14 +1,10 @@
 import asyncio
 import json
-import os
-import sys
 
 import pytest
 from fastapi import Response
 from fastapi.responses import FileResponse
 from starlette.requests import Request
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from routers import comfyui_compat
 

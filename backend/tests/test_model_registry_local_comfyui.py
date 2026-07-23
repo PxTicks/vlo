@@ -2,12 +2,8 @@
 they are only offered when the ComfyUI we talk to is the local one. A local
 install paired with a remote ComfyUI URL must not offer downloads."""
 
-import os
-import sys
 
 import pytest
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services import model_registry
 from services.model_registry import (

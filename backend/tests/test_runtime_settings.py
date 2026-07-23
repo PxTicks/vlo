@@ -1,11 +1,7 @@
 import json
-import os
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services import runtime_settings, workflow_modes
 from services.hardware import VramInfo

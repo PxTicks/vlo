@@ -13,6 +13,12 @@ from services.runtime_settings import (
     should_prompt_for_high_vram,
     update_runtime_settings,
 )
+from services.menu_layouts import (
+    MenuLayoutConflictError,
+    delete_menu_layout,
+    get_menu_layout,
+    put_menu_layout,
+)
 
 router = APIRouter(prefix="/app", tags=["app-settings"])
 
@@ -115,3 +121,85 @@ async def patch_app_settings(request: Request):
         )
 
     return build_public_settings_payload()
+
+
+@router.get("/menu-layouts/{menu_id}")
+async def get_persisted_menu_layout(menu_id: str):
+    try:
+        return get_menu_layout(menu_id)
+    except ValueError as exc:
+        return error_response(
+            400,
+            "invalid_menu_layout_id",
+            str(exc),
+            retryable=False,
+        )
+    except OSError as exc:
+        return error_response(
+            500,
+            "menu_layout_read_failed",
+            "Failed to read the menu layout",
+            retryable=True,
+            details={"reason": str(exc)},
+        )
+
+
+@router.put("/menu-layouts/{menu_id}")
+async def put_persisted_menu_layout(menu_id: str, request: Request):
+    body = await request.json()
+    if not isinstance(body, dict):
+        return error_response(
+            400,
+            "invalid_menu_layout_payload",
+            "Menu layout payload must be an object",
+            retryable=False,
+        )
+    try:
+        return put_menu_layout(
+            menu_id,
+            body.get("customization"),
+            body.get("baseRevision"),
+        )
+    except MenuLayoutConflictError as exc:
+        return error_response(
+            409,
+            "menu_layout_revision_conflict",
+            str(exc),
+            retryable=True,
+        )
+    except ValueError as exc:
+        return error_response(
+            400,
+            "invalid_menu_layout_payload",
+            str(exc),
+            retryable=False,
+        )
+    except OSError as exc:
+        return error_response(
+            500,
+            "menu_layout_write_failed",
+            "Failed to save the menu layout",
+            retryable=True,
+            details={"reason": str(exc)},
+        )
+
+
+@router.delete("/menu-layouts/{menu_id}")
+async def delete_persisted_menu_layout(menu_id: str):
+    try:
+        return delete_menu_layout(menu_id)
+    except ValueError as exc:
+        return error_response(
+            400,
+            "invalid_menu_layout_id",
+            str(exc),
+            retryable=False,
+        )
+    except OSError as exc:
+        return error_response(
+            500,
+            "menu_layout_delete_failed",
+            "Failed to reset the menu layout",
+            retryable=True,
+            details={"reason": str(exc)},
+        )

@@ -1,41 +1,118 @@
 {
-  "version": 1,
-  "groups": [
+  "version": 2,
+  "nodes": [
     {
-      "id": "generate",
-      "name": "Generate",
-      "order": 0,
-      "workflow_ids": [
-        "vlo_ltx2_3.json",
-        "vlo_wan2_2.json",
-        "vlo_klein_multi.json"
-      ]
+      "id": "image",
+      "kind": "category",
+      "label": "Image",
+      "parent_id": null,
+      "order": 0
     },
     {
-      "id": "edit",
-      "name": "Edit",
-      "order": 1,
-      "workflow_ids": [
-        "vlo_VACE_inpaint.json",
-        "vlo_ltx2_3_inpaint.json",
-        "vlo_ltx2_3_ic_edit.json"
-      ]
+      "id": "image.generate",
+      "kind": "folder",
+      "label": "Generate",
+      "parent_id": "image",
+      "order": 0
     },
     {
-      "id": "move",
-      "name": "Move",
-      "order": 2,
-      "workflow_ids": ["vlo_wan_ttm.json", "vlo_wan_animate.json"]
+      "id": "image.improve",
+      "kind": "folder",
+      "label": "Improve",
+      "parent_id": "image",
+      "order": 1
     },
     {
-      "id": "improve",
-      "name": "Improve",
-      "order": 3,
-      "workflow_ids": [
-        "vlo_SeedVR2_image.json",
-        "vlo_SeedVR2_video.json",
-        "vlo_gimm_vfi.json"
-      ]
+      "id": "video",
+      "kind": "category",
+      "label": "Video",
+      "parent_id": null,
+      "order": 1
+    },
+    {
+      "id": "video.generate",
+      "kind": "folder",
+      "label": "Generate",
+      "parent_id": "video",
+      "order": 0
+    },
+    {
+      "id": "video.edit",
+      "kind": "folder",
+      "label": "Edit",
+      "parent_id": "video",
+      "order": 1
+    },
+    {
+      "id": "video.control",
+      "kind": "folder",
+      "label": "Control",
+      "parent_id": "video",
+      "order": 2
+    },
+    {
+      "id": "video.improve",
+      "kind": "folder",
+      "label": "Improve",
+      "parent_id": "video",
+      "order": 3
+    }
+  ],
+  "leaf_placements": [
+    {
+      "workflow_id": "vlo_klein_multi.json",
+      "parent_id": "image.generate",
+      "order": 0
+    },
+    {
+      "workflow_id": "vlo_SeedVR2_image.json",
+      "parent_id": "image.improve",
+      "order": 0
+    },
+    {
+      "workflow_id": "vlo_ltx2_3.json",
+      "parent_id": "video.generate",
+      "order": 0
+    },
+    {
+      "workflow_id": "vlo_wan2_2.json",
+      "parent_id": "video.generate",
+      "order": 1
+    },
+    {
+      "workflow_id": "vlo_VACE_inpaint.json",
+      "parent_id": "video.edit",
+      "order": 0
+    },
+    {
+      "workflow_id": "vlo_ltx2_3_inpaint.json",
+      "parent_id": "video.edit",
+      "order": 1
+    },
+    {
+      "workflow_id": "vlo_ltx2_3_ic_edit.json",
+      "parent_id": "video.edit",
+      "order": 2
+    },
+    {
+      "workflow_id": "vlo_wan_ttm.json",
+      "parent_id": "video.control",
+      "order": 0
+    },
+    {
+      "workflow_id": "vlo_wan_animate.json",
+      "parent_id": "video.control",
+      "order": 1
+    },
+    {
+      "workflow_id": "vlo_SeedVR2_video.json",
+      "parent_id": "video.improve",
+      "order": 0
+    },
+    {
+      "workflow_id": "vlo_gimm_vfi.json",
+      "parent_id": "video.improve",
+      "order": 1
     }
   ]
 }

@@ -798,12 +798,19 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     }
   }, [urlInput]);
 
-  const handleWorkflowChange = useCallback(
-    (event: SelectChangeEvent) => {
+  const handleWorkflowSelect = useCallback(
+    (workflowId: string) => {
       setWorkflowLoadState("loading");
-      void loadWorkflow(event.target.value);
+      void loadWorkflow(workflowId);
     },
     [loadWorkflow, setWorkflowLoadState],
+  );
+
+  const handleWorkflowChange = useCallback(
+    (event: SelectChangeEvent) => {
+      handleWorkflowSelect(event.target.value);
+    },
+    [handleWorkflowSelect],
   );
 
   const handleDismissWorkflowWarning = useCallback(() => {
@@ -1474,6 +1481,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     handleClearQueue,
     handleUrlSave,
     handleWorkflowChange,
+    handleWorkflowSelect,
     handleRetryWorkflow,
     handleDismissWorkflowWarning,
     handleOpenEditorFromWarning,

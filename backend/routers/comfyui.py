@@ -72,6 +72,7 @@ WORKFLOW_MENU_CONFIG_PATH = (
 CUSTOM_WORKFLOW_MENU_PATH = (
     Path(__file__).parent.parent / "assets" / "workflows" / "workflow_menu.json"
 )
+WORKFLOW_MENU_ID = "generation.workflows"
 WORKFLOW_MEDIA_FALLBACK_SPECS: dict[str, dict[str, Any]] = {
     "dummy:image": {
         "path": DUMMY_PHOTO_PATH,
@@ -488,6 +489,132 @@ def _parse_workflow_menu(path: Path, metadata_by_workflow_id: dict[str, dict[str
             metadata_by_workflow_id[w_id]["hidden"] = True
 
 
+def _parse_workflow_menu_tree(path: Path) -> dict[str, list[dict[str, Any]]]:
+    if not path.exists():
+        return {"nodes": [], "leafPlacements": []}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to load workflow menu tree from %s: %s", path, exc)
+        return {"nodes": [], "leafPlacements": []}
+    if not isinstance(raw, dict):
+        return {"nodes": [], "leafPlacements": []}
+
+    nodes: list[dict[str, Any]] = []
+    placements: list[dict[str, Any]] = []
+    if raw.get("version") == 2:
+        raw_nodes = raw.get("nodes")
+        if isinstance(raw_nodes, list):
+            for raw_node in raw_nodes:
+                if not isinstance(raw_node, dict):
+                    continue
+                node_id = raw_node.get("id")
+                kind = raw_node.get("kind")
+                label = raw_node.get("label")
+                parent_id = raw_node.get("parent_id")
+                order = raw_node.get("order")
+                if (
+                    isinstance(node_id, str)
+                    and node_id
+                    and kind in {"category", "folder"}
+                    and isinstance(label, str)
+                    and label.strip()
+                    and (parent_id is None or isinstance(parent_id, str))
+                    and isinstance(order, int)
+                ):
+                    nodes.append(
+                        {
+                            "id": node_id,
+                            "kind": kind,
+                            "label": label.strip(),
+                            "parentId": parent_id,
+                            "order": order,
+                        }
+                    )
+        raw_placements = raw.get("leaf_placements")
+        if isinstance(raw_placements, list):
+            for raw_placement in raw_placements:
+                if not isinstance(raw_placement, dict):
+                    continue
+                workflow_id = raw_placement.get("workflow_id")
+                parent_id = raw_placement.get("parent_id")
+                order = raw_placement.get("order")
+                if (
+                    isinstance(workflow_id, str)
+                    and workflow_id
+                    and (parent_id is None or isinstance(parent_id, str))
+                    and isinstance(order, int)
+                ):
+                    placements.append(
+                        {
+                            "leafId": workflow_id,
+                            "parentId": parent_id,
+                            "order": order,
+                        }
+                    )
+        return {"nodes": nodes, "leafPlacements": placements}
+
+    # Version 1 had one header/group level. Preserve hand-authored custom
+    # files by treating those groups as root folders in the navigable tree.
+    raw_groups = raw.get("groups")
+    if not isinstance(raw_groups, list):
+        return {"nodes": [], "leafPlacements": []}
+    for index, raw_group in enumerate(raw_groups):
+        if not isinstance(raw_group, dict):
+            continue
+        group_id = raw_group.get("id")
+        if not isinstance(group_id, str) or not group_id.strip():
+            continue
+        normalized_id = group_id.strip()
+        raw_name = raw_group.get("name")
+        label = (
+            raw_name.strip()
+            if isinstance(raw_name, str) and raw_name.strip()
+            else normalized_id.title()
+        )
+        raw_order = raw_group.get("order")
+        order = raw_order if isinstance(raw_order, int) else index
+        nodes.append(
+            {
+                "id": normalized_id,
+                "kind": "folder",
+                "label": label,
+                "parentId": None,
+                "order": order,
+            }
+        )
+        raw_workflow_ids = raw_group.get("workflow_ids")
+        if not isinstance(raw_workflow_ids, list):
+            continue
+        for workflow_order, workflow_id in enumerate(raw_workflow_ids):
+            if isinstance(workflow_id, str) and workflow_id.strip():
+                placements.append(
+                    {
+                        "leafId": workflow_id.strip(),
+                        "parentId": normalized_id,
+                        "order": workflow_order,
+                    }
+                )
+    return {"nodes": nodes, "leafPlacements": placements}
+
+
+def _load_workflow_menu_tree() -> dict[str, Any]:
+    nodes_by_id: dict[str, dict[str, Any]] = {}
+    placements_by_id: dict[str, dict[str, Any]] = {}
+    for path in (WORKFLOW_MENU_CONFIG_PATH, CUSTOM_WORKFLOW_MENU_PATH):
+        parsed = _parse_workflow_menu_tree(path)
+        for node in parsed["nodes"]:
+            nodes_by_id[node["id"]] = node
+        for placement in parsed["leafPlacements"]:
+            placements_by_id[placement["leafId"]] = placement
+    return {
+        "version": 1,
+        "id": WORKFLOW_MENU_ID,
+        "nodes": list(nodes_by_id.values()),
+        "leafPlacements": list(placements_by_id.values()),
+    }
+
+
 def _load_workflow_menu_metadata() -> dict[str, dict[str, Any]]:
     metadata_by_workflow_id: dict[str, dict[str, Any]] = {}
     _parse_workflow_menu(WORKFLOW_MENU_CONFIG_PATH, metadata_by_workflow_id)
@@ -815,6 +942,21 @@ async def list_workflows():
             500,
             "workflow_list_failed",
             "Failed to list available workflows",
+            retryable=True,
+            details={"reason": str(exc)},
+        )
+
+
+@router.get("/workflow/menu")
+async def get_workflow_menu():
+    """Returns the reusable default menu tree for workflow leaves."""
+    try:
+        return _load_workflow_menu_tree()
+    except OSError as exc:
+        return error_response(
+            500,
+            "workflow_menu_failed",
+            "Failed to load the workflow menu",
             retryable=True,
             details={"reason": str(exc)},
         )

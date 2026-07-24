@@ -8,6 +8,7 @@ import {
   getObjectInfo,
   getOutputViewUrl,
   getWorkflowContent,
+  getWorkflowMenuDefinition,
   getWorkflowRules,
   interrupt,
   listWorkflows,
@@ -363,6 +364,25 @@ describe("comfyuiApi output helpers", () => {
 });
 
 describe("comfyuiApi workflow endpoints", () => {
+  it("loads the workflow menu definition with an abort signal", async () => {
+    const definition = {
+      version: 1,
+      id: "generation.workflows",
+      nodes: [],
+      leafPlacements: [],
+    };
+    fetchMock.mockResolvedValueOnce(makeResponse({ body: definition }));
+    const controller = new AbortController();
+
+    await expect(
+      getWorkflowMenuDefinition(controller.signal),
+    ).resolves.toEqual(definition);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/comfy/workflow/menu"),
+      { signal: controller.signal },
+    );
+  });
+
   it("listWorkflows maps optional group fields", async () => {
     fetchMock.mockResolvedValueOnce(
       makeResponse({

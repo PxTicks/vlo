@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../../../config";
+import type { MenuTreeDefinition } from "../../../core/shell/menuTree";
 import type { GenerationRequest } from "../pipeline/types";
 import {
   createDefaultWorkflowRules,
@@ -437,6 +438,16 @@ export async function listWorkflows(): Promise<WorkflowOption[]> {
       ? { groupOrder: workflow.group_order }
       : {}),
   }));
+}
+
+export async function getWorkflowMenuDefinition(
+  signal?: AbortSignal,
+): Promise<MenuTreeDefinition> {
+  const resp = await fetch(`${COMFY_API}/workflow/menu`, { signal });
+  if (!resp.ok) {
+    await throwRequestError("Workflow menu fetch", resp);
+  }
+  return resp.json();
 }
 
 export async function getWorkflowContent(

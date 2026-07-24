@@ -465,7 +465,11 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
       isDragging: boolean,
     ) => ReactNode,
   ) => (
-    <SortableItem data={{ item, parentId }} disabled={!editing}>
+    <SortableItem
+      key={`${item.kind}:${item.id}`}
+      data={{ item, parentId }}
+      disabled={!editing}
+    >
       {({ dragHandleProps, isDragging }) =>
         content(dragHandleProps, isDragging)
       }

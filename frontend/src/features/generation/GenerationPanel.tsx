@@ -18,7 +18,6 @@ import {
   Popover,
   Select,
   MenuItem,
-  ListSubheader,
   FormControl,
   InputLabel,
   TextField,
@@ -67,7 +66,6 @@ import {
 import { resolveNodeDisplayTitle } from "./services/nodeTitles";
 import { isAspectRatioWidget } from "./utils/aspectRatioWidgets";
 import { WorkflowDependencyResolver } from "./components/WorkflowDependencyResolver";
-import { buildWorkflowMenuSections } from "./store/workflowCatalog";
 import {
   buildWorkflowInputLookup,
   getWorkflowInputId,
@@ -75,6 +73,10 @@ import {
 } from "./utils/workflowInputs";
 import { ExtensionUiSlot } from "../extensions/ui/publicApi";
 import { extensionGenerationBridge } from "../extensions/generation/ExtensionGenerationBridge";
+import { NestedMenuTree } from "../panelUI";
+import { useMenuTreeLayout } from "../../core/shell/useMenuTreeLayout";
+import { resolveMenuTreeLayout } from "../../core/shell/menuTree";
+import { useWorkflowMenuDefinition } from "./hooks/useWorkflowMenuDefinition";
 
 const EXACT_ASPECT_RATIO_TOOLTIP =
   "If selected, this will make the output aspect ratio exactly match the input ratio, even if it doesn't match the project-supported aspect ratios. If unselected, it will crop the image to the best supported fit before dispatch.";
@@ -254,6 +256,7 @@ function LivePreviewPlayback({
 }
 
 export function GenerationPanel() {
+  const workflowMenuDefinition = useWorkflowMenuDefinition();
   const [isBackendSavePending, setIsBackendSavePending] = useState(false);
   const [isWorkflowUploadPending, setIsWorkflowUploadPending] = useState(false);
   const [isWorkflowJsonDragActive, setIsWorkflowJsonDragActive] =
@@ -331,7 +334,7 @@ export function GenerationPanel() {
     handleInterruptCurrent,
     handleClearQueue,
     handleUrlSave,
-    handleWorkflowChange,
+    handleWorkflowSelect,
     handleRetryWorkflow,
     handleDismissWorkflowWarning,
     handleOpenEditorFromWarning,
@@ -361,9 +364,30 @@ export function GenerationPanel() {
   const syncedWorkflow = useGenerationStore((s) => s.syncedWorkflow);
   const syncedGraphData = useGenerationStore((s) => s.syncedGraphData);
   const rawObjectInfo = useGenerationStore((s) => s.rawObjectInfo);
-  const workflowMenuSections = useMemo(
-    () => buildWorkflowMenuSections(availableWorkflows),
+  const workflowLeafIds = useMemo(
+    () => availableWorkflows.map((workflow) => workflow.id),
     [availableWorkflows],
+  );
+  const workflowMenuLeaves = useMemo(
+    () =>
+      availableWorkflows.map((workflow) => ({
+        id: workflow.id,
+        label: workflow.name,
+      })),
+    [availableWorkflows],
+  );
+  const workflowMenuLayout = useMenuTreeLayout(
+    workflowMenuDefinition,
+    workflowLeafIds,
+  );
+  const defaultWorkflowMenuLayout = useMemo(
+    () =>
+      resolveMenuTreeLayout(
+        workflowMenuDefinition,
+        null,
+        workflowLeafIds,
+      ),
+    [workflowMenuDefinition, workflowLeafIds],
   );
   const fetchWorkflows = useGenerationStore((s) => s.fetchWorkflows);
   const loadWorkflow = useGenerationStore((s) => s.loadWorkflow);
@@ -1028,44 +1052,20 @@ export function GenerationPanel() {
 
       {/* Workflow Selector */}
       <Box sx={{ px: 2, pb: 2 }}>
-        <FormControl fullWidth size="small">
-          <InputLabel id="workflow-select-label">Workflow</InputLabel>
-          <Select
-            data-testid="generation-workflow-select"
-            labelId="workflow-select-label"
-            value={selectedWorkflowId ?? ""}
-            label="Workflow"
-            onChange={handleWorkflowChange}
-            sx={{
-              bgcolor: "#1a1a1a",
-              "& .MuiSelect-select": { py: 1 },
-            }}
-          >
-            {workflowMenuSections.flatMap((section) => [
-              section.label ? (
-                <ListSubheader
-                  key={`${section.key}-header`}
-                  disableSticky
-                  sx={{
-                    bgcolor: "#111",
-                    color: "text.secondary",
-                    lineHeight: 1.8,
-                    fontSize: 12,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.6,
-                  }}
-                >
-                  {section.label}
-                </ListSubheader>
-              ) : null,
-              ...section.workflows.map((wf) => (
-                <MenuItem key={wf.id} value={wf.id}>
-                  {wf.name}
-                </MenuItem>
-              )),
-            ])}
-          </Select>
-        </FormControl>
+        <NestedMenuTree
+          ariaLabel="Generation workflows"
+          layout={workflowMenuLayout.layout}
+          defaultLayout={defaultWorkflowMenuLayout}
+          leaves={workflowMenuLeaves}
+          selectedLeafId={selectedWorkflowId}
+          onLeafActivate={(workflow) =>
+            handleWorkflowSelect(workflow.id)
+          }
+          onSave={workflowMenuLayout.save}
+          onReset={workflowMenuLayout.reset}
+          isSaving={workflowMenuLayout.isSaving}
+          persistenceError={workflowMenuLayout.error}
+        />
         {isWorkflowUploadPending && (
           <Typography
             variant="caption"

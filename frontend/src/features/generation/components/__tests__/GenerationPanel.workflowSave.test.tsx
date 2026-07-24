@@ -5,6 +5,34 @@ import type { RuntimeStatus } from "../../../../types/RuntimeStatus";
 vi.mock("../../hooks/useGenerationPanel", () => ({
   useGenerationPanel: vi.fn(),
 }));
+vi.mock("../../hooks/useWorkflowMenuDefinition", async () => {
+  const { DEFAULT_GENERATION_WORKFLOW_MENU } = await vi.importActual<
+    typeof import("../../workflowMenu")
+  >("../../workflowMenu");
+  return {
+    useWorkflowMenuDefinition: () => DEFAULT_GENERATION_WORKFLOW_MENU,
+  };
+});
+vi.mock("../../../../core/shell/useMenuTreeLayout", async () => {
+  const { resolveMenuTreeLayout } = await vi.importActual<
+    typeof import("../../../../core/shell/menuTree")
+  >("../../../../core/shell/menuTree");
+  return {
+    useMenuTreeLayout: (
+      definition: Parameters<typeof resolveMenuTreeLayout>[0],
+      leafIds: string[],
+    ) => ({
+      layout: resolveMenuTreeLayout(definition, null, leafIds),
+      isLoading: false,
+      isSaving: false,
+      error: null,
+      revision: 0,
+      save: vi.fn(async () => true),
+      reset: vi.fn(async () => true),
+      clearError: vi.fn(),
+    }),
+  };
+});
 
 vi.mock("../../components/ComfyUIEditor", () => ({
   ComfyUIEditor: ({
@@ -113,6 +141,7 @@ function makeHookState(
     handleClearQueue: vi.fn(),
     handleUrlSave: vi.fn(),
     handleWorkflowChange: vi.fn(),
+    handleWorkflowSelect: vi.fn(),
     handleRetryWorkflow: vi.fn(),
     handleDismissWorkflowWarning: vi.fn(),
     handleOpenEditorFromWarning: vi.fn(),

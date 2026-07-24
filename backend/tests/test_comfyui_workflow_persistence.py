@@ -169,6 +169,122 @@ def test_list_workflows_applies_menu_groups_and_preserves_shadowing(
     ]
 
 
+def test_workflow_menu_v2_merges_custom_legacy_groups(tmp_path, monkeypatch):
+    packaged_path = tmp_path / "packaged.json"
+    custom_path = tmp_path / "custom.json"
+    packaged_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "nodes": [
+                    {
+                        "id": "image",
+                        "kind": "category",
+                        "label": "Image",
+                        "parent_id": None,
+                        "order": 0,
+                    },
+                    {
+                        "id": "image.generate",
+                        "kind": "folder",
+                        "label": "Generate",
+                        "parent_id": "image",
+                        "order": 0,
+                    },
+                ],
+                "leaf_placements": [
+                    {
+                        "workflow_id": "flux.json",
+                        "parent_id": "image.generate",
+                        "order": 0,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    custom_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "groups": [
+                    {
+                        "id": "custom",
+                        "name": "Custom",
+                        "workflow_ids": ["custom.json"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(comfyui, "WORKFLOW_MENU_CONFIG_PATH", packaged_path)
+    monkeypatch.setattr(comfyui, "CUSTOM_WORKFLOW_MENU_PATH", custom_path)
+
+    assert asyncio.run(comfyui.get_workflow_menu()) == {
+        "version": 1,
+        "id": "generation.workflows",
+        "nodes": [
+            {
+                "id": "image",
+                "kind": "category",
+                "label": "Image",
+                "parentId": None,
+                "order": 0,
+            },
+            {
+                "id": "image.generate",
+                "kind": "folder",
+                "label": "Generate",
+                "parentId": "image",
+                "order": 0,
+            },
+            {
+                "id": "custom",
+                "kind": "folder",
+                "label": "Custom",
+                "parentId": None,
+                "order": 0,
+            },
+        ],
+        "leafPlacements": [
+            {"leafId": "flux.json", "parentId": "image.generate", "order": 0},
+            {"leafId": "custom.json", "parentId": "custom", "order": 0},
+        ],
+    }
+
+
+def test_packaged_workflow_menu_has_exact_image_video_structure():
+    tree = comfyui._parse_workflow_menu_tree(comfyui.WORKFLOW_MENU_CONFIG_PATH)
+
+    assert [(node["id"], node["kind"], node["label"]) for node in tree["nodes"]] == [
+        ("image", "category", "Image"),
+        ("image.generate", "folder", "Generate"),
+        ("image.improve", "folder", "Improve"),
+        ("video", "category", "Video"),
+        ("video.generate", "folder", "Generate"),
+        ("video.edit", "folder", "Edit"),
+        ("video.control", "folder", "Control"),
+        ("video.improve", "folder", "Improve"),
+    ]
+    assert {
+        placement["leafId"]: placement["parentId"]
+        for placement in tree["leafPlacements"]
+    } == {
+        "vlo_klein_multi.json": "image.generate",
+        "vlo_SeedVR2_image.json": "image.improve",
+        "vlo_ltx2_3.json": "video.generate",
+        "vlo_wan2_2.json": "video.generate",
+        "vlo_VACE_inpaint.json": "video.edit",
+        "vlo_ltx2_3_inpaint.json": "video.edit",
+        "vlo_ltx2_3_ic_edit.json": "video.edit",
+        "vlo_wan_ttm.json": "video.control",
+        "vlo_wan_animate.json": "video.control",
+        "vlo_SeedVR2_video.json": "video.improve",
+        "vlo_gimm_vfi.json": "video.improve",
+    }
+
+
 def test_resolve_workflow_rules_uses_graph_data_for_randomized_control_after_generate():
     payload = {
         "workflow_id": "wf.json",

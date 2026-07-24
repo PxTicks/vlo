@@ -4,6 +4,34 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../hooks/useGenerationPanel", () => ({
   useGenerationPanel: vi.fn(),
 }));
+vi.mock("../../hooks/useWorkflowMenuDefinition", async () => {
+  const { DEFAULT_GENERATION_WORKFLOW_MENU } = await vi.importActual<
+    typeof import("../../workflowMenu")
+  >("../../workflowMenu");
+  return {
+    useWorkflowMenuDefinition: () => DEFAULT_GENERATION_WORKFLOW_MENU,
+  };
+});
+vi.mock("../../../../core/shell/useMenuTreeLayout", async () => {
+  const { resolveMenuTreeLayout } = await vi.importActual<
+    typeof import("../../../../core/shell/menuTree")
+  >("../../../../core/shell/menuTree");
+  return {
+    useMenuTreeLayout: (
+      definition: Parameters<typeof resolveMenuTreeLayout>[0],
+      leafIds: string[],
+    ) => ({
+      layout: resolveMenuTreeLayout(definition, null, leafIds),
+      isLoading: false,
+      isSaving: false,
+      error: null,
+      revision: 0,
+      save: vi.fn(async () => true),
+      reset: vi.fn(async () => true),
+      clearError: vi.fn(),
+    }),
+  };
+});
 vi.mock("../WorkflowDependencyResolver", () => ({
   WorkflowDependencyResolver: () => (
     <div data-testid="workflow-dependency-resolver" />
@@ -62,6 +90,7 @@ function makeHookState(overrides: Record<string, unknown> = {}) {
     handleClearQueue: vi.fn(),
     handleUrlSave: vi.fn(),
     handleWorkflowChange: vi.fn(),
+    handleWorkflowSelect: vi.fn(),
     handleDismissWorkflowWarning: vi.fn(),
     handleOpenEditorFromWarning: vi.fn(),
     handleInputDrop: vi.fn(),
@@ -128,6 +157,26 @@ describe("GenerationPanel workflow rule hints", () => {
       exactAspectRatio: false,
       setExactAspectRatio: vi.fn(),
     });
+  });
+
+  it("loads an unplaced workflow from the nested menu Other section", () => {
+    const handleWorkflowSelect = vi.fn();
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        handleWorkflowSelect,
+        availableWorkflows: [
+          { id: "vlo_klein_multi.json", name: "Flux" },
+          { id: "wf.json", name: "Workflow" },
+        ],
+        selectedWorkflowId: "wf.json",
+      }),
+    );
+
+    render(<GenerationPanel />);
+
+    expect(screen.getByRole("heading", { name: "Other" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Workflow" }));
+    expect(handleWorkflowSelect).toHaveBeenCalledWith("wf.json");
   });
 
   it("moves inferred-input and rule warnings to debug logging", () => {
@@ -396,7 +445,7 @@ describe("GenerationPanel workflow rule hints", () => {
 
     render(<GenerationPanel />);
 
-    fireEvent.mouseDown(screen.getAllByRole("combobox")[2]!);
+    fireEvent.mouseDown(screen.getAllByRole("combobox")[1]!);
     fireEvent.click(screen.getByRole("option", { name: "720" }));
 
     expect(setTargetResolution).toHaveBeenCalledWith(720);

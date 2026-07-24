@@ -46,6 +46,12 @@ export {
   type PanelTabDefinition,
 } from "./components/PanelTabs";
 export { SortableSection } from "./components/SortableSection";
+export {
+  NestedMenuTree,
+  type NestedMenuLeaf,
+  type NestedMenuLeafRenderState,
+  type NestedMenuTreeProps,
+} from "./components/NestedMenuTree";
 export type { SliderControlProps } from "./components/SliderControl";
 export { SliderControl } from "./components/SliderControl";
 export {

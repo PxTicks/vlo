@@ -38,10 +38,6 @@ export function useMenuTreeLayout(
 
   useEffect(() => {
     const abortController = new AbortController();
-    setLayout(defaultLayout);
-    setRevision(0);
-    setIsLoading(true);
-    setError(null);
     void loadMenuTreeCustomization(
       definition,
       availableLeafIds,

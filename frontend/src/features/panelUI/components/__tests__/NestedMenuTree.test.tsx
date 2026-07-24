@@ -1,8 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { DragEndEvent } from "@dnd-kit/core";
+import {
+  closestCenter,
+  type CollisionDetection,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { NestedMenuTree, type NestedMenuLeaf } from "../NestedMenuTree";
-import { resolveDropTarget } from "../menuTreeDrop";
+import {
+  menuTreeCollisionDetection,
+  resolveDropTarget,
+  type MenuTreeDragData,
+  type MenuTreeDropContainerData,
+} from "../menuTreeDrop";
+import { resolveMenuNodeIcon } from "../menuTreeIcons";
 import {
   moveMenuTreeItem,
   type MenuTreeItem,
@@ -145,6 +155,18 @@ describe("NestedMenuTree", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it("opens a folder from its tile while editing so its contents stay reachable", () => {
+    renderTree();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect(screen.getByRole("button", { name: "Flux" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Back to previous menu" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+  });
+
   it("retains the draft and reports save failures", async () => {
     const onSave = vi.fn(async () => false);
     renderTree({
@@ -171,6 +193,63 @@ function dragEvent(
       ? { id: over.id, data: { current: over.data } }
       : null,
   } as unknown as DragEndEvent;
+}
+
+function rect(left: number, top: number) {
+  return {
+    top,
+    left,
+    width: 100,
+    height: 100,
+    right: left + 100,
+    bottom: top + 100,
+  };
+}
+
+/**
+ * A folder tile registers two droppables over the same rectangle — its
+ * sortable item and its drop container — which is the overlap the collision
+ * detection has to resolve.
+ */
+const DROPPABLES: readonly {
+  id: string;
+  data: MenuTreeDragData | MenuTreeDropContainerData;
+  rect: ReturnType<typeof rect>;
+}[] = [
+  {
+    id: "menu-tree:node:image.generate",
+    data: { item: { kind: "node", id: "image.generate" }, parentId: "image" },
+    rect: rect(0, 0),
+  },
+  {
+    id: "menu-tree-container:image.generate",
+    data: { parentId: "image.generate", isFolderTile: true },
+    rect: rect(0, 0),
+  },
+  {
+    id: "menu-tree:leaf:other",
+    data: { item: { kind: "leaf", id: "other" }, parentId: null },
+    rect: rect(0, 200),
+  },
+];
+
+function collisionArgs(
+  active: MenuTreeDragData,
+  pointerCoordinates: { x: number; y: number } | null,
+): Parameters<CollisionDetection>[0] {
+  return {
+    active: { id: "active", data: { current: active } },
+    collisionRect: rect(0, 0),
+    droppableRects: new Map(
+      DROPPABLES.map((droppable) => [droppable.id, droppable.rect]),
+    ),
+    droppableContainers: DROPPABLES.map((droppable) => ({
+      id: droppable.id,
+      data: { current: droppable.data },
+      rect: { current: droppable.rect },
+    })),
+    pointerCoordinates,
+  } as unknown as Parameters<CollisionDetection>[0];
 }
 
 describe("resolveDropTarget", () => {
@@ -253,6 +332,48 @@ describe("resolveDropTarget", () => {
     expect(resolveDropTarget(LAYOUT, withoutOverData)).toBeNull();
   });
 
+  it("files a leaf into the folder tile the pointer is over", () => {
+    const collisions = menuTreeCollisionDetection(
+      collisionArgs({ item: { kind: "leaf", id: "other" }, parentId: null }, {
+        x: 50,
+        y: 50,
+      }),
+    );
+
+    expect(collisions[0]?.id).toBe("menu-tree-container:image.generate");
+    expect(
+      resolveDropTarget(
+        LAYOUT,
+        dragEvent({ kind: "leaf", id: "other" }, null, {
+          id: String(collisions[0]!.id),
+          data: { parentId: "image.generate", isFolderTile: true },
+        }),
+      ),
+    ).toEqual({
+      item: { kind: "leaf", id: "other" },
+      parentId: "image.generate",
+      index: 1,
+    });
+  });
+
+  it("leaves folder-against-folder drags to the default sorting", () => {
+    const args = collisionArgs(
+      { item: { kind: "node", id: "empty" }, parentId: null },
+      { x: 50, y: 50 },
+    );
+
+    expect(menuTreeCollisionDetection(args)).toEqual(closestCenter(args));
+  });
+
+  it("falls back to the default sorting without pointer coordinates", () => {
+    const args = collisionArgs(
+      { item: { kind: "leaf", id: "other" }, parentId: null },
+      null,
+    );
+
+    expect(menuTreeCollisionDetection(args)).toEqual(closestCenter(args));
+  });
+
   it("resolves drops that moveMenuTreeItem rejects, leaving the caller to report them", () => {
     const target = resolveDropTarget(
       LAYOUT,
@@ -265,5 +386,28 @@ describe("resolveDropTarget", () => {
     expect(() =>
       moveMenuTreeItem(LAYOUT, target.item, target.parentId, target.index),
     ).toThrow(/cannot be moved into itself/);
+  });
+});
+
+describe("resolveMenuNodeIcon", () => {
+  const node = (id: string, label: string) =>
+    ({ id, label, kind: "folder", parentId: null, order: 0 }) as const;
+
+  it("prefers the action a folder performs over the media it acts on", () => {
+    const generate = resolveMenuNodeIcon(node("video.generate", "Generate"));
+    const improve = resolveMenuNodeIcon(node("video.improve", "Improve"));
+    const video = resolveMenuNodeIcon(node("video", "Video"));
+
+    expect(generate).not.toBe(video);
+    expect(improve).not.toBe(generate);
+    expect(resolveMenuNodeIcon(node("image.generate", "Generate"))).toBe(
+      generate,
+    );
+  });
+
+  it("falls back to a folder icon for names it cannot classify", () => {
+    expect(resolveMenuNodeIcon(node("user.zzz.1234", "Zzz"))).toBe(
+      resolveMenuNodeIcon(node("user.qqq.5678", "Qqq")),
+    );
   });
 });

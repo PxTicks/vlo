@@ -1,4 +1,9 @@
-import type { DragEndEvent } from "@dnd-kit/core";
+import {
+  closestCenter,
+  pointerWithin,
+  type CollisionDetection,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import {
   getMenuTreeChildren,
   type MenuTreeItem,
@@ -8,6 +13,16 @@ import {
 export interface MenuTreeDragData {
   readonly item: MenuTreeItem;
   readonly parentId: string | null;
+}
+
+export interface MenuTreeDropContainerData {
+  readonly parentId: string | null;
+  /**
+   * Set on the droppable that covers a folder's own tile. Such a container
+   * overlaps the folder's sortable rect exactly, so it only ever wins a
+   * collision through the pointer-first pass in `menuTreeCollisionDetection`.
+   */
+  readonly isFolderTile?: boolean;
 }
 
 export interface MenuTreeDropTarget {
@@ -23,6 +38,29 @@ export function menuTreeItemDndId(item: MenuTreeItem): string {
 export function menuTreeContainerDndId(parentId: string | null): string {
   return `menu-tree-container:${parentId ?? "__root__"}`;
 }
+
+/**
+ * A folder tile is both a sortable item (so folders can be reordered) and a
+ * drop container (so leaves can be filed into it) over the same rectangle.
+ * `closestCenter` alone always resolves that overlap in favour of the sortable
+ * item, which is why dragging a workflow onto a folder used to reorder it
+ * beside the folder instead of moving it inside. Leaves therefore get a
+ * pointer-first pass that prefers the tile container; nodes keep the plain
+ * `closestCenter` behaviour so folders still reorder against each other.
+ */
+export const menuTreeCollisionDetection: CollisionDetection = (args) => {
+  const active = args.active.data.current as MenuTreeDragData | undefined;
+  if (active?.item.kind === "leaf") {
+    const tileHit = pointerWithin(args).find((collision) => {
+      const data = collision.data?.droppableContainer?.data?.current as
+        | MenuTreeDropContainerData
+        | undefined;
+      return data?.isFolderTile === true;
+    });
+    if (tileHit) return [tileHit];
+  }
+  return closestCenter(args);
+};
 
 /**
  * Resolves a dnd-kit drop into a `moveMenuTreeItem` call. Dropping on a

@@ -152,3 +152,52 @@ test.describe('Generation Panel', () => {
     });
 
 });
+
+test.describe('Workflow menu', () => {
+    // The whole menu has to be on screen at once: the drag runs between a
+    // workflow row at the bottom of the tree and a folder tile near the top.
+    test.use({ viewport: { width: 1900, height: 1400 } });
+
+    test('Drags a workflow into a folder tile', async ({ page }) => {
+        await installWebSocketMock(page);
+        await installApiMock(page, {
+            runtimeStatus: { comfyui: { status: 'connected' } },
+            workflowList: [
+                { id: 'vlo_SeedVR2_image.json', name: 'SeedVR2 image' },
+                { id: 'unplaced_workflow.json', name: 'Unplaced workflow' },
+            ],
+        });
+
+        const { EditorComponent } = await import('./components');
+        const editor = new EditorComponent(page);
+        await editor.setup();
+
+        const menu = page.locator('[aria-label="Generation workflows"]');
+        await menu.waitFor();
+        await menu.getByRole('button', { name: 'Edit' }).first().click();
+
+        // "Improve" under Image: the folder that already holds SeedVR2 image.
+        const tile = menu.getByRole('button', { name: 'Improve', exact: true }).first();
+        const handle = menu.getByRole('button', { name: 'Move Unplaced workflow' });
+        await handle.scrollIntoViewIfNeeded();
+        const from = (await handle.boundingBox())!;
+        const to = (await tile.boundingBox())!;
+
+        await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 20 });
+        // The drag overlay duplicates the label, which proves the drag is live.
+        await expect(menu.getByText('Unplaced workflow')).toHaveCount(2);
+        await page.mouse.up();
+
+        // The workflow left the root list...
+        await expect(
+            menu.getByRole('button', { name: 'Unplaced workflow', exact: true }),
+        ).toHaveCount(0);
+        // ...and is inside the folder it was dropped on.
+        await tile.click();
+        await expect(
+            menu.getByRole('button', { name: 'Unplaced workflow', exact: true }),
+        ).toBeVisible();
+    });
+});

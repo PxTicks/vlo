@@ -5,7 +5,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  closestCenter,
   DndContext,
   DragOverlay,
   KeyboardSensor,
@@ -17,10 +16,10 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
+  rectSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
-  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -30,7 +29,6 @@ import {
   DeleteOutline,
   DragIndicator,
   EditOutlined,
-  FolderOutlined,
   RestartAlt,
 } from "@mui/icons-material";
 import {
@@ -38,6 +36,7 @@ import {
   Box,
   Breadcrumbs,
   Button,
+  ButtonBase,
   Dialog,
   DialogActions,
   DialogContent,
@@ -59,11 +58,21 @@ import {
   type MenuTreeNode,
 } from "../../../core/shell/menuTree";
 import {
+  menuTreeCollisionDetection,
   menuTreeContainerDndId,
   menuTreeItemDndId,
   resolveDropTarget,
   type MenuTreeDragData,
+  type MenuTreeDropContainerData,
 } from "./menuTreeDrop";
+import { resolveMenuNodeIcon } from "./menuTreeIcons";
+
+const FOLDER_GRID_SX = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(104px, 1fr))",
+  gap: 1,
+  mb: 1,
+} as const;
 
 export interface NestedMenuLeaf {
   readonly id: string;
@@ -195,25 +204,31 @@ function SortableItem({
 function DropContainer({
   parentId,
   enabled,
+  isFolderTile = false,
   children,
 }: {
   readonly parentId: string | null;
   readonly enabled: boolean;
+  readonly isFolderTile?: boolean;
   readonly children: ReactNode;
 }) {
+  const data: MenuTreeDropContainerData = { parentId, isFolderTile };
   const { setNodeRef, isOver } = useDroppable({
     id: menuTreeContainerDndId(parentId),
-    data: { parentId },
+    data,
     disabled: !enabled,
   });
   return (
     <Box
       ref={setNodeRef}
       sx={{
-        borderRadius: 1,
+        borderRadius: isFolderTile ? 1.5 : 1,
         outline: isOver ? "2px solid" : "2px solid transparent",
         outlineColor: isOver ? "primary.main" : "transparent",
-        outlineOffset: 2,
+        outlineOffset: isFolderTile ? -1 : 2,
+        ...(isFolderTile && isOver
+          ? { bgcolor: "action.selected" }
+          : null),
       }}
     >
       {children}
@@ -228,6 +243,7 @@ function NodeActions({
   onDelete,
   onAddFolder,
   dragHandleProps,
+  dense = false,
 }: {
   readonly node: MenuTreeNode;
   readonly layout: MenuTreeLayout;
@@ -235,10 +251,20 @@ function NodeActions({
   readonly onDelete: () => void;
   readonly onAddFolder?: () => void;
   readonly dragHandleProps: Record<string, unknown>;
+  readonly dense?: boolean;
 }) {
   const empty = !hasNodeChildren(layout, node.id);
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        gap: 0.25,
+        ...(dense
+          ? { "& .MuiIconButton-root": { p: 0.25, fontSize: 16 } }
+          : null),
+      }}
+    >
       {onAddFolder && (
         <Tooltip title="Add folder">
           <IconButton
@@ -509,42 +535,94 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
     );
 
   const renderFolder = (node: MenuTreeNode) => (
-    <DropContainer key={node.id} parentId={node.id} enabled={editing}>
+    <DropContainer key={node.id} parentId={node.id} enabled={editing} isFolderTile>
       {renderDragHandle(
         { kind: "node", id: node.id },
         node.parentId,
-        (dragHandleProps) => (
-          <Box sx={{ display: "flex", gap: 0.5, mb: 0.75 }}>
-            <Button
-              fullWidth
-              variant="outlined"
-              color="inherit"
-              startIcon={<FolderOutlined />}
-              onClick={() => {
-                if (!editing) setCurrentParentId(node.id);
-              }}
-              sx={{ justifyContent: "flex-start", textTransform: "none" }}
-            >
-              {node.label}
-            </Button>
-            {editing && (
-              <NodeActions
-                node={node}
-                layout={draft}
-                onRename={() => beginRename(node)}
-                onDelete={() =>
-                  mutateDraft((current) =>
-                    deleteMenuTreeNode(current, node.id),
-                  )
-                }
-                dragHandleProps={dragHandleProps}
-              />
-            )}
-          </Box>
-        ),
+        (dragHandleProps) => {
+          const FolderIcon = resolveMenuNodeIcon(node);
+          return (
+            <Box sx={{ position: "relative" }}>
+              <ButtonBase
+                focusRipple
+                // Navigating while editing is what makes a folder's contents
+                // reachable for rearranging without leaving edit mode.
+                onClick={() => setCurrentParentId(node.id)}
+                sx={{
+                  width: "100%",
+                  aspectRatio: "1 / 1",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 0.75,
+                  px: 0.75,
+                  overflow: "hidden",
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: 1.5,
+                  color: "text.primary",
+                  transition: "border-color 120ms, background-color 120ms",
+                  "&:hover": {
+                    borderColor: "primary.main",
+                    bgcolor: "action.hover",
+                  },
+                }}
+              >
+                <FolderIcon sx={{ fontSize: 30, color: "text.secondary" }} />
+                <Typography
+                  variant="caption"
+                  sx={{
+                    width: "100%",
+                    fontWeight: 600,
+                    lineHeight: 1.25,
+                    textAlign: "center",
+                    display: "-webkit-box",
+                    WebkitBoxOrient: "vertical",
+                    WebkitLineClamp: 2,
+                    overflow: "hidden",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {node.label}
+                </Typography>
+              </ButtonBase>
+              {editing && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 2,
+                    right: 2,
+                    borderRadius: 1,
+                    bgcolor: "background.paper",
+                    boxShadow: 1,
+                  }}
+                >
+                  <NodeActions
+                    dense
+                    node={node}
+                    layout={draft}
+                    onRename={() => beginRename(node)}
+                    onDelete={() =>
+                      mutateDraft((current) =>
+                        deleteMenuTreeNode(current, node.id),
+                      )
+                    }
+                    dragHandleProps={dragHandleProps}
+                  />
+                </Box>
+              )}
+            </Box>
+          );
+        },
       )}
     </DropContainer>
   );
+
+  const renderFolderGrid = (nodes: readonly MenuTreeNode[]) =>
+    nodes.length > 0 ? (
+      <Box sx={FOLDER_GRID_SX}>{nodes.map(renderFolder)}</Box>
+    ) : null;
 
   const renderCategory = (node: MenuTreeNode) => {
     const categoryItems = getMenuTreeChildren(activeLayout, node.id).filter(
@@ -603,9 +681,9 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
               </Box>
               <SortableContext
                 items={categoryItems.map(menuTreeItemDndId)}
-                strategy={verticalListSortingStrategy}
+                strategy={rectSortingStrategy}
               >
-                {folderNodes.map(renderFolder)}
+                {renderFolderGrid(folderNodes)}
                 {categoryLeaves.map((leaf) =>
                   renderLeafItem(leaf, node.id),
                 )}
@@ -763,17 +841,14 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={menuTreeCollisionDetection}
         onDragStart={handleDragStart}
         onDragCancel={() => setActiveItem(null)}
         onDragEnd={handleDragEnd}
       >
         <DropContainer parentId={activeParentId} enabled={editing}>
-          <SortableContext
-            items={sortableIds}
-            strategy={verticalListSortingStrategy}
-          >
-            {directFolders.map(renderFolder)}
+          <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
+            {renderFolderGrid(directFolders)}
             {categories.map(renderCategory)}
             {directLeaves.length > 0 && hasInternalNodes && (
               <Typography

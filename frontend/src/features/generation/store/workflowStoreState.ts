@@ -134,8 +134,8 @@ export function buildWorkflowStoreState(
     availableWorkflows: [],
     tempWorkflow: null,
     selectedWorkflowId: null,
-    isWorkflowLoading: true,
-    workflowLoadState: "loading",
+    isWorkflowLoading: false,
+    workflowLoadState: "idle",
     workflowLoadError: null,
     isWorkflowReady: false,
     workflowWarning: null,
@@ -210,6 +210,33 @@ export function buildWorkflowStoreState(
 
     clearWorkflowWarning: () => set({ workflowWarning: null }),
     clearWorkflowLoadError: () => set({ workflowLoadError: null }),
+    clearWorkflowSelection: () => {
+      options.getNextWorkflowLoadRequestId();
+      bridgeLoadRetryCounts.clear();
+      set({
+        selectedWorkflowId: null,
+        syncedWorkflow: null,
+        syncedGraphData: null,
+        iframeWorkflowInstanceId: null,
+        iframeWorkflowRevision: null,
+        workflowInputs: [],
+        mediaInputs: {},
+        isWorkflowLoading: false,
+        workflowLoadState: "idle",
+        workflowLoadError: null,
+        isWorkflowReady: false,
+        workflowWarning: null,
+        hasInferredInputs: false,
+        workflowRuleWarnings: [],
+        activeWorkflowRules: null,
+        rulesWorkflowSourceId: null,
+        activeRulesWarnings: [],
+        suspectRuleLossCount: 0,
+        derivedMaskMappings: [],
+        pendingReplayPanelState: null,
+        editorOpen: false,
+      });
+    },
     refreshMissingModelsFromIframe: async () => {
       const { editorRef } = get();
       if (!editorRef) return false;
@@ -227,9 +254,13 @@ export function buildWorkflowStoreState(
     ...buildMediaInputActions(set, get),
 
     syncWorkflow: (workflow, graphData, inputs, options) => {
-      const markReady = options?.markReady ?? true;
-      const bridgeIdentity = options?.bridgeIdentity ?? null;
       const state = get();
+      if (state.selectedWorkflowId === null && !state.editorOpen) {
+        return;
+      }
+      const markReady =
+        (options?.markReady ?? true) && state.selectedWorkflowId !== null;
+      const bridgeIdentity = options?.bridgeIdentity ?? null;
       const applicableRules = pruneWorkflowRulesForWorkflows(
         [graphData, workflow],
         state.activeWorkflowRules,
@@ -279,6 +310,9 @@ export function buildWorkflowStoreState(
     ) => {
       const state = get();
       const { availableWorkflows, selectedWorkflowId, tempWorkflow } = state;
+      if (selectedWorkflowId === null && !state.editorOpen) {
+        return;
+      }
       const currentWorkflowContext = [graphData, workflow];
       const previousWorkflowMatches = haveSubstantialWorkflowOverlap(
         [
@@ -350,6 +384,14 @@ export function buildWorkflowStoreState(
           "[Generation] Failed to resolve live workflow rules from editor sync; falling back to cached rules",
           error,
         );
+      }
+
+      const currentState = get();
+      if (
+        currentState.selectedWorkflowId !== selectedWorkflowId ||
+        (selectedWorkflowId === null && !currentState.editorOpen)
+      ) {
+        return;
       }
 
       // Defer destructive rule replacement when the freshly resolved rules
@@ -543,14 +585,13 @@ export function buildWorkflowStoreState(
     },
 
     fetchWorkflows: async () => {
-      // Attempt sync even while the WS is still "connecting" — the backend
-      // owns the HTTP path to ComfyUI and can succeed before the proxied WS
-      // delivers its first "status" event. `syncObjectInfo` itself guards
-      // against the genuinely-unreachable cases.
+      // Object-info enriches a workflow after selection, but the lightweight
+      // catalog does not depend on it. Start the sync without delaying menu
+      // discovery on ComfyUI's much larger object_info response.
       const status = get().connectionStatus;
       const canAttemptSync = status !== "disconnected" && status !== "error";
       if (canAttemptSync && !get().objectInfoSynced) {
-        await get().syncObjectInfo();
+        void get().syncObjectInfo();
       }
       try {
         const baseWorkflows = await comfyApi.listWorkflows();
@@ -567,16 +608,10 @@ export function buildWorkflowStoreState(
           ? upsertTempWorkflowOption(mergedWorkflows, tempWorkflow)
           : removeWorkflowOption(mergedWorkflows, TEMP_WORKFLOW_ID);
 
-        set({ availableWorkflows: workflows });
-
-        const selectedExists =
-          !!selectedWorkflowId &&
-          workflows.some((workflow) => workflow.id === selectedWorkflowId);
-
-        if (workflows.length > 0 && !selectedExists) {
-          void get().loadWorkflow(workflows[0].id);
-        }
-        set({ workflowLoadError: null });
+        set({
+          availableWorkflows: workflows,
+          workflowLoadError: null,
+        });
       } catch (err) {
         const message =
           err instanceof Error

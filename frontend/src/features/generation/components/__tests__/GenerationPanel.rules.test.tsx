@@ -90,6 +90,7 @@ function makeHookState(overrides: Record<string, unknown> = {}) {
     handleClearQueue: vi.fn(),
     handleUrlSave: vi.fn(),
     handleWorkflowSelect: vi.fn(),
+    handleWorkflowBack: vi.fn(),
     handleDismissWorkflowWarning: vi.fn(),
     handleOpenEditorFromWarning: vi.fn(),
     handleInputDrop: vi.fn(),
@@ -167,15 +168,39 @@ describe("GenerationPanel workflow rule hints", () => {
           { id: "vlo_klein_multi.json", name: "Flux" },
           { id: "wf.json", name: "Workflow" },
         ],
+        selectedWorkflowId: null,
+      }),
+    );
+
+    render(<GenerationPanel />);
+
+    expect(
+      screen.queryByLabelText("generation-mode-label"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Other" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Workflow" }));
+    expect(handleWorkflowSelect).toHaveBeenCalledWith("wf.json");
+  });
+
+  it("replaces the workflow menu with a back control after selection", () => {
+    const handleWorkflowBack = vi.fn();
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        handleWorkflowBack,
         selectedWorkflowId: "wf.json",
       }),
     );
 
     render(<GenerationPanel />);
 
-    expect(screen.getByRole("heading", { name: "Other" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Workflow" }));
-    expect(handleWorkflowSelect).toHaveBeenCalledWith("wf.json");
+    expect(
+      screen.queryByRole("button", { name: "Workflow" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Workflow")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to workflow menu" }),
+    );
+    expect(handleWorkflowBack).toHaveBeenCalledOnce();
   });
 
   it("moves inferred-input and rule warnings to debug logging", () => {

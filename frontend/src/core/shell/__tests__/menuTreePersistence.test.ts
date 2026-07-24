@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MENU_TREE_VERSION, type MenuTreeDefinition } from "../menuTree";
 import {
-  loadMenuTreeCustomization,
-  resetMenuTreeLayout,
-  saveMenuTreeLayout,
+  fetchMenuTreeCustomization,
+  resetMenuTreeCustomization,
+  saveMenuTreeCustomization,
 } from "../menuTreePersistence";
 
 const DEFINITION: MenuTreeDefinition = {
@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe("menuTreePersistence", () => {
-  it("loads customization while retaining newly available leaves", async () => {
+  it("fetches customization without resolving consumer leaves", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -37,11 +37,14 @@ describe("menuTreePersistence", () => {
       ),
     );
 
-    const snapshot = await loadMenuTreeCustomization(DEFINITION, ["new.json"]);
+    const snapshot = await fetchMenuTreeCustomization(DEFINITION.id);
     expect(snapshot.revision).toBe(2);
-    expect(snapshot.layout.leafPlacements).toEqual([
-      { leafId: "new.json", parentId: null, order: 0 },
-    ]);
+    expect(snapshot.customization).toEqual({
+      version: MENU_TREE_VERSION,
+      customNodes: [],
+      nodeOverrides: [],
+      leafPlacements: [],
+    });
   });
 
   it("sends revisions on save and uses DELETE for reset", async () => {
@@ -70,11 +73,15 @@ describe("menuTreePersistence", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const layout = {
-      nodes: [],
-      leafPlacements: [{ leafId: "new.json", parentId: null, order: 0 }],
+    const customization = {
+      version: MENU_TREE_VERSION,
+      customNodes: [],
+      nodeOverrides: [],
+      leafPlacements: [
+        { leafId: "new.json", parentId: null, order: 0 },
+      ],
     };
-    await saveMenuTreeLayout(DEFINITION, ["new.json"], layout, 3, null);
+    await saveMenuTreeCustomization(DEFINITION.id, customization, 3);
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "/app/menu-layouts/generation.workflows",
@@ -84,7 +91,7 @@ describe("menuTreePersistence", () => {
       }),
     );
 
-    await resetMenuTreeLayout(DEFINITION, ["new.json"]);
+    await resetMenuTreeCustomization(DEFINITION.id);
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "/app/menu-layouts/generation.workflows",
@@ -104,12 +111,15 @@ describe("menuTreePersistence", () => {
     );
 
     await expect(
-      saveMenuTreeLayout(
-        DEFINITION,
-        [],
-        { nodes: [], leafPlacements: [] },
+      saveMenuTreeCustomization(
+        DEFINITION.id,
+        {
+          version: MENU_TREE_VERSION,
+          customNodes: [],
+          nodeOverrides: [],
+          leafPlacements: [],
+        },
         1,
-        null,
       ),
     ).rejects.toThrow("Revision conflict");
   });

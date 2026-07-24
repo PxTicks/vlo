@@ -288,6 +288,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const clearWorkflowLoadError = useGenerationStore(
     (s) => s.clearWorkflowLoadError,
   );
+  const clearWorkflowSelection = useGenerationStore(
+    (s) => s.clearWorkflowSelection,
+  );
   const refreshRuntimeStatus = useGenerationStore(
     (s) => s.refreshRuntimeStatus,
   );
@@ -805,6 +808,10 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     },
     [loadWorkflow, setWorkflowLoadState],
   );
+
+  const handleWorkflowBack = useCallback(() => {
+    clearWorkflowSelection();
+  }, [clearWorkflowSelection]);
 
   const handleDismissWorkflowWarning = useCallback(() => {
     clearWorkflowWarning();
@@ -1474,6 +1481,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     handleClearQueue,
     handleUrlSave,
     handleWorkflowSelect,
+    handleWorkflowBack,
     handleRetryWorkflow,
     handleDismissWorkflowWarning,
     handleOpenEditorFromWarning,

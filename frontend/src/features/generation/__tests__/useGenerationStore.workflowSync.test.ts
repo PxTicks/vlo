@@ -82,6 +82,7 @@ function resetGenerationStore() {
     workflowLoadState: "idle",
     isWorkflowReady: false,
     editorRef: null,
+    editorOpen: false,
     jobs: new Map(),
     activeJobId: null,
     maskCropMode: "crop",
@@ -183,6 +184,7 @@ describe("useGenerationStore workflow editor sync", () => {
   it("normalizes bare editor filenames to .json when promoting persisted workflows", async () => {
     useGenerationStore.setState({
       selectedWorkflowId: null,
+      editorOpen: true,
       availableWorkflows: [],
       activeRulesWarnings: [],
       activeWorkflowRules: null,
@@ -283,6 +285,7 @@ describe("useGenerationStore workflow editor sync", () => {
       rules,
       warnings: [],
     });
+    useGenerationStore.setState({ editorOpen: true });
 
     const graphData = {
       nodes: [
@@ -1691,6 +1694,117 @@ describe("useGenerationStore workflow editor sync", () => {
     expect(useGenerationStore.getState().availableWorkflows).toEqual([
       { id: "wf.json", name: "Workflow" },
     ]);
+    expect(useGenerationStore.getState().selectedWorkflowId).toBeNull();
+    expect(comfyApi.getWorkflowContent).not.toHaveBeenCalled();
+  });
+
+  it("does not wait for object-info sync before publishing workflows", async () => {
+    vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([
+      { id: "wf.json", name: "Workflow" },
+    ]);
+    const syncObjectInfo = vi
+      .spyOn(useGenerationStore.getState(), "syncObjectInfo")
+      .mockImplementation(() => new Promise(() => {}));
+    useGenerationStore.setState({
+      connectionStatus: "connecting",
+      objectInfoSynced: false,
+    });
+
+    await useGenerationStore.getState().fetchWorkflows();
+
+    expect(syncObjectInfo).toHaveBeenCalledOnce();
+    expect(useGenerationStore.getState().availableWorkflows).toEqual([
+      { id: "wf.json", name: "Workflow" },
+    ]);
+  });
+
+  it("returns to the menu without leaving a workflow ready to generate", () => {
+    useGenerationStore.setState({
+      selectedWorkflowId: "wf.json",
+      syncedWorkflow: { "1": { class_type: "LoadImage" } },
+      syncedGraphData: { nodes: [{ id: 1 }] },
+      workflowInputs: makeInputs(),
+      mediaInputs: { "1:image": null },
+      activeWorkflowRules: createDefaultWorkflowRules(),
+      rulesWorkflowSourceId: "wf.json",
+      isWorkflowLoading: true,
+      workflowLoadState: "loading",
+      isWorkflowReady: true,
+      workflowLoadError: "stale error",
+      workflowWarning: {
+        missingNodeTypes: ["MissingNode"],
+        missingModels: [],
+      },
+    });
+
+    useGenerationStore.getState().clearWorkflowSelection();
+
+    expect(useGenerationStore.getState()).toMatchObject({
+      selectedWorkflowId: null,
+      isWorkflowLoading: false,
+      workflowLoadState: "idle",
+      isWorkflowReady: false,
+      workflowLoadError: null,
+      workflowWarning: null,
+      syncedWorkflow: null,
+      syncedGraphData: null,
+      workflowInputs: [],
+      mediaInputs: {},
+      activeWorkflowRules: null,
+      rulesWorkflowSourceId: null,
+    });
+  });
+
+  it("ignores passive editor updates after returning to the menu", async () => {
+    useGenerationStore.setState({
+      selectedWorkflowId: "wf.json",
+      editorOpen: true,
+      syncedGraphData: { nodes: [{ id: 1 }] },
+    });
+    useGenerationStore.getState().clearWorkflowSelection();
+
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      { "2": { class_type: "LoadImage", inputs: {} } },
+      { nodes: [{ id: 2 }] },
+      makeInputs(),
+      "wf.json",
+    );
+    useGenerationStore.getState().syncWorkflow(
+      { "3": { class_type: "LoadImage", inputs: {} } },
+      { nodes: [{ id: 3 }] },
+      makeInputs(),
+    );
+
+    expect(useGenerationStore.getState()).toMatchObject({
+      selectedWorkflowId: null,
+      syncedWorkflow: null,
+      syncedGraphData: null,
+      isWorkflowReady: false,
+      editorOpen: false,
+    });
+  });
+
+  it("keeps the menu idle when workflow discovery fails after Back", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(comfyApi, "listWorkflows").mockRejectedValue(
+      new Error("Discovery failed"),
+    );
+    useGenerationStore.setState({
+      selectedWorkflowId: "wf.json",
+      syncedGraphData: { nodes: [{ id: 1 }] },
+      isWorkflowReady: true,
+    });
+    useGenerationStore.getState().clearWorkflowSelection();
+
+    await useGenerationStore.getState().fetchWorkflows();
+
+    expect(useGenerationStore.getState()).toMatchObject({
+      selectedWorkflowId: null,
+      syncedGraphData: null,
+      workflowLoadState: "error",
+      workflowLoadError: "Discovery failed",
+      isWorkflowReady: false,
+    });
   });
 
   it("applies conditioning labels and ordering when syncing editor changes", async () => {
@@ -1737,6 +1851,7 @@ describe("useGenerationStore workflow editor sync", () => {
 
   it("carries a single media input across a workflow switch after sync", () => {
     useGenerationStore.setState({
+      selectedWorkflowId: "wf.json",
       workflowInputs: [
         {
           nodeId: "10",

@@ -33,6 +33,7 @@ import type { HostMenuItemDescriptor } from "../../core/shell/menuDescriptors";
 import {
   Stop,
   PlayArrow,
+  ArrowBack,
   ArrowDropDown,
   Close,
   OpenInNew,
@@ -335,6 +336,7 @@ export function GenerationPanel() {
     handleClearQueue,
     handleUrlSave,
     handleWorkflowSelect,
+    handleWorkflowBack,
     handleRetryWorkflow,
     handleDismissWorkflowWarning,
     handleOpenEditorFromWarning,
@@ -376,6 +378,10 @@ export function GenerationPanel() {
       })),
     [availableWorkflows],
   );
+  const selectedWorkflowLabel = selectedWorkflowId
+    ? workflowMenuLeaves.find((workflow) => workflow.id === selectedWorkflowId)
+        ?.label ?? selectedWorkflowId
+    : null;
   const workflowMenuLayout = useMenuTreeLayout(
     workflowMenuDefinition,
     workflowLeafIds,
@@ -1052,21 +1058,58 @@ export function GenerationPanel() {
 
       {/* Workflow Selector */}
       <Box sx={{ px: 2, pb: 2 }}>
-        <NestedMenuTree
-          ariaLabel="Generation workflows"
-          layout={workflowMenuLayout.layout}
-          defaultLayout={defaultWorkflowMenuLayout}
-          leaves={workflowMenuLeaves}
-          selectedLeafId={selectedWorkflowId}
-          onLeafActivate={(workflow) =>
-            handleWorkflowSelect(workflow.id)
-          }
-          onSave={workflowMenuLayout.save}
-          onReset={workflowMenuLayout.reset}
-          isLoading={workflowMenuLayout.isLoading}
-          isSaving={workflowMenuLayout.isSaving}
-          persistenceError={workflowMenuLayout.error}
-        />
+        {selectedWorkflowId ? (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+            <Tooltip title="Back to workflow menu">
+              <IconButton
+                aria-label="Back to workflow menu"
+                onClick={handleWorkflowBack}
+              >
+                <ArrowBack />
+              </IconButton>
+            </Tooltip>
+            <Typography
+              variant="subtitle2"
+              noWrap
+              title={selectedWorkflowLabel ?? undefined}
+            >
+              {selectedWorkflowLabel}
+            </Typography>
+          </Box>
+        ) : (
+          <NestedMenuTree
+            ariaLabel="Generation workflows"
+            layout={workflowMenuLayout.layout}
+            defaultLayout={defaultWorkflowMenuLayout}
+            leaves={workflowMenuLeaves}
+            onLeafActivate={(workflow) =>
+              handleWorkflowSelect(workflow.id)
+            }
+            onSave={workflowMenuLayout.save}
+            onReset={workflowMenuLayout.reset}
+            isLoading={workflowMenuLayout.isLoading}
+            isSaving={workflowMenuLayout.isSaving}
+            persistenceError={workflowMenuLayout.error}
+          />
+        )}
+        {!selectedWorkflowId && workflowLoadError ? (
+          <Box sx={{ mt: 1 }}>
+            <Typography
+              variant="caption"
+              sx={{ color: "error.main", display: "block", mb: 1 }}
+            >
+              {workflowLoadError}
+            </Typography>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => void handleRetryWorkflow()}
+              sx={{ textTransform: "none" }}
+            >
+              Retry workflow discovery
+            </Button>
+          </Box>
+        ) : null}
         {isWorkflowUploadPending && (
           <Typography
             variant="caption"
@@ -1077,469 +1120,475 @@ export function GenerationPanel() {
         )}
       </Box>
 
-      <Box sx={{ px: 2, pb: 2 }}>
-        <FormControl fullWidth size="small">
-          <InputLabel id="generation-mode-label">Mode</InputLabel>
-          <Select
-            labelId="generation-mode-label"
-            value={effectiveWorkflowMode}
-            label="Mode"
-            onChange={(event) =>
-              setWorkflowMode(event.target.value as "rules" | "manual")
-            }
-            sx={{ bgcolor: "#1a1a1a" }}
-          >
-            {hasRulesMode ? <MenuItem value="rules">Rules</MenuItem> : null}
-            <MenuItem value="manual">Manual</MenuItem>
-          </Select>
-        </FormControl>
-      </Box>
-
-      {showInlineWorkflowResolver ? (
-        <WorkflowDependencyResolver
-          workflowId={selectedWorkflowId}
-          warning={workflowWarning!}
-          onOpenEditor={() => setEditorOpen(true)}
-          onRefreshWarning={handleRetryWorkflow}
-        />
-      ) : (
+      {selectedWorkflowId ? (
         <>
-          {isWorkflowLoading ? (
-            <Box
-              sx={{
-                px: 2,
-                pb: 2,
-                display: "flex",
-                alignItems: "center",
-                gap: 1,
-              }}
-            >
-              <CircularProgress size={16} />
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                Loading inputs...
-              </Typography>
-            </Box>
-          ) : workflowLoadError ? (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Typography
-                variant="caption"
-                sx={{ color: "error.main", display: "block", mb: 1 }}
-              >
-                {workflowLoadError}
-              </Typography>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => void handleRetryWorkflow()}
-                sx={{ textTransform: "none" }}
-              >
-                Retry workflow load
-              </Button>
-            </Box>
-          ) : !hasVisibleGenerationControls ? (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                No inputs detected (or workflow has no editable parameters).
-                <br />
-                Open the ComfyUI editor to inspect.
-              </Typography>
-            </Box>
-          ) : null}
-
-          {!isWorkflowLoading && !workflowLoadError ? (
-            <>
-              <GenerationInputs
-                inputs={workflowInputs}
-                sections={activeWorkflowRules?.sections ?? []}
-                textValues={textValues}
-                onTextValueCommit={handleTextValueCommit}
-                mediaInputs={mediaInputs}
-                onInputDrop={handleInputDrop}
-                onExternalInputDrop={handleExternalInputDrop}
-                onInputClear={handleInputClear}
-                onSwapMediaInputs={handleSwapMediaInputs}
-                onClickSelect={handleClickSelect}
-                onEditMedia={handleEditMedia}
-                widgetInputs={displayWidgetInputs}
-                widgetValues={widgetValues}
-                randomizeToggles={randomizeToggles}
-                onWidgetChange={handleDisplayedWidgetChange}
-                onToggleRandomize={handleToggleRandomize}
-                showExactAspectRatioControl={showRulesResolutionSelector}
-                exactAspectRatioWidgetKey={exactAspectRatioWidgetKey}
-                exactAspectRatio={exactAspectRatio}
-                onExactAspectRatioChange={setExactAspectRatio}
-                exactAspectRatioTooltip={EXACT_ASPECT_RATIO_TOOLTIP}
-              />
-              <ExtensionUiSlot slot="generation.inputs.after" />
-            </>
-          ) : null}
-
-          {effectiveWorkflowMode === "manual" ? (
-            <Box sx={{ px: 2, pb: 1 }}>
-              <Button
-                fullWidth
-                variant="outlined"
-                startIcon={<OpenInNew />}
-                onClick={() => setEditorOpen(true)}
-                sx={{ textTransform: "none" }}
-              >
-                Edit workflow
-              </Button>
-            </Box>
-          ) : null}
-
-          {/* Generate / Cancel Button */}
-          <Box sx={{ px: 2, py: 2 }}>
-            <Box sx={{ display: "flex", width: "100%" }}>
-              <Tooltip
-                title={
-                  !canGenerate && inputValidationFailures.length > 0
-                    ? inputValidationFailures
-                        .slice(0, 4)
-                        .map((f) => f.message)
-                        .join("\n")
-                    : ""
+          <Box sx={{ px: 2, pb: 2 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="generation-mode-label">Mode</InputLabel>
+              <Select
+                labelId="generation-mode-label"
+                value={effectiveWorkflowMode}
+                label="Mode"
+                onChange={(event) =>
+                  setWorkflowMode(event.target.value as "rules" | "manual")
                 }
-                placement="top"
-                arrow
-                slotProps={{
-                  tooltip: { sx: { whiteSpace: "pre-line" } },
-                }}
+                sx={{ bgcolor: "#1a1a1a" }}
               >
-                <span style={{ display: "flex", flex: 1, minWidth: 0 }}>
-                  <Box sx={{ display: "flex", flex: 1, minWidth: 0 }}>
-                    <Button
-                      data-testid="generation-generate-button"
-                      fullWidth
-                      variant="contained"
-                      startIcon={<PlayArrow />}
-                      disabled={!canGenerate}
-                      onPointerDown={blurActiveElement}
-                      onClick={() => handleGenerateCount(1)}
-                      sx={{
-                        borderBottomRightRadius: 0,
-                        borderTopRightRadius: 0,
-                        textTransform: "none",
-                      }}
-                    >
-                      Generate
-                    </Button>
-                    <Button
-                      aria-label="Queue multiple generations"
-                      disabled={!canGenerate}
-                      onClick={handleOpenGenerateMenu}
-                      sx={{
-                        borderBottomLeftRadius: 0,
-                        borderLeft: "1px solid rgba(255, 255, 255, 0.2)",
-                        borderBottomRightRadius: showRunningCancelControls
-                          ? 0
-                          : 4,
-                        borderTopLeftRadius: 0,
-                        borderTopRightRadius: showRunningCancelControls ? 0 : 4,
-                        minWidth: 44,
-                        px: 1,
-                      }}
-                      variant="contained"
-                    >
-                      <ArrowDropDown />
-                    </Button>
-                  </Box>
-                </span>
-              </Tooltip>
-              {showRunningCancelControls ? (
-                <>
-                  <Tooltip title="Cancel current generation" arrow>
-                    <span style={{ display: "flex" }}>
-                      <Button
-                        aria-label="Cancel current generation"
-                        color="warning"
-                        disabled={!canInterruptCurrentGeneration}
-                        onClick={handleInterruptCurrent}
-                        sx={{
-                          borderLeft: "1px solid rgba(255, 255, 255, 0.2)",
-                          borderRadius: 0,
-                          minWidth: 48,
-                          px: 1,
-                        }}
-                        variant="contained"
-                      >
-                        <Close />
-                      </Button>
-                    </span>
-                  </Tooltip>
-                  <Tooltip title="Clear queue" arrow>
-                    <span style={{ display: "flex" }}>
-                      <Button
-                        aria-label="Clear queue"
-                        color="error"
-                        disabled={!canClearQueuedGenerations}
-                        onClick={handleClearQueue}
-                        sx={{
-                          borderBottomLeftRadius: 0,
-                          borderLeft: "1px solid rgba(255, 255, 255, 0.2)",
-                          borderTopLeftRadius: 0,
-                          minWidth: 48,
-                          px: 1,
-                        }}
-                        variant="contained"
-                      >
-                        <Stop />
-                      </Button>
-                    </span>
-                  </Tooltip>
-                </>
-              ) : null}
-            </Box>
-            {pipelineStatusText ? (
-              <Typography
-                variant="caption"
-                sx={{ color: "text.secondary", display: "block", mt: 1 }}
-              >
-                {pipelineStatusText}
-              </Typography>
-            ) : null}
+                {hasRulesMode ? (
+                  <MenuItem value="rules">Rules</MenuItem>
+                ) : null}
+                <MenuItem value="manual">Manual</MenuItem>
+              </Select>
+            </FormControl>
           </Box>
 
-          <AppMenu
-            menuId="generation.generate.options"
-            subject={{
-              slot: "generation.generate.options",
-              generation: { workflowId: selectedWorkflowId ?? null },
-            }}
-            items={[
-              ...[2, 4, 8, 16].map(
-                (count): HostMenuItemDescriptor => ({
-                  kind: "action",
-                  id: `generate-x${count}`,
-                  label: `x ${count}`,
-                  group: "1_batch",
-                  run: () => handleSelectGenerateCount(count),
-                }),
-              ),
-              {
-                kind: "action",
-                id: "queue-custom",
-                label: "Queue custom...",
-                group: "2_custom",
-                run: handleOpenCustomGenerateDialog,
-              },
-            ]}
-            open={Boolean(generateMenuAnchorEl)}
-            onClose={handleCloseGenerateMenu}
-            anchorEl={generateMenuAnchorEl}
-          />
-
-          {/* Progress */}
-          {isRunning && activeJob && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <LinearProgress
-                data-testid="generation-progress-bar"
-                variant={
-                  activeJob.progress > 0 ? "determinate" : "indeterminate"
-                }
-                value={activeJob.progress}
-                sx={{ mb: 0.5, borderRadius: 1 }}
-              />
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                {activeJob.status === "queued"
-                  ? "Queued..."
-                  : `${activeJob.progress}%${activeNodeStatus ? ` — ${activeNodeStatus}` : ""}`}
-              </Typography>
-            </Box>
-          )}
-
-          {/* Live Preview */}
-          {(latestPreviewUrl || previewAnimation) && isRunning && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <LivePreview
-                animation={previewAnimation}
-                fallbackUrl={latestPreviewUrl}
-              />
-            </Box>
-          )}
-
-          {/* Postprocessed Preview */}
-          {displayJob?.postprocessedPreview &&
-            replaceOutputsWithPostprocess && (
-              <Box sx={{ px: 2, pb: 2 }}>
-                <Typography
-                  variant="caption"
-                  sx={{ color: "text.secondary", mb: 1, display: "block" }}
+          {showInlineWorkflowResolver ? (
+            <WorkflowDependencyResolver
+              workflowId={selectedWorkflowId}
+              warning={workflowWarning!}
+              onOpenEditor={() => setEditorOpen(true)}
+              onRefreshWarning={handleRetryWorkflow}
+            />
+          ) : (
+            <>
+              {isWorkflowLoading ? (
+                <Box
+                  sx={{
+                    px: 2,
+                    pb: 2,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                  }}
                 >
-                  Postprocessed preview
-                </Typography>
-                {displayJob.postprocessedPreview.mediaKind === "video" ? (
-                  <video
-                    src={displayJob.postprocessedPreview.previewUrl}
-                    controls
-                    autoPlay
-                    loop
-                    muted
-                    style={{ width: "100%", borderRadius: 4, display: "block" }}
+                  <CircularProgress size={16} />
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Loading inputs...
+                  </Typography>
+                </Box>
+              ) : workflowLoadError ? (
+                <Box sx={{ px: 2, pb: 2 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "error.main", display: "block", mb: 1 }}
+                  >
+                    {workflowLoadError}
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => void handleRetryWorkflow()}
+                    sx={{ textTransform: "none" }}
+                  >
+                    Retry workflow load
+                  </Button>
+                </Box>
+              ) : !hasVisibleGenerationControls ? (
+                <Box sx={{ px: 2, pb: 2 }}>
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    No inputs detected (or workflow has no editable parameters).
+                    <br />
+                    Open the ComfyUI editor to inspect.
+                  </Typography>
+                </Box>
+              ) : null}
+
+              {!isWorkflowLoading && !workflowLoadError ? (
+                <>
+                  <GenerationInputs
+                    inputs={workflowInputs}
+                    sections={activeWorkflowRules?.sections ?? []}
+                    textValues={textValues}
+                    onTextValueCommit={handleTextValueCommit}
+                    mediaInputs={mediaInputs}
+                    onInputDrop={handleInputDrop}
+                    onExternalInputDrop={handleExternalInputDrop}
+                    onInputClear={handleInputClear}
+                    onSwapMediaInputs={handleSwapMediaInputs}
+                    onClickSelect={handleClickSelect}
+                    onEditMedia={handleEditMedia}
+                    widgetInputs={displayWidgetInputs}
+                    widgetValues={widgetValues}
+                    randomizeToggles={randomizeToggles}
+                    onWidgetChange={handleDisplayedWidgetChange}
+                    onToggleRandomize={handleToggleRandomize}
+                    showExactAspectRatioControl={showRulesResolutionSelector}
+                    exactAspectRatioWidgetKey={exactAspectRatioWidgetKey}
+                    exactAspectRatio={exactAspectRatio}
+                    onExactAspectRatioChange={setExactAspectRatio}
+                    exactAspectRatioTooltip={EXACT_ASPECT_RATIO_TOOLTIP}
                   />
-                ) : displayJob.postprocessedPreview.mediaKind === "audio" ? (
-                  <audio
-                    src={displayJob.postprocessedPreview.previewUrl}
-                    controls
-                    style={{ width: "100%", display: "block" }}
-                  />
-                ) : (
-                  <img
-                    src={displayJob.postprocessedPreview.previewUrl}
-                    alt={displayJob.postprocessedPreview.filename}
-                    style={{ width: "100%", borderRadius: 4, display: "block" }}
-                  />
-                )}
-                <Typography
-                  variant="caption"
-                  sx={{ color: "text.secondary", mt: 0.5, display: "block" }}
-                >
-                  Auto-imported to library
-                </Typography>
+                  <ExtensionUiSlot slot="generation.inputs.after" />
+                </>
+              ) : null}
+
+              {effectiveWorkflowMode === "manual" ? (
+                <Box sx={{ px: 2, pb: 1 }}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    startIcon={<OpenInNew />}
+                    onClick={() => setEditorOpen(true)}
+                    sx={{ textTransform: "none" }}
+                  >
+                    Edit workflow
+                  </Button>
+                </Box>
+              ) : null}
+
+              {/* Generate / Cancel Button */}
+              <Box sx={{ px: 2, py: 2 }}>
+                <Box sx={{ display: "flex", width: "100%" }}>
+                  <Tooltip
+                    title={
+                      !canGenerate && inputValidationFailures.length > 0
+                        ? inputValidationFailures
+                            .slice(0, 4)
+                            .map((f) => f.message)
+                            .join("\n")
+                        : ""
+                    }
+                    placement="top"
+                    arrow
+                    slotProps={{
+                      tooltip: { sx: { whiteSpace: "pre-line" } },
+                    }}
+                  >
+                    <span style={{ display: "flex", flex: 1, minWidth: 0 }}>
+                      <Box sx={{ display: "flex", flex: 1, minWidth: 0 }}>
+                        <Button
+                          data-testid="generation-generate-button"
+                          fullWidth
+                          variant="contained"
+                          startIcon={<PlayArrow />}
+                          disabled={!canGenerate}
+                          onPointerDown={blurActiveElement}
+                          onClick={() => handleGenerateCount(1)}
+                          sx={{
+                            borderBottomRightRadius: 0,
+                            borderTopRightRadius: 0,
+                            textTransform: "none",
+                          }}
+                        >
+                          Generate
+                        </Button>
+                        <Button
+                          aria-label="Queue multiple generations"
+                          disabled={!canGenerate}
+                          onClick={handleOpenGenerateMenu}
+                          sx={{
+                            borderBottomLeftRadius: 0,
+                            borderLeft: "1px solid rgba(255, 255, 255, 0.2)",
+                            borderBottomRightRadius: showRunningCancelControls
+                              ? 0
+                              : 4,
+                            borderTopLeftRadius: 0,
+                            borderTopRightRadius: showRunningCancelControls ? 0 : 4,
+                            minWidth: 44,
+                            px: 1,
+                          }}
+                          variant="contained"
+                        >
+                          <ArrowDropDown />
+                        </Button>
+                      </Box>
+                    </span>
+                  </Tooltip>
+                  {showRunningCancelControls ? (
+                    <>
+                      <Tooltip title="Cancel current generation" arrow>
+                        <span style={{ display: "flex" }}>
+                          <Button
+                            aria-label="Cancel current generation"
+                            color="warning"
+                            disabled={!canInterruptCurrentGeneration}
+                            onClick={handleInterruptCurrent}
+                            sx={{
+                              borderLeft: "1px solid rgba(255, 255, 255, 0.2)",
+                              borderRadius: 0,
+                              minWidth: 48,
+                              px: 1,
+                            }}
+                            variant="contained"
+                          >
+                            <Close />
+                          </Button>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title="Clear queue" arrow>
+                        <span style={{ display: "flex" }}>
+                          <Button
+                            aria-label="Clear queue"
+                            color="error"
+                            disabled={!canClearQueuedGenerations}
+                            onClick={handleClearQueue}
+                            sx={{
+                              borderBottomLeftRadius: 0,
+                              borderLeft: "1px solid rgba(255, 255, 255, 0.2)",
+                              borderTopLeftRadius: 0,
+                              minWidth: 48,
+                              px: 1,
+                            }}
+                            variant="contained"
+                          >
+                            <Stop />
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    </>
+                  ) : null}
+                </Box>
+                {pipelineStatusText ? (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "text.secondary", display: "block", mt: 1 }}
+                  >
+                    {pipelineStatusText}
+                  </Typography>
+                ) : null}
               </Box>
-            )}
 
-          {/* Outputs */}
-          {displayJob && shouldShowRawOutputs && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Typography
-                variant="caption"
-                sx={{ color: "text.secondary", mb: 1, display: "block" }}
-              >
-                {displayJob.status === "completed"
-                  ? "Generated outputs"
-                  : "Outputs so far"}
-              </Typography>
-              {displayJob.outputs.map((output, i) => (
-                <Box key={`${output.filename}-${i}`} sx={{ mb: 1 }}>
-                  {getOutputMediaKindFromFilename(output.filename) ===
-                  "video" ? (
+              <AppMenu
+                menuId="generation.generate.options"
+                subject={{
+                  slot: "generation.generate.options",
+                  generation: { workflowId: selectedWorkflowId ?? null },
+                }}
+                items={[
+                  ...[2, 4, 8, 16].map(
+                    (count): HostMenuItemDescriptor => ({
+                      kind: "action",
+                      id: `generate-x${count}`,
+                      label: `x ${count}`,
+                      group: "1_batch",
+                      run: () => handleSelectGenerateCount(count),
+                    }),
+                  ),
+                  {
+                    kind: "action",
+                    id: "queue-custom",
+                    label: "Queue custom...",
+                    group: "2_custom",
+                    run: handleOpenCustomGenerateDialog,
+                  },
+                ]}
+                open={Boolean(generateMenuAnchorEl)}
+                onClose={handleCloseGenerateMenu}
+                anchorEl={generateMenuAnchorEl}
+              />
+
+              {/* Progress */}
+              {isRunning && activeJob && (
+                <Box sx={{ px: 2, pb: 2 }}>
+                  <LinearProgress
+                    data-testid="generation-progress-bar"
+                    variant={
+                      activeJob.progress > 0 ? "determinate" : "indeterminate"
+                    }
+                    value={activeJob.progress}
+                    sx={{ mb: 0.5, borderRadius: 1 }}
+                  />
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    {activeJob.status === "queued"
+                      ? "Queued..."
+                      : `${activeJob.progress}%${activeNodeStatus ? ` — ${activeNodeStatus}` : ""}`}
+                  </Typography>
+                </Box>
+              )}
+
+              {/* Live Preview */}
+              {(latestPreviewUrl || previewAnimation) && isRunning && (
+                <Box sx={{ px: 2, pb: 2 }}>
+                  <LivePreview
+                    animation={previewAnimation}
+                    fallbackUrl={latestPreviewUrl}
+                  />
+                </Box>
+              )}
+
+              {/* Postprocessed Preview */}
+              {displayJob?.postprocessedPreview &&
+                replaceOutputsWithPostprocess && (
+                  <Box sx={{ px: 2, pb: 2 }}>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "text.secondary", mb: 1, display: "block" }}
+                    >
+                      Postprocessed preview
+                    </Typography>
+                    {displayJob.postprocessedPreview.mediaKind === "video" ? (
+                      <video
+                        src={displayJob.postprocessedPreview.previewUrl}
+                        controls
+                        autoPlay
+                        loop
+                        muted
+                        style={{ width: "100%", borderRadius: 4, display: "block" }}
+                      />
+                    ) : displayJob.postprocessedPreview.mediaKind === "audio" ? (
+                      <audio
+                        src={displayJob.postprocessedPreview.previewUrl}
+                        controls
+                        style={{ width: "100%", display: "block" }}
+                      />
+                    ) : (
+                      <img
+                        src={displayJob.postprocessedPreview.previewUrl}
+                        alt={displayJob.postprocessedPreview.filename}
+                        style={{ width: "100%", borderRadius: 4, display: "block" }}
+                      />
+                    )}
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "text.secondary", mt: 0.5, display: "block" }}
+                    >
+                      Auto-imported to library
+                    </Typography>
+                  </Box>
+                )}
+
+              {/* Outputs */}
+              {displayJob && shouldShowRawOutputs && (
+                <Box sx={{ px: 2, pb: 2 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "text.secondary", mb: 1, display: "block" }}
+                  >
+                    {displayJob.status === "completed"
+                      ? "Generated outputs"
+                      : "Outputs so far"}
+                  </Typography>
+                  {displayJob.outputs.map((output, i) => (
+                    <Box key={`${output.filename}-${i}`} sx={{ mb: 1 }}>
+                      {getOutputMediaKindFromFilename(output.filename) ===
+                      "video" ? (
+                        <video
+                          src={output.viewUrl}
+                          controls
+                          autoPlay
+                          loop
+                          muted
+                          style={{
+                            width: "100%",
+                            borderRadius: 4,
+                            display: "block",
+                          }}
+                        />
+                      ) : getOutputMediaKindFromFilename(output.filename) ===
+                        "audio" ? (
+                        <audio
+                          src={output.viewUrl}
+                          controls
+                          style={{ width: "100%", display: "block" }}
+                        />
+                      ) : (
+                        <img
+                          src={output.viewUrl}
+                          alt={output.filename}
+                          style={{
+                            width: "100%",
+                            borderRadius: 4,
+                            display: "block",
+                          }}
+                        />
+                      )}
+                      <Typography
+                        variant="caption"
+                        sx={{ color: "text.secondary", mt: 0.5, display: "block" }}
+                      >
+                        {displayJob.status === "completed"
+                          ? "Auto-imported to library"
+                          : output.filename}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+
+              {/* Imported Asset Preview */}
+              {displayJob && importedPreviewAsset && (
+                <Box sx={{ px: 2, pb: 2 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "text.secondary", mb: 1, display: "block" }}
+                  >
+                    Imported asset preview
+                  </Typography>
+                  {importedPreviewAsset.type === "video" ? (
                     <video
-                      src={output.viewUrl}
+                      src={importedPreviewSrc}
                       controls
                       autoPlay
                       loop
                       muted
-                      style={{
-                        width: "100%",
-                        borderRadius: 4,
-                        display: "block",
-                      }}
+                      style={{ width: "100%", borderRadius: 4, display: "block" }}
                     />
-                  ) : getOutputMediaKindFromFilename(output.filename) ===
-                    "audio" ? (
+                  ) : importedPreviewAsset.type === "audio" ? (
                     <audio
-                      src={output.viewUrl}
+                      src={importedPreviewSrc}
                       controls
                       style={{ width: "100%", display: "block" }}
                     />
                   ) : (
                     <img
-                      src={output.viewUrl}
-                      alt={output.filename}
-                      style={{
-                        width: "100%",
-                        borderRadius: 4,
-                        display: "block",
-                      }}
+                      src={importedPreviewSrc}
+                      alt={importedPreviewAsset.name}
+                      style={{ width: "100%", borderRadius: 4, display: "block" }}
                     />
                   )}
                   <Typography
                     variant="caption"
                     sx={{ color: "text.secondary", mt: 0.5, display: "block" }}
                   >
-                    {displayJob.status === "completed"
-                      ? "Auto-imported to library"
-                      : output.filename}
+                    {importedPreviewAsset.name}
+                    {importedAssets.length > 1
+                      ? ` (+${importedAssets.length - 1} more)`
+                      : ""}
                   </Typography>
                 </Box>
-              ))}
-            </Box>
-          )}
-
-          {/* Imported Asset Preview */}
-          {displayJob && importedPreviewAsset && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Typography
-                variant="caption"
-                sx={{ color: "text.secondary", mb: 1, display: "block" }}
-              >
-                Imported asset preview
-              </Typography>
-              {importedPreviewAsset.type === "video" ? (
-                <video
-                  src={importedPreviewSrc}
-                  controls
-                  autoPlay
-                  loop
-                  muted
-                  style={{ width: "100%", borderRadius: 4, display: "block" }}
-                />
-              ) : importedPreviewAsset.type === "audio" ? (
-                <audio
-                  src={importedPreviewSrc}
-                  controls
-                  style={{ width: "100%", display: "block" }}
-                />
-              ) : (
-                <img
-                  src={importedPreviewSrc}
-                  alt={importedPreviewAsset.name}
-                  style={{ width: "100%", borderRadius: 4, display: "block" }}
-                />
               )}
-              <Typography
-                variant="caption"
-                sx={{ color: "text.secondary", mt: 0.5, display: "block" }}
-              >
-                {importedPreviewAsset.name}
-                {importedAssets.length > 1
-                  ? ` (+${importedAssets.length - 1} more)`
-                  : ""}
-              </Typography>
-            </Box>
-          )}
 
-          {/* Send to Timeline */}
-          {sendableAssets.length > 0 && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Button
-                data-testid="generation-send-to-timeline-button"
-                fullWidth
-                variant="outlined"
-                size="small"
-                startIcon={<Timeline />}
-                onClick={handleSendToTimeline}
-                sx={{ textTransform: "none" }}
-              >
-                Send to Timeline
-              </Button>
-            </Box>
-          )}
+              {/* Send to Timeline */}
+              {sendableAssets.length > 0 && (
+                <Box sx={{ px: 2, pb: 2 }}>
+                  <Button
+                    data-testid="generation-send-to-timeline-button"
+                    fullWidth
+                    variant="outlined"
+                    size="small"
+                    startIcon={<Timeline />}
+                    onClick={handleSendToTimeline}
+                    sx={{ textTransform: "none" }}
+                  >
+                    Send to Timeline
+                  </Button>
+                </Box>
+              )}
 
-          {/* Error */}
-          {(displayJob?.status === "error" || showPostprocessErrorOnly) && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Typography color="error" variant="caption">
-                Error:{" "}
-                {displayJob?.status === "error"
-                  ? displayJob.error
-                  : displayJob?.postprocessError}
-              </Typography>
-            </Box>
-          )}
+              {/* Error */}
+              {(displayJob?.status === "error" || showPostprocessErrorOnly) && (
+                <Box sx={{ px: 2, pb: 2 }}>
+                  <Typography color="error" variant="caption">
+                    Error:{" "}
+                    {displayJob?.status === "error"
+                      ? displayJob.error
+                      : displayJob?.postprocessError}
+                  </Typography>
+                </Box>
+              )}
 
-          {/* Warning */}
-          {showPostprocessWarning && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Typography variant="caption" sx={{ color: "warning.main" }}>
-                Warning: {displayJob?.postprocessError}
-              </Typography>
-            </Box>
+              {/* Warning */}
+              {showPostprocessWarning && (
+                <Box sx={{ px: 2, pb: 2 }}>
+                  <Typography variant="caption" sx={{ color: "warning.main" }}>
+                    Warning: {displayJob?.postprocessError}
+                  </Typography>
+                </Box>
+              )}
+            </>
           )}
         </>
-      )}
+      ) : null}
 
       <Dialog
         open={customGenerateDialogOpen}

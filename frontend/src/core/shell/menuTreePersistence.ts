@@ -1,20 +1,13 @@
-import {
-  createMenuTreeCustomization,
-  resolveMenuTreeLayout,
-  type MenuTreeCustomization,
-  type MenuTreeDefinition,
-  type MenuTreeLayout,
-} from "./menuTree";
+import type { MenuTreeCustomization } from "./menuTree";
 
 interface PersistedMenuLayoutResponse {
   readonly revision: number;
   readonly customization: MenuTreeCustomization | null;
 }
 
-export interface MenuTreePersistenceSnapshot {
+export interface MenuTreeCustomizationSnapshot {
   readonly revision: number;
   readonly customization: MenuTreeCustomization | null;
-  readonly layout: MenuTreeLayout;
 }
 
 export class MenuTreePersistenceError extends Error {
@@ -50,62 +43,33 @@ function endpoint(menuId: string): string {
   return `/app/menu-layouts/${encodeURIComponent(menuId)}`;
 }
 
-export async function loadMenuTreeCustomization(
-  definition: MenuTreeDefinition,
-  availableLeafIds: readonly string[],
+export async function fetchMenuTreeCustomization(
+  menuId: string,
   signal?: AbortSignal,
-): Promise<MenuTreePersistenceSnapshot> {
-  const response = await fetch(endpoint(definition.id), { signal });
+): Promise<MenuTreeCustomizationSnapshot> {
+  const response = await fetch(endpoint(menuId), { signal });
   if (!response.ok) await throwResponseError("Menu layout load", response);
-  const persisted = (await response.json()) as PersistedMenuLayoutResponse;
-  return {
-    ...persisted,
-    layout: resolveMenuTreeLayout(
-      definition,
-      persisted.customization,
-      availableLeafIds,
-    ),
-  };
+  return (await response.json()) as PersistedMenuLayoutResponse;
 }
 
-export async function saveMenuTreeLayout(
-  definition: MenuTreeDefinition,
-  availableLeafIds: readonly string[],
-  layout: MenuTreeLayout,
+export async function saveMenuTreeCustomization(
+  menuId: string,
+  customization: MenuTreeCustomization,
   baseRevision: number,
-  baseCustomization: MenuTreeCustomization | null,
-): Promise<MenuTreePersistenceSnapshot> {
-  const customization = createMenuTreeCustomization(
-    definition,
-    layout,
-    baseCustomization,
-  );
-  const response = await fetch(endpoint(definition.id), {
+): Promise<MenuTreeCustomizationSnapshot> {
+  const response = await fetch(endpoint(menuId), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ baseRevision, customization }),
   });
   if (!response.ok) await throwResponseError("Menu layout save", response);
-  const persisted = (await response.json()) as PersistedMenuLayoutResponse;
-  return {
-    ...persisted,
-    layout: resolveMenuTreeLayout(
-      definition,
-      persisted.customization,
-      availableLeafIds,
-    ),
-  };
+  return (await response.json()) as PersistedMenuLayoutResponse;
 }
 
-export async function resetMenuTreeLayout(
-  definition: MenuTreeDefinition,
-  availableLeafIds: readonly string[],
-): Promise<MenuTreePersistenceSnapshot> {
-  const response = await fetch(endpoint(definition.id), { method: "DELETE" });
+export async function resetMenuTreeCustomization(
+  menuId: string,
+): Promise<MenuTreeCustomizationSnapshot> {
+  const response = await fetch(endpoint(menuId), { method: "DELETE" });
   if (!response.ok) await throwResponseError("Menu layout reset", response);
-  const persisted = (await response.json()) as PersistedMenuLayoutResponse;
-  return {
-    ...persisted,
-    layout: resolveMenuTreeLayout(definition, null, availableLeafIds),
-  };
+  return (await response.json()) as PersistedMenuLayoutResponse;
 }

@@ -116,6 +116,7 @@ export interface GenerationWorkflowState {
   setWorkflowLoadState: (state: WorkflowLoadState) => void;
   clearWorkflowWarning: () => void;
   clearWorkflowLoadError: () => void;
+  clearWorkflowSelection: () => void;
   setMediaInputAsset: (inputId: string, asset: Asset) => void;
   setMediaInputFrame: (inputId: string, file: File) => void;
   setMediaInputFrameWithSelection: (

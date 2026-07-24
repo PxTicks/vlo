@@ -141,6 +141,7 @@ function makeHookState(
     handleClearQueue: vi.fn(),
     handleUrlSave: vi.fn(),
     handleWorkflowSelect: vi.fn(),
+    handleWorkflowBack: vi.fn(),
     handleRetryWorkflow: vi.fn(),
     handleDismissWorkflowWarning: vi.fn(),
     handleOpenEditorFromWarning: vi.fn(),

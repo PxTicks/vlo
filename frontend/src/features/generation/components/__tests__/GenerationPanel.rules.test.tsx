@@ -1,9 +1,28 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const runtimeApiMocks = vi.hoisted(() => ({
+  launchComfyui: vi.fn(),
+}));
 
 vi.mock("../../hooks/useGenerationPanel", () => ({
   useGenerationPanel: vi.fn(),
 }));
+vi.mock("../../../../services/runtimeApi", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../../services/runtimeApi")
+  >("../../../../services/runtimeApi");
+  return {
+    ...actual,
+    launchComfyui: runtimeApiMocks.launchComfyui,
+  };
+});
 vi.mock("../../hooks/useWorkflowMenuDefinition", async () => {
   const { DEFAULT_GENERATION_WORKFLOW_MENU } = await vi.importActual<
     typeof import("../../workflowMenu")
@@ -103,6 +122,16 @@ function makeHookState(overrides: Record<string, unknown> = {}) {
     handleWidgetChange: vi.fn(),
     handleToggleRandomize: vi.fn(),
     connectionStatus: "connected",
+    runtimeStatus: {
+      comfyui: {
+        status: "connected",
+        url: "http://127.0.0.1:8188",
+        error: null,
+      },
+      settings: {
+        comfyuiInstallVerification: null,
+      },
+    },
     isWorkflowReady: true,
     importedAssets: [],
     sendableAssets: [],
@@ -143,6 +172,12 @@ function makeCompletedJob(
 
 describe("GenerationPanel workflow rule hints", () => {
   beforeEach(() => {
+    runtimeApiMocks.launchComfyui.mockReset();
+    runtimeApiMocks.launchComfyui.mockResolvedValue({
+      started: true,
+      alreadyRunning: false,
+      pid: 4321,
+    });
     useGenerationStore.setState({
       activeWorkflowRules: null,
       rulesWorkflowSourceId: null,
@@ -180,6 +215,125 @@ describe("GenerationPanel workflow rule hints", () => {
     expect(screen.getByRole("heading", { name: "Other" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Workflow" }));
     expect(handleWorkflowSelect).toHaveBeenCalledWith("wf.json");
+  });
+
+  it("hides the workflow menu and launches a configured offline install", async () => {
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        connectionStatus: "disconnected",
+        selectedWorkflowId: null,
+        runtimeStatus: {
+          comfyui: {
+            status: "disconnected",
+            url: "http://127.0.0.1:8188",
+            error: "offline",
+          },
+          settings: {
+            comfyuiInstallVerification: {
+              requestedPath: "/opt/ComfyUI",
+              installPath: "/opt/ComfyUI",
+              valid: true,
+              mainPyPresent: true,
+              sourceMarkers: ["argument parser"],
+              layoutMarkers: ["comfy", "nodes.py", "server.py"],
+              warnings: [],
+            },
+          },
+        },
+      }),
+    );
+
+    render(<GenerationPanel />);
+
+    expect(
+      screen.getByText("ComfyUI is not connected"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Launch ComfyUI" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Generation workflows"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Launch ComfyUI" }));
+    await waitFor(() => {
+      expect(runtimeApiMocks.launchComfyui).toHaveBeenCalledWith({});
+    });
+    expect(
+      screen.getByText("ComfyUI started; waiting for it to become ready…"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a neutral connecting state instead of the offline gate", () => {
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        connectionStatus: "connecting",
+        selectedWorkflowId: null,
+      }),
+    );
+
+    render(<GenerationPanel />);
+
+    expect(screen.getByText("Connecting to ComfyUI…")).toBeInTheDocument();
+    expect(
+      screen.queryByText("ComfyUI is not connected"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Generation workflows"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("requires an explicit Python choice when no ComfyUI environment is found", async () => {
+    runtimeApiMocks.launchComfyui
+      .mockResolvedValueOnce({
+        started: false,
+        alreadyRunning: false,
+        requiresPythonChoice: true,
+      })
+      .mockResolvedValueOnce({
+        started: true,
+        alreadyRunning: false,
+        pid: 4321,
+      });
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        connectionStatus: "disconnected",
+        selectedWorkflowId: null,
+        runtimeStatus: {
+          comfyui: {
+            status: "disconnected",
+            url: "http://127.0.0.1:8188",
+            error: "offline",
+          },
+          settings: {
+            comfyuiInstallVerification: {
+              requestedPath: "/opt/ComfyUI",
+              installPath: "/opt/ComfyUI",
+              valid: true,
+              mainPyPresent: true,
+              sourceMarkers: ["argument parser"],
+              layoutMarkers: ["comfy", "nodes.py", "server.py"],
+              warnings: [],
+            },
+          },
+        },
+      }),
+    );
+
+    render(<GenerationPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Launch ComfyUI" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Choose a ComfyUI Python environment",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use vlo Python" }));
+
+    await waitFor(() => {
+      expect(runtimeApiMocks.launchComfyui).toHaveBeenLastCalledWith({
+        useSystemPython: true,
+      });
+    });
   });
 
   it("replaces the workflow menu with a back control after selection", () => {

@@ -78,6 +78,12 @@ import { NestedMenuTree } from "../panelUI";
 import { useMenuTreeLayout } from "../../core/shell/useMenuTreeLayout";
 import { resolveMenuTreeLayout } from "../../core/shell/menuTree";
 import { useWorkflowMenuDefinition } from "./hooks/useWorkflowMenuDefinition";
+import {
+  getComfyuiInstallStatus,
+  launchComfyui,
+  prepareComfyuiEnvironment,
+  type ComfyuiInstallStatus,
+} from "../../services/runtimeApi";
 
 const EXACT_ASPECT_RATIO_TOOLTIP =
   "If selected, this will make the output aspect ratio exactly match the input ratio, even if it doesn't match the project-supported aspect ratios. If unselected, it will crop the image to the best supported fit before dispatch.";
@@ -279,6 +285,17 @@ export function GenerationPanel() {
     useState(false);
   const [customGenerateCount, setCustomGenerateCount] = useState("1");
   const [savePromptOpen, setSavePromptOpen] = useState(false);
+  const [isLaunchingComfyui, setIsLaunchingComfyui] = useState(false);
+  const [comfyuiLaunchError, setComfyuiLaunchError] = useState<string | null>(
+    null,
+  );
+  const [comfyuiLaunchMessage, setComfyuiLaunchMessage] = useState<
+    string | null
+  >(null);
+  const [pythonChoiceOpen, setPythonChoiceOpen] = useState(false);
+  const [pythonPath, setPythonPath] = useState("");
+  const [environmentSetupStatus, setEnvironmentSetupStatus] =
+    useState<ComfyuiInstallStatus | null>(null);
   const [newWorkflowNamePromptOpen, setNewWorkflowNamePromptOpen] =
     useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState("");
@@ -306,6 +323,8 @@ export function GenerationPanel() {
     handleToggleRandomize,
 
     // Derived
+    connectionStatus,
+    runtimeStatus,
     latestPreviewUrl,
     previewAnimation,
     comfyuiDirectUrl,
@@ -352,6 +371,140 @@ export function GenerationPanel() {
     sendableAssets,
     handleSendToTimeline,
   } = useGenerationPanel(effectiveWorkflowMode);
+  const configuredInstall =
+    runtimeStatus?.settings?.comfyuiInstallVerification;
+  const canLaunchLocalComfyui =
+    runtimeStatus !== null &&
+    runtimeStatus.comfyui.status !== "connected" &&
+    connectionStatus !== "connecting" &&
+    configuredInstall?.valid === true &&
+    Boolean(configuredInstall.installPath);
+
+  useEffect(() => {
+    if (
+      runtimeStatus?.comfyui.status !== "connected" ||
+      connectionStatus !== "connected"
+    ) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setComfyuiLaunchError(null);
+      setComfyuiLaunchMessage(null);
+      setPythonChoiceOpen(false);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [connectionStatus, runtimeStatus?.comfyui.status]);
+
+  useEffect(() => {
+    if (!environmentSetupStatus?.running) return;
+    let active = true;
+    let pollInFlight = false;
+    const interval = window.setInterval(() => {
+      if (pollInFlight) return;
+      pollInFlight = true;
+      void getComfyuiInstallStatus()
+        .then(async (status) => {
+          if (!active) return;
+          setEnvironmentSetupStatus(status);
+          if (status.phase === "failed") {
+            setComfyuiLaunchMessage(null);
+            setComfyuiLaunchError(
+              status.error ?? "Failed to create the ComfyUI environment",
+            );
+            return;
+          }
+          if (status.phase !== "complete") return;
+
+          const result = await launchComfyui();
+          if (!active) return;
+          if (result.requiresPythonChoice) {
+            setPythonChoiceOpen(true);
+            setComfyuiLaunchMessage(null);
+            return;
+          }
+          setComfyuiLaunchMessage(
+            result.alreadyRunning
+              ? "ComfyUI is running; waiting for it to become ready…"
+              : "ComfyUI started; waiting for it to become ready…",
+          );
+          void useGenerationStore.getState().refreshRuntimeStatus();
+        })
+        .catch((err: unknown) => {
+          if (!active) return;
+          setComfyuiLaunchMessage(null);
+          setComfyuiLaunchError(
+            err instanceof Error
+              ? err.message
+              : "Failed to prepare the ComfyUI environment",
+          );
+        })
+        .finally(() => {
+          pollInFlight = false;
+        });
+    }, 1500);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [environmentSetupStatus?.running]);
+
+  const requestComfyuiLaunch = async (
+    options: { pythonPath?: string; useSystemPython?: boolean } = {},
+  ) => {
+    setIsLaunchingComfyui(true);
+    setComfyuiLaunchError(null);
+    setComfyuiLaunchMessage(null);
+    try {
+      const result = await launchComfyui(options);
+      if (result.requiresPythonChoice) {
+        setPythonChoiceOpen(true);
+        return;
+      }
+      setPythonChoiceOpen(false);
+      setComfyuiLaunchMessage(
+        result.alreadyRunning
+          ? "ComfyUI is running; waiting for it to become ready…"
+          : "ComfyUI started; waiting for it to become ready…",
+      );
+      void useGenerationStore.getState().refreshRuntimeStatus();
+    } catch (err) {
+      setComfyuiLaunchError(
+        err instanceof Error ? err.message : "Failed to launch ComfyUI",
+      );
+    } finally {
+      setIsLaunchingComfyui(false);
+    }
+  };
+
+  const handlePrepareComfyuiEnvironment = async () => {
+    setIsLaunchingComfyui(true);
+    setComfyuiLaunchError(null);
+    try {
+      const status = await prepareComfyuiEnvironment();
+      setEnvironmentSetupStatus(status);
+      setPythonChoiceOpen(false);
+      setComfyuiLaunchMessage(
+        status.message ?? "Creating a managed ComfyUI environment…",
+      );
+    } catch (err) {
+      setComfyuiLaunchError(
+        err instanceof Error
+          ? err.message
+          : "Failed to create the ComfyUI environment",
+      );
+    } finally {
+      setIsLaunchingComfyui(false);
+    }
+  };
+
+  const comfyuiIsReady =
+    runtimeStatus?.comfyui.status === "connected" &&
+    connectionStatus === "connected";
+  const comfyuiStatusResolving =
+    runtimeStatus === null ||
+    connectionStatus === "connecting" ||
+    (runtimeStatus.comfyui.status === "connected" &&
+      connectionStatus !== "connected");
 
   const derivedMaskMappings = useGenerationStore((s) => s.derivedMaskMappings);
   const activeWorkflowRules = useGenerationStore((s) => s.activeWorkflowRules);
@@ -1008,6 +1161,7 @@ export function GenerationPanel() {
             size="small"
             onClick={() => setEditorOpen(true)}
             title="Open ComfyUI Node Editor"
+            disabled={connectionStatus !== "connected"}
             sx={{ color: "text.secondary" }}
           >
             <OpenInNew fontSize="small" />
@@ -1058,7 +1212,66 @@ export function GenerationPanel() {
 
       {/* Workflow Selector */}
       <Box sx={{ px: 2, pb: 2 }}>
-        {selectedWorkflowId ? (
+        {comfyuiStatusResolving ? (
+          <Box
+            sx={{
+              p: 2,
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              color: "text.secondary",
+            }}
+          >
+            <CircularProgress size={16} />
+            <Typography variant="caption">Connecting to ComfyUI…</Typography>
+          </Box>
+        ) : !comfyuiIsReady ? (
+          <Box
+            sx={{
+              p: 2,
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 1,
+              bgcolor: "background.paper",
+            }}
+          >
+            <Typography variant="subtitle2">ComfyUI is not connected</Typography>
+            <Typography
+              variant="caption"
+              sx={{ color: "text.secondary", display: "block", mt: 0.5 }}
+            >
+              Connect a running instance before choosing a generation
+              workflow.
+            </Typography>
+            {canLaunchLocalComfyui ? (
+              <Button
+                variant="contained"
+                size="small"
+                onClick={() => void requestComfyuiLaunch()}
+                disabled={isLaunchingComfyui}
+                sx={{ mt: 1.5, textTransform: "none" }}
+              >
+                {isLaunchingComfyui ? "Launching ComfyUI…" : "Launch ComfyUI"}
+              </Button>
+            ) : null}
+            {comfyuiLaunchMessage ? (
+              <Typography
+                variant="caption"
+                sx={{ color: "text.secondary", display: "block", mt: 1 }}
+              >
+                {comfyuiLaunchMessage}
+              </Typography>
+            ) : null}
+            {comfyuiLaunchError ? (
+              <Typography
+                variant="caption"
+                sx={{ color: "error.main", display: "block", mt: 1 }}
+              >
+                {comfyuiLaunchError}
+              </Typography>
+            ) : null}
+          </Box>
+        ) : selectedWorkflowId ? (
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
             <Tooltip title="Back to workflow menu">
               <IconButton
@@ -1092,7 +1305,9 @@ export function GenerationPanel() {
             persistenceError={workflowMenuLayout.error}
           />
         )}
-        {!selectedWorkflowId && workflowLoadError ? (
+        {comfyuiIsReady &&
+        !selectedWorkflowId &&
+        workflowLoadError ? (
           <Box sx={{ mt: 1 }}>
             <Typography
               variant="caption"
@@ -1589,6 +1804,61 @@ export function GenerationPanel() {
           )}
         </>
       ) : null}
+
+      <Dialog
+        open={pythonChoiceOpen}
+        onClose={() => setPythonChoiceOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Choose a ComfyUI Python environment</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            No virtual environment or portable Python installation was found.
+            Choose an existing Python executable, let vlo create a managed
+            environment inside the ComfyUI checkout, or explicitly use the
+            Python interpreter running vlo.
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            label="Existing Python executable"
+            value={pythonPath}
+            onChange={(event) => setPythonPath(event.target.value)}
+            placeholder={
+              navigator.platform.startsWith("Win")
+                ? "C:\\path\\to\\venv\\Scripts\\python.exe"
+                : "/path/to/venv/bin/python"
+            }
+          />
+        </DialogContent>
+        <DialogActions sx={{ flexWrap: "wrap" }}>
+          <Button onClick={() => setPythonChoiceOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => void handlePrepareComfyuiEnvironment()}
+            disabled={isLaunchingComfyui}
+          >
+            Create managed environment
+          </Button>
+          <Button
+            onClick={() =>
+              void requestComfyuiLaunch({ useSystemPython: true })
+            }
+            disabled={isLaunchingComfyui}
+          >
+            Use vlo Python
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() =>
+              void requestComfyuiLaunch({ pythonPath: pythonPath.trim() })
+            }
+            disabled={isLaunchingComfyui || !pythonPath.trim()}
+          >
+            Use selected Python
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={customGenerateDialogOpen}

@@ -1,11 +1,43 @@
 import { API_BASE_URL } from "../config";
 import type {
+  ComfyuiInstallVerification,
   RuntimeSettingsPatch,
   RuntimeSettingsPayload,
   RuntimeStatus,
 } from "../types/RuntimeStatus";
 
 const APP_API = `${API_BASE_URL}/app`;
+
+export type ComfyuiInstallPhase =
+  | "idle"
+  | "cloning"
+  | "creating_environment"
+  | "installing_requirements"
+  | "complete"
+  | "failed";
+
+export interface ComfyuiInstallStatus {
+  phase: ComfyuiInstallPhase;
+  running: boolean;
+  targetPath: string | null;
+  message: string | null;
+  error: string | null;
+}
+
+export interface ComfyuiLaunchResult {
+  started: boolean;
+  alreadyRunning: boolean;
+  requiresPythonChoice?: boolean;
+  message?: string;
+  pid?: number;
+  logPath?: string;
+}
+
+interface DirectoryPickerResult {
+  cancelled: boolean;
+  path: string | null;
+  verification: ComfyuiInstallVerification | null;
+}
 
 function extractErrorMessage(payload: unknown): string | null {
   if (typeof payload === "string") {
@@ -104,4 +136,58 @@ export async function updateRuntimeSettings(
     throw new Error(await parseErrorMessage(response));
   }
   return (await response.json()) as RuntimeSettingsPayload;
+}
+
+async function postRuntimeAction<T>(
+  path: string,
+  body?: Record<string, unknown>,
+): Promise<T> {
+  const response = await fetch(`${APP_API}${path}`, {
+    method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as T;
+}
+
+export function pickComfyuiDirectory(
+  purpose: "existing" | "install",
+): Promise<DirectoryPickerResult> {
+  return postRuntimeAction("/comfyui/pick-directory", { purpose });
+}
+
+export function verifyComfyuiInstall(
+  path: string,
+): Promise<ComfyuiInstallVerification> {
+  return postRuntimeAction("/comfyui/verify-install", { path });
+}
+
+export function installComfyui(
+  parentPath: string,
+): Promise<ComfyuiInstallStatus> {
+  return postRuntimeAction("/comfyui/install", { parentPath });
+}
+
+export function prepareComfyuiEnvironment(): Promise<ComfyuiInstallStatus> {
+  return postRuntimeAction("/comfyui/environment");
+}
+
+export async function getComfyuiInstallStatus(): Promise<ComfyuiInstallStatus> {
+  const response = await fetch(`${APP_API}/comfyui/install`);
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as ComfyuiInstallStatus;
+}
+
+export function launchComfyui(
+  options: {
+    pythonPath?: string;
+    useSystemPython?: boolean;
+  } = {},
+): Promise<ComfyuiLaunchResult> {
+  return postRuntimeAction("/comfyui/launch", options);
 }

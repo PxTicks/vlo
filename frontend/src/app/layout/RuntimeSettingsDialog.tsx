@@ -3,11 +3,13 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Select,
@@ -18,7 +20,10 @@ import type {
   RuntimeSettingsPayload,
   WorkflowMode,
 } from "../../types/RuntimeStatus";
-import { getRuntimeSettings } from "../../services/runtimeApi";
+import {
+  getRuntimeSettings,
+  pickComfyuiDirectory,
+} from "../../services/runtimeApi";
 import { useGenerationStore } from "../../features/generation";
 
 interface RuntimeSettingsDialogProps {
@@ -42,8 +47,11 @@ export function RuntimeSettingsDialog({
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>("default");
   const [comfyuiUrl, setComfyuiUrl] = useState("");
   const [comfyuiInstallDir, setComfyuiInstallDir] = useState("");
+  const [allowUnverifiedInstallDir, setAllowUnverifiedInstallDir] =
+    useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pickingDirectory, setPickingDirectory] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,6 +68,7 @@ export function RuntimeSettingsDialog({
         setWorkflowMode(nextPayload.settings.workflowMode);
         setComfyuiUrl(nextPayload.settings.comfyuiUrl);
         setComfyuiInstallDir(nextPayload.settings.comfyuiInstallDir ?? "");
+        setAllowUnverifiedInstallDir(false);
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
@@ -84,6 +93,7 @@ export function RuntimeSettingsDialog({
         workflowMode,
         comfyuiUrl,
         comfyuiInstallDir: comfyuiInstallDir.trim() || null,
+        allowUnverifiedComfyuiInstallDir: allowUnverifiedInstallDir,
       });
       onClose();
     } catch (err) {
@@ -92,6 +102,35 @@ export function RuntimeSettingsDialog({
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePickComfyuiDirectory = async () => {
+    setPickingDirectory(true);
+    setError(null);
+    try {
+      const result = await pickComfyuiDirectory("existing");
+      if (result.cancelled || !result.path) return;
+      if (!result.verification?.valid || !result.verification.installPath) {
+        setComfyuiInstallDir(
+          result.verification?.installPath ?? result.path,
+        );
+        setError(
+          result.verification?.warnings[0] ??
+            "The selected folder could not be verified. Enable the override below to save it anyway.",
+        );
+        return;
+      }
+      setComfyuiInstallDir(result.verification.installPath);
+      setAllowUnverifiedInstallDir(false);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to choose the ComfyUI directory",
+      );
+    } finally {
+      setPickingDirectory(false);
     }
   };
 
@@ -125,13 +164,34 @@ export function RuntimeSettingsDialog({
             onChange={(event) => setComfyuiUrl(event.target.value)}
             fullWidth
           />
-          <TextField
-            size="small"
-            label="ComfyUI install directory"
-            value={comfyuiInstallDir}
-            disabled={loading || saving}
-            onChange={(event) => setComfyuiInstallDir(event.target.value)}
-            fullWidth
+          <Box sx={{ display: "flex", gap: 1 }}>
+            <TextField
+              size="small"
+              label="ComfyUI install directory"
+              value={comfyuiInstallDir}
+              disabled={loading || saving || pickingDirectory}
+              onChange={(event) => setComfyuiInstallDir(event.target.value)}
+              fullWidth
+            />
+            <Button
+              variant="outlined"
+              onClick={() => void handlePickComfyuiDirectory()}
+              disabled={loading || saving || pickingDirectory}
+            >
+              Browse
+            </Button>
+          </Box>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={allowUnverifiedInstallDir}
+                onChange={(event) =>
+                  setAllowUnverifiedInstallDir(event.target.checked)
+                }
+                disabled={loading || saving}
+              />
+            }
+            label="Allow an unverified ComfyUI directory"
           />
           <Box>
             <Typography variant="caption" color="text.secondary">

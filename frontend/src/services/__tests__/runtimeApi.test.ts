@@ -3,6 +3,8 @@ import { createMockResponse, stubFetch } from "../../testUtils/fetch";
 import {
   getRuntimeSettings,
   getRuntimeStatus,
+  launchComfyui,
+  prepareComfyuiEnvironment,
   updateRuntimeSettings,
 } from "../runtimeApi";
 
@@ -65,6 +67,40 @@ describe("getRuntimeStatus", () => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ workflowMode: "high_vram" }),
+    });
+  });
+
+  it("launches ComfyUI with an explicit Python choice", async () => {
+    const result = { started: true, alreadyRunning: false, pid: 4321 };
+    const fetchMock = stubFetch(createMockResponse({ json: result }));
+
+    await expect(
+      launchComfyui({ pythonPath: "/opt/comfy-venv/bin/python" }),
+    ).resolves.toEqual(result);
+    expect(fetchMock).toHaveBeenCalledWith("/app/comfyui/launch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pythonPath: "/opt/comfy-venv/bin/python",
+      }),
+    });
+  });
+
+  it("starts explicit managed-environment setup", async () => {
+    const status = {
+      phase: "creating_environment",
+      running: true,
+      targetPath: "/opt/ComfyUI",
+      message: "Creating environment",
+      error: null,
+    };
+    const fetchMock = stubFetch(createMockResponse({ json: status }));
+
+    await expect(prepareComfyuiEnvironment()).resolves.toEqual(status);
+    expect(fetchMock).toHaveBeenCalledWith("/app/comfyui/environment", {
+      method: "POST",
+      headers: undefined,
+      body: undefined,
     });
   });
 

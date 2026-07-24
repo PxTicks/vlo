@@ -7,12 +7,23 @@ export type Sam2RuntimeStatus = "available" | "unavailable";
 export type SamAudioRuntimeStatus = "available" | "unavailable";
 export type WorkflowMode = "default" | "high_vram";
 export type HighVramPromptStatus = "accepted" | "declined";
-export type ComfyuiInstallDirPromptStatus = "dismissed";
+export type ComfyuiInstallDirPromptStatus = "accepted" | "declined";
+
+export interface ComfyuiInstallVerification {
+  requestedPath: string;
+  installPath: string | null;
+  valid: boolean;
+  mainPyPresent: boolean;
+  sourceMarkers: string[];
+  layoutMarkers: string[];
+  warnings: string[];
+}
 
 export interface RuntimeSettings {
   workflowMode: WorkflowMode;
   comfyuiUrl: string;
   comfyuiInstallDir: string | null;
+  comfyuiInstallVerification: ComfyuiInstallVerification | null;
   highVramPromptStatus: HighVramPromptStatus | null;
   comfyuiInstallDirPromptStatus: ComfyuiInstallDirPromptStatus | null;
 }
@@ -41,6 +52,7 @@ export interface RuntimeSettingsPatch {
   workflowMode?: WorkflowMode;
   comfyuiUrl?: string;
   comfyuiInstallDir?: string | null;
+  allowUnverifiedComfyuiInstallDir?: boolean;
   highVramPromptStatus?: HighVramPromptStatus;
   comfyuiInstallDirPromptStatus?: ComfyuiInstallDirPromptStatus;
 }

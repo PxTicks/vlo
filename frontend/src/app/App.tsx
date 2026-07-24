@@ -22,6 +22,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ExtensionApprovalGate } from "../features/extensions";
 import { ExtensionModalHost } from "../features/extensions/ui/publicApi";
 import { MenuHostMount } from "../core/shell/MenuHostMount";
+import { ComfyUiSetupPrompt } from "./layout/ComfyUiSetupPrompt";
 
 // 1. Lazy load the heavy editor to separate it from the initial bundle
 const Editor = lazy(() =>
@@ -86,6 +87,7 @@ export function App() {
       </ErrorBoundary>
       <ExtensionModalHost />
       <MenuHostMount />
+      <ComfyUiSetupPrompt />
     </ThemeProvider>
   );
 }

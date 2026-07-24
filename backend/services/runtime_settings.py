@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 
 WorkflowMode = Literal["default", "high_vram"]
 HighVramPromptStatus = Literal["accepted", "declined"]
-ComfyuiInstallDirPromptStatus = Literal["dismissed"]
+ComfyuiInstallDirPromptStatus = Literal["accepted", "declined"]
 
 WORKFLOW_MODES: set[str] = {"default", "high_vram"}
 HIGH_VRAM_PROMPT_STATUSES: set[str] = {"accepted", "declined"}
-COMFYUI_INSTALL_DIR_PROMPT_STATUSES: set[str] = {"dismissed"}
+COMFYUI_INSTALL_DIR_PROMPT_STATUSES: set[str] = {"accepted", "declined"}
 
 SETTINGS_PATH = RUNTIME_ROOT / "app_settings.json"
 _UNSET = object()
@@ -68,6 +68,10 @@ def _normalize_prompt_status(value: Any, allowed: set[str]) -> str | None:
         return None
     if isinstance(value, str):
         normalized = value.strip().lower()
+        # "dismissed" was briefly written by development builds before the
+        # prompt represented an explicit generative-AI choice.
+        if normalized == "dismissed" and "declined" in allowed:
+            return "declined"
         if normalized in allowed:
             return normalized
     return None
@@ -137,6 +141,8 @@ def update_runtime_settings(
         if normalized is not None and not Path(normalized).is_dir():
             raise ValueError("ComfyUI install directory does not exist")
         raw["comfyui_install_dir"] = normalized
+        if normalized is not None and comfyui_install_dir_prompt_status is None:
+            raw["comfyui_install_dir_prompt_status"] = "accepted"
 
     if comfyui_install_dir_prompt_status is not None:
         if comfyui_install_dir_prompt_status not in COMFYUI_INSTALL_DIR_PROMPT_STATUSES:

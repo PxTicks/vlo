@@ -32,6 +32,13 @@ Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, 
 1. It uses the File System Access API for smooth and efficient file management directly on disk. This allows for a unified file management interface, whether you launch vlo on your own computer or on a remote service (e.g. runpod). You can still access your locally-stored project files. One caveat: it is best to keep your projects in a folder where you can easily find them, as clearing browser data will forget their location.
 2. The media renderer is built on mediabunny, which wraps webcodecs. Webcodecs has implementation differences between firefox and chrome, and during early testing, this led to noticeable lag. The Webcodecs API is the basis of frame-accurate web video, and is indispensable for a project like this.
 
+## Known issues and TODOs
+
+Known compatibility limitations and their current workarounds are tracked in
+[`docs/todos/known_issues.md`](docs/todos/known_issues.md). This includes the
+partially supported arrangement where vlo runs in WSL and ComfyUI runs on
+Windows.
+
 ## Features
 
 - SAM2 points editor and masking.

@@ -490,6 +490,12 @@ def _parse_workflow_menu(path: Path, metadata_by_workflow_id: dict[str, dict[str
 
 
 def _parse_workflow_menu_tree(path: Path) -> dict[str, list[dict[str, Any]]]:
+    """Reads the navigable tree from a menu config of either schema version.
+
+    `hidden_workflows` is deliberately not read here: hidden workflows are
+    already filtered out of /workflow/list, so they never reach the leaf IDs
+    the shell resolves this tree against. Placements for them are inert.
+    """
     if not path.exists():
         return {"nodes": [], "leafPlacements": []}
     try:

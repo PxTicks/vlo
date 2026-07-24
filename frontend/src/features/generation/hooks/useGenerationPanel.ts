@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import type { SelectChangeEvent, ChipProps } from "@mui/material";
+import type { ChipProps } from "@mui/material";
 import type { Asset } from "../../../types/Asset";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { usePlayerStore } from "../../player/usePlayerStore";
@@ -806,13 +806,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     [loadWorkflow, setWorkflowLoadState],
   );
 
-  const handleWorkflowChange = useCallback(
-    (event: SelectChangeEvent) => {
-      handleWorkflowSelect(event.target.value);
-    },
-    [handleWorkflowSelect],
-  );
-
   const handleDismissWorkflowWarning = useCallback(() => {
     clearWorkflowWarning();
   }, [clearWorkflowWarning]);
@@ -1480,7 +1473,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     handleInterruptCurrent,
     handleClearQueue,
     handleUrlSave,
-    handleWorkflowChange,
     handleWorkflowSelect,
     handleRetryWorkflow,
     handleDismissWorkflowWarning,

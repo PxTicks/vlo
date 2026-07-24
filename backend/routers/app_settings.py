@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Request
+from fastapi.concurrency import run_in_threadpool
 
 from api_errors import error_response
 from services.comfyui.comfyui_client import get_comfyui_url, set_comfyui_url
@@ -126,7 +127,7 @@ async def patch_app_settings(request: Request):
 @router.get("/menu-layouts/{menu_id}")
 async def get_persisted_menu_layout(menu_id: str):
     try:
-        return get_menu_layout(menu_id)
+        return await run_in_threadpool(get_menu_layout, menu_id)
     except ValueError as exc:
         return error_response(
             400,
@@ -155,7 +156,8 @@ async def put_persisted_menu_layout(menu_id: str, request: Request):
             retryable=False,
         )
     try:
-        return put_menu_layout(
+        return await run_in_threadpool(
+            put_menu_layout,
             menu_id,
             body.get("customization"),
             body.get("baseRevision"),
@@ -187,7 +189,7 @@ async def put_persisted_menu_layout(menu_id: str, request: Request):
 @router.delete("/menu-layouts/{menu_id}")
 async def delete_persisted_menu_layout(menu_id: str):
     try:
-        return delete_menu_layout(menu_id)
+        return await run_in_threadpool(delete_menu_layout, menu_id)
     except ValueError as exc:
         return error_response(
             400,

@@ -74,7 +74,7 @@ describe("menuTreePersistence", () => {
       nodes: [],
       leafPlacements: [{ leafId: "new.json", parentId: null, order: 0 }],
     };
-    await saveMenuTreeLayout(DEFINITION, ["new.json"], layout, 3);
+    await saveMenuTreeLayout(DEFINITION, ["new.json"], layout, 3, null);
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "/app/menu-layouts/generation.workflows",
@@ -109,6 +109,7 @@ describe("menuTreePersistence", () => {
         [],
         { nodes: [], leafPlacements: [] },
         1,
+        null,
       ),
     ).rejects.toThrow("Revision conflict");
   });

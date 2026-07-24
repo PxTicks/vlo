@@ -73,8 +73,13 @@ export async function saveMenuTreeLayout(
   availableLeafIds: readonly string[],
   layout: MenuTreeLayout,
   baseRevision: number,
+  baseCustomization: MenuTreeCustomization | null,
 ): Promise<MenuTreePersistenceSnapshot> {
-  const customization = createMenuTreeCustomization(definition, layout);
+  const customization = createMenuTreeCustomization(
+    definition,
+    layout,
+    baseCustomization,
+  );
   const response = await fetch(endpoint(definition.id), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

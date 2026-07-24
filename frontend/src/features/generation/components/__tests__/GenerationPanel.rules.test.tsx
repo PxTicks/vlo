@@ -89,7 +89,6 @@ function makeHookState(overrides: Record<string, unknown> = {}) {
     handleInterruptCurrent: vi.fn(),
     handleClearQueue: vi.fn(),
     handleUrlSave: vi.fn(),
-    handleWorkflowChange: vi.fn(),
     handleWorkflowSelect: vi.fn(),
     handleDismissWorkflowWarning: vi.fn(),
     handleOpenEditorFromWarning: vi.fn(),

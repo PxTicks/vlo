@@ -129,6 +129,10 @@ class _JsonRequest:
 def test_menu_layout_endpoints_report_validation_and_revision_conflicts(
     tmp_path, monkeypatch
 ):
+    async def direct_threadpool(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(app_settings, "run_in_threadpool", direct_threadpool)
     monkeypatch.setattr(
         menu_layouts, "MENU_LAYOUTS_PATH", tmp_path / "menu_layouts.json"
     )
@@ -167,3 +171,38 @@ def test_menu_layout_endpoints_report_validation_and_revision_conflicts(
         app_settings.delete_persisted_menu_layout("generation.workflows")
     )
     assert reset == {"revision": 0, "customization": None}
+
+
+def test_unusable_stored_record_does_not_lock_out_saving(tmp_path, monkeypatch):
+    path = tmp_path / "menu_layouts.json"
+    monkeypatch.setattr(menu_layouts, "MENU_LAYOUTS_PATH", path)
+
+    menu_layouts.put_menu_layout(
+        "generation.workflows", CUSTOMIZATION, base_revision=0
+    )
+
+    # Corrupt the stored customization while leaving the revision intact.
+    store = json.loads(path.read_text(encoding="utf-8"))
+    store["menus"]["generation.workflows"]["customization"]["customNodes"] = [
+        {"id": "favorites", "kind": "sideways", "label": "", "parentId": None}
+    ]
+    path.write_text(json.dumps(store), encoding="utf-8")
+
+    # The invalid customization is omitted, but its revision remains usable for
+    # recovery and cannot collide with an older client's revision.
+    assert menu_layouts.get_menu_layout("generation.workflows") == {
+        "revision": 1,
+        "customization": None,
+    }
+    recovered = menu_layouts.put_menu_layout(
+        "generation.workflows", CUSTOMIZATION, base_revision=1
+    )
+    assert recovered["revision"] == 2
+    assert menu_layouts.get_menu_layout("generation.workflows")["customization"] == (
+        CUSTOMIZATION
+    )
+
+    with pytest.raises(menu_layouts.MenuLayoutConflictError):
+        menu_layouts.put_menu_layout(
+            "generation.workflows", CUSTOMIZATION, base_revision=1
+        )

@@ -58,6 +58,12 @@ import {
   type MenuTreeLayout,
   type MenuTreeNode,
 } from "../../../core/shell/menuTree";
+import {
+  menuTreeContainerDndId,
+  menuTreeItemDndId,
+  resolveDropTarget,
+  type MenuTreeDragData,
+} from "./menuTreeDrop";
 
 export interface NestedMenuLeaf {
   readonly id: string;
@@ -84,13 +90,13 @@ export interface NestedMenuTreeProps<TLeaf extends NestedMenuLeaf> {
   ) => ReactNode;
   readonly onSave?: (layout: MenuTreeLayout) => Promise<boolean>;
   readonly onReset?: () => Promise<boolean>;
+  /**
+   * Editing is blocked until the persisted layout has arrived: the pre-load
+   * layout shows defaults, and saving that would discard the stored one.
+   */
+  readonly isLoading?: boolean;
   readonly isSaving?: boolean;
   readonly persistenceError?: string | null;
-}
-
-interface ItemData {
-  readonly item: MenuTreeItem;
-  readonly parentId: string | null;
 }
 
 interface NodeDialogState {
@@ -99,14 +105,6 @@ interface NodeDialogState {
   readonly parentId: string | null;
   readonly nodeId?: string;
   readonly initialLabel: string;
-}
-
-function itemDndId(item: MenuTreeItem): string {
-  return `menu-tree:${item.kind}:${item.id}`;
-}
-
-function containerDndId(parentId: string | null): string {
-  return `menu-tree-container:${parentId ?? "__root__"}`;
 }
 
 function hasNodeChildren(layout: MenuTreeLayout, nodeId: string): boolean {
@@ -160,7 +158,7 @@ function SortableItem({
   disabled,
   children,
 }: {
-  readonly data: ItemData;
+  readonly data: MenuTreeDragData;
   readonly disabled: boolean;
   readonly children: (props: {
     readonly dragHandleProps: Record<string, unknown>;
@@ -175,7 +173,7 @@ function SortableItem({
     transition,
     isDragging,
   } = useSortable({
-    id: itemDndId(data.item),
+    id: menuTreeItemDndId(data.item),
     data,
     disabled,
   });
@@ -204,7 +202,7 @@ function DropContainer({
   readonly children: ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({
-    id: containerDndId(parentId),
+    id: menuTreeContainerDndId(parentId),
     data: { parentId },
     disabled: !enabled,
   });
@@ -299,6 +297,7 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
   renderLeaf,
   onSave,
   onReset,
+  isLoading = false,
   isSaving = false,
   persistenceError = null,
 }: NestedMenuTreeProps<TLeaf>) {
@@ -353,16 +352,22 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
   const categories = directNodes.filter((node) => node.kind === "category");
   const hasInternalNodes = directFolders.length > 0 || categories.length > 0;
 
+  // The mutation must run here rather than inside the state updater: React
+  // invokes updaters during render, where a rejected edit would escape this
+  // catch and unmount the tree instead of surfacing as an error.
   const mutateDraft = (mutation: (current: MenuTreeLayout) => MenuTreeLayout) => {
+    let next: MenuTreeLayout;
     try {
-      setDraft((current) => mutation(current));
-      setResetRequested(false);
-      setEditError(null);
+      next = mutation(draft);
     } catch (reason) {
       setEditError(
         reason instanceof Error ? reason.message : "The menu change is invalid",
       );
+      return;
     }
+    setDraft(next);
+    setResetRequested(false);
+    setEditError(null);
   };
 
   const beginAdd = (
@@ -420,40 +425,16 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
   };
 
   const handleDragStart = (event: DragStartEvent) => {
-    const data = event.active.data.current as ItemData | undefined;
+    const data = event.active.data.current as MenuTreeDragData | undefined;
     setActiveItem(data?.item ?? null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveItem(null);
-    if (!event.over) return;
-    const activeData = event.active.data.current as ItemData | undefined;
-    if (!activeData) return;
-
-    const overData = event.over.data.current as
-      | ItemData
-      | { readonly parentId: string | null }
-      | undefined;
-    let targetParentId: string | null;
-    let targetIndex: number;
-    if (String(event.over.id).startsWith("menu-tree-container:")) {
-      targetParentId = overData?.parentId ?? null;
-      targetIndex = getMenuTreeChildren(draft, targetParentId).length;
-    } else {
-      const overItem = (overData as ItemData | undefined)?.item;
-      if (!overItem) return;
-      targetParentId = (overData as ItemData).parentId;
-      targetIndex = getMenuTreeChildren(draft, targetParentId).findIndex(
-        (item) => item.kind === overItem.kind && item.id === overItem.id,
-      );
-    }
+    const target = resolveDropTarget(draft, event);
+    if (!target) return;
     mutateDraft((current) =>
-      moveMenuTreeItem(
-        current,
-        activeData.item,
-        targetParentId,
-        Math.max(0, targetIndex),
-      ),
+      moveMenuTreeItem(current, target.item, target.parentId, target.index),
     );
   };
 
@@ -621,7 +602,7 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
                 )}
               </Box>
               <SortableContext
-                items={categoryItems.map(itemDndId)}
+                items={categoryItems.map(menuTreeItemDndId)}
                 strategy={verticalListSortingStrategy}
               >
                 {folderNodes.map(renderFolder)}
@@ -658,7 +639,7 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
       : null;
   }
 
-  const sortableIds = childItems.map(itemDndId);
+  const sortableIds = childItems.map(menuTreeItemDndId);
 
   return (
     <Box aria-label={ariaLabel}>
@@ -706,6 +687,7 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
             <Button
               size="small"
               startIcon={<EditOutlined />}
+              disabled={isLoading}
               onClick={() => {
                 setDraft(layout);
                 setEditing(true);

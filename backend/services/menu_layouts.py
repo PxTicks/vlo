@@ -215,21 +215,32 @@ def _write_store(store: dict[str, Any]) -> None:
         raise
 
 
-def get_menu_layout(menu_id: str) -> MenuLayoutRecord:
-    validate_menu_id(menu_id)
-    with _STORE_LOCK:
-        raw_record = _read_store()["menus"].get(menu_id)
+def _read_record(store: dict[str, Any], menu_id: str) -> MenuLayoutRecord:
+    """Reads a stored record while preserving valid revision history.
+
+    A corrupt or future customization is omitted, but its numeric revision is
+    still returned. The client can recover by saving against that revision
+    without resetting the token and allowing an older writer to pass an ABA
+    revision check.
+    """
+    raw_record = store["menus"].get(menu_id)
     if not isinstance(raw_record, dict):
         return {"revision": 0, "customization": None}
     revision = raw_record.get("revision")
     customization = raw_record.get("customization")
-    if not isinstance(revision, int) or revision < 1:
+    if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
         return {"revision": 0, "customization": None}
     try:
         normalized = validate_customization(customization)
     except ValueError:
-        return {"revision": 0, "customization": None}
+        return {"revision": revision, "customization": None}
     return {"revision": revision, "customization": normalized}
+
+
+def get_menu_layout(menu_id: str) -> MenuLayoutRecord:
+    validate_menu_id(menu_id)
+    with _STORE_LOCK:
+        return _read_record(_read_store(), menu_id)
 
 
 def put_menu_layout(
@@ -244,13 +255,7 @@ def put_menu_layout(
 
     with _STORE_LOCK:
         store = _read_store()
-        raw_current = store["menus"].get(menu_id)
-        current_revision = (
-            raw_current.get("revision")
-            if isinstance(raw_current, dict)
-            and isinstance(raw_current.get("revision"), int)
-            else 0
-        )
+        current_revision = _read_record(store, menu_id)["revision"]
         if current_revision != base_revision:
             raise MenuLayoutConflictError(
                 f"Menu layout revision is {current_revision}, not {base_revision}"

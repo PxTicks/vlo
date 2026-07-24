@@ -237,54 +237,53 @@ function compareOrdered(
   return a.order - b.order || a.id.localeCompare(b.id);
 }
 
-function sanitizeEffectiveLayout(layout: MenuTreeLayout): MenuTreeLayout {
-  const remaining = new Map(layout.nodes.map((node) => [node.id, node]));
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const node of remaining.values()) {
-      if (node.parentId !== null && !remaining.has(node.parentId)) {
-        remaining.delete(node.id);
-        changed = true;
-      }
+/**
+ * Persisted data is not authoritative: overrides may reference a removed
+ * parent, reparent a node beneath a category, or — once a shipped definition
+ * reparents a node the user had already moved — close a cycle. These are
+ * repaired by falling back to root placement rather than rejecting the layout.
+ */
+function normalizeNodeGraph(nodes: readonly MenuTreeNode[]): MenuTreeNode[] {
+  const byId = new Map(nodes.map((node) => [node.id, { ...node }]));
+
+  for (const node of byId.values()) {
+    const parent = node.parentId ? byId.get(node.parentId) : undefined;
+    if (node.parentId !== null && !parent) {
+      node.parentId = null;
+      continue;
+    }
+    if (parent && node.kind === "category" && parent.kind === "category") {
+      node.parentId = null;
     }
   }
 
-  const nodes = [...remaining.values()];
-  try {
-    assertNodeGraph(nodes);
-  } catch {
-    // Persisted data is not authoritative. Fall back to root placement for
-    // invalid moves while retaining labels and order where possible.
-    const normalized = nodes.map((node) => {
-      const parent = node.parentId ? remaining.get(node.parentId) : undefined;
-      return {
-        ...node,
-        parentId:
-          parent && !(node.kind === "category" && parent.kind === "category")
-            ? node.parentId
-            : null,
-      };
-    });
-    assertNodeGraph(normalized);
-    return {
-      nodes: normalized,
-      leafPlacements: layout.leafPlacements.map((placement) => ({
-        ...placement,
-        parentId:
-          placement.parentId && remaining.has(placement.parentId)
-            ? placement.parentId
-            : null,
-      })),
-    };
+  for (const node of byId.values()) {
+    const visited = new Set<string>([node.id]);
+    let current = node;
+    while (current.parentId !== null) {
+      if (visited.has(current.parentId)) {
+        // Break the edge that closes the cycle; the rest of the chain stands.
+        current.parentId = null;
+        break;
+      }
+      visited.add(current.parentId);
+      current = byId.get(current.parentId)!;
+    }
   }
 
+  return [...byId.values()];
+}
+
+function sanitizeEffectiveLayout(layout: MenuTreeLayout): MenuTreeLayout {
+  const nodes = normalizeNodeGraph(layout.nodes);
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  assertNodeGraph(nodes);
   return {
     nodes,
     leafPlacements: layout.leafPlacements.map((placement) => ({
       ...placement,
       parentId:
-        placement.parentId && remaining.has(placement.parentId)
+        placement.parentId && nodeIds.has(placement.parentId)
           ? placement.parentId
           : null,
     })),
@@ -385,12 +384,20 @@ function placementEquals(
   );
 }
 
+/**
+ * `previous` carries forward placements for leaves the layout never saw. A
+ * layout only contains leaves that were available when it was resolved, so
+ * without this a save taken while a workflow is missing — still loading, or
+ * temporarily absent from disk — would erase that workflow's placement.
+ */
 export function createMenuTreeCustomization(
   definition: MenuTreeDefinition,
   layout: MenuTreeLayout,
+  previous?: MenuTreeCustomization | null,
 ): MenuTreeCustomization {
   assertMenuTreeDefinition(definition);
   assertMenuTreeLayout(layout);
+  if (previous) assertMenuTreeCustomization(previous);
 
   const defaultNodes = new Map(definition.nodes.map((node) => [node.id, node]));
   const layoutNodes = new Map(layout.nodes.map((node) => [node.id, node]));
@@ -419,9 +426,17 @@ export function createMenuTreeCustomization(
   const defaults = new Map(
     definition.leafPlacements.map((leaf) => [leaf.leafId, leaf]),
   );
-  const leafPlacements = layout.leafPlacements.filter(
-    (leaf) => !placementEquals(defaults.get(leaf.leafId), leaf),
+  const presentLeafIds = new Set(
+    layout.leafPlacements.map((leaf) => leaf.leafId),
   );
+  const leafPlacements = [
+    ...layout.leafPlacements.filter(
+      (leaf) => !placementEquals(defaults.get(leaf.leafId), leaf),
+    ),
+    ...(previous?.leafPlacements ?? []).filter(
+      (leaf) => !presentLeafIds.has(leaf.leafId),
+    ),
+  ];
 
   return {
     version: MENU_TREE_VERSION,

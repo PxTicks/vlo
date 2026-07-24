@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { DragEndEvent } from "@dnd-kit/core";
 import { NestedMenuTree, type NestedMenuLeaf } from "../NestedMenuTree";
-import type { MenuTreeLayout } from "../../../../core/shell/menuTree";
+import { resolveDropTarget } from "../menuTreeDrop";
+import {
+  moveMenuTreeItem,
+  type MenuTreeItem,
+  type MenuTreeLayout,
+} from "../../../../core/shell/menuTree";
 
 const LAYOUT: MenuTreeLayout = {
   nodes: [
@@ -151,5 +157,113 @@ describe("NestedMenuTree", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(screen.getByText("Could not save menu")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+  });
+});
+
+function dragEvent(
+  item: MenuTreeItem,
+  parentId: string | null,
+  over: { id: string; data: Record<string, unknown> } | null,
+): DragEndEvent {
+  return {
+    active: { id: "active", data: { current: { item, parentId } } },
+    over: over
+      ? { id: over.id, data: { current: over.data } }
+      : null,
+  } as unknown as DragEndEvent;
+}
+
+describe("resolveDropTarget", () => {
+  it("appends to the container when dropped on empty container space", () => {
+    const target = resolveDropTarget(
+      LAYOUT,
+      dragEvent({ kind: "leaf", id: "other" }, null, {
+        id: "menu-tree-container:image.generate",
+        data: { parentId: "image.generate" },
+      }),
+    );
+
+    expect(target).toEqual({
+      item: { kind: "leaf", id: "other" },
+      parentId: "image.generate",
+      index: 1,
+    });
+  });
+
+  it("takes the slot of the item it is dropped on", () => {
+    const target = resolveDropTarget(
+      LAYOUT,
+      dragEvent({ kind: "leaf", id: "other" }, null, {
+        id: "menu-tree:node:image.generate",
+        data: {
+          item: { kind: "node", id: "image.generate" },
+          parentId: "image",
+        },
+      }),
+    );
+
+    expect(target).toEqual({
+      item: { kind: "leaf", id: "other" },
+      parentId: "image",
+      index: 0,
+    });
+  });
+
+  it("reorders within a parent identically in both directions", () => {
+    const flat: MenuTreeLayout = {
+      nodes: [],
+      leafPlacements: [
+        { leafId: "a", parentId: null, order: 0 },
+        { leafId: "b", parentId: null, order: 1 },
+        { leafId: "c", parentId: null, order: 2 },
+      ],
+    };
+    const dropOn = (dragged: string, overLeaf: string) => {
+      const target = resolveDropTarget(
+        flat,
+        dragEvent({ kind: "leaf", id: dragged }, null, {
+          id: `menu-tree:leaf:${overLeaf}`,
+          data: { item: { kind: "leaf", id: overLeaf }, parentId: null },
+        }),
+      )!;
+      return moveMenuTreeItem(
+        flat,
+        target.item,
+        target.parentId,
+        target.index,
+      )
+        .leafPlacements.slice()
+        .sort((x, y) => x.order - y.order)
+        .map((placement) => placement.leafId);
+    };
+
+    expect(dropOn("a", "c")).toEqual(["b", "c", "a"]);
+    expect(dropOn("c", "a")).toEqual(["c", "a", "b"]);
+  });
+
+  it("ignores drops outside a droppable or without drag data", () => {
+    expect(
+      resolveDropTarget(LAYOUT, dragEvent({ kind: "leaf", id: "other" }, null, null)),
+    ).toBeNull();
+
+    const withoutOverData = {
+      active: { id: "active", data: { current: { item: { kind: "leaf", id: "other" }, parentId: null } } },
+      over: { id: "menu-tree:leaf:flux", data: { current: undefined } },
+    } as unknown as DragEndEvent;
+    expect(resolveDropTarget(LAYOUT, withoutOverData)).toBeNull();
+  });
+
+  it("resolves drops that moveMenuTreeItem rejects, leaving the caller to report them", () => {
+    const target = resolveDropTarget(
+      LAYOUT,
+      dragEvent({ kind: "node", id: "image" }, null, {
+        id: "menu-tree-container:image.generate",
+        data: { parentId: "image.generate" },
+      }),
+    )!;
+
+    expect(() =>
+      moveMenuTreeItem(LAYOUT, target.item, target.parentId, target.index),
+    ).toThrow(/cannot be moved into itself/);
   });
 });

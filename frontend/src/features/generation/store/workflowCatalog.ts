@@ -11,13 +11,6 @@ import type { TempWorkflow, WorkflowOption } from "./types";
 
 const UNGROUPED_WORKFLOW_GROUP_ORDER = 1_000_000;
 
-export interface WorkflowMenuSection {
-  key: string;
-  label: string | null;
-  order: number;
-  workflows: WorkflowOption[];
-}
-
 export function resolveWorkflowDisplayName(
   availableWorkflows: WorkflowOption[],
   selectedWorkflowId: string | null,
@@ -155,40 +148,5 @@ export function upsertTempWorkflowOption(
   return upsertWorkflowOption(workflows, {
     id: TEMP_WORKFLOW_ID,
     name: resolveTempWorkflowDisplayName(tempWorkflow),
-  });
-}
-
-export function buildWorkflowMenuSections(
-  workflows: WorkflowOption[],
-): WorkflowMenuSection[] {
-  const sortedWorkflows = sortWorkflowOptions(workflows);
-  const hasGroupedWorkflow = sortedWorkflows.some(
-    (workflow) => workflow.groupId || workflow.groupName,
-  );
-  const sections = new Map<string, WorkflowMenuSection>();
-
-  for (const workflow of sortedWorkflows) {
-    const key = workflow.groupId ?? "__ungrouped__";
-    const existing = sections.get(key);
-    if (existing) {
-      existing.workflows.push(workflow);
-      continue;
-    }
-
-    const label =
-      workflow.groupName ??
-      (hasGroupedWorkflow && key === "__ungrouped__" ? "Other" : null);
-    sections.set(key, {
-      key,
-      label,
-      order: workflow.groupOrder ?? UNGROUPED_WORKFLOW_GROUP_ORDER,
-      workflows: [workflow],
-    });
-  }
-
-  return [...sections.values()].sort((a, b) => {
-    const orderDifference = a.order - b.order;
-    if (orderDifference !== 0) return orderDifference;
-    return (a.label ?? "").localeCompare(b.label ?? "");
   });
 }

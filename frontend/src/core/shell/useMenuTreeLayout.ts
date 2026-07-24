@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   resolveMenuTreeLayout,
+  type MenuTreeCustomization,
   type MenuTreeDefinition,
   type MenuTreeLayout,
 } from "./menuTree";
@@ -31,6 +32,8 @@ export function useMenuTreeLayout(
   );
   const [layout, setLayout] = useState(defaultLayout);
   const [revision, setRevision] = useState(0);
+  const [customization, setCustomization] =
+    useState<MenuTreeCustomization | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +48,7 @@ export function useMenuTreeLayout(
       .then((snapshot) => {
         setLayout(snapshot.layout);
         setRevision(snapshot.revision);
+        setCustomization(snapshot.customization);
       })
       .catch((reason: unknown) => {
         if (abortController.signal.aborted) return;
@@ -58,7 +62,7 @@ export function useMenuTreeLayout(
         if (!abortController.signal.aborted) setIsLoading(false);
       });
     return () => abortController.abort();
-  }, [definition, availableLeafIds, defaultLayout]);
+  }, [definition, availableLeafIds]);
 
   const save = useCallback(
     async (nextLayout: MenuTreeLayout): Promise<boolean> => {
@@ -70,9 +74,11 @@ export function useMenuTreeLayout(
           availableLeafIds,
           nextLayout,
           revision,
+          customization,
         );
         setLayout(snapshot.layout);
         setRevision(snapshot.revision);
+        setCustomization(snapshot.customization);
         return true;
       } catch (reason) {
         setError(
@@ -83,7 +89,7 @@ export function useMenuTreeLayout(
         setIsSaving(false);
       }
     },
-    [availableLeafIds, definition, revision],
+    [availableLeafIds, customization, definition, revision],
   );
 
   const reset = useCallback(async (): Promise<boolean> => {
@@ -96,6 +102,7 @@ export function useMenuTreeLayout(
       );
       setLayout(snapshot.layout);
       setRevision(snapshot.revision);
+      setCustomization(snapshot.customization);
       return true;
     } catch (reason) {
       setError(
@@ -107,6 +114,8 @@ export function useMenuTreeLayout(
     }
   }, [availableLeafIds, definition]);
 
+  const clearError = useCallback(() => setError(null), []);
+
   return {
     layout,
     isLoading,
@@ -115,6 +124,6 @@ export function useMenuTreeLayout(
     revision,
     save,
     reset,
-    clearError: () => setError(null),
+    clearError,
   };
 }

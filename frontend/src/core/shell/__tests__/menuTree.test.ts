@@ -265,4 +265,155 @@ describe("menuTree", () => {
       expect.objectContaining({ id: "empty" }),
     );
   });
+
+  it("repairs a cycle introduced by overrides instead of rejecting the layout", () => {
+    // A shipped definition that reparents a node the user already moved can
+    // close a cycle between two otherwise-valid overrides.
+    const layout = resolveMenuTreeLayout(
+      DEFINITION,
+      {
+        version: MENU_TREE_VERSION,
+        customNodes: [],
+        nodeOverrides: [
+          { id: "image", parentId: "image.generate" },
+          { id: "image.generate", parentId: "image" },
+        ],
+        leafPlacements: [],
+      },
+      ["flux.json"],
+    );
+
+    // The edge that closes the cycle is dropped; the other one survives, and
+    // no node is discarded.
+    const parents = new Map(
+      layout.nodes.map((node) => [node.id, node.parentId]),
+    );
+    expect(parents.get("image")).toBe("image.generate");
+    expect(parents.get("image.generate")).toBe(null);
+    expect(layout.nodes).toHaveLength(DEFINITION.nodes.length);
+  });
+
+  it("reparents to root when an override nests a category under a category", () => {
+    const layout = resolveMenuTreeLayout(
+      DEFINITION,
+      {
+        version: MENU_TREE_VERSION,
+        customNodes: [],
+        nodeOverrides: [{ id: "video", parentId: "image" }],
+        leafPlacements: [],
+      },
+      ["flux.json"],
+    );
+
+    expect(layout.nodes.find((node) => node.id === "video")?.parentId).toBe(
+      null,
+    );
+  });
+
+  it("reparents nodes to root when their persisted parent no longer exists", () => {
+    const layout = resolveMenuTreeLayout(
+      DEFINITION,
+      {
+        version: MENU_TREE_VERSION,
+        customNodes: [
+          {
+            id: "orphan",
+            kind: "folder",
+            label: "Orphan",
+            parentId: "removed.parent",
+            order: 0,
+          },
+          {
+            id: "orphan.child",
+            kind: "folder",
+            label: "Child",
+            parentId: "orphan",
+            order: 0,
+          },
+        ],
+        nodeOverrides: [],
+        leafPlacements: [],
+      },
+      ["flux.json"],
+    );
+
+    expect(layout.nodes.find((node) => node.id === "orphan")?.parentId).toBe(
+      null,
+    );
+    expect(
+      layout.nodes.find((node) => node.id === "orphan.child")?.parentId,
+    ).toBe("orphan");
+  });
+
+  it("retains new default descendants when their formerly empty parent was deleted", () => {
+    const evolvedDefinition = {
+      ...DEFINITION,
+      nodes: [
+        ...DEFINITION.nodes,
+        {
+          id: "image.edit",
+          kind: "folder",
+          label: "Edit",
+          parentId: "image",
+          order: 2,
+        },
+        {
+          id: "image.edit.new",
+          kind: "folder",
+          label: "New default",
+          parentId: "image.edit",
+          order: 0,
+        },
+      ],
+    } as const;
+    const layout = resolveMenuTreeLayout(
+      evolvedDefinition,
+      {
+        version: MENU_TREE_VERSION,
+        customNodes: [],
+        nodeOverrides: [{ id: "image.edit", deleted: true }],
+        leafPlacements: [],
+      },
+      ["flux.json"],
+    );
+
+    expect(layout.nodes.some((node) => node.id === "image.edit")).toBe(false);
+    expect(
+      layout.nodes.find((node) => node.id === "image.edit.new")?.parentId,
+    ).toBe(null);
+  });
+
+  it("carries forward placements for leaves the layout never saw", () => {
+    const previous = {
+      version: MENU_TREE_VERSION,
+      customNodes: [],
+      nodeOverrides: [],
+      leafPlacements: [
+        { leafId: "flux.json", parentId: null, order: 3 },
+        { leafId: "absent.json", parentId: "image.generate", order: 0 },
+      ],
+    } as const;
+
+    // "absent.json" is not installed right now, so it never reaches the layout.
+    const layout = resolveMenuTreeLayout(DEFINITION, previous, ["flux.json"]);
+    expect(
+      layout.leafPlacements.map((placement) => placement.leafId),
+    ).toEqual(["flux.json"]);
+
+    const customization = createMenuTreeCustomization(
+      DEFINITION,
+      layout,
+      previous,
+    );
+    expect(customization.leafPlacements).toContainEqual({
+      leafId: "absent.json",
+      parentId: "image.generate",
+      order: 0,
+    });
+
+    // Without the previous customization the placement is lost.
+    expect(
+      createMenuTreeCustomization(DEFINITION, layout).leafPlacements,
+    ).not.toContainEqual(expect.objectContaining({ leafId: "absent.json" }));
+  });
 });

@@ -1063,6 +1063,7 @@ export function GenerationPanel() {
           }
           onSave={workflowMenuLayout.save}
           onReset={workflowMenuLayout.reset}
+          isLoading={workflowMenuLayout.isLoading}
           isSaving={workflowMenuLayout.isSaving}
           persistenceError={workflowMenuLayout.error}
         />

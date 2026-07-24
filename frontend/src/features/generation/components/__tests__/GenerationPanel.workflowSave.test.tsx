@@ -140,7 +140,6 @@ function makeHookState(
     handleInterruptCurrent: vi.fn(),
     handleClearQueue: vi.fn(),
     handleUrlSave: vi.fn(),
-    handleWorkflowChange: vi.fn(),
     handleWorkflowSelect: vi.fn(),
     handleRetryWorkflow: vi.fn(),
     handleDismissWorkflowWarning: vi.fn(),

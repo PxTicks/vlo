@@ -163,7 +163,38 @@ export function assertMenuTreeCustomization(
       `Unsupported menu tree customization version '${customization.version}'.`,
     );
   }
-  assertNodeGraph(customization.customNodes);
+  const customNodesById = new Map<string, MenuTreeNode>();
+  for (const node of customization.customNodes) {
+    assertItemId(node.id, "Custom menu tree node");
+    assertLabel(node.label, `Custom menu tree node '${node.id}'`);
+    assertFiniteOrder(node.order, `Custom menu tree node '${node.id}'`);
+    if (customNodesById.has(node.id)) {
+      throw new Error(`Duplicate custom menu tree node '${node.id}'.`);
+    }
+    customNodesById.set(node.id, node);
+  }
+  for (const node of customization.customNodes) {
+    const customParent = node.parentId
+      ? customNodesById.get(node.parentId)
+      : undefined;
+    if (
+      node.kind === "category" &&
+      customParent?.kind === "category"
+    ) {
+      throw new Error(
+        `Custom menu tree category '${node.id}' cannot be nested beneath a category.`,
+      );
+    }
+    const visited = new Set<string>([node.id]);
+    let parentId = node.parentId;
+    while (parentId && customNodesById.has(parentId)) {
+      if (visited.has(parentId)) {
+        throw new Error(`Custom menu tree node '${node.id}' creates a cycle.`);
+      }
+      visited.add(parentId);
+      parentId = customNodesById.get(parentId)?.parentId ?? null;
+    }
+  }
 
   const overrideIds = new Set<string>();
   for (const override of customization.nodeOverrides) {

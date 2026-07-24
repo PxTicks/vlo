@@ -620,8 +620,15 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
                   />
                 )}
               </Box>
-              {folderNodes.map(renderFolder)}
-              {categoryLeaves.map((leaf) => renderLeafItem(leaf, node.id))}
+              <SortableContext
+                items={categoryItems.map(itemDndId)}
+                strategy={verticalListSortingStrategy}
+              >
+                {folderNodes.map(renderFolder)}
+                {categoryLeaves.map((leaf) =>
+                  renderLeafItem(leaf, node.id),
+                )}
+              </SortableContext>
               {editing &&
                 folderNodes.length === 0 &&
                 categoryLeaves.length === 0 && (

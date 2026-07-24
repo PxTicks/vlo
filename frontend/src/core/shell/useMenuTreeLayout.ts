@@ -25,10 +25,9 @@ export function useMenuTreeLayout(
   definition: MenuTreeDefinition,
   availableLeafIds: readonly string[],
 ): MenuTreeLayoutController {
-  const leafKey = availableLeafIds.join("\u0000");
   const defaultLayout = useMemo(
     () => resolveMenuTreeLayout(definition, null, availableLeafIds),
-    [definition, leafKey],
+    [definition, availableLeafIds],
   );
   const [layout, setLayout] = useState(defaultLayout);
   const [revision, setRevision] = useState(0);
@@ -59,7 +58,7 @@ export function useMenuTreeLayout(
         if (!abortController.signal.aborted) setIsLoading(false);
       });
     return () => abortController.abort();
-  }, [definition, leafKey, defaultLayout]);
+  }, [definition, availableLeafIds, defaultLayout]);
 
   const save = useCallback(
     async (nextLayout: MenuTreeLayout): Promise<boolean> => {

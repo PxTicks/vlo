@@ -204,6 +204,32 @@ describe("menuTree", () => {
     });
   });
 
+  it("round-trips a custom folder nested beneath a default category", () => {
+    let layout = resolveMenuTreeLayout(DEFINITION, null, ["flux.json"]);
+    layout = addMenuTreeNode(layout, {
+      id: "image.favourites",
+      kind: "folder",
+      label: "Favourites",
+      parentId: "image",
+    });
+    const customization = createMenuTreeCustomization(DEFINITION, layout);
+
+    expect(customization.customNodes).toEqual([
+      expect.objectContaining({
+        id: "image.favourites",
+        parentId: "image",
+      }),
+    ]);
+    expect(
+      resolveMenuTreeLayout(DEFINITION, customization, ["flux.json"]).nodes,
+    ).toContainEqual(
+      expect.objectContaining({
+        id: "image.favourites",
+        parentId: "image",
+      }),
+    );
+  });
+
   it("moves nodes immutably and rejects invalid moves or non-empty deletion", () => {
     const layout = resolveMenuTreeLayout(DEFINITION, null, ["flux.json"]);
     const moved = moveMenuTreeItem(

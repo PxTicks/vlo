@@ -296,6 +296,7 @@ async def test_generation_holding_service_reattaches_inflight_delivery_on_load(
 @pytest.mark.anyio
 async def test_generation_holding_service_captures_websocket_outputs_and_finalizes(
     tmp_path: Path,
+    stub_comfyui_http: None,
 ) -> None:
     service = GenerationHoldingService(root=tmp_path / "holding")
     context = _delivery_context()
@@ -1023,6 +1024,7 @@ async def test_generation_monitor_resets_reconnect_budget_after_healthy_traffic(
 async def test_generation_monitor_marks_disappeared_prompt_as_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fast_delivery_timings: None,
 ) -> None:
     service = GenerationHoldingService(root=tmp_path / "holding")
     await service.create_delivery(
@@ -1037,16 +1039,8 @@ async def test_generation_monitor_marks_disappeared_prompt_as_error(
         return "missing", None
 
     monkeypatch.setattr(service, "_reconcile_prompt_state", _missing)
-    monkeypatch.setattr(
-        delivery_service_module,
-        "MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS",
-        0,
-    )
-    monkeypatch.setattr(
-        delivery_service_module,
-        "MONITOR_BACKSTOP_INTERVAL_SECONDS",
-        0,
-    )
+    # Timing constants are zeroed by fast_delivery_timings; MISS_THRESHOLD and
+    # RECONNECT_ATTEMPTS are behavioural and stay here.
     monkeypatch.setattr(
         delivery_service_module,
         "MONITOR_BACKSTOP_MISS_THRESHOLD",

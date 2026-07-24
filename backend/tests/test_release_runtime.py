@@ -7,6 +7,7 @@ from starlette.datastructures import FormData
 
 import main
 from routers import comfyui
+from services.hardware import VramInfo
 
 
 class DummyRequest:
@@ -99,6 +100,7 @@ def test_backend_extension_runtime_follows_application_lifespan(monkeypatch):
 def test_app_status_reports_connected_comfyui_and_available_sam2(
     monkeypatch,
     tmp_path: Path,
+    reset_hardware_probe_cache,
 ):
     index_file = tmp_path / "index.html"
     index_file.write_text("<!doctype html><html></html>", encoding="utf-8")
@@ -106,6 +108,7 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
     async def fake_get_http_client():
         return DummyClient()
 
+    monkeypatch.setattr(main, "detect_local_vram", lambda: VramInfo(total_mb=24576))
     monkeypatch.setattr(main, "FRONTEND_DIST_DIR", tmp_path)
     monkeypatch.setattr(main, "FRONTEND_INDEX_FILE", index_file)
     monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
@@ -163,10 +166,12 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
 
 def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
     monkeypatch,
+    reset_hardware_probe_cache,
 ):
     async def fake_get_http_client():
         return FailingClient()
 
+    monkeypatch.setattr(main, "detect_local_vram", lambda: VramInfo(total_mb=24576))
     monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
     monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
@@ -200,10 +205,14 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
     }
 
 
-def test_app_status_uses_installed_sam2_model_inventory(monkeypatch):
+def test_app_status_uses_installed_sam2_model_inventory(
+    monkeypatch,
+    reset_hardware_probe_cache,
+):
     async def fake_get_http_client():
         return DummyClient()
 
+    monkeypatch.setattr(main, "detect_local_vram", lambda: VramInfo(total_mb=24576))
     monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
     monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
@@ -265,6 +274,7 @@ def test_update_comfyui_config_rejects_invalid_urls():
 
 def test_generate_returns_structured_error_when_comfyui_is_unreachable(
     monkeypatch,
+    fast_delivery_timings,
 ):
     async def fake_get_http_client():
         return object()

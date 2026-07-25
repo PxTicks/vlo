@@ -59,6 +59,19 @@ export const colorGradeDefinition: TransformationDefinition = {
         ],
       },
       {
+        id: "color_grade_qualifier",
+        title: "Qualifier",
+        columns: 1,
+        controls: [
+          {
+            type: "custom",
+            label: "Qualifier",
+            name: "_qualifier",
+            componentId: QUALIFIER_CONTROL_ID,
+          },
+        ],
+      },
+      {
         id: "color_grade_light",
         title: "Light",
         columns: 1,
@@ -161,19 +174,6 @@ export const colorGradeDefinition: TransformationDefinition = {
             name: "_hueCurves",
             componentId: HUE_CURVES_CONTROL_ID,
             config: { kind: "hue" },
-          },
-        ],
-      },
-      {
-        id: "color_grade_qualifier",
-        title: "Qualifier",
-        columns: 1,
-        controls: [
-          {
-            type: "custom",
-            label: "Qualifier",
-            name: "_qualifier",
-            componentId: QUALIFIER_CONTROL_ID,
           },
         ],
       },

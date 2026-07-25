@@ -19,8 +19,17 @@ export class GenerationPanelComponent {
         return this.page.getByTestId('generation-connection-chip');
     }
 
-    get workflowSelect() {
-        return this.page.getByTestId('generation-workflow-select');
+    /** The nested workflow menu shown until a workflow is chosen. */
+    get workflowMenu() {
+        return this.panel.getByLabel('Generation workflows');
+    }
+
+    /**
+     * Workflows the menu has no placement for sit at its root, so a fixture
+     * workflow is reachable without opening a folder.
+     */
+    workflowMenuItem(name: string) {
+        return this.workflowMenu.getByRole('button', { name, exact: true });
     }
 
     get generateButton() {
@@ -48,7 +57,6 @@ export class GenerationPanelComponent {
     }
 
     async selectWorkflow(name: string) {
-        await this.workflowSelect.click();
-        await this.page.getByRole('option', { name }).click();
+        await this.workflowMenuItem(name).click();
     }
 }

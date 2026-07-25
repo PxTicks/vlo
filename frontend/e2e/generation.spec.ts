@@ -2,6 +2,9 @@ import { test, expect } from './fixtures';
 import { installApiMock } from './mocks/apiMock';
 import { installWebSocketMock, simulateWsEvent, simulateGenerationComplete } from './mocks/websocketMock';
 
+/** The sole entry in e2e/mocks/fixtures/workflow-list.json. */
+const FIXTURE_WORKFLOW_NAME = 'LTX2.3 I2V / T2V';
+
 test.describe('Generation Panel', () => {
 
     test('@smoke Connection chip shows connected status', async ({ page }) => {
@@ -36,7 +39,7 @@ test.describe('Generation Panel', () => {
         await expect(generationPanel.connectionChip).toHaveText('ComfyUI disconnected');
     });
 
-    test('Workflow selector lists available workflows', async ({ page }) => {
+    test('Workflow menu lists available workflows', async ({ page }) => {
         await installWebSocketMock(page);
         await installApiMock(page, {
             workflowList: [
@@ -51,18 +54,16 @@ test.describe('Generation Panel', () => {
         await editor.setup();
 
         const { generationPanel } = editor;
-        await expect(generationPanel.workflowSelect).toBeVisible();
+        await expect(generationPanel.workflowMenu).toBeVisible();
 
-        // Open the select dropdown
-        await generationPanel.workflowSelect.click();
-
-        // Verify all three workflows are listed
-        await expect(page.getByRole('option', { name: 'Workflow Alpha' })).toBeVisible();
-        await expect(page.getByRole('option', { name: 'Workflow Beta' })).toBeVisible();
-        await expect(page.getByRole('option', { name: 'Workflow Charlie' })).toBeVisible();
+        // None of these have a placement in the packaged menu, so all three
+        // sit at its root rather than inside a folder.
+        await expect(generationPanel.workflowMenuItem('Workflow Alpha')).toBeVisible();
+        await expect(generationPanel.workflowMenuItem('Workflow Beta')).toBeVisible();
+        await expect(generationPanel.workflowMenuItem('Workflow Charlie')).toBeVisible();
     });
 
-    test('Generate button disabled without connected backend', async ({ page }) => {
+    test('Generation is unavailable without a connected backend', async ({ page }) => {
         await installWebSocketMock(page);
         await installApiMock(page, {
             runtimeStatus: { comfyui: { status: 'disconnected', error: null } },
@@ -72,9 +73,12 @@ test.describe('Generation Panel', () => {
         const editor = new EditorComponent(page);
         await editor.setup();
 
+        // Generating needs a chosen workflow, and the panel withholds the
+        // workflow menu — so also the Generate button — until ComfyUI answers.
         const { generationPanel } = editor;
-        await expect(generationPanel.generateButton).toBeVisible();
-        await expect(generationPanel.generateButton).toBeDisabled();
+        await expect(generationPanel.panel.getByText('ComfyUI is not connected')).toBeVisible();
+        await expect(generationPanel.workflowMenu).toHaveCount(0);
+        await expect(generationPanel.generateButton).toHaveCount(0);
     });
 
     test('Generate happy path with progress', async ({ page }) => {
@@ -93,7 +97,8 @@ test.describe('Generation Panel', () => {
 
         const { generationPanel } = editor;
 
-        // Generate button should be enabled with connected backend + workflow
+        // The generate controls only exist once a workflow is chosen.
+        await generationPanel.selectWorkflow(FIXTURE_WORKFLOW_NAME);
         await expect(generationPanel.generateButton).toBeVisible();
         await expect(generationPanel.generateButton).toHaveText('Generate');
 
@@ -137,6 +142,7 @@ test.describe('Generation Panel', () => {
         const { generationPanel } = editor;
 
         // Wait for workflow to load so button is enabled
+        await generationPanel.selectWorkflow(FIXTURE_WORKFLOW_NAME);
         await expect(generationPanel.generateButton).toBeEnabled({ timeout: 10000 });
 
         // Start generation

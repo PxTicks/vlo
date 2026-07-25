@@ -442,6 +442,40 @@ export function useTransformationController(
     [applyTargetTransforms],
   );
 
+  /**
+   * Add a transform directly after an existing one instead of at the end of its
+   * tier. Chained color grades use this so each new grade lands adjacent to the
+   * grade it was spawned from — both to keep panel order matching render order
+   * and because the runtime only fuses a *contiguous* run of grade ops
+   * (see `preResolveFilterOperations`). The anchor is expected to be a dynamic
+   * transform; an unknown anchor falls back to ordinary tier insertion.
+   */
+  const handleAddTransformAfter = useCallback(
+    (typeOrFilterName: string, afterTransformId: string, isFilter = false) => {
+      const currentTarget = activeTargetRef.current;
+      if (!currentTarget) return;
+
+      const newTransform = createAddTransform(typeOrFilterName, isFilter);
+      if (!newTransform) return;
+
+      const currentTransforms = activeTransformsRef.current;
+      const anchorIndex = currentTransforms.findIndex(
+        (transform) => transform.id === afterTransformId,
+      );
+      if (anchorIndex === -1 || isDefaultTransform(newTransform.type)) {
+        applyTargetTransforms(
+          insertTransformRespectingDefaultOrder(currentTransforms, newTransform),
+        );
+        return;
+      }
+
+      const nextTransforms = [...currentTransforms];
+      nextTransforms.splice(anchorIndex + 1, 0, newTransform);
+      applyTargetTransforms(nextTransforms);
+    },
+    [applyTargetTransforms],
+  );
+
   const handleRemoveTransform = useCallback(
     (transformId: string) => {
       applyTargetTransforms(
@@ -599,6 +633,7 @@ export function useTransformationController(
     setActiveTransforms: applyTargetTransforms,
     updateActiveTransform: updateTargetTransform,
     handleAddTransform,
+    handleAddTransformAfter,
     handleRemoveTransform,
     handleSetTransformEnabled,
     handleSetDefaultGroupsEnabled,

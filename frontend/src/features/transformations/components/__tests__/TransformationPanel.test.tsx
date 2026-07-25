@@ -190,6 +190,103 @@ describe("TransformationPanel", () => {
     expect(screen.queryByText("Color (HSL)")).not.toBeInTheDocument();
   });
 
+  it("chains another color grade after the last one in the panel", () => {
+    installTimelineState({
+      selectedClipIds: ["clip_1"],
+      clips: [
+        {
+          ...baseClip,
+          transformations: [
+            {
+              id: "grade-1",
+              type: "filter",
+              filterName: "ColorGradeFilter",
+              isEnabled: true,
+              parameters: {},
+            },
+            {
+              id: "hsl-1",
+              type: "filter",
+              filterName: "HslAdjustmentFilter",
+              isEnabled: true,
+              parameters: { hue: 0 },
+            },
+          ],
+        },
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: mockSetClipTransformsAndShape,
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+    });
+
+    render(<TransformationPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "Color" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Color Grade" }));
+
+    expect(mockSetClipTransforms).toHaveBeenCalledTimes(1);
+    const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
+    expect(
+      (nextTransforms as { id: string; filterName?: string }[]).map(
+        (transform) => transform.filterName,
+      ),
+    ).toEqual([
+      "ColorGradeFilter",
+      "ColorGradeFilter",
+      "HslAdjustmentFilter",
+    ]);
+    expect((nextTransforms as { id: string }[])[1].id).not.toBe("grade-1");
+  });
+
+  it("numbers chained grades and lets the added ones be removed", () => {
+    installTimelineState({
+      selectedClipIds: ["clip_1"],
+      clips: [
+        {
+          ...baseClip,
+          transformations: [
+            {
+              id: "grade-1",
+              type: "filter",
+              filterName: "ColorGradeFilter",
+              isEnabled: true,
+              parameters: {},
+            },
+            {
+              id: "grade-2",
+              type: "filter",
+              filterName: "ColorGradeFilter",
+              isEnabled: true,
+              parameters: {},
+            },
+          ],
+        },
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: mockSetClipTransformsAndShape,
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+    });
+
+    render(<TransformationPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "Color" }));
+
+    expect(screen.getByText("Color Grade 1")).toBeInTheDocument();
+    expect(screen.getByText("Color Grade 2")).toBeInTheDocument();
+    // One panel-level action, not one per grade section.
+    expect(
+      screen.getAllByRole("button", { name: "Add Color Grade" }),
+    ).toHaveLength(1);
+
+    const removeButtons = screen.getAllByRole("button", { name: /remove/i });
+    expect(removeButtons).toHaveLength(2);
+    fireEvent.click(removeButtons[1]);
+
+    expect(mockSetClipTransforms).toHaveBeenCalledWith("clip_1", [
+      expect.objectContaining({ id: "grade-1" }),
+    ]);
+  });
+
   it("materializes the built-in color grade when its tab is opened", () => {
     render(<TransformationPanel />);
 

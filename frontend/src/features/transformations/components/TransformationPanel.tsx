@@ -6,10 +6,12 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { Alert, Box, Button, Typography } from "@mui/material";
+import { Alert, Box, Button, Tooltip, Typography } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import { AppMenu } from "../../../core/shell/AppMenu";
 import type { HostMenuItemDescriptor } from "../../../core/shell/menuDescriptors";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
+import type { ClipTransform } from "../../../types/TimelineTypes";
 import { useTransformationController } from "../hooks/useTransformationController";
 import {
   getEntryForTransform,
@@ -165,6 +167,7 @@ export function TransformationPanelSurface({
     setActiveTransforms,
     updateActiveTransform,
     handleAddTransform,
+    handleAddTransformAfter,
     handleRemoveTransform,
     handleSetTransformEnabled,
     handleSetDefaultGroupsEnabled,
@@ -314,9 +317,10 @@ export function TransformationPanelSurface({
     [activeTransforms],
   );
 
-  const colorGradeTransform = useMemo(
+  // Grades are chainable: a clip can carry several, applied in array order.
+  const colorGradeTransforms = useMemo(
     () =>
-      dynamicTransforms.find(
+      dynamicTransforms.filter(
         (transform) =>
           transform.type === "filter" &&
           "filterName" in transform &&
@@ -324,6 +328,7 @@ export function TransformationPanelSurface({
       ),
     [dynamicTransforms],
   );
+  const colorGradeTransform = colorGradeTransforms[0];
 
   const canUseColorGrade = useMemo(() => {
     const definition = getEntryByFilterName("ColorGradeFilter");
@@ -337,6 +342,41 @@ export function TransformationPanelSurface({
       )
     );
   }, [activeTargetKind, compatibilityClipType, compatibilityHasAudio]);
+
+  const colorGradePositions = useMemo(() => {
+    const positions = new Map<string, number>();
+    colorGradeTransforms.forEach((transform, index) => {
+      positions.set(transform.id, index);
+    });
+    return positions;
+  }, [colorGradeTransforms]);
+
+  // A chained stack of identically-named sections is unreadable, so grades are
+  // numbered by their position in the chain once there is more than one.
+  const getSectionTitle = useCallback(
+    (transform: ClipTransform) => {
+      const label = getLabelForTransform(transform);
+      const position = colorGradePositions.get(transform.id);
+      return position === undefined || colorGradePositions.size < 2
+        ? label
+        : `${label} ${position + 1}`;
+    },
+    [colorGradePositions],
+  );
+
+  const lastColorGradeTransform =
+    colorGradeTransforms[colorGradeTransforms.length - 1];
+
+  // New grades land at the end of the chain, right after the last existing one,
+  // so panel order keeps matching the order the grades are applied in.
+  const handleChainColorGrade = useCallback(() => {
+    if (!lastColorGradeTransform) return;
+    handleAddTransformAfter(
+      "ColorGradeFilter",
+      lastColorGradeTransform.id,
+      true,
+    );
+  }, [handleAddTransformAfter, lastColorGradeTransform]);
 
   useEffect(() => {
     if (effectsOnly) return;
@@ -987,7 +1027,7 @@ export function TransformationPanelSurface({
               const sectionId = getDynamicSectionId(t.id);
               const isActiveSection = activeSectionId === sectionId;
               const groups = getLayoutGroupsForTransform(t);
-              const title = getLabelForTransform(t);
+              const title = getSectionTitle(t);
 
               if (!groups || groups.length === 0) {
                 const missingContributionId =
@@ -1019,7 +1059,11 @@ export function TransformationPanelSurface({
                   title={title}
                   bgColor={bgColor}
                   onRemove={
-                    getTransformationTab(t) === "color"
+                    // The Color tab keeps one grade materialized at all times,
+                    // so removal only opens up once a chain exists — and then
+                    // never takes the chain below its last grade.
+                    getTransformationTab(t) === "color" &&
+                    colorGradePositions.size < 2
                       ? undefined
                       : () => handleRemoveTransform(t.id)
                   }
@@ -1059,7 +1103,7 @@ export function TransformationPanelSurface({
               if (!t) return null;
 
               const groups = getLayoutGroupsForTransform(t);
-              const title = getLabelForTransform(t);
+              const title = getSectionTitle(t);
 
               const bgColor = "#18181b";
 
@@ -1110,6 +1154,28 @@ export function TransformationPanelSurface({
             })()}
           </DragOverlay>
         </DndContext>
+
+        {!effectsOnly && activeTab === "color" && lastColorGradeTransform ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 1.5 }}>
+            <Tooltip
+              describeChild
+              title="Add another color grade, applied after the ones above"
+            >
+              <Button
+                size="small"
+                startIcon={<AddIcon fontSize="small" />}
+                onClick={handleChainColorGrade}
+                sx={{
+                  textTransform: "none",
+                  fontSize: "0.7rem",
+                  lineHeight: 1.2,
+                }}
+              >
+                Add Color Grade
+              </Button>
+            </Tooltip>
+          </Box>
+        ) : null}
 
         {visibleDefaultTransforms.length === 0 &&
         visibleDynamicTransforms.length === 0 &&

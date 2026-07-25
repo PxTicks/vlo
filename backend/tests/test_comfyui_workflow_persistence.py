@@ -260,19 +260,19 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
     assert [(node["id"], node["kind"], node["label"]) for node in tree["nodes"]] == [
         ("image", "category", "Image"),
         ("image.generate", "folder", "Generate"),
-        ("image.improve", "folder", "Improve"),
+        ("image.enhance", "folder", "Enhance"),
         ("video", "category", "Video"),
         ("video.generate", "folder", "Generate"),
         ("video.edit", "folder", "Edit"),
         ("video.control", "folder", "Control"),
-        ("video.improve", "folder", "Improve"),
+        ("video.enhance", "folder", "Enhance"),
     ]
     assert {
         placement["leafId"]: placement["parentId"]
         for placement in tree["leafPlacements"]
     } == {
         "vlo_klein_multi.json": "image.generate",
-        "vlo_SeedVR2_image.json": "image.improve",
+        "vlo_SeedVR2_image.json": "image.enhance",
         "vlo_ltx2_3.json": "video.generate",
         "vlo_wan2_2.json": "video.generate",
         "vlo_VACE_inpaint.json": "video.edit",
@@ -280,8 +280,8 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
         "vlo_ltx2_3_ic_edit.json": "video.edit",
         "vlo_wan_ttm.json": "video.control",
         "vlo_wan_animate.json": "video.control",
-        "vlo_SeedVR2_video.json": "video.improve",
-        "vlo_gimm_vfi.json": "video.improve",
+        "vlo_SeedVR2_video.json": "video.enhance",
+        "vlo_gimm_vfi.json": "video.enhance",
     }
 
 

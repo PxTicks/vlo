@@ -431,6 +431,32 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
         });
     });
 
+    // ── Persisted menu layouts ──
+    // Menu trees keep editing disabled until this load settles, so an unrouted
+    // request leaves the workflow menu permanently read-only.
+    let menuLayoutRevision = 0;
+    let menuLayoutCustomization: unknown = null;
+    await page.route('**/app/menu-layouts/*', async (route) => {
+        const method = route.request().method();
+        if (method === 'PUT') {
+            menuLayoutRevision += 1;
+            menuLayoutCustomization =
+                (route.request().postDataJSON() as { customization?: unknown })
+                    ?.customization ?? null;
+        } else if (method === 'DELETE') {
+            menuLayoutRevision += 1;
+            menuLayoutCustomization = null;
+        }
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                revision: menuLayoutRevision,
+                customization: menuLayoutCustomization,
+            }),
+        });
+    });
+
     await page.route(
         '**/app/generation-delivery/projects/*/pending',
         async (route) => {

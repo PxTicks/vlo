@@ -512,6 +512,12 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
                     justifyContent: "flex-start",
                     textTransform: "none",
                     minHeight: 36,
+                    py: 0.5,
+                    textAlign: "left",
+                    // Workflow names are single underscore-joined tokens, which
+                    // no default break opportunity can split.
+                    whiteSpace: "normal",
+                    overflowWrap: "anywhere",
                   }}
                 >
                   {leaf.label}
@@ -887,6 +893,8 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
                 borderColor: "primary.main",
                 borderRadius: 1,
                 boxShadow: 4,
+                maxWidth: 240,
+                overflowWrap: "anywhere",
               }}
             >
               {activeItem.kind === "node"

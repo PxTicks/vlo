@@ -395,11 +395,11 @@ describe("resolveMenuNodeIcon", () => {
 
   it("prefers the action a folder performs over the media it acts on", () => {
     const generate = resolveMenuNodeIcon(node("video.generate", "Generate"));
-    const improve = resolveMenuNodeIcon(node("video.improve", "Improve"));
+    const enhance = resolveMenuNodeIcon(node("video.enhance", "Enhance"));
     const video = resolveMenuNodeIcon(node("video", "Video"));
 
     expect(generate).not.toBe(video);
-    expect(improve).not.toBe(generate);
+    expect(enhance).not.toBe(generate);
     expect(resolveMenuNodeIcon(node("image.generate", "Generate"))).toBe(
       generate,
     );

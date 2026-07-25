@@ -16,9 +16,9 @@
       "order": 0
     },
     {
-      "id": "image.improve",
+      "id": "image.enhance",
       "kind": "folder",
-      "label": "Improve",
+      "label": "Enhance",
       "parent_id": "image",
       "order": 1
     },
@@ -51,9 +51,9 @@
       "order": 2
     },
     {
-      "id": "video.improve",
+      "id": "video.enhance",
       "kind": "folder",
-      "label": "Improve",
+      "label": "Enhance",
       "parent_id": "video",
       "order": 3
     }
@@ -66,7 +66,7 @@
     },
     {
       "workflow_id": "vlo_SeedVR2_image.json",
-      "parent_id": "image.improve",
+      "parent_id": "image.enhance",
       "order": 0
     },
     {
@@ -106,12 +106,12 @@
     },
     {
       "workflow_id": "vlo_SeedVR2_video.json",
-      "parent_id": "video.improve",
+      "parent_id": "video.enhance",
       "order": 0
     },
     {
       "workflow_id": "vlo_gimm_vfi.json",
-      "parent_id": "video.improve",
+      "parent_id": "video.enhance",
       "order": 1
     }
   ]

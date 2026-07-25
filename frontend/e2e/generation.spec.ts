@@ -176,8 +176,8 @@ test.describe('Workflow menu', () => {
         await menu.waitFor();
         await menu.getByRole('button', { name: 'Edit' }).first().click();
 
-        // "Improve" under Image: the folder that already holds SeedVR2 image.
-        const tile = menu.getByRole('button', { name: 'Improve', exact: true }).first();
+        // "Enhance" under Image: the folder that already holds SeedVR2 image.
+        const tile = menu.getByRole('button', { name: 'Enhance', exact: true }).first();
         const handle = menu.getByRole('button', { name: 'Move Unplaced workflow' });
         await handle.scrollIntoViewIfNeeded();
         const from = (await handle.boundingBox())!;

@@ -1284,6 +1284,9 @@ export function GenerationPanel() {
             <Typography
               variant="subtitle2"
               noWrap
+              // Without this the flex item keeps its content width and the
+              // name runs past the panel instead of ellipsising.
+              sx={{ minWidth: 0 }}
               title={selectedWorkflowLabel ?? undefined}
             >
               {selectedWorkflowLabel}

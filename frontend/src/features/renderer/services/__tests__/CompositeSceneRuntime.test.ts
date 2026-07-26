@@ -366,7 +366,61 @@ describe("CompositeSceneRuntimeManager", () => {
     manager.dispose();
   });
 
-  it("deduplicates complete stateless work keys and accounts for every lease", async () => {
+  it("reuses one stateless placement runtime across changing ticks", async () => {
+    const renderer = { render: vi.fn() } as unknown as Renderer;
+    const manager = new CompositeSceneRuntimeManager(renderer);
+    const source: ResolvedCompositeSource = {
+      mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
+      compositeId: "shared",
+      placementId: "placement-a",
+      revision: 1,
+      bakeKey: "shared-key",
+      localPresentationTick: 100,
+      logicalDimensions: { width: 640, height: 360 },
+      fps: 30,
+      content: { durationTicks: 1000, clips: [], tracks: [] },
+      fallbackAssetId: null,
+      isStateless: true,
+    };
+
+    const first = await manager.renderCompositeScene(source, [], {
+      mode: "export",
+    });
+    first.release();
+    const second = await manager.renderCompositeScene(
+      { ...source, localPresentationTick: 200 },
+      [],
+      { mode: "export" },
+    );
+    const duplicate = await manager.renderCompositeScene(
+      { ...source, localPresentationTick: 200 },
+      [],
+      { mode: "export" },
+    );
+
+    expect(renderer.render).toHaveBeenCalledTimes(2);
+    expect(second.value).toBe(first.value);
+    expect(duplicate.value).toBe(second.value);
+    expect(manager.getDiagnostics()).toMatchObject({
+      runtimeCount: 1,
+      outstandingLeases: 2,
+      renderDedupHits: 1,
+    });
+
+    second.release();
+    duplicate.release();
+    expect(manager.getDiagnostics()).toMatchObject({
+      runtimeCount: 1,
+      pooledRuntimeCount: 1,
+      outstandingLeases: 0,
+    });
+    manager.dispose();
+  });
+
+  it("keeps stateless outputs private across placements at the same tick", async () => {
     const renderer = { render: vi.fn() } as unknown as Renderer;
     const manager = new CompositeSceneRuntimeManager(renderer);
     const source: ResolvedCompositeSource = {
@@ -395,21 +449,16 @@ describe("CompositeSceneRuntimeManager", () => {
       { mode: "export" },
     );
 
-    expect(renderer.render).toHaveBeenCalledTimes(1);
-    expect(second.value).toBe(first.value);
+    expect(renderer.render).toHaveBeenCalledTimes(2);
+    expect(second.value).not.toBe(first.value);
     expect(manager.getDiagnostics()).toMatchObject({
-      runtimeCount: 1,
+      runtimeCount: 2,
       outstandingLeases: 2,
-      renderDedupHits: 1,
+      renderDedupHits: 0,
     });
 
     first.release();
     second.release();
-    expect(manager.getDiagnostics()).toMatchObject({
-      runtimeCount: 1,
-      pooledRuntimeCount: 1,
-      outstandingLeases: 0,
-    });
     manager.dispose();
   });
 

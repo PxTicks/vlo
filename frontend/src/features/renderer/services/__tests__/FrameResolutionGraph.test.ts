@@ -167,7 +167,7 @@ describe("FrameResolutionGraph", () => {
     ]);
   });
 
-  it("shares complete stateless composite work keys but isolates temporal placements", () => {
+  it("keeps composite scene work keys placement-private even when stateless", () => {
     const first = job("4:t1:p1", "t1", "p1", null);
     const second = job("4:t2:p2", "t2", "p2", null);
     const source = {
@@ -191,7 +191,7 @@ describe("FrameResolutionGraph", () => {
 
     const statelessNodes = buildFrameResolutionGraph(4, [first, second]).nodes
       .filter((node) => node.kind === "composite-scene");
-    expect(statelessNodes[0].workKey).toBe(statelessNodes[1].workKey);
+    expect(statelessNodes[0].workKey).not.toBe(statelessNodes[1].workKey);
 
     second.compositeSource = {
       ...second.compositeSource,

@@ -78,6 +78,7 @@ export const DEFAULT_COMPOSITE_RUNTIME_LIMIT = 12;
 export const DEFAULT_COMPOSITE_TEXTURE_BUDGET_BYTES = 96 * 1024 * 1024;
 
 interface RuntimeIdentity {
+  compositeId: string;
   revision: number;
   bakeKey: string;
   logicalWidth: number;
@@ -92,6 +93,7 @@ function identityFor(
   rasterDimensions: { width: number; height: number },
 ): RuntimeIdentity {
   return {
+    compositeId: source.compositeId,
     revision: source.revision,
     bakeKey: source.bakeKey,
     logicalWidth: source.logicalDimensions.width,
@@ -104,6 +106,7 @@ function identityFor(
 
 function sameIdentity(left: RuntimeIdentity, right: RuntimeIdentity): boolean {
   return (
+    left.compositeId === right.compositeId &&
     left.revision === right.revision &&
     left.bakeKey === right.bakeKey &&
     left.logicalWidth === right.logicalWidth &&
@@ -475,17 +478,7 @@ interface CompositeRuntimeEntry {
 }
 
 function runtimePoolKey(source: ResolvedCompositeSource): string {
-  if (!source.isStateless) return `placement:${source.placementId}`;
-  return [
-    "stateless",
-    source.compositeId,
-    source.revision,
-    source.bakeKey,
-    source.localPresentationTick,
-    source.logicalDimensions.width,
-    source.logicalDimensions.height,
-    source.fps,
-  ].join(":");
+  return `placement:${source.placementId}`;
 }
 
 function renderWorkKey(
@@ -496,7 +489,7 @@ function renderWorkKey(
     source.compositeId,
     source.revision,
     source.bakeKey,
-    source.isStateless ? "stateless" : source.placementId,
+    source.placementId,
     source.localPresentationTick,
     identity.logicalWidth,
     identity.logicalHeight,
@@ -507,10 +500,11 @@ function renderWorkKey(
 }
 
 /**
- * Pools child-scene runtimes behind reference-counted frame leases. Stateless
- * placements may share a complete work key; temporal placements always retain
- * placement-private history. Inactive entries are held only within explicit
- * count and texture-memory budgets.
+ * Pools child-scene runtimes by stable placement identity behind
+ * reference-counted frame leases. Stateless placements may deduplicate an
+ * identical render request within their private runtime; sharing mutable
+ * output textures across placements requires a separate fan-out cache.
+ * Inactive entries are held only within explicit count and texture budgets.
  */
 export class CompositeSceneRuntimeManager
   implements CompositeSceneFrameRenderer

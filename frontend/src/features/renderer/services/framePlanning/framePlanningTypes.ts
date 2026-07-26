@@ -48,7 +48,7 @@ export interface ResolvedCompositeSource {
   fps: number;
   content: CompositeContent;
   fallbackAssetId: string | null;
-  /** Only stateless child scenes may share a complete render work key. */
+  /** Stateless child scenes may reuse identical work within one placement. */
   isStateless?: boolean;
 }
 

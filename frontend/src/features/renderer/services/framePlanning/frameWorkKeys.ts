@@ -40,8 +40,8 @@ export function createCompositeSceneWorkKey(
   source: ResolvedCompositeSource,
 ): FrameWorkKey {
   return serializeParts("composite-scene", [
-    source.isStateless ? "stateless" : epoch,
-    source.isStateless ? null : source.placementId,
+    epoch,
+    source.placementId,
     source.compositeId,
     source.revision,
     source.bakeKey,

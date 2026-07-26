@@ -11,6 +11,7 @@ import type { AdjustmentEffectResolver } from "../AdjustmentEffectResolver";
 import type { TrackRenderEngine } from "../TrackRenderEngine";
 import {
   BatchFrameGraphExecutor,
+  isAbortError,
   type BatchFrameGraphExecutionResult,
 } from "./BatchFrameGraphExecutor";
 import { FrameJobResolver } from "./FrameJobResolver";
@@ -54,6 +55,8 @@ export interface LiveFrameGraphRenderOptions {
    * tick when scrubbing backwards. Never use this policy for still or export.
    */
   temporalPreviewQuality?: "exact" | "approximate";
+  /** Cancels a superseded queue entry without changing frame-epoch identity. */
+  signal?: AbortSignal;
   submitWarmupFrame?: (
     tick: number,
     plan: ScenePresentationPlan,
@@ -95,12 +98,16 @@ export class LiveFrameGraphCoordinator {
   private readonly executor: BatchFrameGraphExecutor;
 
   constructor(options: LiveFrameGraphCoordinatorOptions = {}) {
+    const isLiveEpochCurrent = (epoch: number) =>
+      epoch === this.epoch && !this.disposed;
     this.executor = new BatchFrameGraphExecutor({
-      isLiveEpochCurrent: (epoch) => epoch === this.epoch && !this.disposed,
+      isLiveEpochCurrent,
       ...(options.renderer
         ? {
             compositeSceneRenderer: new CompositeSceneRuntimeManager(
               options.renderer,
+              undefined,
+              { isLiveEpochCurrent },
             ),
           }
         : {}),
@@ -306,6 +313,7 @@ export class LiveFrameGraphCoordinator {
       const execution = await this.executor.execute(graph, resolution, {
         mode: "live",
         epoch,
+        signal: options.signal,
         render,
         temporalPreviewQuality:
           options.temporalPreviewQuality ?? "exact",
@@ -315,7 +323,7 @@ export class LiveFrameGraphCoordinator {
       }
       return { presentationPlan, execution, render };
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
+      if (isAbortError(error)) {
         return null;
       }
       throw error;

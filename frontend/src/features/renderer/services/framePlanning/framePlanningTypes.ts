@@ -152,6 +152,7 @@ export type FrameExecutionPolicy =
   | {
       mode: "live";
       epoch: number;
+      signal?: AbortSignal;
       render?: FilterRenderContext;
       temporalPreviewQuality?: "exact" | "approximate";
     };
@@ -162,8 +163,50 @@ export interface FrameResourceLease<T> {
   release(): void;
 }
 
+export interface CompositeChildPlanningDiagnostics {
+  samples: number;
+  warmupSamples: number;
+  targetSamples: number;
+  cancelledSamples: number;
+  failedSamples: number;
+  jobsPlanned: number;
+  nodesPlanned: number;
+  withinFrameDedupHits: number;
+  cacheHits: number;
+  cacheMisses: number;
+  resolutionTimeMs: number;
+  decodeTimeMs: number;
+  gpuTimeMs: number;
+  peakResidentSourceResources: number;
+  peakResidentSourceTextureBytes: number;
+  peakOutstandingLeases: number;
+}
+
+export function createEmptyCompositeChildPlanningDiagnostics(
+): CompositeChildPlanningDiagnostics {
+  return {
+    samples: 0,
+    warmupSamples: 0,
+    targetSamples: 0,
+    cancelledSamples: 0,
+    failedSamples: 0,
+    jobsPlanned: 0,
+    nodesPlanned: 0,
+    withinFrameDedupHits: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
+    resolutionTimeMs: 0,
+    decodeTimeMs: 0,
+    gpuTimeMs: 0,
+    peakResidentSourceResources: 0,
+    peakResidentSourceTextureBytes: 0,
+    peakOutstandingLeases: 0,
+  };
+}
+
 export interface FramePlanningDiagnostics {
   epoch: number;
+  resolutionTimeMs: number;
   jobsPlanned: number;
   nodesPlanned: number;
   nodesExecutedByKind: Record<FrameNode["kind"], number>;
@@ -184,9 +227,16 @@ export interface FramePlanningDiagnostics {
   compositeTextureBytes: number;
   compositeOutstandingLeases: number;
   compositeRenderDedupHits: number;
+  compositeSnapshotClones: number;
+  compositeSnapshotCacheHits: number;
+  compositeChild: CompositeChildPlanningDiagnostics;
+  compositeChildResidentSourceResources: number;
+  compositeChildResidentSourceTextureBytes: number;
+  compositeChildOutstandingLeases: number;
   decodeTimeMs: number;
   gpuTimeMs: number;
   residentSourceResources: number;
+  residentSourceTextureBytes: number;
   residentCoverageResources: number;
   residentEffectResources: number;
   outstandingLeases: number;
@@ -197,6 +247,7 @@ export function createEmptyFramePlanningDiagnostics(
 ): FramePlanningDiagnostics {
   return {
     epoch,
+    resolutionTimeMs: 0,
     jobsPlanned: 0,
     nodesPlanned: 0,
     nodesExecutedByKind: {
@@ -222,9 +273,16 @@ export function createEmptyFramePlanningDiagnostics(
     compositeTextureBytes: 0,
     compositeOutstandingLeases: 0,
     compositeRenderDedupHits: 0,
+    compositeSnapshotClones: 0,
+    compositeSnapshotCacheHits: 0,
+    compositeChild: createEmptyCompositeChildPlanningDiagnostics(),
+    compositeChildResidentSourceResources: 0,
+    compositeChildResidentSourceTextureBytes: 0,
+    compositeChildOutstandingLeases: 0,
     decodeTimeMs: 0,
     gpuTimeMs: 0,
     residentSourceResources: 0,
+    residentSourceTextureBytes: 0,
     residentCoverageResources: 0,
     residentEffectResources: 0,
     outstandingLeases: 0,

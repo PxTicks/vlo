@@ -210,6 +210,37 @@ describe("LiveFrameGraphCoordinator", () => {
     coordinator.dispose();
   });
 
+  it("drops a queue-cancelled live frame before decoding it", async () => {
+    const coordinator = new LiveFrameGraphCoordinator();
+    const harness = createEngineHarness("t1", "c1");
+    coordinator.register({
+      trackId: "t1",
+      engine: harness.engine,
+      getTrackClips: () => [harness.clip],
+      getMaskClipsByParent: () => new Map(),
+      getAssets: () =>
+        [{ id: "asset-1", src: "a.mp4", type: "video", fps: 30 }] as Asset[],
+      onResolvedJob: vi.fn(),
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await coordinator.renderFrame(0, {
+      fps: 30,
+      logicalDimensions: { width: 1920, height: 1080 },
+      visualTrackOrder: ["t1"],
+      adjustmentEffectResolver: {
+        deriveGroups: () => [],
+      } as unknown as AdjustmentEffectResolver,
+      temporalPreviewQuality: "approximate",
+      signal: controller.signal,
+    });
+
+    expect(result).toBeNull();
+    expect(harness.decode).not.toHaveBeenCalled();
+    coordinator.dispose();
+  });
+
   it("defers an unprepared source without blocking ready tracks", async () => {
     const coordinator = new LiveFrameGraphCoordinator();
     const ready = createEngineHarness("t1", "c1", "asset-ready");

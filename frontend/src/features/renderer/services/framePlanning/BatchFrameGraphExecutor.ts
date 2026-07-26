@@ -46,7 +46,12 @@ export interface CompositeSourceCommit {
 
 export interface BatchFrameGraphExecutorOptions {
   isLiveEpochCurrent?: (epoch: number) => boolean;
-  onDiagnostics?: (diagnostics: FramePlanningDiagnostics) => void;
+  onDiagnostics?: (
+    diagnostics: FramePlanningDiagnostics,
+    policy: FrameExecutionPolicy,
+  ) => void;
+  /** Child scopes aggregate into their parent instead of publishing frames. */
+  publishDiagnostics?: boolean;
   compositeSceneRenderer?: CompositeSceneFrameRenderer;
   onCompositeSceneError?: (error: unknown, job: ResolvedClipFrameJob) => void;
   /** Pre-parent-operation seam used by diagnostics and the parity harness. */
@@ -62,11 +67,20 @@ function createAbortError(message: string): Error {
   return error;
 }
 
-function throwIfCancelled(
+export function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name?: unknown }).name === "AbortError"
+  );
+}
+
+export function throwIfFrameExecutionCancelled(
   policy: FrameExecutionPolicy,
   isLiveEpochCurrent?: (epoch: number) => boolean,
 ): void {
-  if (policy.mode === "export" && policy.signal?.aborted) {
+  if (policy.signal?.aborted) {
     throw createAbortError("Render cancelled");
   }
   if (
@@ -138,9 +152,18 @@ export class BatchFrameGraphExecutor {
     if (this.disposed) {
       throw new Error("Frame graph executor has been disposed");
     }
-    throwIfCancelled(policy, this.options.isLiveEpochCurrent);
+    throwIfFrameExecutionCancelled(
+      policy,
+      this.options.isLiveEpochCurrent,
+    );
 
     const diagnostics = createEmptyFramePlanningDiagnostics(graph.epoch);
+    diagnostics.resolutionTimeMs =
+      resolution.diagnostics?.resolutionTimeMs ?? 0;
+    diagnostics.compositeSnapshotClones =
+      resolution.diagnostics?.compositeSnapshotClones ?? 0;
+    diagnostics.compositeSnapshotCacheHits =
+      resolution.diagnostics?.compositeSnapshotCacheHits ?? 0;
     diagnostics.jobsPlanned = graph.jobs.length;
     diagnostics.nodesPlanned = graph.nodes.length;
     for (const job of graph.jobs) {
@@ -205,7 +228,10 @@ export class BatchFrameGraphExecutor {
     }
     if (policy.mode === "export" && exportPreparations.length > 0) {
       await awaitAllUntilAborted(exportPreparations, policy.signal);
-      throwIfCancelled(policy, this.options.isLiveEpochCurrent);
+      throwIfFrameExecutionCancelled(
+        policy,
+        this.options.isLiveEpochCurrent,
+      );
     }
 
     const decodePlan = this.planner.plan(
@@ -223,7 +249,10 @@ export class BatchFrameGraphExecutor {
     const decodeStart = performance.now();
     const handles = await this.planner.acquireFrameTextures(decodePlan, {
       decode: async (group) => {
-        throwIfCancelled(policy, this.options.isLiveEpochCurrent);
+        throwIfFrameExecutionCancelled(
+          policy,
+          this.options.isLiveEpochCurrent,
+        );
         const planned = group.jobs[0];
         const job = resolvedByPlanned.get(planned);
         const engine = job
@@ -234,7 +263,7 @@ export class BatchFrameGraphExecutor {
         }
         return {
           bitmap: await engine.decodeResolvedSourceFrame(job, {
-            signal: policy.mode === "export" ? policy.signal : undefined,
+            signal: policy.signal,
           }),
         };
       },
@@ -246,6 +275,7 @@ export class BatchFrameGraphExecutor {
         const texture = Texture.from(bitmap);
         return {
           texture,
+          byteSize: bitmap.width * bitmap.height * 4,
           dispose: () => {
             destroyTexture(texture);
             if (typeof bitmap.close === "function") {
@@ -283,7 +313,10 @@ export class BatchFrameGraphExecutor {
     const gpuStart = performance.now();
     try {
       for (const node of orderedNodes) {
-        throwIfCancelled(policy, this.options.isLiveEpochCurrent);
+        throwIfFrameExecutionCancelled(
+          policy,
+          this.options.isLiveEpochCurrent,
+        );
         diagnostics.nodesExecutedByKind[node.kind] += 1;
         if (node.kind === "composite-scene") {
           const job = graph.jobs.find(
@@ -316,6 +349,9 @@ export class BatchFrameGraphExecutor {
               ),
             );
           } catch (error) {
+            if (isAbortError(error)) {
+              throw error;
+            }
             diagnostics.compositeNodeFailures += 1;
             this.options.onCompositeSceneError?.(error, job);
             if (!source.fallbackAssetId) {
@@ -363,7 +399,10 @@ export class BatchFrameGraphExecutor {
           diagnostics.staleGenerationsDropped += 1;
         }
       }
-      throwIfCancelled(policy, this.options.isLiveEpochCurrent);
+      throwIfFrameExecutionCancelled(
+        policy,
+        this.options.isLiveEpochCurrent,
+      );
     } catch (error) {
       for (const [jobId, handle] of handleByJobId) {
         if (!consumedHandles.has(jobId)) {
@@ -381,8 +420,10 @@ export class BatchFrameGraphExecutor {
       }
     }
     diagnostics.residentSourceResources = this.store.size;
+    diagnostics.residentSourceTextureBytes = this.store.totalByteSize;
     diagnostics.outstandingLeases = this.store.totalRefCount;
     const compositeDiagnostics =
+      this.options.compositeSceneRenderer?.takeDiagnostics?.() ??
       this.options.compositeSceneRenderer?.getDiagnostics?.();
     if (compositeDiagnostics) {
       diagnostics.compositeRuntimeCount = compositeDiagnostics.runtimeCount;
@@ -393,9 +434,18 @@ export class BatchFrameGraphExecutor {
         compositeDiagnostics.outstandingLeases;
       diagnostics.compositeRenderDedupHits =
         compositeDiagnostics.renderDedupHits;
+      diagnostics.compositeChild = compositeDiagnostics.childPlanning;
+      diagnostics.compositeChildResidentSourceResources =
+        compositeDiagnostics.childResidentSourceResources;
+      diagnostics.compositeChildResidentSourceTextureBytes =
+        compositeDiagnostics.childResidentSourceTextureBytes;
+      diagnostics.compositeChildOutstandingLeases =
+        compositeDiagnostics.childOutstandingLeases;
     }
-    publishFramePlanningDiagnostics(diagnostics);
-    this.options.onDiagnostics?.(diagnostics);
+    if (this.options.publishDiagnostics !== false) {
+      publishFramePlanningDiagnostics(diagnostics);
+    }
+    this.options.onDiagnostics?.(diagnostics, policy);
     const compositeSourceCommits = graph.jobs.flatMap((job) => {
       const source = job.compositeSource;
       if (!source || !committedCompositeSourceJobIds.has(job.id)) return [];
@@ -412,6 +462,18 @@ export class BatchFrameGraphExecutor {
       ];
     });
     return { committedJobIds, compositeSourceCommits, diagnostics };
+  }
+
+  getResourceDiagnostics(): {
+    residentSourceResources: number;
+    residentSourceTextureBytes: number;
+    outstandingLeases: number;
+  } {
+    return {
+      residentSourceResources: this.store.size,
+      residentSourceTextureBytes: this.store.totalByteSize,
+      outstandingLeases: this.store.totalRefCount,
+    };
   }
 
   dispose(): void {

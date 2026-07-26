@@ -5,6 +5,7 @@ import type { TimelineClip } from "../../../../types/TimelineTypes";
 import type { FilterRenderContext } from "../../../transformations/catalogue/types";
 import { CompositeSceneRuntimeManager } from "../CompositeSceneRuntime";
 import { TemporalRenderCoordinator } from "../TemporalRenderCoordinator";
+import { BatchFrameGraphExecutor } from "../framePlanning/BatchFrameGraphExecutor";
 import type { ResolvedCompositeSource } from "../framePlanning";
 
 const userAssetMocks = vi.hoisted(() => ({
@@ -83,6 +84,18 @@ describe("CompositeSceneRuntimeManager", () => {
       );
       expect(lease.value).toMatchObject({ width: 1280, height: 720 });
       lease.release();
+      expect(manager.getDiagnostics()).toMatchObject({
+        childPlanning: {
+          samples: 2,
+          warmupSamples: 1,
+          targetSamples: 1,
+          cancelledSamples: 0,
+          failedSamples: 0,
+        },
+      });
+      expect(manager.getDiagnostics().childPlanning.samples).toBe(2);
+      expect(manager.takeDiagnostics().childPlanning.samples).toBe(2);
+      expect(manager.getDiagnostics().childPlanning.samples).toBe(0);
     } finally {
       plan.mockRestore();
       manager.dispose();
@@ -127,6 +140,116 @@ describe("CompositeSceneRuntimeManager", () => {
     } finally {
       plan.mockRestore();
       approximate.mockRestore();
+      manager.dispose();
+    }
+  });
+
+  it("threads live epoch cancellation into the child executor", async () => {
+    const renderer = { render: vi.fn() } as unknown as Renderer;
+    const manager = new CompositeSceneRuntimeManager(renderer, undefined, {
+      isLiveEpochCurrent: () => false,
+    });
+    const source: ResolvedCompositeSource = {
+      mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
+      compositeId: "composite",
+      placementId: "placement",
+      revision: 1,
+      bakeKey: "key",
+      localPresentationTick: 500,
+      logicalDimensions: { width: 640, height: 360 },
+      fps: 30,
+      content: { durationTicks: 1000, clips: [], tracks: [] },
+      fallbackAssetId: null,
+    };
+
+    await expect(
+      manager.renderCompositeScene(source, [], {
+        mode: "live",
+        epoch: 1,
+        temporalPreviewQuality: "approximate",
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(renderer.render).not.toHaveBeenCalled();
+    expect(manager.getDiagnostics().childPlanning).toMatchObject({
+      samples: 0,
+      cancelledSamples: 1,
+      failedSamples: 0,
+    });
+    manager.dispose();
+  });
+
+  it("retires partial temporal history after abort and fully replays on retry", async () => {
+    const controller = new AbortController();
+    const render = vi.fn(() => {
+      if (render.mock.calls.length === 3) {
+        controller.abort();
+      }
+    });
+    const renderer = { render } as unknown as Renderer;
+    const manager = new CompositeSceneRuntimeManager(renderer);
+    const warmup = [100, 200, 300, 400, 500].map((tick) =>
+      renderContext(tick, true),
+    );
+    const target = renderContext(600, false);
+    const plan = vi
+      .spyOn(TemporalRenderCoordinator.prototype, "plan")
+      .mockReturnValue({ warmup, target, isDiscontinuous: true });
+    const source: ResolvedCompositeSource = {
+      mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
+      compositeId: "temporal",
+      placementId: "placement",
+      revision: 1,
+      bakeKey: "key",
+      localPresentationTick: 600,
+      logicalDimensions: { width: 640, height: 360 },
+      fps: 30,
+      content: { durationTicks: 1000, clips: [], tracks: [] },
+      fallbackAssetId: null,
+      isStateless: false,
+    };
+
+    try {
+      await expect(
+        manager.renderCompositeScene(source, [], {
+          mode: "live",
+          epoch: 1,
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      expect(manager.getDiagnostics()).toMatchObject({
+        runtimeCount: 0,
+        childPlanning: {
+          samples: 3,
+          warmupSamples: 3,
+          cancelledSamples: 1,
+        },
+      });
+
+      const retry = await manager.renderCompositeScene(source, [], {
+        mode: "live",
+        epoch: 2,
+        signal: new AbortController().signal,
+      });
+      expect(plan).toHaveBeenCalledTimes(2);
+      expect(renderer.render).toHaveBeenCalledTimes(9);
+      expect(manager.getDiagnostics()).toMatchObject({
+        runtimeCount: 1,
+        childPlanning: {
+          samples: 9,
+          warmupSamples: 8,
+          targetSamples: 1,
+          cancelledSamples: 1,
+        },
+      });
+      retry.release();
+    } finally {
+      plan.mockRestore();
       manager.dispose();
     }
   });
@@ -328,5 +451,62 @@ describe("CompositeSceneRuntimeManager", () => {
       outstandingLeases: 0,
     });
     manager.dispose();
+  });
+
+  it("reports child source bytes without charging them to the output pool budget", async () => {
+    const resourceDiagnostics = vi
+      .spyOn(BatchFrameGraphExecutor.prototype, "getResourceDiagnostics")
+      .mockReturnValue({
+        residentSourceResources: 3,
+        residentSourceTextureBytes: 64 * 1024 * 1024,
+        outstandingLeases: 3,
+      });
+    const renderer = { render: vi.fn() } as unknown as Renderer;
+    const manager = new CompositeSceneRuntimeManager(renderer, undefined, {
+      maxRuntimeCount: 12,
+      maxTextureBytes: 8 * 1024 * 1024,
+    });
+    const source: ResolvedCompositeSource = {
+      mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
+      compositeId: "budget-capacity",
+      placementId: "placement-a",
+      revision: 1,
+      bakeKey: "key",
+      localPresentationTick: 0,
+      logicalDimensions: { width: 640, height: 360 },
+      fps: 30,
+      content: { durationTicks: 100, clips: [], tracks: [] },
+      fallbackAssetId: null,
+      isStateless: false,
+    };
+
+    try {
+      const first = await manager.renderCompositeScene(source, [], {
+        mode: "export",
+      });
+      first.release();
+      const second = await manager.renderCompositeScene(
+        { ...source, placementId: "placement-b" },
+        [],
+        { mode: "export" },
+      );
+      second.release();
+
+      expect(manager.getDiagnostics()).toMatchObject({
+        runtimeCount: 2,
+        outputTextureBytes: 2 * 1280 * 720 * 4,
+        childResidentSourceResources: 6,
+        childResidentSourceTextureBytes: 128 * 1024 * 1024,
+      });
+      expect(manager.getDiagnostics().textureBytes).toBeGreaterThan(
+        8 * 1024 * 1024,
+      );
+    } finally {
+      manager.dispose();
+      resourceDiagnostics.mockRestore();
+    }
   });
 });

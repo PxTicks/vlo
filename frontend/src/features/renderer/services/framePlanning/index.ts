@@ -39,6 +39,7 @@ export {
 } from "./frameWorkKeys";
 export type {
   ClipOutputNode,
+  CompositeChildPlanningDiagnostics,
   CompositeSceneNode,
   EffectChainNode,
   FrameDimensions,
@@ -62,6 +63,7 @@ export type {
   TransitionColorLayerCommand,
 } from "./framePlanningTypes";
 export type {
+  FrameJobResolutionDiagnostics,
   FrameJobResolutionInput,
   FrameJobResolutionResult,
   FrameJobResolutionTrack,
@@ -84,4 +86,7 @@ export type {
   LiveFrameGraphRenderResult,
   LiveFrameGraphCoordinatorOptions,
 } from "./LiveFrameGraphCoordinator";
-export { createEmptyFramePlanningDiagnostics } from "./framePlanningTypes";
+export {
+  createEmptyCompositeChildPlanningDiagnostics,
+  createEmptyFramePlanningDiagnostics,
+} from "./framePlanningTypes";

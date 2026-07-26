@@ -26,6 +26,27 @@ const EMPTY_BAKED_COMPOSITE_CONTENT: CompositeContent = {
   clips: [],
 };
 
+function freezeCompositeSnapshotInDevelopment(
+  snapshot: CompositeContent,
+): CompositeContent {
+  if (!import.meta.env.DEV) {
+    return snapshot;
+  }
+  const seen = new WeakSet<object>();
+  const freeze = (value: unknown): void => {
+    if (typeof value !== "object" || value === null || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    for (const key of Reflect.ownKeys(value)) {
+      freeze(Reflect.get(value, key));
+    }
+    Object.freeze(value);
+  };
+  freeze(snapshot);
+  return snapshot;
+}
+
 export interface FrameJobResolutionTrack {
   trackId: string;
   engine: TrackRenderEngine;
@@ -55,6 +76,13 @@ export interface FrameJobResolutionResult {
   assetsById: Map<string, Asset>;
   engineByJobId: Map<string, TrackRenderEngine>;
   trackInputByJobId: Map<string, FrameJobResolutionTrack>;
+  diagnostics?: FrameJobResolutionDiagnostics;
+}
+
+export interface FrameJobResolutionDiagnostics {
+  resolutionTimeMs: number;
+  compositeSnapshotClones: number;
+  compositeSnapshotCacheHits: number;
 }
 
 /**
@@ -78,6 +106,61 @@ export class FrameJobResolver {
       selection: CompositeBakeSelection;
     }
   >();
+  // Persisted composite edits publish a new content object and revision. The
+  // WeakMap therefore keeps one defensive frame snapshot per immutable content
+  // identity without retaining obsolete revisions.
+  private readonly compositeContentCache = new WeakMap<
+    CompositeContent,
+    {
+      snapshot?: CompositeContent;
+      readonly fpsByProjectFps: Map<number, number>;
+      isStateless?: boolean;
+    }
+  >();
+
+  private resolveCompositeContent(
+    content: CompositeContent,
+    projectFps: number,
+    includeSnapshot: boolean,
+  ): {
+    content: CompositeContent;
+    fps: number;
+    isStateless: boolean | undefined;
+    snapshotCacheHit: boolean;
+  } {
+    let cached = this.compositeContentCache.get(content);
+    if (!cached) {
+      cached = {
+        fpsByProjectFps: new Map(),
+      };
+      this.compositeContentCache.set(content, cached);
+    }
+    let fps = cached.fpsByProjectFps.get(projectFps);
+    if (fps === undefined) {
+      fps = resolveCompositeRenderFps(content, projectFps);
+      cached.fpsByProjectFps.set(projectFps, fps);
+    }
+    const snapshotCacheHit = includeSnapshot && cached.snapshot !== undefined;
+    if (includeSnapshot && !cached.snapshot) {
+      cached.snapshot = freezeCompositeSnapshotInDevelopment(
+        structuredClone(content),
+      );
+    }
+    if (includeSnapshot && cached.isStateless === undefined) {
+      cached.isStateless =
+        !content.clips.some((clip) => clip.type === "extension") &&
+        collectClipTemporalRenderingRequirements(content.clips)
+          .timeDependency === "none";
+    }
+    return {
+      content: includeSnapshot
+        ? cached.snapshot!
+        : EMPTY_BAKED_COMPOSITE_CONTENT,
+      fps,
+      isStateless: cached.isStateless,
+      snapshotCacheHit,
+    };
+  }
 
   private resolveBakeSelection(
     composite: CompositeAsset,
@@ -114,6 +197,9 @@ export class FrameJobResolver {
   }
 
   resolve(input: FrameJobResolutionInput): FrameJobResolutionResult {
+    const resolutionStart = performance.now();
+    let compositeSnapshotClones = 0;
+    let compositeSnapshotCacheHits = 0;
     const assetsById = new Map(
       input.assets.map((asset) => [asset.id, asset] as const),
     );
@@ -172,9 +258,18 @@ export class FrameJobResolver {
             job.activeClip.id,
             decision.mode,
           );
-          const liveContent = decision.mode === "live"
-            ? structuredClone(composite.content)
-            : EMPTY_BAKED_COMPOSITE_CONTENT;
+          const contentMetadata = this.resolveCompositeContent(
+            composite.content,
+            compositeProjectFps,
+            decision.mode === "live",
+          );
+          if (decision.mode === "live") {
+            if (contentMetadata.snapshotCacheHit) {
+              compositeSnapshotCacheHits += 1;
+            } else {
+              compositeSnapshotClones += 1;
+            }
+          }
           job.compositeSource = {
             mode: decision.mode,
             fallbackReason: decision.fallbackReason,
@@ -191,20 +286,12 @@ export class FrameJobResolver {
             bakeKey,
             localPresentationTick: job.sourceFrame.sourceTimeTicks,
             logicalDimensions: input.logicalDimensions,
-            fps: resolveCompositeRenderFps(
-              composite.content,
-              compositeProjectFps,
-            ),
-            content: liveContent,
+            fps: contentMetadata.fps,
+            content: contentMetadata.content,
             fallbackAssetId: decision.bakeAssetId,
             isStateless:
               decision.mode === "live"
-                ? !composite.content.clips.some(
-                    (clip) => clip.type === "extension",
-                  ) &&
-                  collectClipTemporalRenderingRequirements(
-                    composite.content.clips,
-                  ).timeDependency === "none"
+                ? contentMetadata.isStateless
                 : undefined,
           };
           // A composite source is a project-logical layer even when its
@@ -229,6 +316,11 @@ export class FrameJobResolver {
       assetsById,
       engineByJobId,
       trackInputByJobId,
+      diagnostics: {
+        resolutionTimeMs: performance.now() - resolutionStart,
+        compositeSnapshotClones,
+        compositeSnapshotCacheHits,
+      },
     };
   }
 }

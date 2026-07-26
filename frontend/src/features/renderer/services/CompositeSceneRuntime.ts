@@ -16,7 +16,12 @@ import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
 import { TemporalRenderCoordinator } from "./TemporalRenderCoordinator";
 import { collectTemporalFrameScope } from "./TemporalFrameScopeResolver";
-import { BatchFrameGraphExecutor } from "./framePlanning/BatchFrameGraphExecutor";
+import {
+  BatchFrameGraphExecutor,
+  isAbortError,
+  throwIfFrameExecutionCancelled,
+  type BatchFrameGraphExecutorOptions,
+} from "./framePlanning/BatchFrameGraphExecutor";
 import {
   FrameJobResolver,
   type FrameJobResolutionTrack,
@@ -24,9 +29,14 @@ import {
 import { buildFrameResolutionGraph } from "./framePlanning/FrameResolutionGraph";
 import { buildScenePresentationPlan } from "./framePlanning/ScenePresentationPlanner";
 import type {
+  CompositeChildPlanningDiagnostics,
   FrameExecutionPolicy,
+  FramePlanningDiagnostics,
   FrameResourceLease,
   ResolvedCompositeSource,
+} from "./framePlanning/framePlanningTypes";
+import {
+  createEmptyCompositeChildPlanningDiagnostics,
 } from "./framePlanning/framePlanningTypes";
 import type { FilterRenderContext } from "../../transformations/catalogue/types";
 import { resolveCompositeRasterDimensionsForContent } from "../utils/compositeRasterDimensions";
@@ -38,20 +48,30 @@ export interface CompositeSceneFrameRenderer {
     policy: FrameExecutionPolicy,
   ): Promise<FrameResourceLease<Texture>>;
   getDiagnostics?(): CompositeSceneRuntimeDiagnostics;
+  takeDiagnostics?(): CompositeSceneRuntimeDiagnostics;
   dispose(): void;
 }
 
 export interface CompositeSceneRuntimeDiagnostics {
   runtimeCount: number;
   pooledRuntimeCount: number;
+  /** Bytes owned by the pool's output textures and charged to its budget. */
+  outputTextureBytes: number;
+  /** Total output and child-source texture bytes retained by the runtimes. */
   textureBytes: number;
   outstandingLeases: number;
   renderDedupHits: number;
+  childPlanning: CompositeChildPlanningDiagnostics;
+  childResidentSourceResources: number;
+  childResidentSourceTextureBytes: number;
+  childOutstandingLeases: number;
 }
 
 export interface CompositeSceneRuntimeManagerOptions {
   maxRuntimeCount?: number;
+  /** Budget for pool-owned output textures; child-source bytes remain observable. */
   maxTextureBytes?: number;
+  isLiveEpochCurrent?: (epoch: number) => boolean;
 }
 
 export const DEFAULT_COMPOSITE_RUNTIME_LIMIT = 12;
@@ -132,11 +152,42 @@ function withRenderContext(
     : { ...policy, render };
 }
 
+function mergeChildPlanningDiagnostics(
+  target: CompositeChildPlanningDiagnostics,
+  source: CompositeChildPlanningDiagnostics,
+): void {
+  target.samples += source.samples;
+  target.warmupSamples += source.warmupSamples;
+  target.targetSamples += source.targetSamples;
+  target.cancelledSamples += source.cancelledSamples;
+  target.failedSamples += source.failedSamples;
+  target.jobsPlanned += source.jobsPlanned;
+  target.nodesPlanned += source.nodesPlanned;
+  target.withinFrameDedupHits += source.withinFrameDedupHits;
+  target.cacheHits += source.cacheHits;
+  target.cacheMisses += source.cacheMisses;
+  target.resolutionTimeMs += source.resolutionTimeMs;
+  target.decodeTimeMs += source.decodeTimeMs;
+  target.gpuTimeMs += source.gpuTimeMs;
+  target.peakResidentSourceResources = Math.max(
+    target.peakResidentSourceResources,
+    source.peakResidentSourceResources,
+  );
+  target.peakResidentSourceTextureBytes = Math.max(
+    target.peakResidentSourceTextureBytes,
+    source.peakResidentSourceTextureBytes,
+  );
+  target.peakOutstandingLeases = Math.max(
+    target.peakOutstandingLeases,
+    source.peakOutstandingLeases,
+  );
+}
+
 class CompositePlacementRuntime {
   private readonly root = new Container();
   private readonly output: RenderTexture;
   private readonly resolver = new FrameJobResolver();
-  private readonly executor = new BatchFrameGraphExecutor();
+  private readonly executor: BatchFrameGraphExecutor;
   private readonly adjustmentResolver = new AdjustmentEffectResolver();
   private readonly orchestrator: RenderGroupOrchestrator;
   private readonly engines: TrackRenderEngine[];
@@ -148,6 +199,7 @@ class CompositePlacementRuntime {
   private readonly renderer: Renderer;
   private readonly source: ResolvedCompositeSource;
   private readonly temporal = new TemporalRenderCoordinator();
+  private pendingDiagnostics = createEmptyCompositeChildPlanningDiagnostics();
   private epoch = 0;
 
   constructor(
@@ -155,9 +207,19 @@ class CompositePlacementRuntime {
     source: ResolvedCompositeSource,
     identity: RuntimeIdentity,
     decoderPool?: DecoderWorkerPool,
+    executorOptions: BatchFrameGraphExecutorOptions = {},
   ) {
     this.renderer = renderer;
     this.source = source;
+    const externalDiagnostics = executorOptions.onDiagnostics;
+    this.executor = new BatchFrameGraphExecutor({
+      ...executorOptions,
+      publishDiagnostics: false,
+      onDiagnostics: (diagnostics, policy) => {
+        this.recordDiagnostics(diagnostics, policy);
+        externalDiagnostics?.(diagnostics, policy);
+      },
+    });
     if (source.content.clips.some((clip) => isCompositeClip(clip))) {
       throw new Error(
         `Nested composite content is not supported for '${source.compositeId}'.`,
@@ -314,7 +376,16 @@ class CompositePlacementRuntime {
       zIndexOverrides: transitionFrame.zIndexOverrides,
       transitionColorLayers: transitionFrame.colorLayers,
     });
-    await this.executor.execute(graph, resolution, policy);
+    try {
+      await this.executor.execute(graph, resolution, policy);
+    } catch (error) {
+      if (isAbortError(error)) {
+        this.pendingDiagnostics.cancelledSamples += 1;
+      } else {
+        this.pendingDiagnostics.failedSamples += 1;
+      }
+      throw error;
+    }
     this.orchestrator.syncPresentationPlan(
       localPresentationTick,
       presentationPlan,
@@ -326,6 +397,58 @@ class CompositePlacementRuntime {
       clear: true,
       clearColor: [0, 0, 0, 0],
     });
+  }
+
+  private recordDiagnostics(
+    diagnostics: FramePlanningDiagnostics,
+    policy: FrameExecutionPolicy,
+  ): void {
+    this.pendingDiagnostics.samples += 1;
+    if (policy.render?.isWarmup) {
+      this.pendingDiagnostics.warmupSamples += 1;
+    } else {
+      this.pendingDiagnostics.targetSamples += 1;
+    }
+    this.pendingDiagnostics.jobsPlanned += diagnostics.jobsPlanned;
+    this.pendingDiagnostics.nodesPlanned += diagnostics.nodesPlanned;
+    this.pendingDiagnostics.withinFrameDedupHits +=
+      diagnostics.withinFrameDedupHits;
+    this.pendingDiagnostics.cacheHits += diagnostics.cacheHits;
+    this.pendingDiagnostics.cacheMisses += diagnostics.cacheMisses;
+    this.pendingDiagnostics.resolutionTimeMs += diagnostics.resolutionTimeMs;
+    this.pendingDiagnostics.decodeTimeMs += diagnostics.decodeTimeMs;
+    this.pendingDiagnostics.gpuTimeMs += diagnostics.gpuTimeMs;
+    this.pendingDiagnostics.peakResidentSourceResources = Math.max(
+      this.pendingDiagnostics.peakResidentSourceResources,
+      diagnostics.residentSourceResources,
+    );
+    this.pendingDiagnostics.peakResidentSourceTextureBytes = Math.max(
+      this.pendingDiagnostics.peakResidentSourceTextureBytes,
+      diagnostics.residentSourceTextureBytes,
+    );
+    this.pendingDiagnostics.peakOutstandingLeases = Math.max(
+      this.pendingDiagnostics.peakOutstandingLeases,
+      diagnostics.outstandingLeases,
+    );
+  }
+
+  takePendingDiagnostics(): CompositeChildPlanningDiagnostics {
+    const diagnostics = this.pendingDiagnostics;
+    this.pendingDiagnostics = createEmptyCompositeChildPlanningDiagnostics();
+    return diagnostics;
+  }
+
+  getResourceDiagnostics(): {
+    residentSourceResources: number;
+    residentSourceTextureBytes: number;
+    outstandingSourceLeases: number;
+  } {
+    const diagnostics = this.executor.getResourceDiagnostics();
+    return {
+      residentSourceResources: diagnostics.residentSourceResources,
+      residentSourceTextureBytes: diagnostics.residentSourceTextureBytes,
+      outstandingSourceLeases: diagnostics.outstandingLeases,
+    };
   }
 
   dispose(): void {
@@ -343,7 +466,7 @@ interface CompositeRuntimeEntry {
   key: string;
   identity: RuntimeIdentity;
   runtime: CompositePlacementRuntime;
-  textureBytes: number;
+  outputTextureBytes: number;
   lastUsed: number;
   leaseCount: number;
   lastRenderedWorkKey: string | null;
@@ -401,12 +524,15 @@ export class CompositeSceneRuntimeManager
   private readonly decoderPool?: DecoderWorkerPool;
   private readonly maxRuntimeCount: number;
   private readonly maxTextureBytes: number;
+  private readonly isLiveEpochCurrent?: (epoch: number) => boolean;
   private readonly rasterDimensionsByIdentity = new Map<
     string,
     Promise<{ width: number; height: number }>
   >();
   private useCounter = 0;
   private renderDedupHits = 0;
+  private pendingChildDiagnostics =
+    createEmptyCompositeChildPlanningDiagnostics();
   private disposed = false;
 
   constructor(
@@ -416,6 +542,7 @@ export class CompositeSceneRuntimeManager
   ) {
     this.renderer = renderer;
     this.decoderPool = decoderPool;
+    this.isLiveEpochCurrent = options.isLiveEpochCurrent;
     this.maxRuntimeCount = Math.max(
       1,
       Math.floor(options.maxRuntimeCount ?? DEFAULT_COMPOSITE_RUNTIME_LIMIT),
@@ -436,6 +563,7 @@ export class CompositeSceneRuntimeManager
     if (this.disposed) {
       throw new Error("Composite scene runtime manager has been disposed");
     }
+    this.throwIfCancelled(policy);
     const rasterIdentity = `${source.compositeId}:${source.revision}:${source.bakeKey}`;
     let rasterDimensions = this.rasterDimensionsByIdentity.get(rasterIdentity);
     if (!rasterDimensions) {
@@ -443,6 +571,7 @@ export class CompositeSceneRuntimeManager
       this.rasterDimensionsByIdentity.set(rasterIdentity, rasterDimensions);
     }
     const identity = identityFor(source, await rasterDimensions);
+    this.throwIfCancelled(policy);
     const key = runtimePoolKey(source);
     let entry = this.runtimes.get(key);
     if (!entry || !sameIdentity(entry.identity, identity)) {
@@ -455,8 +584,13 @@ export class CompositeSceneRuntimeManager
           source,
           identity,
           this.decoderPool,
+          {
+            ...(this.isLiveEpochCurrent
+              ? { isLiveEpochCurrent: this.isLiveEpochCurrent }
+              : {}),
+          },
         ),
-        textureBytes: identity.width * identity.height * 4,
+        outputTextureBytes: identity.width * identity.height * 4,
         lastUsed: ++this.useCounter,
         leaseCount: 0,
         lastRenderedWorkKey: null,
@@ -476,11 +610,26 @@ export class CompositeSceneRuntimeManager
     ) {
       this.renderDedupHits += 1;
     } else {
-      texture = await entry.runtime.render(
-        source.localPresentationTick,
-        assets,
-        policy,
-      );
+      try {
+        texture = await entry.runtime.render(
+          source.localPresentationTick,
+          assets,
+          policy,
+        );
+      } catch (error) {
+        if (isAbortError(error)) {
+          // A cancelled temporal replay may have advanced only part of the
+          // placement-private filter state. Remove it from the active pool so
+          // the replacement request starts with fresh engines and history.
+          this.retireEntry(entry);
+        }
+        throw error;
+      } finally {
+        mergeChildPlanningDiagnostics(
+          this.pendingChildDiagnostics,
+          entry.runtime.takePendingDiagnostics(),
+        );
+      }
       entry.lastRenderedWorkKey = workKey;
       entry.lastTexture = texture;
     }
@@ -507,29 +656,71 @@ export class CompositeSceneRuntimeManager
   }
 
   getDiagnostics(): CompositeSceneRuntimeDiagnostics {
+    let outputTextureBytes = 0;
     let textureBytes = 0;
     let outstandingLeases = 0;
     let pooledRuntimeCount = 0;
+    let childResidentSourceResources = 0;
+    let childResidentSourceTextureBytes = 0;
+    let childOutstandingLeases = 0;
     for (const entry of this.allEntries) {
       if (entry.disposed) continue;
-      textureBytes += entry.textureBytes;
+      const childResources = entry.runtime.getResourceDiagnostics();
+      outputTextureBytes += entry.outputTextureBytes;
+      textureBytes +=
+        entry.outputTextureBytes +
+        childResources.residentSourceTextureBytes;
       outstandingLeases += entry.leaseCount;
+      childResidentSourceResources += childResources.residentSourceResources;
+      childResidentSourceTextureBytes +=
+        childResources.residentSourceTextureBytes;
+      childOutstandingLeases += childResources.outstandingSourceLeases;
       if (entry.leaseCount === 0) pooledRuntimeCount += 1;
     }
     return {
       runtimeCount: this.allEntries.size,
       pooledRuntimeCount,
+      outputTextureBytes,
       textureBytes,
       outstandingLeases,
       renderDedupHits: this.renderDedupHits,
+      childPlanning: { ...this.pendingChildDiagnostics },
+      childResidentSourceResources,
+      childResidentSourceTextureBytes,
+      childOutstandingLeases,
     };
+  }
+
+  takeDiagnostics(): CompositeSceneRuntimeDiagnostics {
+    const diagnostics = this.getDiagnostics();
+    this.pendingChildDiagnostics =
+      createEmptyCompositeChildPlanningDiagnostics();
+    return diagnostics;
+  }
+
+  private throwIfCancelled(policy: FrameExecutionPolicy): void {
+    try {
+      throwIfFrameExecutionCancelled(policy, this.isLiveEpochCurrent);
+    } catch (error) {
+      if (isAbortError(error)) {
+        this.pendingChildDiagnostics.cancelledSamples += 1;
+      }
+      throw error;
+    }
   }
 
   private enforceBudget(protectedEntry?: CompositeRuntimeEntry): void {
     const getResident = () =>
       [...this.allEntries].filter((entry) => !entry.disposed);
     let resident = getResident();
-    let bytes = resident.reduce((sum, entry) => sum + entry.textureBytes, 0);
+    // The output budget and runtime-count cap were calibrated together. Child
+    // source textures are reported in diagnostics, but charging them here
+    // would silently reduce the pool from roughly twelve 1080p outputs to
+    // about three ordinary multi-track composites.
+    let bytes = resident.reduce(
+      (sum, entry) => sum + entry.outputTextureBytes,
+      0,
+    );
     while (
       resident.length > this.maxRuntimeCount ||
       bytes > this.maxTextureBytes
@@ -545,7 +736,10 @@ export class CompositeSceneRuntimeManager
       }
       this.disposeEntry(candidate);
       resident = getResident();
-      bytes = resident.reduce((sum, entry) => sum + entry.textureBytes, 0);
+      bytes = resident.reduce(
+        (sum, entry) => sum + entry.outputTextureBytes,
+        0,
+      );
     }
   }
 

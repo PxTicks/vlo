@@ -191,6 +191,58 @@ describe("BatchFrameGraphExecutor composite scenes", () => {
     executor.dispose();
   });
 
+  it("propagates composite cancellation without reporting a render failure", async () => {
+    const job = compositeJob();
+    const cancellation = new Error("cancelled");
+    cancellation.name = "AbortError";
+    const present = vi.fn(async () => true);
+    const onCompositeSceneError = vi.fn();
+    const executor = new BatchFrameGraphExecutor({
+      compositeSceneRenderer: {
+        renderCompositeScene: vi.fn(async () => {
+          throw cancellation;
+        }),
+        dispose: vi.fn(),
+      },
+      onCompositeSceneError,
+    });
+
+    await expect(
+      executor.execute(
+        buildFrameResolutionGraph(1, [job]),
+        resolution(job, present),
+        { mode: "live", epoch: 1 },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(onCompositeSceneError).not.toHaveBeenCalled();
+    expect(present).not.toHaveBeenCalled();
+    executor.dispose();
+  });
+
+  it("honours a live abort signal before beginning child work", async () => {
+    const job = compositeJob();
+    const present = vi.fn(async () => true);
+    const renderCompositeScene = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+    const executor = new BatchFrameGraphExecutor({
+      compositeSceneRenderer: {
+        renderCompositeScene,
+        dispose: vi.fn(),
+      },
+    });
+
+    await expect(
+      executor.execute(
+        buildFrameResolutionGraph(1, [job]),
+        resolution(job, present),
+        { mode: "live", epoch: 1, signal: controller.signal },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(renderCompositeScene).not.toHaveBeenCalled();
+    executor.dispose();
+  });
+
   it("uses the validated baked source when direct rendering fails", async () => {
     const job = compositeJob();
     job.compositeSource = {

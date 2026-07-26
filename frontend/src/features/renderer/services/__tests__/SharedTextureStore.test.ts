@@ -40,6 +40,21 @@ describe("SharedTextureStore", () => {
     expect(store.size).toBe(1);
   });
 
+  it("accounts resident texture bytes until the final lease releases", () => {
+    const store = new SharedTextureStore();
+    const first = store.acquire(KEY, () => ({
+      texture: fakeTexture(),
+      byteSize: 640 * 360 * 4,
+    }));
+    const second = store.acquireExisting(KEY);
+
+    expect(store.totalByteSize).toBe(640 * 360 * 4);
+    first.release();
+    expect(store.totalByteSize).toBe(640 * 360 * 4);
+    second?.release();
+    expect(store.totalByteSize).toBe(0);
+  });
+
   it("keeps distinct textures for distinct decodeKeys", () => {
     const store = new SharedTextureStore();
     const a = store.acquire("asset-1:2:30:0.066", () => ({ texture: fakeTexture() }));

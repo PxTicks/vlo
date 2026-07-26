@@ -11,6 +11,8 @@ import { destroyTexture } from "../utils/retiredTextureQueue";
  */
 export interface SharedTextureResource {
   texture: Texture;
+  /** Approximate decoded texture storage used for diagnostics and budgets. */
+  byteSize?: number;
   dispose?: () => void;
 }
 
@@ -19,6 +21,7 @@ interface ResidentEntry {
   texture: Texture;
   dispose: () => void;
   refCount: number;
+  byteSize: number;
   disposed: boolean;
 }
 
@@ -100,6 +103,14 @@ export class SharedTextureStore {
     return count;
   }
 
+  get totalByteSize(): number {
+    let bytes = 0;
+    for (const entry of this.byKey.values()) {
+      bytes += entry.byteSize;
+    }
+    return bytes;
+  }
+
   /**
    * Acquire a reference to the shared texture for `decodeKey`, creating it via
    * `create` on first acquisition only. Returns a handle the caller must
@@ -122,7 +133,17 @@ export class SharedTextureStore {
       const resource = create();
       const texture = resource.texture;
       const dispose = resource.dispose ?? (() => destroyTexture(texture));
-      entry = { decodeKey, texture, dispose, refCount: 0, disposed: false };
+      const requestedByteSize = resource.byteSize ?? 0;
+      entry = {
+        decodeKey,
+        texture,
+        dispose,
+        refCount: 0,
+        byteSize: Number.isFinite(requestedByteSize)
+          ? Math.max(0, Math.floor(requestedByteSize))
+          : 0,
+        disposed: false,
+      };
       this.byKey.set(decodeKey, entry);
       this.byTexture.set(texture, entry);
       created = true;

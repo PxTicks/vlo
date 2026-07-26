@@ -60,6 +60,7 @@ import {
   useTimelineSelectionStore,
 } from "../timelineSelection";
 import {
+  abortSupersededPausedRender,
   enqueueSynchronizedPlaybackQueueEntry,
   pruneSynchronizedPlaybackQueue,
   type SynchronizedPlaybackQueueEntry,
@@ -88,6 +89,7 @@ function PlayerImpl() {
     [] as SynchronizedPlaybackQueueEntry[],
   );
   const synchronizedPlaybackBusyRef = useRef(false);
+  const activePlaybackRenderAbortRef = useRef<AbortController | null>(null);
   const temporalWarmupTargetRef = useRef<RenderTexture | null>(null);
   const maxTimelineDurationRef = useRef(0);
 
@@ -450,48 +452,65 @@ function PlayerImpl() {
             liveFrameGraphCoordinator.participantCount > 0
           ) {
             const timelineState = getTimelineModelState();
-            const result = await liveFrameGraphCoordinator.renderFrame(
-              nextFrame.time,
-              {
-                tracks: timelineState.tracks,
-                clips: timelineState.clips,
-                transitions: timelineState.transitions,
-                composites: getCompositeAssets(),
-                compositeSourcePolicy,
-                fps: config.fps,
-                logicalDimensions,
-                visualTrackOrder: visualTrackIdsRef.current,
-                adjustmentEffectResolver,
-                temporalPreviewQuality:
-                  nextFrame.temporalPreviewQuality ?? "exact",
-                submitWarmupFrame: (tick, plan, render) => {
-                  if (!pixiApp?.renderer) return;
-                  renderGroupOrchestrator?.syncPresentationPlan(
-                    tick,
-                    plan,
-                    render,
-                  );
-                  const width = Math.max(1, pixiApp.renderer.width);
-                  const height = Math.max(1, pixiApp.renderer.height);
-                  let target = temporalWarmupTargetRef.current;
-                  if (
-                    !target ||
-                    target.destroyed ||
-                    target.width !== width ||
-                    target.height !== height
-                  ) {
-                    target?.destroy(true);
-                    target = RenderTexture.create({ width, height });
-                    temporalWarmupTargetRef.current = target;
-                  }
-                  pixiApp.renderer.render({
-                    container: viewport ?? pixiApp.stage,
-                    target,
-                    clear: true,
-                  });
+            const abortController = new AbortController();
+            activePlaybackRenderAbortRef.current = abortController;
+            let result: Awaited<
+              ReturnType<LiveFrameGraphCoordinator["renderFrame"]>
+            > = null;
+            try {
+              result = await liveFrameGraphCoordinator.renderFrame(
+                nextFrame.time,
+                {
+                  tracks: timelineState.tracks,
+                  clips: timelineState.clips,
+                  transitions: timelineState.transitions,
+                  composites: getCompositeAssets(),
+                  compositeSourcePolicy,
+                  fps: config.fps,
+                  logicalDimensions,
+                  visualTrackOrder: visualTrackIdsRef.current,
+                  adjustmentEffectResolver,
+                  signal: abortController.signal,
+                  temporalPreviewQuality:
+                    nextFrame.temporalPreviewQuality ?? "exact",
+                  submitWarmupFrame: (tick, plan, render) => {
+                    if (!pixiApp?.renderer) return;
+                    renderGroupOrchestrator?.syncPresentationPlan(
+                      tick,
+                      plan,
+                      render,
+                    );
+                    const width = Math.max(1, pixiApp.renderer.width);
+                    const height = Math.max(1, pixiApp.renderer.height);
+                    let target = temporalWarmupTargetRef.current;
+                    if (
+                      !target ||
+                      target.destroyed ||
+                      target.width !== width ||
+                      target.height !== height
+                    ) {
+                      target?.destroy(true);
+                      target = RenderTexture.create({ width, height });
+                      temporalWarmupTargetRef.current = target;
+                    }
+                    pixiApp.renderer.render({
+                      container: viewport ?? pixiApp.stage,
+                      target,
+                      clear: true,
+                    });
+                  },
                 },
-              },
-            );
+              );
+            } finally {
+              if (
+                activePlaybackRenderAbortRef.current === abortController
+              ) {
+                activePlaybackRenderAbortRef.current = null;
+              }
+            }
+            if (abortController.signal.aborted) {
+              continue;
+            }
             if (result) {
               renderGroupOrchestrator?.syncPresentationPlan(
                 nextFrame.time,
@@ -566,6 +585,10 @@ function PlayerImpl() {
         },
         isPlaying ? undefined : { maxQueueSize: 1 },
       );
+      abortSupersededPausedRender(
+        isPlaying,
+        activePlaybackRenderAbortRef.current,
+      );
       void processPendingPlaybackFrames();
     });
     const unsubscribeFrameRequests =
@@ -579,11 +602,17 @@ function PlayerImpl() {
           },
           isPlaying ? undefined : { maxQueueSize: 1 },
         );
+        abortSupersededPausedRender(
+          isPlaying,
+          activePlaybackRenderAbortRef.current,
+        );
         void processPendingPlaybackFrames();
       });
 
     return () => {
       isDisposed = true;
+      activePlaybackRenderAbortRef.current?.abort();
+      activePlaybackRenderAbortRef.current = null;
       pendingPlaybackFrameQueueRef.current = [];
       unsubscribe();
       unsubscribeFrameRequests?.();

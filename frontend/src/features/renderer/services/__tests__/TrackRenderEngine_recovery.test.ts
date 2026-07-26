@@ -8,6 +8,7 @@ import { resetDecoderWorkerRecoveryForTests } from "../../utils/decoderWorkerRec
 const {
   mockWorkerInstances,
   mockWorkerBehaviors,
+  returnedBitmaps,
   textureFromSpy,
   syncMaskClipsSpy,
 } = vi.hoisted(() => {
@@ -17,6 +18,11 @@ const {
     terminate: ReturnType<typeof vi.fn>;
   }> = [];
   const workerBehaviors: Array<Array<"frame" | "hang">> = [];
+  const returnedBitmaps: Array<{
+    width: number;
+    height: number;
+    close: ReturnType<typeof vi.fn>;
+  }> = [];
   const textureFromSpy = vi.fn((bitmap?: { width?: number; height?: number }) => ({
     width: bitmap?.width ?? 100,
     height: bitmap?.height ?? 100,
@@ -31,6 +37,7 @@ const {
   return {
     mockWorkerInstances: workerInstances,
     mockWorkerBehaviors: workerBehaviors,
+    returnedBitmaps,
     textureFromSpy,
     syncMaskClipsSpy,
   };
@@ -71,14 +78,16 @@ vi.mock("@decoder-worker-loader", () => ({
         }
 
         setTimeout(() => {
+          const bitmap = {
+            width: 320,
+            height: 240,
+            close: vi.fn(),
+          };
+          returnedBitmaps.push(bitmap);
           this.onmessage?.({
             data: {
               type: "frame",
-              bitmap: {
-                width: 320,
-                height: 240,
-                close: vi.fn(),
-              },
+              bitmap,
               clipId: message.clipId,
               requestId: message.requestId,
               transformTime: message.transformTime,
@@ -206,13 +215,16 @@ function createAsset(overrides: Partial<Asset> = {}): Asset {
   };
 }
 
-function createEngine() {
+function createEngine(options: { trackId?: string } = {}) {
   const decoderPool = createDecoderWorkerPool({
     label: "test",
     size: 1,
     idleRecycleMs: null,
   });
-  const engine = new TrackRenderEngine(1, undefined, undefined, { decoderPool });
+  const engine = new TrackRenderEngine(1, undefined, undefined, {
+    decoderPool,
+    trackId: options.trackId,
+  });
   return { decoderPool, engine };
 }
 
@@ -221,6 +233,7 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     vi.useFakeTimers();
     mockWorkerInstances.length = 0;
     mockWorkerBehaviors.length = 0;
+    returnedBitmaps.length = 0;
     textureFromSpy.mockClear();
     syncMaskClipsSpy.mockClear();
     resetSharedDecoderWorkerPoolForTests();
@@ -266,6 +279,51 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     expect(engine.sprite.texture.width).toBe(320);
 
     engine.dispose();
+    decoderPool.dispose();
+  });
+
+  it("closes unclaimed decoded frames without leaking the decoder lease after repeated aborts", async () => {
+    mockWorkerBehaviors.push(["frame", "frame", "frame"]);
+
+    const { engine, decoderPool } = createEngine({ trackId: "track-1" });
+    const clip = createClip();
+    const asset = createAsset();
+    const job = engine.resolveFrameJob({
+      epoch: 1,
+      presentationTick: 2 * TICKS_PER_SECOND,
+      trackClips: [clip],
+      maskClipsByParent: new Map(),
+      assetsById: new Map([[asset.id, asset]]),
+      logicalDimensions: { width: 1920, height: 1080 },
+      fps: 30,
+    });
+    expect(job).not.toBeNull();
+    if (!job) {
+      throw new Error("Expected a resolved video frame job");
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const controller = new AbortController();
+      const decode = engine.decodeResolvedSourceFrame(job, {
+        signal: controller.signal,
+      });
+      controller.abort();
+      await expect(decode).rejects.toMatchObject({ name: "AbortError" });
+      await vi.runAllTimersAsync();
+    }
+
+    expect(returnedBitmaps).toHaveLength(3);
+    for (const bitmap of returnedBitmaps) {
+      expect(bitmap.close).toHaveBeenCalledTimes(1);
+    }
+    expect(engine["pendingResolve"]).toBeNull();
+    expect(engine["pendingReject"]).toBeNull();
+    const getLeaseCount = () =>
+      (decoderPool as unknown as { leases: Map<string, unknown> }).leases.size;
+    expect(getLeaseCount()).toBe(1);
+
+    engine.dispose();
+    expect(getLeaseCount()).toBe(0);
     decoderPool.dispose();
   });
 

@@ -12,6 +12,17 @@ interface SynchronizedPlaybackQueueOptions {
   maxQueueSize?: number;
 }
 
+export function abortSupersededPausedRender(
+  isPlaying: boolean,
+  activeRender: AbortController | null,
+): boolean {
+  if (isPlaying || !activeRender) {
+    return false;
+  }
+  activeRender.abort();
+  return true;
+}
+
 export function pruneSynchronizedPlaybackQueue(
   queue: SynchronizedPlaybackQueueEntry[],
   nowMs: number,

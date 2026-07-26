@@ -240,6 +240,46 @@ describe("FrameJobResolver composite sources", () => {
     });
   });
 
+  it("reuses one immutable live snapshot until content identity changes", () => {
+    const resolver = new FrameJobResolver();
+    const stale = {
+      ...composite,
+      bake: { ...composite.bake, readyKey: "stale-key" },
+    } satisfies CompositeAsset;
+
+    const first = resolve(stale, undefined, resolver);
+    const second = resolve(
+      {
+        ...stale,
+        bake: { ...stale.bake, status: "failed" },
+      },
+      undefined,
+      resolver,
+    );
+    const changedContent = structuredClone(stale.content);
+    changedContent.frameStep = 9;
+    const third = resolve(
+      {
+        ...stale,
+        content: changedContent,
+        revision: 3,
+      },
+      undefined,
+      resolver,
+    );
+
+    expect(first.compositeSource?.content).not.toBe(stale.content);
+    expect(Object.isFrozen(first.compositeSource?.content)).toBe(true);
+    expect(Object.isFrozen(first.compositeSource?.content.clips)).toBe(true);
+    expect(second.compositeSource?.content).toBe(
+      first.compositeSource?.content,
+    );
+    expect(third.compositeSource?.content).not.toBe(
+      first.compositeSource?.content,
+    );
+    expect(third.compositeSource?.content).toMatchObject({ frameStep: 9 });
+  });
+
   it("records a frame-epoch source switch and bake publication latency", () => {
     const resolver = new FrameJobResolver();
     const stale = {

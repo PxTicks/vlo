@@ -70,15 +70,55 @@ export function startFramePlanningDiagnosticsConsole(): () => void {
         sum((d) => d.compositeSwitchLatencyMs),
       ),
       compositeRenderDedupHits: sum((d) => d.compositeRenderDedupHits),
+      compositeSnapshotClones: sum((d) => d.compositeSnapshotClones),
+      compositeSnapshotCacheHits: sum(
+        (d) => d.compositeSnapshotCacheHits,
+      ),
+      compositeChildSamples: sum((d) => d.compositeChild.samples),
+      compositeChildWarmups: sum(
+        (d) => d.compositeChild.warmupSamples,
+      ),
+      compositeChildCancelled: sum(
+        (d) => d.compositeChild.cancelledSamples,
+      ),
+      compositeChildFailed: sum(
+        (d) => d.compositeChild.failedSamples,
+      ),
+      compositeChildJobs: sum((d) => d.compositeChild.jobsPlanned),
+      compositeChildNodes: sum((d) => d.compositeChild.nodesPlanned),
+      compositeChildDecodeMs: roundMs(
+        sum((d) => d.compositeChild.decodeTimeMs),
+      ),
+      compositeChildGpuMs: roundMs(
+        sum((d) => d.compositeChild.gpuTimeMs),
+      ),
+      peakCompositeChildSourceBytes: max(
+        (d) => d.compositeChild.peakResidentSourceTextureBytes,
+      ),
+      peakCompositeChildResidentSources: max(
+        (d) => d.compositeChildResidentSourceResources,
+      ),
+      peakCompositeChildResidentBytes: max(
+        (d) => d.compositeChildResidentSourceTextureBytes,
+      ),
+      peakCompositeChildLeases: max(
+        (d) => d.compositeChildOutstandingLeases,
+      ),
       peakCompositeRuntimes: max((d) => d.compositeRuntimeCount),
       peakCompositePooledRuntimes: max(
         (d) => d.compositePooledRuntimeCount,
       ),
       peakCompositeTextureBytes: max((d) => d.compositeTextureBytes),
       peakCompositeLeases: max((d) => d.compositeOutstandingLeases),
+      avgResolutionMs: roundMs(
+        sum((d) => d.resolutionTimeMs) / frames.length,
+      ),
       avgDecodeMs: roundMs(sum((d) => d.decodeTimeMs) / frames.length),
       avgGpuMs: roundMs(sum((d) => d.gpuTimeMs) / frames.length),
       peakResidentSources: max((d) => d.residentSourceResources),
+      peakResidentSourceBytes: max(
+        (d) => d.residentSourceTextureBytes,
+      ),
       peakOutstandingLeases: max((d) => d.outstandingLeases),
     };
 

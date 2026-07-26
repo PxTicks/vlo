@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  abortSupersededPausedRender,
   enqueueSynchronizedPlaybackQueueEntry,
   pruneSynchronizedPlaybackQueue,
 } from "../synchronizedPlaybackQueue";
 
 describe("synchronizedPlaybackQueue", () => {
+  it("cancels paused replacements without cancelling playback", () => {
+    const playback = new AbortController();
+    const paused = new AbortController();
+
+    expect(abortSupersededPausedRender(true, playback)).toBe(false);
+    expect(playback.signal.aborted).toBe(false);
+    expect(abortSupersededPausedRender(false, paused)).toBe(true);
+    expect(paused.signal.aborted).toBe(true);
+  });
+
   it("keeps FIFO order for queued playback batches", () => {
     const queue: Array<{ time: number; enqueuedAtMs: number }> = [];
 

@@ -17,12 +17,13 @@ const darkTheme = createTheme({
 
 import { useProjectStore, ProjectManager } from "../features/project";
 import { Suspense, lazy, useEffect } from "react";
-import { Box, CircularProgress, Typography } from "@mui/material";
+import { Box, CircularProgress, CssBaseline, Typography } from "@mui/material";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ExtensionApprovalGate } from "../features/extensions";
 import { ExtensionModalHost } from "../features/extensions/ui/publicApi";
 import { MenuHostMount } from "../core/shell/MenuHostMount";
 import { ComfyUiSetupPrompt } from "./layout/ComfyUiSetupPrompt";
+import { AppSettingsMenu } from "./layout/AppSettingsMenu";
 
 // 1. Lazy load the heavy editor to separate it from the initial bundle
 const Editor = lazy(() =>
@@ -66,6 +67,10 @@ export function App() {
 
   return (
     <ThemeProvider theme={darkTheme}>
+      {/* App-level, not editor-level: the project page needs the same
+          box-sizing reset, or its `height: 100%` panes overflow by their own
+          padding and grow phantom scrollbars. */}
+      <CssBaseline />
       <ErrorBoundary
         boundaryName="App"
         variant="screen"
@@ -75,6 +80,10 @@ export function App() {
           {!project || !rootHandle ? (
             <>
               <ProjectManager />
+              {/* Install-wide settings live here rather than in the editor:
+                  they outlive any one project, and extension activation is
+                  fixed at page load. */}
+              <AppSettingsMenu />
               {/* Trust decisions belong here: activation is fixed at page
                   load, so this is the last point where allowing an extension
                   can take effect without discarding editor work. */}

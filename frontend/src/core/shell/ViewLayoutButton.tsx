@@ -29,6 +29,11 @@ export function ViewLayoutButton({ region, edge }: ViewLayoutButtonProps) {
   const { allViews, isViewVisible, setViewVisible, moveView, resetLayout } =
     useViewRegion(region);
 
+  // A single-view region has nothing to order and nothing safe to hide —
+  // hiding the only view would empty the region with no control left to
+  // restore it. Extensions contributing a view bring the control back.
+  if (allViews.length <= 1) return null;
+
   return (
     <>
       <Tooltip title="Manage panels">

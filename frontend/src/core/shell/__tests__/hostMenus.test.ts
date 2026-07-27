@@ -45,6 +45,13 @@ describe("Wave 3 host menu subjects", () => {
       },
     ],
     [
+      "app.settings",
+      {
+        slot: "app.settings",
+        app: { workflowMode: "high_vram", comfyuiConfigured: true },
+      },
+    ],
+    [
       "projects.item.context",
       {
         slot: "projects.item.context",
@@ -58,6 +65,21 @@ describe("Wave 3 host menu subjects", () => {
     ],
   ] as const)("validates %s", (menuId, subject) => {
     expect(hostMenuCatalog.validateSubject(menuId, subject)).toBe(true);
+  });
+
+  it("rejects an app.settings subject carrying project state", () => {
+    expect(
+      hostMenuCatalog.validateSubject("app.settings", {
+        slot: "app.settings",
+        app: { workflowMode: "default" },
+      }),
+    ).toBe(false);
+    expect(
+      hostMenuCatalog.validateSubject("app.settings", {
+        slot: "app.project.settings",
+        app: { workflowMode: "default", comfyuiConfigured: false },
+      }),
+    ).toBe(false);
   });
 
   it("rejects non-finite and fractional collection counts", () => {

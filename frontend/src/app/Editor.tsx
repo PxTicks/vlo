@@ -1,5 +1,4 @@
 import { useCallback } from "react";
-import { CssBaseline } from "@mui/material";
 import {
   DndContext,
   PointerSensor,
@@ -184,7 +183,6 @@ export function Editor() {
       onDragCancel={handleDragCancel}
       autoScroll={ASSET_AUTO_SCROLL}
     >
-      <CssBaseline />
       <EditorLayout
         layoutMode={layoutMode}
         nonTimelineRegionsLocked={nonTimelineRegionsLocked}

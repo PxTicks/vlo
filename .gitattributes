@@ -29,6 +29,7 @@
 /frontend/src/app/App.tsx extension-surface=adapter
 /frontend/src/app/main.tsx extension-surface=adapter
 /frontend/src/app/installHostOptionCatalogues.ts extension-surface=adapter
+/frontend/src/app/layout/AppSettingsMenu.tsx extension-surface=adapter
 /frontend/src/app/layout/EditorLeftSidebar.tsx extension-surface=adapter
 /frontend/src/app/layout/LeftSidebarPanel.tsx extension-surface=adapter
 /frontend/src/app/layout/ProjectSettingsMenu.tsx extension-surface=adapter

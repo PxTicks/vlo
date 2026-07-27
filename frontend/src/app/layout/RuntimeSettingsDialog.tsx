@@ -23,8 +23,8 @@ import type {
 import {
   getRuntimeSettings,
   pickComfyuiDirectory,
+  updateRuntimeSettings,
 } from "../../services/runtimeApi";
-import { useGenerationStore } from "../../features/generation";
 
 interface RuntimeSettingsDialogProps {
   open: boolean;
@@ -40,9 +40,10 @@ export function RuntimeSettingsDialog({
   open,
   onClose,
 }: RuntimeSettingsDialogProps) {
-  const updateRuntimeSettings = useGenerationStore(
-    (state) => state.updateRuntimeSettings,
-  );
+  // Patches the backend directly rather than through the generation store:
+  // this dialog is a landing-page surface, so there is no live ComfyUI session
+  // to disconnect or re-sync, and routing through the store would pull the
+  // whole generation feature into the pre-project bundle.
   const [payload, setPayload] = useState<RuntimeSettingsPayload | null>(null);
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>("default");
   const [comfyuiUrl, setComfyuiUrl] = useState("");

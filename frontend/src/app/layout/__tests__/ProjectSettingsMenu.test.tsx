@@ -39,25 +39,17 @@ describe("ProjectSettingsMenu", () => {
     expect(screen.getByText("Ungrouped assets")).toBeInTheDocument();
   });
 
-  it("opens extension management from the settings menu", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ extensions: [] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    );
+  // App-scoped settings moved to the landing page's AppSettingsMenu; the
+  // editor menu must stay project-scoped so the two surfaces cannot drift back
+  // into overlapping.
+  it("no longer offers install-wide settings", () => {
     render(<ProjectSettingsMenu />);
 
     fireEvent.click(screen.getByRole("button"));
 
-    expect(screen.getByText("EXTENSIONS")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Manage extensions"));
-
-    expect(
-      await screen.findByRole("heading", { name: "Extension manager" }),
-    ).toBeInTheDocument();
-    const [url, init] = fetchSpy.mock.calls[0] ?? [];
-    expect(url).toBe("/app/extensions");
-    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    expect(screen.queryByText("EXTENSIONS")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manage extensions")).not.toBeInTheDocument();
+    expect(screen.queryByText("RUNTIME")).not.toBeInTheDocument();
+    expect(screen.queryByText("Runtime settings")).not.toBeInTheDocument();
   });
 });

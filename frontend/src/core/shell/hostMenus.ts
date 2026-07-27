@@ -117,6 +117,17 @@ export interface HostMenuSubjectMap {
       readonly assetBrowserDisplay: string;
     };
   };
+  readonly "app.settings": {
+    readonly slot: "app.settings";
+    /**
+     * Application-scoped runtime state, detached. Persisted install-wide in
+     * `app_settings.json`, so this subject is deliberately project-free.
+     */
+    readonly app: {
+      readonly workflowMode: string;
+      readonly comfyuiConfigured: boolean;
+    };
+  };
   readonly "projects.item.context": {
     readonly slot: "projects.item.context";
     readonly project: {
@@ -311,6 +322,19 @@ function validateProjectSettingsSubject(subject: unknown): boolean {
   );
 }
 
+/** Subject: `{ slot, app: install-wide runtime snapshot }`. */
+function validateAppSettingsSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "app.settings") {
+    return false;
+  }
+  const app = subject.app;
+  return (
+    isRecord(app) &&
+    typeof app.workflowMode === "string" &&
+    typeof app.comfyuiConfigured === "boolean"
+  );
+}
+
 /** Subject: `{ slot, project: detached recent-project descriptor }`. */
 function validateProjectsItemSubject(subject: unknown): boolean {
   if (!isRecord(subject) || subject.slot !== "projects.item.context") {
@@ -340,6 +364,7 @@ const HOST_MENU_SUBJECT_VALIDATORS = {
   "library.browser.context": validateLibraryBrowserSubject,
   "player.canvas.context": validatePlayerCanvasSubject,
   "app.project.settings": validateProjectSettingsSubject,
+  "app.settings": validateAppSettingsSubject,
   "projects.item.context": validateProjectsItemSubject,
 } satisfies Record<HostMenuId, (subject: unknown) => boolean>;
 
@@ -426,6 +451,13 @@ const HOST_MENU_SUBJECT_SCHEMAS = {
       fitMode: "string",
       layoutMode: "string",
       assetBrowserDisplay: "string",
+    },
+  },
+  "app.settings": {
+    slot: "'app.settings'",
+    app: {
+      workflowMode: "'default' | 'high_vram'",
+      comfyuiConfigured: "boolean",
     },
   },
   "projects.item.context": {

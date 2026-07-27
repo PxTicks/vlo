@@ -4,8 +4,6 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
 import ViewStreamIcon from "@mui/icons-material/ViewStream";
 import BugReportIcon from "@mui/icons-material/BugReport";
-import ExtensionIcon from "@mui/icons-material/Extension";
-import SettingsApplicationsIcon from "@mui/icons-material/SettingsApplications";
 import { AppMenu } from "../../core/shell/AppMenu";
 import type { HostMenuItemDescriptor } from "../../core/shell/menuDescriptors";
 import type { HostMenuSubject } from "../../core/shell/hostMenus";
@@ -16,8 +14,6 @@ import type {
 } from "../../features/project";
 import { useProjectStore } from "../../features/project/useProjectStore";
 import { useDebugStore } from "../../shared/debug/useDebugStore";
-import { ExtensionManagerDialog } from "../../features/extensions";
-import { RuntimeSettingsDialog } from "./RuntimeSettingsDialog";
 
 const FPS_OPTIONS = [16, 24, 25, 30, 60];
 
@@ -40,15 +36,13 @@ const GROUP_LABELS: Readonly<Record<string, string>> = {
   "3_aspect": "ASPECT RATIO",
   "4_fit": "FIT MODE",
   "5_browser": "ASSET BROWSER",
-  "6_extensions": "EXTENSIONS",
-  "7_runtime": "RUNTIME",
+  // 6_extensions and 7_runtime moved to the landing page's `app.settings`
+  // menu; the surviving keys stay put so extension placements don't shift.
   "8_debug": "DEBUG",
 };
 
 export function ProjectSettingsMenu() {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [extensionManagerOpen, setExtensionManagerOpen] = useState(false);
-  const [runtimeSettingsOpen, setRuntimeSettingsOpen] = useState(false);
   const open = Boolean(anchorEl);
 
   const config = useProjectStore((state) => state.config);
@@ -169,26 +163,6 @@ export function ProjectSettingsMenu() {
       group: "5_browser",
       selected: currentAssetBrowserDisplay === "ungrouped",
     },
-    {
-      kind: "action",
-      id: "manage-extensions",
-      label: "Manage extensions",
-      group: "6_extensions",
-      icon: <ExtensionIcon fontSize="small" sx={{ color: "white" }} />,
-      testId: "project-settings-extensions",
-      run: () => setExtensionManagerOpen(true),
-    },
-    {
-      kind: "action",
-      id: "runtime-settings",
-      label: "Runtime settings",
-      group: "7_runtime",
-      icon: (
-        <SettingsApplicationsIcon fontSize="small" sx={{ color: "white" }} />
-      ),
-      testId: "project-settings-runtime",
-      run: () => setRuntimeSettingsOpen(true),
-    },
     ...(import.meta.env.DEV
       ? [
           {
@@ -239,14 +213,6 @@ export function ProjectSettingsMenu() {
             },
           },
         }}
-      />
-      <ExtensionManagerDialog
-        open={extensionManagerOpen}
-        onClose={() => setExtensionManagerOpen(false)}
-      />
-      <RuntimeSettingsDialog
-        open={runtimeSettingsOpen}
-        onClose={() => setRuntimeSettingsOpen(false)}
       />
     </>
   );

@@ -222,6 +222,10 @@ export function ProjectManager() {
         overflowY: "auto",
         px: { xs: 2, md: 3 },
         py: { xs: 2, md: 3 },
+        // Top gutter for the app-settings gear App mounts over this page. The
+        // panels otherwise run to the viewport edge, and the right panel's own
+        // "Manage panels" gear already owns that corner of the tab strip.
+        pt: { xs: 6, md: 7 },
         color: "#F4FBF9",
         backgroundColor: "#081111",
         backgroundImage: `
@@ -232,31 +236,41 @@ export function ProjectManager() {
         `,
       }}
     >
+      {/* Clipping layer: these glows deliberately bleed past the viewport
+          edges, and without it their negative insets are real overflow that
+          grows a page scrollbar. */}
       <Box
         sx={{
           position: "absolute",
-          inset: "auto auto -12% -4%",
-          width: { xs: 240, md: 420 },
-          height: { xs: 240, md: 420 },
-          borderRadius: "50%",
-          background: alpha(BRAND_PRIMARY, 0.08),
-          filter: "blur(60px)",
+          inset: 0,
+          overflow: "hidden",
           pointerEvents: "none",
         }}
-      />
+      >
+        <Box
+          sx={{
+            position: "absolute",
+            inset: "auto auto -12% -4%",
+            width: { xs: 240, md: 420 },
+            height: { xs: 240, md: 420 },
+            borderRadius: "50%",
+            background: alpha(BRAND_PRIMARY, 0.08),
+            filter: "blur(60px)",
+          }}
+        />
 
-      <Box
-        sx={{
-          position: "absolute",
-          inset: "-8% -6% auto auto",
-          width: { xs: 220, md: 360 },
-          height: { xs: 220, md: 360 },
-          borderRadius: "50%",
-          background: alpha(BRAND_SECONDARY, 0.08),
-          filter: "blur(72px)",
-          pointerEvents: "none",
-        }}
-      />
+        <Box
+          sx={{
+            position: "absolute",
+            inset: "-8% -6% auto auto",
+            width: { xs: 220, md: 360 },
+            height: { xs: 220, md: 360 },
+            borderRadius: "50%",
+            background: alpha(BRAND_SECONDARY, 0.08),
+            filter: "blur(72px)",
+          }}
+        />
+      </Box>
 
       <Box
         sx={{

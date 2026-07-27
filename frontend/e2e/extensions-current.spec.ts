@@ -194,9 +194,14 @@ async function blockAtProjectMenu(page: Page) {
     ).toHaveCount(0);
 }
 
+/**
+ * The manager lives on the project landing page: extensions install
+ * app-wide and activate at page load, so it is only reachable before a
+ * project is open. Call this from an `onProjectMenu` hook.
+ */
 async function openExtensionManager(page: Page) {
-    await page.getByTestId('project-settings-button').click();
-    await page.getByTestId('project-settings-extensions').click();
+    await page.getByTestId('app-settings-button').click();
+    await page.getByTestId('app-settings-extensions').click();
     await expect(
         page.getByRole('dialog', { name: 'Extension manager' }),
     ).toBeVisible();
@@ -215,15 +220,19 @@ test.describe('Extension browser boundary', () => {
         test.setTimeout(120_000);
         const { page } = editorNoSetup;
         await installStatefulExtensionMock(page, 'pending_approval');
-        // Trust is granted on the project menu, before the editor exists.
+        // Trust is granted on the project menu, before the editor exists, and
+        // the manager that reports it lives on that same page.
         await editorNoSetup.setup({
             fixtureDir: 'project_current',
-            onProjectMenu: () => allowAtProjectMenu(page),
+            onProjectMenu: async () => {
+                await allowAtProjectMenu(page);
+                await openExtensionManager(page);
+                await expect(
+                    page.getByText('Allowed', { exact: true }),
+                ).toBeVisible();
+                await page.getByRole('button', { name: 'Close' }).click();
+            },
         });
-
-        await openExtensionManager(page);
-        await expect(page.getByText('Allowed', { exact: true })).toBeVisible();
-        await page.getByRole('button', { name: 'Close' }).click();
 
         const reloadedInventory = page.waitForResponse(
             (response) =>
@@ -273,23 +282,31 @@ test.describe('Extension browser boundary', () => {
         await selectBoundaryView(page);
         await expect(page.getByText('Dispatch count: 1')).toBeVisible();
 
-        await openExtensionManager(page);
-        await page.getByRole('button', { name: 'Forget my answer' }).click();
-        await expect(
-            page.getByText('Not allowed yet', { exact: true }),
-        ).toBeVisible();
-        await page.getByRole('button', { name: 'Close' }).click();
-
-        // Forgetting the answer makes it ask again, and refusing it there is
-        // what keeps the extension out of the editor.
+        // Forgetting the answer makes it ask again. The manager and the gate
+        // read one inventory, so the prompt returns over the manager without
+        // waiting for a reload, and refusing it there is what keeps the
+        // extension out of the editor.
         await editorNoSetup.reopenProject({
-            onProjectMenu: () => blockAtProjectMenu(page),
+            onProjectMenu: async () => {
+                await openExtensionManager(page);
+                await page
+                    .getByRole('button', { name: 'Forget my answer' })
+                    .click();
+                await expect(
+                    page.getByText('Not allowed yet', { exact: true }),
+                ).toBeVisible();
+                // The gate opens over the manager, so its decision has to be
+                // taken before the manager is interactive again.
+                await blockAtProjectMenu(page);
+                await expect(
+                    page.getByText('You blocked this extension. It will not run.'),
+                ).toBeVisible();
+                await page.getByRole('button', { name: 'Close' }).click();
+            },
         });
-        await expect(
-            page.getByRole('button', { name: 'More panels' }),
-        ).toHaveCount(0);
-
-        // The refusal sticks: no prompt on the next launch.
+        // Activation is fixed at page load, so the refusal does not retract
+        // what is already running — it lands on the next launch, and sticks
+        // there without prompting again.
         await editorNoSetup.reopenProject();
         await expect(
             page.getByTestId('extension-approval-gate'),
@@ -307,19 +324,24 @@ test.describe('Extension browser boundary', () => {
         await installApiMock(page, {
             extensionInventory: [inventoryItem('pending_approval', '>=99.0.0')],
         });
-        await editorNoSetup.setup({ fixtureDir: 'project_current' });
+        await editorNoSetup.setup({
+            fixtureDir: 'project_current',
+            onProjectMenu: async () => {
+                // A package that cannot run here is never worth prompting
+                // about.
+                await expect(
+                    page.getByTestId('extension-approval-gate'),
+                ).toHaveCount(0);
 
-        // A package that cannot run here is never worth prompting about.
-        await expect(
-            page.getByTestId('extension-approval-gate'),
-        ).toHaveCount(0);
-
-        await openExtensionManager(page);
-        await expect(
-            page.getByText(/built for a different version of vlo/i),
-        ).toBeVisible();
-        await expect(
-            page.getByRole('button', { name: 'Allow' }),
-        ).toHaveCount(0);
+                await openExtensionManager(page);
+                await expect(
+                    page.getByText(/built for a different version of vlo/i),
+                ).toBeVisible();
+                await expect(
+                    page.getByRole('button', { name: 'Allow' }),
+                ).toHaveCount(0);
+                await page.getByRole('button', { name: 'Close' }).click();
+            },
+        });
     });
 });

@@ -291,6 +291,8 @@ sidecar examples. A custom GPT is available [here](https://chatgpt.com/g/g-69f93
 
 The following nodes are used in some capacity in the default workflows. Either install them yourself, or use the small helper script:
 [`scripts/install-comfyui-nodes.py`](scripts/install-comfyui-nodes.py), running it in whichever venv ComfyUI uses on your machine.
+New ComfyUI installations managed by vlo install these nodes automatically,
+apart from ComfyUI-WanVideoWrapper.
 
 ```bash
 python scripts/install-comfyui-nodes.py

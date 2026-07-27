@@ -15,6 +15,18 @@ from urllib.parse import urlparse
 from config import RUNTIME_ROOT
 
 COMFYUI_REPOSITORY_URL = "https://github.com/Comfy-Org/ComfyUI.git"
+# WanVideoWrapper remains documented for legacy workflows but is intentionally
+# omitted because those workflows are being replaced.
+MANAGED_CUSTOM_NODE_REPOSITORY_URLS = (
+    "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler",
+    "https://github.com/Lightricks/ComfyUI-LTXVideo",
+    "https://github.com/PxTicks/ComfyUI-vlo",
+    "https://github.com/Fannovel16/comfyui_controlnet_aux",
+    "https://github.com/kijai/ComfyUI-GIMM-VFI",
+    "https://github.com/kijai/ComfyUI-MelBandRoFormer",
+    "https://github.com/kosinkadink/ComfyUI-VideoHelperSuite",
+    "https://github.com/kijai/ComfyUI-KJNodes",
+)
 _MAIN_SOURCE_LIMIT_BYTES = 256 * 1024
 _SOURCE_MARKERS = {
     "argument parser": re.compile(
@@ -354,6 +366,43 @@ class ComfyuiLocalRuntime:
             stdin=subprocess.DEVNULL,
         )
 
+    def _install_custom_nodes(self, target: Path, python: Path) -> None:
+        custom_nodes_dir = target / "custom_nodes"
+        custom_nodes_dir.mkdir(exist_ok=True)
+
+        for repository_url in MANAGED_CUSTOM_NODE_REPOSITORY_URLS:
+            repository_name = repository_url.rsplit("/", 1)[-1]
+            node_dir = custom_nodes_dir / repository_name
+            if node_dir.exists() and not node_dir.is_dir():
+                raise ValueError(
+                    f"Custom-node destination exists and is not a directory: {node_dir}"
+                )
+            if not node_dir.exists():
+                self._run_install_command(
+                    [
+                        "git",
+                        "clone",
+                        "--depth",
+                        "1",
+                        repository_url,
+                        str(node_dir),
+                    ]
+                )
+
+            requirements_path = node_dir / "requirements.txt"
+            if requirements_path.is_file():
+                self._run_install_command(
+                    [
+                        str(python),
+                        "-m",
+                        "pip",
+                        "install",
+                        "-r",
+                        str(requirements_path),
+                    ],
+                    cwd=node_dir,
+                )
+
     def _install_worker(
         self,
         target: Path,
@@ -394,6 +443,13 @@ class ComfyuiLocalRuntime:
                 [str(python), "-m", "pip", "install", "-r", "requirements.txt"],
                 cwd=target,
             )
+            self._set_install_status(
+                phase="installing_requirements",
+                running=True,
+                target_path=target,
+                message="Installing vlo's recommended ComfyUI custom nodes…",
+            )
+            self._install_custom_nodes(target, python)
 
             verification = verify_comfyui_install(target)
             if not verification["valid"]:

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -6,6 +7,7 @@ from services import runtime_settings
 from services.comfyui import local_runtime
 from services.comfyui.local_runtime import (
     COMFYUI_REPOSITORY_URL,
+    MANAGED_CUSTOM_NODE_REPOSITORY_URLS,
     ComfyuiPythonEnvironmentRequired,
     ComfyuiLocalRuntime,
     DirectoryPickerBusyError,
@@ -27,6 +29,24 @@ def _write_comfyui_checkout(path: Path) -> None:
     for filename in ("nodes.py", "server.py", "folder_paths.py"):
         (path / filename).write_text("", encoding="utf-8")
     (path / "requirements.txt").write_text("aiohttp\n", encoding="utf-8")
+
+
+def test_managed_custom_nodes_match_readme_except_wan_video_wrapper() -> None:
+    readme = (Path(__file__).parents[2] / "README.md").read_text(encoding="utf-8")
+    custom_nodes_block = readme.split(
+        "<!-- comfyui-custom-nodes:start -->",
+        1,
+    )[1].split("<!-- comfyui-custom-nodes:end -->", 1)[0]
+    readme_urls = re.findall(
+        r"^- (https://github\.com/\S+)$",
+        custom_nodes_block,
+        re.MULTILINE,
+    )
+
+    expected_urls = [
+        url for url in readme_urls if not url.endswith("/ComfyUI-WanVideoWrapper")
+    ]
+    assert list(MANAGED_CUSTOM_NODE_REPOSITORY_URLS) == expected_urls
 
 
 def test_verification_accepts_nested_portable_layout(tmp_path: Path) -> None:
@@ -63,7 +83,15 @@ def test_installer_clones_creates_venv_installs_and_persists(
     def fake_run(command: list[str], cwd: Path | None = None) -> None:
         commands.append((command, cwd))
         if command[:4] == ["git", "clone", "--depth", "1"]:
-            _write_comfyui_checkout(target)
+            clone_target = Path(command[-1])
+            if clone_target == target:
+                _write_comfyui_checkout(target)
+            else:
+                clone_target.mkdir(parents=True)
+                (clone_target / "requirements.txt").write_text(
+                    f"{clone_target.name}-dependency\n",
+                    encoding="utf-8",
+                )
         if command[1:3] == ["-m", "venv"]:
             python = target / ".venv" / "bin" / "python"
             python.parent.mkdir(parents=True)
@@ -89,7 +117,28 @@ def test_installer_clones_creates_venv_installs_and_persists(
         COMFYUI_REPOSITORY_URL,
         str(target),
     ]
-    assert commands[-1][0][-2:] == ["-r", "requirements.txt"]
+    custom_node_clone_urls = [
+        command[0][4]
+        for command in commands
+        if command[0][:4] == ["git", "clone", "--depth", "1"]
+        and command[0][4] != COMFYUI_REPOSITORY_URL
+    ]
+    assert custom_node_clone_urls == list(MANAGED_CUSTOM_NODE_REPOSITORY_URLS)
+    assert all("WanVideoWrapper" not in url for url in custom_node_clone_urls)
+    custom_node_requirement_installs = [
+        command
+        for command, _cwd in commands
+        if command[:4] == [
+            str(target / ".venv" / "bin" / "python"),
+            "-m",
+            "pip",
+            "install",
+        ]
+        and Path(command[-1]).parent.parent.name == "custom_nodes"
+    ]
+    assert len(custom_node_requirement_installs) == len(
+        MANAGED_CUSTOM_NODE_REPOSITORY_URLS
+    )
     assert persisted == [
         {
             "comfyui_install_dir": str(target.resolve()),
@@ -123,6 +172,8 @@ def test_environment_setup_skips_clone_for_existing_checkout(
             python = checkout / ".venv" / "bin" / "python"
             python.parent.mkdir(parents=True)
             python.write_text("", encoding="utf-8")
+        if command[:4] == ["git", "clone", "--depth", "1"]:
+            Path(command[-1]).mkdir(parents=True)
 
     monkeypatch.setattr(manager, "_run_install_command", fake_run)
     monkeypatch.setattr(runtime_settings, "update_runtime_settings", lambda **_kwargs: None)
@@ -133,7 +184,16 @@ def test_environment_setup_skips_clone_for_existing_checkout(
         completion_message="Environment ready.",
     )
 
-    assert all(command[0] != "git" for command in commands)
+    assert all(
+        command[:5]
+        != ["git", "clone", "--depth", "1", COMFYUI_REPOSITORY_URL]
+        for command in commands
+    )
+    assert [
+        command[4]
+        for command in commands
+        if command[:4] == ["git", "clone", "--depth", "1"]
+    ] == list(MANAGED_CUSTOM_NODE_REPOSITORY_URLS)
     assert commands[0][1:3] == ["-m", "venv"]
     assert manager.get_install_status()["message"] == "Environment ready."
 

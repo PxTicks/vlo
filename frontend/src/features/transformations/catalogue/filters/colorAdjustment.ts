@@ -9,6 +9,7 @@ export const colorAdjustmentDefinition: TransformationDefinition = {
   FilterClass: AdjustmentFilter,
   label: "Color Adjustment",
   handler: filterHandler,
+  hidden: true,
   uiConfig: {
     groups: [
       {
@@ -108,4 +109,3 @@ export const colorAdjustmentDefinition: TransformationDefinition = {
     ],
   },
 };
-

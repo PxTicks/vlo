@@ -9,6 +9,7 @@ export const hslFilterDefinition: TransformationDefinition = {
   FilterClass: HslAdjustmentFilter,
   label: "Color (HSL)",
   handler: filterHandler,
+  hidden: true,
   uiConfig: {
     groups: [
       {

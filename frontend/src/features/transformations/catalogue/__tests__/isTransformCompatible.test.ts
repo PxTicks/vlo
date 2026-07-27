@@ -109,18 +109,22 @@ describe("default + addable menus for adjustment clips", () => {
     expect(addable.find((d) => d.type === "filter")).toBeDefined();
   });
 
-  it("keeps hidden filters out of the adjustment add menu", () => {
+  it("keeps internal and legacy color filters out of add menus", () => {
     const adjustmentAddable = getAddableTransforms({ clipType: "adjustment" });
-    expect(
-      adjustmentAddable.find(
-        (d) => d.type === "filter" && d.filterName === "AlphaFilter",
-      ),
-    ).toBeUndefined();
-    expect(
-      adjustmentAddable.find(
-        (d) => d.type === "filter" && d.filterName === "ColorMatrixFilter",
-      ),
-    ).toBeUndefined();
+    const adjustmentFilterNames = adjustmentAddable
+      .filter((definition) => definition.type === "filter")
+      .map((definition) => definition.filterName);
+
+    expect(adjustmentFilterNames).not.toContain("AlphaFilter");
+    expect(adjustmentFilterNames).not.toContain("ColorMatrix");
+    expect(adjustmentFilterNames).not.toContain("HslAdjustmentFilter");
+    expect(adjustmentFilterNames).not.toContain("AdjustmentFilter");
+
+    const videoFilterNames = getAddableTransforms({ clipType: "video" })
+      .filter((definition) => definition.type === "filter")
+      .map((definition) => definition.filterName);
+    expect(videoFilterNames).not.toContain("HslAdjustmentFilter");
+    expect(videoFilterNames).not.toContain("AdjustmentFilter");
   });
 
   it("still treats hidden AlphaFilter as render-compatible for adjustment clips", () => {

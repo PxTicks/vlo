@@ -2,7 +2,7 @@
   "version": 3,
   "name": "Wan TTM",
   "nodes": {
-    "27": {
+    "144": {
       "widgets": {
         "noise_seed": {
           "label": "Noise seed",
@@ -12,30 +12,38 @@
           "group_title": "Video Generation",
           "group_order": 3
         },
-        "start_step": {
+        "start_at_step": {
           "value_type": "int",
           "hidden": true
         },
-        "end_step": {
+        "end_at_step": {
           "value_type": "int",
+          "hidden": true
+        },
+        "cfg": {
+          "value_type": "float",
           "hidden": true
         }
       }
     },
-    "90": {
+    "148": {
       "widgets": {
         "noise_seed": {
           "control_after_generate": true,
           "value_type": "int",
           "hidden": true
         },
-        "start_step": {
+        "start_at_step": {
           "value_type": "int",
+          "hidden": true
+        },
+        "cfg": {
+          "value_type": "float",
           "hidden": true
         }
       }
     },
-    "89": {
+    "150": {
       "widgets": {
         "width": {
           "value_type": "int",
@@ -45,7 +53,7 @@
           "value_type": "int",
           "hidden": true
         },
-        "num_frames": {
+        "length": {
           "label": "Length",
           "when": {
             "kind": "input_presence",
@@ -71,7 +79,7 @@
         }
       }
     },
-    "94": {
+    "146": {
       "widgets": {
         "value": {
           "label": "Total Steps",
@@ -80,7 +88,7 @@
         }
       }
     },
-    "91": {
+    "149": {
       "widgets": {
         "value": {
           "label": "Split Steps",
@@ -132,27 +140,31 @@
       "group_title": "Video Generation",
       "group_order": 1,
       "total_steps": {
-        "node_id": "94",
+        "node_id": "146",
         "param": "value"
       },
       "start_step": {
-        "node_id": "27",
-        "param": "start_step"
+        "node_id": "144",
+        "param": "start_at_step"
       },
       "base_split_step": {
-        "node_id": "91",
+        "node_id": "149",
         "param": "value"
       },
       "split_step_targets": [
         {
-          "node_id": "27",
-          "param": "end_step"
+          "node_id": "144",
+          "param": "end_at_step"
         },
         {
-          "node_id": "90",
-          "param": "start_step"
+          "node_id": "148",
+          "param": "start_at_step"
         }
-      ]
+      ],
+      "second_sampler_add_noise": {
+        "node_id": "148",
+        "param": "add_noise"
+      }
     }
   ],
   "rewrites": [],

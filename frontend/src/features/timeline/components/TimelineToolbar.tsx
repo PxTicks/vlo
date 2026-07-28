@@ -21,7 +21,12 @@ import { useInteractionStore } from "../hooks/useInteractionStore";
 import { useTimelineStore } from "../useTimelineStore";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { useProjectStore } from "../../project/useProjectStore";
-import { calculateClipTime } from "../../transformations";
+import {
+  getTimelineClipsAtPlayhead,
+  getTimelineMarkerPlacementsAtPlayhead,
+  getTimelineSplitPointsAtPlayhead,
+  splitTimelineClip,
+} from "../api";
 import {
   getTicksPerFrame,
   snapTickToFrame,
@@ -104,12 +109,7 @@ export const TimelineToolbar = () => {
       .filter((clip): clip is TimelineClip => clip !== undefined && isAudibleClip(clip));
 
     if (candidates.length === 0) {
-      candidates = state.clips.filter(
-        (clip) =>
-          isAudibleClip(clip) &&
-          clip.start <= playheadTick &&
-          clip.start + clip.timelineDuration > playheadTick,
-      );
+      candidates = getTimelineClipsAtPlayhead(playheadTick).filter(isAudibleClip);
     }
 
     if (candidates.length === 0) {
@@ -253,39 +253,18 @@ export const TimelineToolbar = () => {
                 ticksPerFrame,
               );
 
-              const state = useTimelineStore.getState();
-              let targetIds = state.selectedClipIds.filter((id) => {
-                const clip = state.clips.find((candidate) => candidate.id === id);
-                return (
-                  clip &&
-                  clip.type !== "mask" &&
-                  clip.start <= snappedTick &&
-                  clip.start + clip.timelineDuration > snappedTick
-                );
-              });
+              // The playhead is a presentation tick, so both the target clips
+              // and the anchor are resolved through the presentation model —
+              // a ripple retime moves a clip's footprint away from its stored
+              // `start`.
+              const placements =
+                getTimelineMarkerPlacementsAtPlayhead(snappedTick);
 
-              if (targetIds.length === 0) {
-                targetIds = state.clips
-                  .filter(
-                    (clip) =>
-                      clip.type !== "mask" &&
-                      clip.start <= snappedTick &&
-                      clip.start + clip.timelineDuration > snappedTick,
-                  )
-                  .map((clip) => clip.id);
-              }
-
-              targetIds.forEach((id) => {
+              placements.forEach(({ clipId: id, sourceTimeTicks }) => {
                 const clip = useTimelineStore
                   .getState()
                   .clips.find((candidate) => candidate.id === id);
                 if (!clip || clip.type === "mask") return;
-
-                const localVisualTicks = snappedTick - clip.start;
-                const sourceTimeTicks = calculateClipTime(
-                  clip,
-                  localVisualTicks,
-                );
 
                 const markersComponent = (clip.components ?? []).find(
                   (component): component is MarkersComponent =>
@@ -381,38 +360,14 @@ export const TimelineToolbar = () => {
           <IconButton
             size="small"
             onClick={() => {
-              const currentTime = playbackClock.time;
-              const state = useTimelineStore.getState();
-
-              let idsToSplit = [...state.selectedClipIds];
-
-              // If no clips are selected, split ALL clips under the playhead (Razor behavior)
-              if (idsToSplit.length === 0) {
-                const intersectingClips = state.clips.filter(
-                  (c) =>
-                    c.type !== "mask" &&
-                    c.start < currentTime &&
-                    c.start + c.timelineDuration > currentTime,
-                );
-                idsToSplit = intersectingClips.map((c) => c.id);
-              } else {
-                // If there IS a selection, we should only split selected clips that ACTUALLY intersect
-                // To prevent errors or weird behavior if we try to split a clip not under playhead
-                const clips = state.clips;
-                idsToSplit = idsToSplit.filter((id) => {
-                  const c = clips.find((clip) => clip.id === id);
-                  return (
-                    c &&
-                    c.type !== "mask" &&
-                    c.start < currentTime &&
-                    c.start + c.timelineDuration > currentTime
-                  );
-                });
-              }
-
-              idsToSplit.forEach((id) => {
-                state.splitClip(id, currentTime);
-              });
+              // The playhead is a presentation tick; `splitTimelineClip` wants
+              // stored track time. A selection restricts the cut to the
+              // selected clips it covers; an empty one is razor mode.
+              getTimelineSplitPointsAtPlayhead(playbackClock.time).forEach(
+                ({ clipId, splitTick }) => {
+                  splitTimelineClip(clipId, splitTick);
+                },
+              );
             }}
             sx={{ color: "#eee" }}
           >

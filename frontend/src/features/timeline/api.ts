@@ -59,7 +59,13 @@ import {
   createTimelinePlacementMapper,
   timelinePresentationRange,
 } from "./utils/timelinePlacementMapper";
-import { presentationTick } from "./utils/timelineTimeDomains";
+import {
+  resolveClipsAtPlayhead,
+  resolveMarkerPlacementsAtPlayhead,
+  resolveSplitPointsAtPlayhead,
+  type MarkerPlacement,
+  type SplitPoint,
+} from "./model/playheadPlacement";
 import { createClipFromAsset } from "./utils/clipFactory";
 import {
   insertAssetAtTime,
@@ -286,21 +292,89 @@ export function getTimelinePresentationContext(): {
   };
 }
 
-/** Return clips whose visible presentation footprint intersects a range. */
+/**
+ * Return clips whose visible presentation footprint intersects a range, or
+ * covers a single tick when `end` is omitted. Mask clips ride along with a
+ * covered parent.
+ */
 export function getTimelineClipsInPresentationRange(
   start: number,
   end?: number,
 ): TimelineClip[] {
   const { clips, tracks, fps } = getTimelinePresentationContext();
+  if (end === undefined) {
+    return resolveClipsAtPlayhead({
+      tracks,
+      clips,
+      fps,
+      presentationTick: start,
+      includeMaskChildren: true,
+    });
+  }
+
   const mapper = createTimelinePlacementMapper({ tracks, clips, fps });
   const selectedIds = new Set(
-    end === undefined
-      ? mapper.getClipIdsAtPresentationTick(presentationTick(start))
-      : mapper.getClipIdsInPresentationRange(
-          timelinePresentationRange(start, end),
-        ),
+    mapper.getClipIdsInPresentationRange(timelinePresentationRange(start, end)),
   );
   return clips.filter((clip) => selectedIds.has(clip.id));
+}
+
+/**
+ * Clips the playhead is drawn over, excluding mask children — the set an action
+ * that edits the clip itself (markers, beat detection) should operate on.
+ */
+export function getTimelineClipsAtPlayhead(
+  presentationTickValue: number,
+): TimelineClip[] {
+  const { clips, tracks, fps } = getTimelinePresentationContext();
+  return resolveClipsAtPlayhead({
+    tracks,
+    clips,
+    fps,
+    presentationTick: presentationTickValue,
+  });
+}
+
+/**
+ * Anchors for "add a marker at the playhead": which clips get one, and the
+ * source-media time each marker is pinned to. Presentation-aware, so a clip
+ * moved by a ripple retime still anchors under the playhead the user sees.
+ * Defaults to preferring the current selection when it is under the playhead.
+ */
+export function getTimelineMarkerPlacementsAtPlayhead(
+  presentationTickValue: number,
+  preferredClipIds?: readonly string[],
+): MarkerPlacement[] {
+  const { clips, tracks, fps } = getTimelinePresentationContext();
+  return resolveMarkerPlacementsAtPlayhead({
+    tracks,
+    clips,
+    fps,
+    presentationTick: presentationTickValue,
+    preferredClipIds:
+      preferredClipIds ?? useTimelineStore.getState().selectedClipIds,
+  });
+}
+
+/**
+ * Cuts for "split at the playhead": which clips are cut, each with the stored
+ * track tick `splitTimelineClip` expects. Presentation-aware, and pre-filtered
+ * to cuts the model will accept. Defaults to the current selection, which
+ * restricts the cut (an empty selection is razor mode: every covered clip).
+ */
+export function getTimelineSplitPointsAtPlayhead(
+  presentationTickValue: number,
+  selectedClipIds?: readonly string[],
+): SplitPoint[] {
+  const { clips, tracks, fps } = getTimelinePresentationContext();
+  return resolveSplitPointsAtPlayhead({
+    tracks,
+    clips,
+    fps,
+    presentationTick: presentationTickValue,
+    selectedClipIds:
+      selectedClipIds ?? useTimelineStore.getState().selectedClipIds,
+  });
 }
 
 export function getTimelineCompositeContent(): CompositeContent {
@@ -645,6 +719,15 @@ export function removeTimelineClip(clipId: string): void {
 
 export function removeTimelineClips(clipIds: string[]): boolean {
   return useTimelineStore.getState().removeClips(clipIds);
+}
+
+/**
+ * Cut a clip in two. `splitTick` is stored track time — pair this with
+ * {@link getTimelineSplitPointsAtPlayhead}, which converts the presentation
+ * playhead into that domain.
+ */
+export function splitTimelineClip(clipId: string, splitTick: number): void {
+  useTimelineStore.getState().splitClip(clipId, splitTick);
 }
 
 export function moveTimelineClips(

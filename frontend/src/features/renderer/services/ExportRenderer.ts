@@ -32,6 +32,7 @@ import {
 } from "./audioEffectChain";
 import { createDecoderWorkerPool } from "./DecoderWorkerPool";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
+import { yieldToEventLoop } from "../utils/yieldToEventLoop";
 import { getAssetInput } from "../../userAssets";
 import {
   getIncludedClipsForSelection,
@@ -810,7 +811,7 @@ export class ExportRenderer {
         if (i % 5 === 0) {
           const videoProgress = (i / totalFrames) * (100 - startProgress);
           onProgress(startProgress + videoProgress);
-          await new Promise((resolve) => setTimeout(resolve, 0));
+          await yieldToEventLoop();
         }
       }
 

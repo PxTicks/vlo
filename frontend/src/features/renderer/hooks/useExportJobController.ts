@@ -17,6 +17,7 @@ import {
   type ExportConfig,
 } from "../services/ExportRenderer";
 import { renderSelectionToVideoFile } from "../services/renderSelectionToVideoFile";
+import { acquireExportWakeLock } from "../services/exportWakeLock";
 import { deriveTrueDimensionsFromShortEdge } from "../utils/dimensions";
 import type { AspectRatio } from "../../project/useProjectStore";
 import type { OutputVideoFormat } from "../services/TextureOutputEncoder";
@@ -149,48 +150,44 @@ export function useExportJobController({
       onProgress,
     }: SelectionExportOptions) => {
       const sessionId = beginSession();
-      const aspectRatio = logicalDimensions.width / logicalDimensions.height;
-      const outputHeight = Math.round(logicalDimensions.height / 2) * 2;
-      const outputWidth = Math.round((outputHeight * aspectRatio) / 2) * 2;
-
-      const exportConfig: ExportConfig = {
-        logicalWidth: logicalDimensions.width,
-        logicalHeight: logicalDimensions.height,
-        outputWidth,
-        outputHeight,
-        backgroundAlpha: 0,
-      };
+      const wakeLock = acquireExportWakeLock();
 
       try {
+        const aspectRatio = logicalDimensions.width / logicalDimensions.height;
+        const outputHeight = Math.round(logicalDimensions.height / 2) * 2;
+        const outputWidth = Math.round((outputHeight * aspectRatio) / 2) * 2;
+
+        const exportConfig: ExportConfig = {
+          logicalWidth: logicalDimensions.width,
+          logicalHeight: logicalDimensions.height,
+          outputWidth,
+          outputHeight,
+          backgroundAlpha: 0,
+        };
+
         await prepareBrushMasksForTimelineRender();
-      } catch (error) {
-        console.error("Selection extraction failed", error);
-        finalizeSession(sessionId);
-        return;
-      }
-      const projectData = buildProjectData();
-      const selectionFps = resolveSelectionFps(
-        { fps: selectionFpsOverride },
-        projectData.fps,
-      );
-      const selectionTimelineSelection = {
-        start: selectionStartTick,
-        end: selectionEndTick,
-        clips: getClipsInSelection(projectData.clips, {
+        const projectData = buildProjectData();
+        const selectionFps = resolveSelectionFps(
+          { fps: selectionFpsOverride },
+          projectData.fps,
+        );
+        const selectionTimelineSelection = {
           start: selectionStartTick,
           end: selectionEndTick,
-          clips: [],
-        }),
-        tracks: projectData.tracks,
-        ...(selectionMessage ? { message: selectionMessage } : {}),
-        ...(selectionIncludedTrackIds.length > 0
-          ? { includedTrackIds: selectionIncludedTrackIds.slice() }
-          : {}),
-        fps: selectionFps,
-        frameStep: selectionFrameStep,
-      };
+          clips: getClipsInSelection(projectData.clips, {
+            start: selectionStartTick,
+            end: selectionEndTick,
+            clips: [],
+          }),
+          tracks: projectData.tracks,
+          ...(selectionMessage ? { message: selectionMessage } : {}),
+          ...(selectionIncludedTrackIds.length > 0
+            ? { includedTrackIds: selectionIncludedTrackIds.slice() }
+            : {}),
+          fps: selectionFps,
+          frameStep: selectionFrameStep,
+        };
 
-      try {
         const file = await renderSelectionToVideoFile(
           selectionTimelineSelection,
           {
@@ -216,6 +213,7 @@ export function useExportJobController({
           console.error("Selection extraction failed", e);
         }
       } finally {
+        wakeLock.release();
         finalizeSession(sessionId);
       }
     },
@@ -237,40 +235,36 @@ export function useExportJobController({
       onProgress,
     }: ProjectExportOptions) => {
       const sessionId = beginSession();
-      const trueDimensions = deriveTrueDimensionsFromShortEdge(
-        projectAspectRatio,
-        resolution,
-      );
-      const outputWidth = Math.max(2, Math.round(trueDimensions.width / 2) * 2);
-      const outputHeight = Math.max(
-        2,
-        Math.round(trueDimensions.height / 2) * 2,
-      );
-
-      const exportConfig: ExportConfig = {
-        logicalWidth: logicalDimensions.width,
-        logicalHeight: logicalDimensions.height,
-        outputWidth,
-        outputHeight,
-        fileHandle,
-      };
+      const wakeLock = acquireExportWakeLock();
 
       try {
+        const trueDimensions = deriveTrueDimensionsFromShortEdge(
+          projectAspectRatio,
+          resolution,
+        );
+        const outputWidth = Math.max(2, Math.round(trueDimensions.width / 2) * 2);
+        const outputHeight = Math.max(
+          2,
+          Math.round(trueDimensions.height / 2) * 2,
+        );
+
+        const exportConfig: ExportConfig = {
+          logicalWidth: logicalDimensions.width,
+          logicalHeight: logicalDimensions.height,
+          outputWidth,
+          outputHeight,
+          fileHandle,
+        };
+
         await prepareBrushMasksForTimelineRender();
-      } catch (error) {
-        console.error("Export failed", error);
-        finalizeSession(sessionId);
-        return;
-      }
-      const projectData = buildProjectData();
-      const fullTimelineSelection = {
-        start: 0,
-        end: projectData.duration,
-        clips: projectData.clips,
-        fps: projectData.fps,
-      };
+        const projectData = buildProjectData();
+        const fullTimelineSelection = {
+          start: 0,
+          end: projectData.duration,
+          clips: projectData.clips,
+          fps: projectData.fps,
+        };
 
-      try {
         // The encoder writes to config.fileHandle; the returned File is unused.
         await renderSelectionToVideoFile(fullTimelineSelection, {
           renderInputs: {
@@ -291,6 +285,7 @@ export function useExportJobController({
           console.error("Export failed", e);
         }
       } finally {
+        wakeLock.release();
         finalizeSession(sessionId);
       }
     },

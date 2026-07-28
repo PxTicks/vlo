@@ -67,10 +67,16 @@ beforeEach(() => {
   vi.mocked(addLocalAsset).mockReset();
   vi.mocked(prepareBrushMasksForTimelineRender).mockReset();
   vi.mocked(prepareBrushMasksForTimelineRender).mockResolvedValue(undefined);
+  vi.mocked(deriveTrueDimensionsFromShortEdge).mockReset();
+  vi.mocked(deriveTrueDimensionsFromShortEdge).mockReturnValue({
+    width: 1280,
+    height: 720,
+  });
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 afterEach(() => {
+  Reflect.deleteProperty(navigator as object, "wakeLock");
   vi.restoreAllMocks();
 });
 
@@ -257,6 +263,33 @@ describe("useExportJobController runProjectExport", () => {
       await result.current.runProjectExport({ resolution: 1080 });
     });
 
+    expect(console.error).toHaveBeenCalledWith("Export failed", expect.any(Error));
+  });
+
+  it("releases a late wake-lock grant when export setup fails", async () => {
+    const sentinel = {
+      released: false,
+      release: vi.fn(async () => {
+        sentinel.released = true;
+      }),
+    };
+    Object.defineProperty(navigator, "wakeLock", {
+      configurable: true,
+      value: {
+        request: vi.fn(async () => sentinel),
+      },
+    });
+    vi.mocked(deriveTrueDimensionsFromShortEdge).mockImplementationOnce(() => {
+      throw new Error("invalid dimensions");
+    });
+
+    const { result } = makeController();
+    await act(async () => {
+      await result.current.runProjectExport({ resolution: 1080 });
+    });
+    await Promise.resolve();
+
+    expect(sentinel.release).toHaveBeenCalledOnce();
     expect(console.error).toHaveBeenCalledWith("Export failed", expect.any(Error));
   });
 });

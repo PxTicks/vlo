@@ -43,6 +43,7 @@ export const TimelinePlayhead = () => {
   return (
     <Box
       ref={lineRef}
+      data-testid="timeline-playhead"
       sx={{
         position: "absolute",
         top: 0,

@@ -31,6 +31,7 @@ import { playbackClock } from "../../../../core/playback/PlaybackClock";
 import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
 import {
   commitTransformControl,
+  commitTransformControls,
   hasDragMovement,
 } from "./transformInteraction";
 import {
@@ -70,6 +71,7 @@ const DRAG_MOVE_EPSILON = 0.01;
 const PATH_PROGRESS_EPSILON = 0.02;
 const PATH_RECORDING_SPATIAL_EPSILON = 6;
 const PATH_RECORDING_SIMPLIFY_EPSILON = 4;
+let transformDragSequence = 0;
 
 type InteractionMode =
   | "translate"
@@ -96,6 +98,7 @@ interface InteractionState {
   lastRotationParam: number | null;
   path: PositionPathDragState;
   didMove: boolean;
+  historyCoalesceKey: string | null;
 }
 
 function createInitialInteractionState(): InteractionState {
@@ -117,6 +120,7 @@ function createInitialInteractionState(): InteractionState {
     lastRotationParam: null,
     path: createInitialPositionPathDragState(),
     didMove: false,
+    historyCoalesceKey: null,
   };
 }
 
@@ -183,6 +187,7 @@ export function useTransformInteractionController(
       current.lastRotationParam = null;
       current.path = createInitialPositionPathDragState();
       current.didMove = false;
+      current.historyCoalesceKey = null;
     };
 
     const resolveLocalVisualTime = (clip: TimelineClip): number => {
@@ -358,7 +363,12 @@ export function useTransformInteractionController(
         clip.transformations || [],
         commit.createdTransform,
       );
-      setTimelineClipTransforms(clip.id, orderedTransforms);
+      const historyCoalesceKey = interactionRef.current.historyCoalesceKey;
+      setTimelineClipTransforms(clip.id, orderedTransforms, {
+        historyCoalesce: historyCoalesceKey
+          ? { key: historyCoalesceKey, end: false }
+          : undefined,
+      });
       return commit.createdTransform.id;
     };
 
@@ -647,29 +657,28 @@ export function useTransformInteractionController(
             }
 
             if (finalPosition) {
-              const xCommit = applyCommit(
-                latestClip,
-                nextTransforms,
-                "position",
-                "x",
-                finalPosition.x,
-                current.transformIds.position ?? undefined,
-              );
-              if (xCommit) {
-                nextTransforms = xCommit.nextTransforms;
-                current.transformIds.position = xCommit.transformId;
-              }
-
-              const yCommit = applyCommit(
-                latestClip,
-                nextTransforms,
-                "position",
-                "y",
-                finalPosition.y,
-                current.transformIds.position ?? undefined,
-              );
-              if (yCommit) {
-                current.transformIds.position = yCommit.transformId;
+              const positionCommit = commitTransformControls({
+                clip: latestClip,
+                transforms: nextTransforms,
+                groupId: "position",
+                values: finalPosition,
+                transformId: current.transformIds.position ?? undefined,
+                playheadTicks: playbackClock.time,
+                keyframeSourceTimeTicks: resolveSourceKeyframeTime(latestClip),
+                pointEpsilonTicks: POINT_EPSILON_TICKS,
+                actions: {
+                  addClipTransform: addTimelineClipTransform,
+                  updateClipTransform: updateTimelineClipTransform,
+                  setClipTransforms: (clipId, transforms) =>
+                    setTimelineClipTransforms(clipId, transforms, {
+                      historyCoalesce: current.historyCoalesceKey
+                        ? { key: current.historyCoalesceKey, end: true }
+                        : undefined,
+                    }),
+                },
+              });
+              if (positionCommit) {
+                current.transformIds.position = positionCommit.transformId;
               }
             }
           } else if (current.mode === "scale") {
@@ -816,6 +825,8 @@ export function useTransformInteractionController(
         },
         lastPositionParams: { x: startX, y: startY },
         path: initialPathState,
+        historyCoalesceKey:
+          `canvas-position-drag:${activeClip.id}:${++transformDragSequence}`,
       };
 
       bindStageListeners();

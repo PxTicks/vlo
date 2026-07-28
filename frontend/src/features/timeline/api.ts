@@ -698,8 +698,13 @@ export function updateTimelineClipTransform(
 export function setTimelineClipTransforms(
   clipId: string,
   transforms: ClipTransform[],
+  options?: Parameters<TimelineStoreState["setClipTransforms"]>[2],
 ): void {
-  useTimelineStore.getState().setClipTransforms(clipId, transforms);
+  if (options === undefined) {
+    useTimelineStore.getState().setClipTransforms(clipId, transforms);
+    return;
+  }
+  useTimelineStore.getState().setClipTransforms(clipId, transforms, options);
 }
 
 export function setTimelineClipTransformsAndShape(

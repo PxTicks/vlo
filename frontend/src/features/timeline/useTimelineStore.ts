@@ -240,7 +240,16 @@ interface TimelineState extends TimelineModelState {
     updates: Partial<Omit<ClipTransform, "id" | "type">>,
   ) => void;
 
-  setClipTransforms: (clipId: string, transforms: ClipTransform[]) => void;
+  setClipTransforms: (
+    clipId: string,
+    transforms: ClipTransform[],
+    options?: {
+      historyCoalesce?: {
+        key: string;
+        end: boolean;
+      };
+    },
+  ) => void;
   setClipTransformsAndShape: (
     clipId: string,
     transforms: ClipTransform[],
@@ -866,10 +875,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
     },
 
-    setClipTransforms: (clipId, transforms) => {
-      mutationPipeline.commitModelMutation((draft) => {
-        setClipTransformsInDraft(draft, clipId, transforms);
-      });
+    setClipTransforms: (clipId, transforms, options) => {
+      mutationPipeline.commitModelMutation(
+        (draft) => {
+          setClipTransformsInDraft(draft, clipId, transforms);
+        },
+        {
+          coalesce: options?.historyCoalesce,
+        },
+      );
     },
 
     setClipTransformsAndShape: (clipId, transforms, shape) => {

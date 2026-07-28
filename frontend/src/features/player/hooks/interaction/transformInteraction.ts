@@ -37,6 +37,39 @@ export interface CommitTransformControlResult {
   nextTransforms: ClipTransform[];
 }
 
+export function commitTransformControls(
+  input: Omit<CommitTransformControlInput, "controlName" | "value"> & {
+    values: Readonly<
+      Partial<Record<CommitTransformControlInput["controlName"], number>>
+    >;
+  },
+): CommitTransformControlResult | null {
+  let nextTransforms = input.transforms;
+  let transformId = input.transformId;
+
+  for (const [controlName, value] of Object.entries(input.values)) {
+    if (value === undefined) continue;
+    const result = commitLayoutControlToTransforms({
+      clip: input.clip,
+      transforms: nextTransforms,
+      groupId: input.groupId,
+      controlName: controlName as CommitTransformControlInput["controlName"],
+      value,
+      playheadTicks: input.playheadTicks,
+      pointEpsilonTicks: input.pointEpsilonTicks,
+      transformId,
+      keyframeSourceTimeTicks: input.keyframeSourceTimeTicks,
+    });
+    if (!result) continue;
+    nextTransforms = result.nextTransforms;
+    transformId = result.transformId;
+  }
+
+  if (!transformId || nextTransforms === input.transforms) return null;
+  input.actions.setClipTransforms(input.clip.id, nextTransforms);
+  return { transformId, nextTransforms };
+}
+
 export function commitTransformControl({
   clip,
   transforms,

@@ -85,6 +85,9 @@ describe("useTransformInteractionController", () => {
       start: 0,
       timelineDuration: 100,
       offset: 0,
+      name: "Position undo",
+      sourceDuration: 100,
+      croppedSourceDuration: 100,
       transformedDuration: 100,
       transformedOffset: 0,
     } as TimelineClip;
@@ -155,7 +158,76 @@ describe("useTransformInteractionController", () => {
     expect(positionAfterDrop!.parameters.x).toBe(30);
     expect(positionAfterDrop!.parameters.y).toBe(40);
 
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    const positionAfterUndo = useTimelineStore
+      .getState()
+      .clips[0].transformations?.find((transform) => transform.type === "position");
+    expect(positionAfterUndo).toBeUndefined();
+
     notifySpy.mockRestore();
+  });
+
+  it("undoes both axes of a position drag in one history step", () => {
+    const clip = {
+      id: "clip_position_undo",
+      trackId: "track_1",
+      type: "video",
+      assetId: "asset_1",
+      name: "Position undo",
+      start: 0,
+      timelineDuration: 100,
+      sourceDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      transformations: [
+        {
+          id: "position_undo",
+          type: "position",
+          isEnabled: true,
+          parameters: { x: 5, y: 10 },
+        },
+      ],
+    } as TimelineClip;
+
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    act(() => {
+      result.current.onSpritePointerDown({
+        button: 0,
+        stopPropagation: vi.fn(),
+        global: { x: 20, y: 30 },
+        originalEvent: { shiftKey: false, ctrlKey: false, metaKey: false },
+      } as unknown as FederatedPointerEvent);
+      getStageHandler("pointermove")?.({
+        global: { x: 50, y: 70 },
+      } as FederatedPointerEvent);
+      getStageHandler("pointerup")?.({
+        global: { x: 50, y: 70 },
+      } as FederatedPointerEvent);
+    });
+
+    const draggedPosition = useTimelineStore
+      .getState()
+      .clips[0].transformations?.find((transform) => transform.type === "position");
+    expect(draggedPosition?.parameters).toMatchObject({ x: 35, y: 50 });
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    const undonePosition = useTimelineStore
+      .getState()
+      .clips[0].transformations?.find((transform) => transform.type === "position");
+    expect(undonePosition?.parameters).toMatchObject({ x: 5, y: 10 });
   });
 
   it("selects the clip on sprite pointer down", () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 vi.mock("../../../timeline/api", () => ({
   getTimelineClips: vi.fn(() => []),
@@ -11,6 +11,9 @@ vi.mock("../../../timeline/api", () => ({
 vi.mock("../../../userAssets", () => ({
   addLocalAsset: vi.fn(),
   getAssets: vi.fn(() => []),
+}));
+vi.mock("../../../masks/api", () => ({
+  prepareBrushMasksForTimelineRender: vi.fn(async () => undefined),
 }));
 vi.mock("../../../timelineSelection", () => ({
   getClipsInSelection: vi.fn(() => []),
@@ -27,6 +30,7 @@ vi.mock("../../services/ExportRenderer", () => ({
 }));
 
 import { addLocalAsset } from "../../../userAssets";
+import { prepareBrushMasksForTimelineRender } from "../../../masks/api";
 import { renderSelectionToVideoFile } from "../../services/renderSelectionToVideoFile";
 import { deriveTrueDimensionsFromShortEdge } from "../../utils/dimensions";
 import { useExportJobController } from "../useExportJobController";
@@ -61,6 +65,8 @@ function selectionOptions() {
 beforeEach(() => {
   vi.mocked(renderSelectionToVideoFile).mockReset();
   vi.mocked(addLocalAsset).mockReset();
+  vi.mocked(prepareBrushMasksForTimelineRender).mockReset();
+  vi.mocked(prepareBrushMasksForTimelineRender).mockResolvedValue(undefined);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -79,6 +85,12 @@ describe("useExportJobController runSelectionExport", () => {
     });
 
     expect(renderSelectionToVideoFile).toHaveBeenCalledOnce();
+    expect(prepareBrushMasksForTimelineRender).toHaveBeenCalledOnce();
+    expect(
+      vi.mocked(prepareBrushMasksForTimelineRender).mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(renderSelectionToVideoFile).mock.invocationCallOrder[0],
+    );
     const [selection, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
     expect(selection).toMatchObject({ start: 0, end: 1000, message: "hi", fps: 30 });
     expect(opts!.renderInputs!.exportConfig).toMatchObject({
@@ -106,6 +118,24 @@ describe("useExportJobController runSelectionExport", () => {
       expect.any(Error),
     );
     expect(addLocalAsset).not.toHaveBeenCalled();
+  });
+
+  it("does not snapshot or render when brush materialization fails", async () => {
+    vi.mocked(prepareBrushMasksForTimelineRender).mockRejectedValue(
+      new Error("brush changed"),
+    );
+
+    const { result } = makeController();
+    await act(async () => {
+      await result.current.runSelectionExport(selectionOptions());
+    });
+
+    expect(renderSelectionToVideoFile).not.toHaveBeenCalled();
+    expect(addLocalAsset).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      "Selection extraction failed",
+      expect.any(Error),
+    );
   });
 
   it("swallows abort errors silently", async () => {
@@ -141,7 +171,9 @@ describe("useExportJobController runSelectionExport", () => {
     act(() => {
       result.current.cancel();
     });
-    expect(renderer.cancel).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(renderer.cancel).toHaveBeenCalled();
+    });
 
     await act(async () => {
       release();
@@ -203,6 +235,7 @@ describe("useExportJobController runProjectExport", () => {
     });
 
     expect(deriveTrueDimensionsFromShortEdge).toHaveBeenCalledWith("16:9", 720);
+    expect(prepareBrushMasksForTimelineRender).toHaveBeenCalledOnce();
     const [selection, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
     expect(selection).toMatchObject({ start: 0, end: 5000, fps: 24 });
     expect(opts!.filenamePrefix).toBe("export");

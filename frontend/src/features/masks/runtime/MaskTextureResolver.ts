@@ -20,10 +20,7 @@ import { createMaskCleanupFilter } from "../../transformations/catalogue/mask/ma
 import { createMaskCoverageBoostFilter } from "../../transformations/catalogue/mask/maskCoverageBoostFilter";
 import { createMaskCoverageInvertFilter } from "../../transformations/catalogue/mask/maskCoverageInvertFilter";
 import { createMaskRedToAlphaFilter } from "../../transformations/catalogue/mask/maskRedToAlphaFilter";
-import {
-  getSam2MaskGrowAmount,
-  isAssetBackedMask,
-} from "./AssetMaskSourceFactory";
+import { getSam2MaskGrowAmount } from "./AssetMaskSourceFactory";
 import type { AssetMaskNode, VectorMaskNode } from "./MaskSceneNodes";
 import { MaskRenderTexturePool } from "./MaskRenderTexturePool";
 import { MaskSceneNodeRegistry } from "./MaskSceneNodeRegistry";
@@ -721,11 +718,11 @@ export class MaskTextureResolver {
   }
 
   private isMaskClipRenderable(maskClip: MaskTimelineClip): boolean {
-    if (!isAssetBackedMask(maskClip)) {
-      return this.nodeRegistry.vectorMaskNodes.has(maskClip.id);
+    const sprite = this.nodeRegistry.getAssetNode(maskClip.id)?.player.sprite;
+    if (sprite) {
+      return sprite.visible && this.hasUsableTexture(sprite);
     }
 
-    const sprite = this.nodeRegistry.getAssetNode(maskClip.id)?.player.sprite;
-    return !!(sprite && sprite.visible && this.hasUsableTexture(sprite));
+    return this.nodeRegistry.vectorMaskNodes.has(maskClip.id);
   }
 }

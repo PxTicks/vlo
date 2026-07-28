@@ -25,9 +25,18 @@ import { createMaskRenderableShapeSource } from "../../model/maskRenderableLayou
 import { useMaskViewStore } from "../../store/useMaskViewStore";
 import { resolveMaskRenderableLayout } from "../resolveMaskRenderableLayout";
 
-const { mockBrushSetHydrationContext, mockBrushSetSource } = vi.hoisted(() => ({
+const {
+  mockBrushSetHydrationContext,
+  mockBrushSetSource,
+  mockImageSetGeometryContext,
+  mockImageSetSource,
+  mockImageRenderAt,
+} = vi.hoisted(() => ({
   mockBrushSetHydrationContext: vi.fn(),
   mockBrushSetSource: vi.fn(async () => undefined),
+  mockImageSetGeometryContext: vi.fn(),
+  mockImageSetSource: vi.fn(async () => undefined),
+  mockImageRenderAt: vi.fn(async () => undefined),
 }));
 
 vi.mock("../MaskVideoFramePlayer", async () => {
@@ -77,6 +86,29 @@ vi.mock("../BrushBufferMaskSource", async () => {
 
   return {
     BrushBufferMaskSource: MockBrushBufferMaskSource,
+  };
+});
+
+vi.mock("../ImageMaskSource", async () => {
+  const { Sprite, Texture } = await import("pixi.js");
+
+  class MockImageMaskSource {
+    public readonly sprite: Sprite;
+    public readonly setGeometryContext = mockImageSetGeometryContext;
+    public readonly setSource = mockImageSetSource;
+    public readonly renderAt = mockImageRenderAt;
+    public readonly hasFrame = vi.fn(() => true);
+    public readonly dispose = vi.fn(() => undefined);
+
+    constructor() {
+      this.sprite = new Sprite(Texture.WHITE);
+      this.sprite.anchor.set(0.5);
+      this.sprite.visible = true;
+    }
+  }
+
+  return {
+    ImageMaskSource: MockImageMaskSource,
   };
 });
 
@@ -195,9 +227,11 @@ function createImageAsset(id: string): Asset {
 }
 
 describe("SpriteClipMaskController mask composition", () => {
-  it("hydrates persisted brush masks during normal mask sync", async () => {
+  it("loads committed brush masks through the immutable image path", async () => {
     mockBrushSetHydrationContext.mockClear();
     mockBrushSetSource.mockClear();
+    mockImageSetGeometryContext.mockClear();
+    mockImageSetSource.mockClear();
 
     const renderer = {
       render: vi.fn(),
@@ -222,12 +256,14 @@ describe("SpriteClipMaskController mask composition", () => {
       new Map([[brushAsset.id, brushAsset]]),
     );
 
-    expect(mockBrushSetHydrationContext).toHaveBeenCalledWith({
+    expect(mockBrushSetHydrationContext).not.toHaveBeenCalled();
+    expect(mockBrushSetSource).not.toHaveBeenCalled();
+    expect(mockImageSetGeometryContext).toHaveBeenCalledWith({
       canvasWidth: 100,
       canvasHeight: 100,
-      paintedBounds: { x: 12, y: 18, width: 44, height: 30 },
+      imageBounds: { x: 12, y: 18, width: 44, height: 30 },
     });
-    expect(mockBrushSetSource).toHaveBeenCalledWith(brushAsset);
+    expect(mockImageSetSource).toHaveBeenCalledWith(brushAsset);
 
     controller.dispose();
   });
@@ -235,6 +271,8 @@ describe("SpriteClipMaskController mask composition", () => {
   it("hydrates image-backed SAM2 masks through the image mask path", async () => {
     mockBrushSetHydrationContext.mockClear();
     mockBrushSetSource.mockClear();
+    mockImageSetGeometryContext.mockClear();
+    mockImageSetSource.mockClear();
 
     const renderer = {
       render: vi.fn(),
@@ -258,14 +296,61 @@ describe("SpriteClipMaskController mask composition", () => {
       new Map([[sam2Asset.id, sam2Asset]]),
     );
 
-    expect(mockBrushSetHydrationContext).toHaveBeenCalledWith({
+    expect(mockBrushSetHydrationContext).not.toHaveBeenCalled();
+    expect(mockBrushSetSource).not.toHaveBeenCalled();
+    expect(mockImageSetGeometryContext).toHaveBeenCalledWith({
       canvasWidth: 1920,
       canvasHeight: 1080,
-      paintedBounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      imageBounds: { x: 0, y: 0, width: 1920, height: 1080 },
     });
-    expect(mockBrushSetSource).toHaveBeenCalledWith(sam2Asset);
+    expect(mockImageSetSource).toHaveBeenCalledWith(sam2Asset);
 
     controller.dispose();
+  });
+
+  it("fails closed when an image mask cannot be loaded", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockImageSetSource.mockRejectedValueOnce(new Error("missing image"));
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const controller = new SpriteClipMaskController(
+      new Sprite(),
+      renderer,
+      new Container(),
+    );
+    const parent = createParentClip();
+    const mask = createMaskClip("mask_missing_image", {
+      maskType: "sam2",
+      sam2MaskAssetId: "missing-image",
+    });
+    const asset = createImageAsset("missing-image");
+
+    await expect(
+      controller.syncMaskClips(
+        [mask],
+        parent,
+        { width: 1920, height: 1080 },
+        10,
+        new Map([[asset.id, asset]]),
+      ),
+    ).resolves.toBeUndefined();
+
+    const node = (
+      controller as unknown as {
+        assetMaskNodes: Map<
+          string,
+          { player: { sprite: Sprite } }
+        >;
+      }
+    ).assetMaskNodes.get(mask.id);
+    expect(node?.player.sprite.visible).toBe(false);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Image mask source failed to load",
+      expect.any(Error),
+    );
+    controller.dispose();
+    warnSpy.mockRestore();
   });
 
   it("keeps the alpha-mask sprite active without rendering it as scene content", async () => {

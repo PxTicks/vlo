@@ -284,7 +284,11 @@ export async function renderSyntheticEditedOutputs(
     source,
     dims,
   );
-  const renderInputs = { exportConfig, projectData };
+  const renderInputs = {
+    exportConfig,
+    projectData,
+    brushMasksPrepared: true as const,
+  };
 
   const activeRanges = spec.ranges.filter(
     (range) => range.isActive && range.endSourceTicks > range.startSourceTicks,

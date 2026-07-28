@@ -109,7 +109,11 @@ function buildCompositeRenderInputs(
     fps,
   };
 
-  return { exportConfig, projectData };
+  return {
+    exportConfig,
+    projectData,
+    brushMasksPrepared: true,
+  };
 }
 
 /**

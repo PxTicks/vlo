@@ -44,6 +44,7 @@ vi.mock("pixi.js", async () => {
   return {
     ...originalModule,
     Application: class MockApplication {
+      renderer = {};
       stage = {
         on: vi.fn(),
         off: vi.fn(),
@@ -152,6 +153,7 @@ function createBrushBuffer(
   overrides: Partial<BrushBuffer> = {},
 ): BrushBuffer {
   return {
+    renderer: {} as never,
     renderTexture: {} as never,
     canvasSize: { width: 120, height: 120 },
     paintedBounds: { x: 8, y: 12, width: 40, height: 32 },
@@ -166,6 +168,15 @@ describe("useMaskInteractionController", () => {
   beforeEach(() => {
     playbackClock.setTime(0);
     mockEnsureBrushBuffer.mockReset();
+    mockEnsureBrushBuffer.mockImplementation(
+      (
+        _maskId: string,
+        _width: number,
+        _height: number,
+        renderer: BrushBuffer["renderer"],
+      ) =>
+        createBrushBuffer({ renderer }),
+    );
     mockGetBrushBuffer.mockReset();
     mockGetBrushBuffer.mockReturnValue(null);
     mockHydrateBrushBufferFromUrl.mockClear();
@@ -1208,7 +1219,12 @@ describe("useMaskInteractionController", () => {
       useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
     );
 
-    expect(mockEnsureBrushBuffer).toHaveBeenCalledWith(brushMask.id, 120, 120);
+    expect(mockEnsureBrushBuffer).toHaveBeenCalledWith(
+      brushMask.id,
+      120,
+      120,
+      expect.anything(),
+    );
     expect(mockIsBrushBufferReadyForSource).not.toHaveBeenCalled();
     expect(mockHydrateBrushBufferFromUrl).not.toHaveBeenCalled();
   });

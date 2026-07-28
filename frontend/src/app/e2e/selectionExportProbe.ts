@@ -5,6 +5,7 @@ import {
     renderSelectionToVideoFile,
 } from "../../features/renderer";
 import type { RenderedFramePixelCapture } from "../../features/renderer/services/ExportRenderer";
+import { prepareBrushMasksForTimelineRender } from "../../features/masks/api";
 import { getClipsInSelection } from "../../features/timelineSelection";
 
 /**
@@ -124,7 +125,11 @@ export async function runSelectionExportProbe(
         // `TimelineSelection` carries its own clip set, so the inputs are built
         // once here and reused for both the selection and the render rather
         // than letting `renderSelectionToVideoFile` rebuild them.
-        const renderInputs = buildProjectRenderInputs();
+        await prepareBrushMasksForTimelineRender();
+        const renderInputs = {
+            ...buildProjectRenderInputs(),
+            brushMasksPrepared: true as const,
+        };
         const { projectData } = renderInputs;
         const selection = {
             start: request.startTick,

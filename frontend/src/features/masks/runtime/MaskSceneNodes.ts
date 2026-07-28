@@ -1,8 +1,12 @@
 import type { Container, Filter, Graphics, RenderTexture, Sprite } from "pixi.js";
 import type { BrushBufferMaskSource } from "./BrushBufferMaskSource";
+import type { ImageMaskSource } from "./ImageMaskSource";
 import type { MaskVideoFramePlayer } from "./MaskVideoFramePlayer";
 
-export type AssetMaskFrameSource = MaskVideoFramePlayer | BrushBufferMaskSource;
+export type AssetMaskFrameSource =
+  | MaskVideoFramePlayer
+  | ImageMaskSource
+  | BrushBufferMaskSource;
 
 export interface VectorMaskNode {
   root: Container;
@@ -22,11 +26,11 @@ export interface AssetMaskNode {
   player: AssetMaskFrameSource;
   assetId: string;
   thresholdFilter: Filter;
-  kind: "video" | "image";
+  kind: "video" | "image" | "brush";
 }
 
 export interface AssetMaskNodeEntry {
   maskId: string;
   assetId: string;
-  kind: "video" | "image";
+  kind: "video" | "image" | "brush";
 }

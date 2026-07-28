@@ -17,6 +17,12 @@ import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParam
  * derived from this buffer as a one-way bridge when brush editing is flushed.
  */
 export interface BrushBuffer {
+  /**
+   * The interactive Pixi renderer that owns `renderTexture`. Brush pixels are
+   * mutable authoring state and must never be sampled or mutated through a
+   * renderer from another WebGL context.
+   */
+  renderer: Renderer;
   renderTexture: RenderTexture;
   canvasSize: { width: number; height: number };
   paintedBounds: BrushPaintedBounds | null;
@@ -45,17 +51,19 @@ const buffers = new Map<string, BrushBuffer>();
 const listeners = new Map<string, Set<() => void>>();
 const editSessions = new Map<string, number>();
 
-let sharedRenderer: Renderer | null = null;
-
 const PAINT_COLOR = 0xff0000;
 const ERASE_COLOR = 0x000000;
 
-export function setBrushRenderer(renderer: Renderer | null): void {
-  sharedRenderer = renderer;
-}
-
 export function getBrushBuffer(maskId: string): BrushBuffer | null {
   return buffers.get(maskId) ?? null;
+}
+
+export function getBrushBufferForRenderer(
+  maskId: string,
+  renderer: Renderer,
+): BrushBuffer | null {
+  const buffer = buffers.get(maskId);
+  return buffer?.renderer === renderer ? buffer : null;
 }
 
 function notify(maskId: string): void {
@@ -67,11 +75,10 @@ function bumpRevision(buffer: BrushBuffer): void {
 }
 
 function clearRenderTextureToBlack(buffer: BrushBuffer): void {
-  if (!sharedRenderer) return;
   const filler = new Graphics()
     .rect(0, 0, buffer.canvasSize.width, buffer.canvasSize.height)
     .fill(ERASE_COLOR);
-  sharedRenderer.render({
+  buffer.renderer.render({
     container: filler,
     target: buffer.renderTexture,
     clear: true,
@@ -83,12 +90,14 @@ export function ensureBrushBuffer(
   maskId: string,
   width: number,
   height: number,
+  renderer: Renderer,
 ): BrushBuffer {
   const w = Math.max(1, Math.round(width));
   const h = Math.max(1, Math.round(height));
   const existing = buffers.get(maskId);
   if (
     existing &&
+    existing.renderer === renderer &&
     existing.canvasSize.width === w &&
     existing.canvasSize.height === h
   ) {
@@ -96,6 +105,12 @@ export function ensureBrushBuffer(
   }
 
   if (existing) {
+    if (existing.renderer !== renderer && existing.dirty) {
+      console.warn(
+        `Keeping dirty brush buffer "${maskId}" on its original renderer`,
+      );
+      return existing;
+    }
     existing.renderTexture.destroy(true);
     buffers.delete(maskId);
   }
@@ -106,6 +121,7 @@ export function ensureBrushBuffer(
     dynamic: true,
   });
   const buffer: BrushBuffer = {
+    renderer,
     renderTexture,
     canvasSize: { width: w, height: h },
     paintedBounds: null,
@@ -114,9 +130,7 @@ export function ensureBrushBuffer(
     sourceAssetId: null,
   };
   buffers.set(maskId, buffer);
-  if (sharedRenderer) {
-    clearRenderTextureToBlack(buffer);
-  }
+  clearRenderTextureToBlack(buffer);
   notify(maskId);
   return buffer;
 }
@@ -191,10 +205,9 @@ export function calculateBrushPaintedBoundsFromImageData(
 }
 
 function renderStroke(buffer: BrushBuffer, build: (g: Graphics) => void): void {
-  if (!sharedRenderer) return;
   const graphics = new Graphics();
   build(graphics);
-  sharedRenderer.render({
+  buffer.renderer.render({
     container: graphics,
     target: buffer.renderTexture,
     clear: false,
@@ -382,11 +395,11 @@ export async function recalculateBrushPaintedBounds(
   maskId: string,
 ): Promise<BrushPaintedBounds | null> {
   const buffer = buffers.get(maskId);
-  if (!buffer || !sharedRenderer) {
-    return buffer?.paintedBounds ?? null;
+  if (!buffer) {
+    return null;
   }
 
-  const extract = sharedRenderer.extract;
+  const extract = buffer.renderer.extract;
   if (!extract || typeof extract.canvas !== "function") {
     return buffer.paintedBounds;
   }
@@ -434,7 +447,7 @@ export async function extractBrushPng(
   bounds?: BrushPaintedBounds | null,
 ): Promise<Blob | null> {
   const buffer = buffers.get(maskId);
-  if (!buffer || !sharedRenderer) return null;
+  if (!buffer) return null;
 
   const cropTarget =
     bounds ??
@@ -454,14 +467,14 @@ export async function extractBrushPng(
   });
   const sourceSprite = new Sprite(buffer.renderTexture);
   sourceSprite.position.set(-cropTarget.x, -cropTarget.y);
-  sharedRenderer.render({
+  buffer.renderer.render({
     container: sourceSprite,
     target: cropped,
     clear: true,
   });
   sourceSprite.destroy();
 
-  const extract = sharedRenderer.extract;
+  const extract = buffer.renderer.extract;
   let blob: Blob | null = null;
   try {
     if (extract && typeof extract.canvas === "function") {
@@ -492,9 +505,15 @@ export async function hydrateBrushBufferFromUrl(
   canvasWidth: number,
   canvasHeight: number,
   bounds: BrushPaintedBounds | null,
+  renderer: Renderer,
   sourceAssetId: string | null = null,
 ): Promise<BrushBuffer> {
-  const buffer = ensureBrushBuffer(maskId, canvasWidth, canvasHeight);
+  const buffer = ensureBrushBuffer(
+    maskId,
+    canvasWidth,
+    canvasHeight,
+    renderer,
+  );
   if (
     buffer.dirty ||
     isBrushBufferReadyForSource(
@@ -505,13 +524,6 @@ export async function hydrateBrushBufferFromUrl(
       bounds,
     )
   ) {
-    return buffer;
-  }
-
-  if (!sharedRenderer) {
-    // The RenderTexture has not received the PNG yet, so it must not be marked
-    // ready for this asset. A later sync, once the renderer is connected, must
-    // retry hydration instead of binding a permanently empty mask buffer.
     return buffer;
   }
 
@@ -547,7 +559,7 @@ export async function hydrateBrushBufferFromUrl(
     .fill(ERASE_COLOR);
   container.addChild(blackBg);
   container.addChild(sprite);
-  sharedRenderer.render({
+  buffer.renderer.render({
     container,
     target: buffer.renderTexture,
     clear: true,

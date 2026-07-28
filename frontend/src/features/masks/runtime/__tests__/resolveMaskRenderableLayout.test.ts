@@ -108,6 +108,9 @@ describe("resolveMaskRenderableLayout", () => {
     const resolved = resolveMaskRenderableLayout(brushMask, {
       layout,
       parentClipContentSize: { width: 1920, height: 1080 },
+      // A committed brush PNG is cropped to paintedBounds. Its crop dimensions
+      // must never replace the brush canvas coordinate system.
+      assetTextureSize: { width: 44, height: 28 },
     });
     const shape = createMaskRenderableShapeSource(brushMask, resolved);
 

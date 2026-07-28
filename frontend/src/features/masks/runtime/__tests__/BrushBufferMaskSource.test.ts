@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Texture } from "pixi.js";
+import { Texture, type Renderer } from "pixi.js";
 import type { Asset } from "../../../../types/Asset";
 import type { BrushBuffer } from "../brushBufferRegistry";
 
@@ -28,6 +28,7 @@ vi.mock("../../../userAssets", () => ({
 vi.mock("../brushBufferRegistry", () => ({
   ensureBrushBuffer: mockEnsureBrushBuffer,
   getBrushBuffer: mockGetBrushBuffer,
+  getBrushBufferForRenderer: mockGetBrushBuffer,
   hydrateBrushBufferFromUrl: mockHydrateBrushBufferFromUrl,
   isBrushBufferEditing: mockIsBrushBufferEditing,
   isBrushBufferReadyForSource: mockIsBrushBufferReadyForSource,
@@ -52,6 +53,7 @@ function createBrushBuffer(
   overrides: Partial<BrushBuffer> = {},
 ): BrushBuffer {
   return {
+    renderer: {} as Renderer,
     renderTexture: Texture.EMPTY as never,
     canvasSize: { width: 128, height: 72 },
     paintedBounds: { x: 10, y: 12, width: 30, height: 20 },
@@ -63,6 +65,8 @@ function createBrushBuffer(
 }
 
 describe("BrushBufferMaskSource", () => {
+  const brushRenderer = {} as Renderer;
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetBrushBuffer.mockReturnValue(null);
@@ -72,7 +76,10 @@ describe("BrushBufferMaskSource", () => {
   });
 
   it("hydrates using the resolved asset source url", async () => {
-    const source = new BrushBufferMaskSource("clip_1::mask::mask_brush");
+    const source = new BrushBufferMaskSource(
+      "clip_1::mask::mask_brush",
+      brushRenderer,
+    );
     source.setHydrationContext({
       canvasWidth: 128,
       canvasHeight: 72,
@@ -92,12 +99,16 @@ describe("BrushBufferMaskSource", () => {
       128,
       72,
       { x: 10, y: 12, width: 30, height: 20 },
+      brushRenderer,
       "brush-asset-1",
     );
   });
 
   it("falls back to the passed asset when source hydration returns null", async () => {
-    const source = new BrushBufferMaskSource("clip_1::mask::mask_brush");
+    const source = new BrushBufferMaskSource(
+      "clip_1::mask::mask_brush",
+      brushRenderer,
+    );
     source.setHydrationContext({
       canvasWidth: 64,
       canvasHeight: 64,
@@ -112,12 +123,16 @@ describe("BrushBufferMaskSource", () => {
       64,
       64,
       null,
+      brushRenderer,
       "brush-asset-1",
     );
   });
 
   it("does not hydrate over a dirty live buffer", async () => {
-    const source = new BrushBufferMaskSource("clip_1::mask::mask_brush");
+    const source = new BrushBufferMaskSource(
+      "clip_1::mask::mask_brush",
+      brushRenderer,
+    );
     source.setHydrationContext({
       canvasWidth: 128,
       canvasHeight: 72,
@@ -137,7 +152,10 @@ describe("BrushBufferMaskSource", () => {
   });
 
   it("reuses a clean live buffer already committed to the same asset", async () => {
-    const source = new BrushBufferMaskSource("clip_1::mask::mask_brush");
+    const source = new BrushBufferMaskSource(
+      "clip_1::mask::mask_brush",
+      brushRenderer,
+    );
     source.setHydrationContext({
       canvasWidth: 128,
       canvasHeight: 72,
@@ -157,7 +175,10 @@ describe("BrushBufferMaskSource", () => {
   });
 
   it("keeps an initialized edit-session buffer authoritative over newer asset ids", async () => {
-    const source = new BrushBufferMaskSource("clip_1::mask::mask_brush");
+    const source = new BrushBufferMaskSource(
+      "clip_1::mask::mask_brush",
+      brushRenderer,
+    );
     source.setHydrationContext({
       canvasWidth: 128,
       canvasHeight: 72,
@@ -177,7 +198,10 @@ describe("BrushBufferMaskSource", () => {
   });
 
   it("retries hydration when an earlier attempt left behind an empty buffer", async () => {
-    const source = new BrushBufferMaskSource("clip_1::mask::mask_brush");
+    const source = new BrushBufferMaskSource(
+      "clip_1::mask::mask_brush",
+      brushRenderer,
+    );
     source.setHydrationContext({
       canvasWidth: 128,
       canvasHeight: 72,
@@ -208,6 +232,7 @@ describe("BrushBufferMaskSource", () => {
       128,
       72,
       { x: 10, y: 12, width: 30, height: 20 },
+      brushRenderer,
       "brush-asset-1",
     );
     expect(mockHydrateBrushBufferFromUrl).toHaveBeenNthCalledWith(
@@ -217,6 +242,7 @@ describe("BrushBufferMaskSource", () => {
       128,
       72,
       { x: 10, y: 12, width: 30, height: 20 },
+      brushRenderer,
       "brush-asset-1",
     );
   });

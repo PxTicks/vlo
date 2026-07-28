@@ -1,1 +1,4 @@
-export { flushAllBrushMaskCommits } from "./runtime/brushAssetSync";
+export {
+  flushAllBrushMaskCommits,
+  prepareBrushMasksForTimelineRender,
+} from "./runtime/brushAssetSync";

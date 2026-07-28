@@ -475,7 +475,9 @@ describe("useMaskPanel", () => {
 
     const { result } = renderHook(() => useMaskPanel());
     act(() => {
-      ensureBrushBuffer(brushMask.id, 64, 64);
+      ensureBrushBuffer(brushMask.id, 64, 64, {
+        render: vi.fn(),
+      } as never);
       paintBrushDot(brushMask.id, 20, 20, 8, "paint");
     });
 

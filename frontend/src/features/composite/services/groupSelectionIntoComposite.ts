@@ -13,6 +13,7 @@ import {
   getTimelineTransitions,
   groupTimelineClipsIntoComposite,
 } from "../../timeline/api";
+import { prepareBrushMasksForTimelineRender } from "../../masks/api";
 import { useProjectStore } from "../../project/useProjectStore";
 import { createCompositeTimelineClipFromAsset } from "../utils/createCompositeClip";
 import { useCompositeLibraryStore } from "../useCompositeLibraryStore";
@@ -58,6 +59,7 @@ export async function groupSelectionIntoComposite(
   selection: TimelineSelection,
   options: GroupSelectionOptions = {},
 ): Promise<VideoTimelineClip | null> {
+  await prepareBrushMasksForTimelineRender();
   const presentationContextClips = getTimelineClips();
   const selectedClips = getTimelineClipsInPresentationRange(
     selection.start,

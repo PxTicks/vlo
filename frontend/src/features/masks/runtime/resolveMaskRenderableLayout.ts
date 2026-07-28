@@ -1,4 +1,5 @@
 import type { MaskTimelineClip } from "../../../types/TimelineTypes";
+import type { BrushPaintedBounds } from "../../../types/TimelineTypes";
 import type { MaskLayoutState } from "../model/maskFactory";
 import {
   getMaskClipLocalId,
@@ -6,7 +7,6 @@ import {
   type ResolvedMaskRenderableLayout,
 } from "../model/maskRenderableLayout";
 import { resolveMaskLayoutStateAtTime } from "../model/maskTimelineClip";
-import { getBrushBuffer } from "./brushBufferRegistry";
 
 function getMaskBaseSize(maskClip: MaskTimelineClip): {
   width: number;
@@ -26,6 +26,7 @@ export function resolveMaskRenderableLayout(
     rawTimeTicks?: number;
     layout?: MaskLayoutState;
     assetTextureSize?: { width: number; height: number } | null;
+    brushPaintedBounds?: BrushPaintedBounds | null;
   },
 ): ResolvedMaskRenderableLayout {
   const baseSize = getMaskBaseSize(maskClip);
@@ -34,9 +35,7 @@ export function resolveMaskRenderableLayout(
     resolveMaskLayoutStateAtTime(maskClip, options.rawTimeTicks ?? 0);
   const paintedBounds =
     maskClip.maskType === "brush"
-      ? getBrushBuffer(maskClip.id)?.paintedBounds ??
-        maskClip.brushPaintedBounds ??
-        null
+      ? options.brushPaintedBounds ?? maskClip.brushPaintedBounds ?? null
       : null;
 
   if (maskClip.maskType === "brush") {
@@ -46,7 +45,7 @@ export function resolveMaskRenderableLayout(
       contentSize: resolveMaskRenderableContentSize(
         baseSize,
         baseSize,
-        options.assetTextureSize,
+        null,
       ),
       layout,
       hitArea:

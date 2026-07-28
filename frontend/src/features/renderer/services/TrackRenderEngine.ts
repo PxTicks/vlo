@@ -43,7 +43,6 @@ import {
 } from "../../transformations/effectMaskFilterOps";
 import { SpriteClipMaskController } from "../../masks/runtime/SpriteClipMaskController";
 import { MaskedEffectRenderer } from "../../masks/runtime/MaskedEffectRenderer";
-import { setBrushRenderer } from "../../masks/runtime/brushBufferRegistry";
 import { useDebugStore } from "../../../shared/debug/useDebugStore";
 import { ticksPerFrame } from "../../../core/time/frameGrid";
 import { ensureAssetSourceLoaded } from "../../userAssets";
@@ -445,12 +444,6 @@ export class TrackRenderEngine {
       },
       this.presentationContainer,
     );
-    if (renderer) {
-      // Brush masks render their painted bitmap into a Pixi RenderTexture via
-      // this shared renderer. Wire it synchronously so an image-backed mask
-      // cannot hydrate an empty buffer before the dynamic import resolves.
-      setBrushRenderer(renderer);
-    }
     this.container.zIndex = zIndex;
   }
 

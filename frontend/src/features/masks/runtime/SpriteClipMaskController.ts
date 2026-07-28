@@ -31,10 +31,8 @@ import {
 import {
   AssetMaskSourceFactory,
   getAssetBackedMaskId,
-  isAssetBackedMask,
-  isBrushBufferAssetId,
 } from "./AssetMaskSourceFactory";
-import { getBrushBufferRevision } from "./brushBufferRegistry";
+import { getBrushBufferForRenderer } from "./brushBufferRegistry";
 import {
   MaskApplicationController,
   type MaskApplicationMode,
@@ -180,6 +178,7 @@ export class SpriteClipMaskController {
     this.previewContainer.addChild(this.previewSprite);
 
     this.assetMaskSourceFactory = new AssetMaskSourceFactory(
+      this.renderer,
       this.onAssetMaskFrameReady,
     );
     this.nodeRegistry = new MaskSceneNodeRegistry(
@@ -275,7 +274,11 @@ export class SpriteClipMaskController {
         : null;
     const isPreviewingThisClip = !!previewMaskClip;
     const usesMaskNodePreview =
-      !!previewMaskClip && isAssetBackedMask(previewMaskClip);
+      !!previewMaskClip &&
+      this.assetMaskSourceFactory.resolveMaskEntry(
+        previewMaskClip,
+        assetsById,
+      ) !== null;
 
     const resolvedMaskExpression =
       parentClip.type === "mask" || isPreviewingThisClip
@@ -319,6 +322,15 @@ export class SpriteClipMaskController {
         maskClipByLocalId.set(maskId, clip);
       }
     });
+    const assetEntryByMaskClipId = new Map(
+      nodeSyncMaskClips.flatMap((clip) => {
+        const entry = this.assetMaskSourceFactory.resolveMaskEntry(
+          clip,
+          assetsById,
+        );
+        return entry ? [[clip.id, entry] as const] : [];
+      }),
+    );
 
     const parentSourceTimeTicks =
       parentClip.type === "mask"
@@ -330,15 +342,15 @@ export class SpriteClipMaskController {
       if (!isMaskActiveAtSourceTime(clip.activeRange, parentSourceTimeTicks)) {
         return false;
       }
-      const assetMaskId = getAssetBackedMaskId(clip);
+      const entry = assetEntryByMaskClipId.get(clip.id);
       return (
-        assetMaskId === null ||
-        isBrushBufferAssetId(assetMaskId) ||
-        assetsById.has(assetMaskId)
+        entry === undefined ||
+        entry.kind === "brush" ||
+        assetsById.has(entry.assetId)
       );
     };
     const isPlainVectorMask = (clip: MaskTimelineClip): boolean =>
-      !isAssetBackedMask(clip) &&
+      !assetEntryByMaskClipId.has(clip.id) &&
       clip.maskType !== "sam2" &&
       clip.maskType !== "generation" &&
       clip.maskType !== "brush";
@@ -353,7 +365,7 @@ export class SpriteClipMaskController {
     const activeMaskClips = referencedMaskClips.filter(isActiveForRender);
     const activeVectorMasks = activeMaskClips.filter(isPlainVectorMask);
     const activeAssetMasks = activeMaskClips.filter((clip) =>
-      isAssetBackedMask(clip),
+      assetEntryByMaskClipId.has(clip.id),
     );
 
     // Node-sync set (superset of the spatial set; nodes only). Equals the
@@ -362,7 +374,7 @@ export class SpriteClipMaskController {
     const nodeSyncVectorMasks =
       activeNodeSyncMaskClips.filter(isPlainVectorMask);
     const nodeSyncAssetMasks = activeNodeSyncMaskClips.filter((clip) =>
-      isAssetBackedMask(clip),
+      assetEntryByMaskClipId.has(clip.id),
     );
 
     const clipContentSize = this.getActiveClipContentSize(logicalDimensions);
@@ -374,9 +386,7 @@ export class SpriteClipMaskController {
     );
     this.nodeRegistry.reconcileAssetMaskNodes(
       nodeSyncAssetMasks
-        .map((clip) =>
-          this.assetMaskSourceFactory.resolveMaskEntry(clip, assetsById),
-        )
+        .map((clip) => assetEntryByMaskClipId.get(clip.id) ?? null)
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null),
     );
 
@@ -1377,7 +1387,11 @@ export class SpriteClipMaskController {
       width: texture.width,
       height: texture.height,
       visible: sprite.visible,
-      brushRevision: getBrushBufferRevision(maskClipId),
+      brushRevision:
+        this.renderer
+          ? getBrushBufferForRenderer(maskClipId, this.renderer)?.revision ??
+            null
+          : null,
     };
   }
 
@@ -1458,7 +1472,7 @@ export class SpriteClipMaskController {
       if (
         !maskClip ||
         maskClip.maskInverted ||
-        isAssetBackedMask(maskClip) ||
+        this.assetMaskNodes.has(maskClip.id) ||
         !this.isMaskClipRenderable(maskClip)
       ) {
         return null;
@@ -1704,12 +1718,12 @@ export class SpriteClipMaskController {
   }
 
   private isMaskClipRenderable(maskClip: MaskTimelineClip): boolean {
-    if (!isAssetBackedMask(maskClip)) {
-      return this.vectorMaskNodes.has(maskClip.id);
+    const sprite = this.assetMaskNodes.get(maskClip.id)?.player.sprite;
+    if (sprite) {
+      return sprite.visible && this.hasUsableTexture(sprite);
     }
 
-    const sprite = this.assetMaskNodes.get(maskClip.id)?.player.sprite;
-    return !!(sprite && sprite.visible && this.hasUsableTexture(sprite));
+    return this.vectorMaskNodes.has(maskClip.id);
   }
 
   private hasUsableTexture(sprite: Sprite): boolean {

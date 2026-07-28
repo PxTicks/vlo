@@ -6,6 +6,7 @@ import {
   getTimelineTransitions,
 } from "../../timeline/api";
 import { addLocalAsset, getAssets } from "../../userAssets";
+import { prepareBrushMasksForTimelineRender } from "../../masks/api";
 import {
   getClipsInSelection,
   resolveSelectionFps,
@@ -160,6 +161,13 @@ export function useExportJobController({
         backgroundAlpha: 0,
       };
 
+      try {
+        await prepareBrushMasksForTimelineRender();
+      } catch (error) {
+        console.error("Selection extraction failed", error);
+        finalizeSession(sessionId);
+        return;
+      }
       const projectData = buildProjectData();
       const selectionFps = resolveSelectionFps(
         { fps: selectionFpsOverride },
@@ -186,7 +194,11 @@ export function useExportJobController({
         const file = await renderSelectionToVideoFile(
           selectionTimelineSelection,
           {
-            renderInputs: { exportConfig, projectData },
+            renderInputs: {
+              exportConfig,
+              projectData,
+              brushMasksPrepared: true,
+            },
             onProgress,
             skipNormalize: true,
             filenamePrefix: "selection",
@@ -243,6 +255,13 @@ export function useExportJobController({
         fileHandle,
       };
 
+      try {
+        await prepareBrushMasksForTimelineRender();
+      } catch (error) {
+        console.error("Export failed", error);
+        finalizeSession(sessionId);
+        return;
+      }
       const projectData = buildProjectData();
       const fullTimelineSelection = {
         start: 0,
@@ -254,7 +273,11 @@ export function useExportJobController({
       try {
         // The encoder writes to config.fileHandle; the returned File is unused.
         await renderSelectionToVideoFile(fullTimelineSelection, {
-          renderInputs: { exportConfig, projectData },
+          renderInputs: {
+            exportConfig,
+            projectData,
+            brushMasksPrepared: true,
+          },
           onProgress,
           format,
           keyFrameInterval,

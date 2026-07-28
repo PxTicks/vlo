@@ -1,8 +1,10 @@
 import type {
   BrushPaintedBounds,
   MaskTimelineClip,
+  TimelineSelection,
 } from "../../../types/TimelineTypes";
 import {
+  getTimelineClips,
   getTimelineBrushMaskAssetConsumerCount,
   getTimelineBrushMaskClipIds,
   getTimelineMaskClipById,
@@ -202,4 +204,43 @@ export async function flushAllBrushMaskCommits(): Promise<void> {
   await Promise.all(
     brushMaskClipIds.map((maskClipId) => flushBrushMaskCommit(maskClipId)),
   );
+}
+
+/**
+ * Materialise dirty interactive brush pixels before a render takes a project
+ * snapshot. Existing selections may contain cloned mask clips, so replace
+ * matching clips with their post-flush timeline versions as part of the same
+ * precondition.
+ */
+export async function prepareBrushMasksForTimelineRender(
+  selection?: TimelineSelection,
+): Promise<TimelineSelection | undefined> {
+  await flushAllBrushMaskCommits();
+  let dirtyMaskIds = getTimelineBrushMaskClipIds().filter(
+    isBrushBufferDirty,
+  );
+  if (dirtyMaskIds.length > 0) {
+    // A stroke may have landed while the first extraction was in flight.
+    await Promise.all(dirtyMaskIds.map(flushBrushMaskCommit));
+    dirtyMaskIds = dirtyMaskIds.filter(isBrushBufferDirty);
+  }
+  if (dirtyMaskIds.length > 0) {
+    throw new Error(
+      `Could not materialize brush masks for rendering: ${dirtyMaskIds.join(", ")}`,
+    );
+  }
+
+  if (!selection) {
+    return undefined;
+  }
+
+  const currentClipsById = new Map(
+    getTimelineClips().map((clip) => [clip.id, clip] as const),
+  );
+  return {
+    ...selection,
+    clips: selection.clips.map(
+      (clip) => currentClipsById.get(clip.id) ?? clip,
+    ),
+  };
 }

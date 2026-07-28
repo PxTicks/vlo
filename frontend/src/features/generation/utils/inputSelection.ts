@@ -25,6 +25,7 @@ import {
   resolveSelectionFrameStep,
   snapFrameCountToStep,
 } from "../../timelineSelection";
+import { prepareBrushMasksForTimelineRender } from "../../masks/api";
 import { getAssetInput, getAssets } from "../../userAssets";
 import type {
   DerivedMaskMapping,
@@ -85,6 +86,7 @@ export async function captureFramePngAtTick(
 export interface RenderInputsOverride {
   exportConfig: ExportConfig;
   projectData: ProjectData;
+  brushMasksPrepared: true;
 }
 
 export async function renderTimelineSelectionToMp4(
@@ -337,9 +339,12 @@ async function renderTimelineSelectionToOutputs(
   } = {},
 ): Promise<Awaited<ReturnType<ExportRenderer["render"]>>> {
   throwIfAborted(options.signal);
+  const preparedTimelineSelection =
+    (await prepareBrushMasksForTimelineRender(timelineSelection)) ??
+    timelineSelection;
   const { exportConfig, projectData } = buildProjectRenderInputs();
   const normalizedSelection = normalizeTimelineSelection(
-    timelineSelection,
+    preparedTimelineSelection,
     projectData.clips,
   );
   const renderConfig = {
@@ -766,6 +771,10 @@ export async function renderTimelineSelectionToMp4WithMask(
   } = {},
 ): Promise<TimelineSelectionWithMaskResult> {
   throwIfAborted(options.signal);
+  const preparedTimelineSelection = options.renderInputs
+    ? timelineSelection
+    : ((await prepareBrushMasksForTimelineRender(timelineSelection)) ??
+      timelineSelection);
   const { exportConfig, projectData } =
     options.renderInputs ?? buildProjectRenderInputs();
   const renderConfig: ExportConfig = {
@@ -780,7 +789,7 @@ export async function renderTimelineSelectionToMp4WithMask(
     ),
   };
   const normalizedSelection = normalizeTimelineSelection(
-    timelineSelection,
+    preparedTimelineSelection,
     projectData.clips,
   );
   try {

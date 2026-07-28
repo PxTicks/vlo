@@ -7,6 +7,7 @@ import {
 } from "../../timeline/api";
 import { getAssets } from "../../userAssets";
 import { getCompositeAssets } from "../../composite";
+import { prepareBrushMasksForTimelineRender } from "../../masks/api";
 import { getProjectDimensions } from "../utils/dimensions";
 import {
   ExportRenderer,
@@ -72,9 +73,17 @@ export async function renderProjectFrameFileAtTick(
 ): Promise<File> {
   const mimeType = options.mimeType ?? "image/png";
   const filenamePrefix = options.filenamePrefix ?? "frame";
+  const preparedSelection = await prepareBrushMasksForTimelineRender(
+    options.timelineSelection,
+  );
   const { exportConfig, projectData } = buildProjectRenderInputs();
   const renderer = await ExportRenderer.create(exportConfig);
-  const blob = await renderer.renderStill(projectData, exportConfig, tick, options);
+  const blob = await renderer.renderStill(projectData, exportConfig, tick, {
+    ...options,
+    ...(preparedSelection
+      ? { timelineSelection: preparedSelection }
+      : {}),
+  });
   const now = Date.now();
 
   return new File([blob], `${filenamePrefix}-${now}.${resolveExtension(mimeType)}`, {

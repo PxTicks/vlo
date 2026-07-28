@@ -81,6 +81,7 @@ import { resolveMaskLayoutStateAtTime } from "../../../masks/model/maskTimelineC
 import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
 import {
   ensureBrushBuffer,
+  getBrushBuffer,
   hydrateBrushBufferFromUrl,
   isBrushBufferEditing,
   isBrushBufferReadyForSource,
@@ -572,6 +573,10 @@ export function useMaskInteractionController(
       const resolvedLayout = resolveMaskRenderableLayout(maskClip, {
         layout: layoutOverride ?? resolveMaskLayoutAtPlayhead(maskClip),
         parentClipContentSize: resolveActiveClipContentSize(),
+        brushPaintedBounds:
+          maskClip.maskType === "brush"
+            ? getBrushBuffer(maskClip.id)?.paintedBounds ?? null
+            : null,
       });
       return createMaskRenderableShapeSource(maskClip, resolvedLayout);
     },
@@ -1527,6 +1532,8 @@ export function useMaskInteractionController(
       if (typeof e.button === "number" && e.button !== 0) return false;
       const tool = useMaskViewStore.getState().brushTool;
       if (tool !== "paint" && tool !== "erase") return false;
+      const brushRenderer = app?.renderer;
+      if (!brushRenderer) return false;
       const radius = useMaskViewStore.getState().brushRadius;
 
       e.stopPropagation();
@@ -1554,11 +1561,18 @@ export function useMaskInteractionController(
               width: Math.max(1, Math.round(params?.baseWidth ?? 1)),
               height: Math.max(1, Math.round(params?.baseHeight ?? 1)),
             };
-      ensureBrushBuffer(
+      const brushBuffer = ensureBrushBuffer(
         target.maskClip.id,
         canvasSize.width,
         canvasSize.height,
+        brushRenderer,
       );
+      if (brushBuffer.renderer !== brushRenderer) {
+        console.warn(
+          "Brush input is paused until unsaved strokes can be materialized",
+        );
+        return false;
+      }
       if (
         placeholder &&
         (canvasSize.width !== params?.baseWidth ||
@@ -2261,10 +2275,23 @@ export function useMaskInteractionController(
     const height = Math.max(1, params?.baseHeight ?? 1);
     const assetId = selectedMaskClip.brushMaskAssetId;
     const persistedBounds = selectedMaskClip.brushPaintedBounds ?? null;
+    const brushRenderer = app?.renderer;
+    if (!brushRenderer) return;
 
     // Always ensure the buffer exists at the persisted canvas size — strokes
     // can begin before any asset has been committed.
-    const buffer = ensureBrushBuffer(maskClipId, width, height);
+    const buffer = ensureBrushBuffer(
+      maskClipId,
+      width,
+      height,
+      brushRenderer,
+    );
+    if (buffer.renderer !== brushRenderer) {
+      console.warn(
+        "Brush hydration is paused to preserve unsaved strokes from the previous renderer",
+      );
+      return;
+    }
 
     if (!assetId) return;
     if (
@@ -2308,6 +2335,7 @@ export function useMaskInteractionController(
           width,
           height,
           persistedBounds,
+          brushRenderer,
           assetId,
         );
       } catch (error) {
@@ -2320,7 +2348,7 @@ export function useMaskInteractionController(
     return () => {
       cancelled = true;
     };
-  }, [selectedMaskClip]);
+  }, [app, selectedMaskClip]);
 
   // Leave-detection commit. The brush PNG is persisted only when focus moves
   // off the currently-edited brush mask: switching to a different mask or

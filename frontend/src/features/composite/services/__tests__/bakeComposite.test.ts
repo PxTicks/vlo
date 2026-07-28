@@ -111,6 +111,7 @@ describe("bakeComposite", () => {
       expect.objectContaining({ start: 0, end: 100 }),
       {
         renderInputs: {
+          brushMasksPrepared: true,
           exportConfig: {
             logicalWidth: 1919,
             logicalHeight: 1079,

@@ -2,11 +2,13 @@ import { useCallback, useSyncExternalStore } from "react";
 import type { MaskTimelineClip } from "../../../types/TimelineTypes";
 import {
   clearBrushBuffer,
-  ensureBrushBuffer,
   getBrushBuffer,
   subscribeToBrushBuffer,
 } from "../runtime/brushBufferRegistry";
-import { flushBrushMaskCommit } from "../runtime/brushAssetSync";
+import {
+  commitBrushMaskAsset,
+  flushBrushMaskCommit,
+} from "../runtime/brushAssetSync";
 import { useMaskViewStore } from "../store/useMaskViewStore";
 
 export interface UseBrushMaskPanelResult {
@@ -61,13 +63,19 @@ export function useBrushMaskPanel({
       return;
     }
 
-    ensureBrushBuffer(
+    if (getBrushBuffer(selectedMask.id)) {
+      clearBrushBuffer(selectedMask.id);
+      await flushBrushMaskCommit(selectedMask.id);
+      return;
+    }
+
+    await commitBrushMaskAsset(
+      selectedClipId,
       selectedMask.id,
-      Math.max(1, selectedMask.maskParameters?.baseWidth ?? 1),
-      Math.max(1, selectedMask.maskParameters?.baseHeight ?? 1),
+      selectedMaskId,
+      selectedMask.brushMaskAssetId,
+      null,
     );
-    clearBrushBuffer(selectedMask.id);
-    await flushBrushMaskCommit(selectedMask.id);
   }, [selectedClipId, selectedMask, selectedMaskId]);
 
   return {

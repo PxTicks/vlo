@@ -1,10 +1,11 @@
-import { Sprite } from "pixi.js";
+import { Sprite, type Renderer } from "pixi.js";
 import type { Asset } from "../../../types/Asset";
 import type { SourceFrameSyncRef } from "../../renderer";
 import { ensureAssetSourceLoaded } from "../../userAssets";
 import {
   ensureBrushBuffer,
   getBrushBuffer,
+  getBrushBufferForRenderer,
   hydrateBrushBufferFromUrl,
   isBrushBufferEditing,
   isBrushBufferReadyForSource,
@@ -28,6 +29,7 @@ export class BrushBufferMaskSource {
   public readonly sprite: Sprite;
 
   private readonly maskClipId: string;
+  private readonly renderer: Renderer;
   private readonly onFrameReady: (() => void) | undefined;
   private readonly unsubscribe: () => void;
 
@@ -48,8 +50,13 @@ export class BrushBufferMaskSource {
       | null;
   } | null = null;
 
-  constructor(maskClipId: string, onFrameReady?: () => void) {
+  constructor(
+    maskClipId: string,
+    renderer: Renderer,
+    onFrameReady?: () => void,
+  ) {
     this.maskClipId = maskClipId;
+    this.renderer = renderer;
     this.onFrameReady = onFrameReady;
     this.sprite = new Sprite();
     this.sprite.anchor.set(0.5);
@@ -73,7 +80,10 @@ export class BrushBufferMaskSource {
   public async setSource(asset: Asset): Promise<void> {
     if (this.disposed) return;
     const ctx = this.hydrationContext;
-    const existingBuffer = getBrushBuffer(this.maskClipId);
+    const existingBuffer = getBrushBufferForRenderer(
+      this.maskClipId,
+      this.renderer,
+    );
     const liveBufferIsAuthoritative =
       !!existingBuffer &&
       (existingBuffer.dirty ||
@@ -126,7 +136,12 @@ export class BrushBufferMaskSource {
     const resolvedAsset = hydratedAsset ?? asset;
     const url = resolvedAsset.src;
     if (!url) {
-      ensureBrushBuffer(this.maskClipId, ctx.canvasWidth, ctx.canvasHeight);
+      ensureBrushBuffer(
+        this.maskClipId,
+        ctx.canvasWidth,
+        ctx.canvasHeight,
+        this.renderer,
+      );
       this.bindToBuffer();
       return;
     }
@@ -137,6 +152,7 @@ export class BrushBufferMaskSource {
       ctx.canvasWidth,
       ctx.canvasHeight,
       ctx.paintedBounds,
+      this.renderer,
       asset.id,
     )
       .then(() => {
@@ -166,7 +182,10 @@ export class BrushBufferMaskSource {
   }
 
   public hasFrame(): boolean {
-    const buffer = getBrushBuffer(this.maskClipId);
+    const buffer = getBrushBufferForRenderer(
+      this.maskClipId,
+      this.renderer,
+    );
     return !!(buffer && buffer.paintedBounds);
   }
 
@@ -181,7 +200,10 @@ export class BrushBufferMaskSource {
 
   private bindToBuffer(): void {
     if (this.disposed || this.sprite.destroyed) return;
-    const buffer = getBrushBuffer(this.maskClipId);
+    const buffer = getBrushBufferForRenderer(
+      this.maskClipId,
+      this.renderer,
+    );
     if (!buffer || !buffer.paintedBounds) {
       this.sprite.visible = false;
       return;

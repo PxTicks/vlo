@@ -1,4 +1,5 @@
 import type { TimelineSelection } from "../../../types/TimelineTypes";
+import { prepareBrushMasksForTimelineRender } from "../../masks/api";
 import { normalizeTimelineSelection } from "../../timelineSelection";
 import { preloadColorGradeLuts } from "../../transformations/catalogue/filters/colorGrade/lutTexture";
 import {
@@ -14,6 +15,12 @@ import type { OutputVideoFormat } from "./TextureOutputEncoder";
 export interface SelectionRenderInputs {
   exportConfig: ExportConfig;
   projectData: ProjectData;
+  /**
+   * Confirms that any live brush pixels were materialized before projectData
+   * was captured. Detached/synthetic inputs may set this when they contain no
+   * live brush authoring state.
+   */
+  brushMasksPrepared: true;
 }
 
 export interface RenderSelectionToVideoFileOptions {
@@ -62,11 +69,23 @@ export async function renderSelectionToVideoFile(
   timelineSelection: TimelineSelection,
   options: RenderSelectionToVideoFileOptions = {},
 ): Promise<File> {
+  if (
+    options.renderInputs &&
+    options.renderInputs.brushMasksPrepared !== true
+  ) {
+    throw new Error(
+      "Caller-supplied render inputs must prepare brush masks before snapshotting",
+    );
+  }
+  const preparedTimelineSelection = options.renderInputs
+    ? timelineSelection
+    : ((await prepareBrushMasksForTimelineRender(timelineSelection)) ??
+      timelineSelection);
   const { exportConfig, projectData } =
     options.renderInputs ?? buildProjectRenderInputs();
   const selection = options.skipNormalize
-    ? timelineSelection
-    : normalizeTimelineSelection(timelineSelection, projectData.clips);
+    ? preparedTimelineSelection
+    : normalizeTimelineSelection(preparedTimelineSelection, projectData.clips);
 
   // Strict rendering starts pulling frames immediately; referenced grade LUTs
   // must be cached up front or early frames would render without them.

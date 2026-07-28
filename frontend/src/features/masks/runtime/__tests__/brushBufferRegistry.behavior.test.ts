@@ -108,7 +108,6 @@ import {
   paintBrushStroke,
   recalculateBrushPaintedBounds,
   setBrushPaintedBounds,
-  setBrushRenderer,
   subscribeToBrushBuffer,
 } from "../brushBufferRegistry";
 
@@ -128,6 +127,8 @@ function renderer(options: {
 }
 
 describe("brushBufferRegistry behavior", () => {
+  let activeRenderer: ReturnType<typeof renderer>;
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.createdTextures = [];
@@ -135,19 +136,18 @@ describe("brushBufferRegistry behavior", () => {
     mocks.createdSprites = [];
     mocks.createdContainers = [];
     mocks.textureFrom.mockImplementation(() => ({ destroy: vi.fn() }));
-    setBrushRenderer(null);
+    activeRenderer = renderer();
     for (const id of ["mask", "other", "hydrate", "extract"]) {
       disposeBrushBuffer(id);
     }
   });
 
   afterEach(() => {
-    setBrushRenderer(null);
     vi.unstubAllGlobals();
   });
 
   it("creates clamped buffers, reuses matching sizes, and replaces resized buffers", () => {
-    const first = ensureBrushBuffer("mask", 0.2, 2.6);
+    const first = ensureBrushBuffer("mask", 0.2, 2.6, activeRenderer as never);
     expect(first.canvasSize).toEqual({ width: 1, height: 3 });
     expect(first).toMatchObject({
       paintedBounds: null,
@@ -155,20 +155,23 @@ describe("brushBufferRegistry behavior", () => {
       revision: 0,
       sourceAssetId: null,
     });
-    expect(ensureBrushBuffer("mask", 1, 3)).toBe(first);
+    expect(ensureBrushBuffer("mask", 1, 3, activeRenderer as never)).toBe(first);
 
-    const second = ensureBrushBuffer("mask", 4, 5);
+    const second = ensureBrushBuffer("mask", 4, 5, activeRenderer as never);
     expect(second).not.toBe(first);
     expect(first.renderTexture.destroy).toHaveBeenCalledWith(true);
   });
 
   it("clears new textures when a renderer is connected and notifies subscribers", () => {
-    const activeRenderer = renderer();
-    setBrushRenderer(activeRenderer as never);
     const listener = vi.fn();
     const unsubscribe = subscribeToBrushBuffer("mask", listener);
 
-    const buffer = ensureBrushBuffer("mask", 10, 10);
+    const buffer = ensureBrushBuffer(
+      "mask",
+      10,
+      10,
+      activeRenderer as never,
+    );
     expect(activeRenderer.render).toHaveBeenCalledWith(
       expect.objectContaining({
         target: buffer.renderTexture,
@@ -177,17 +180,15 @@ describe("brushBufferRegistry behavior", () => {
     );
     expect(listener).toHaveBeenCalledOnce();
     unsubscribe();
-    ensureBrushBuffer("mask", 20, 20);
+    ensureBrushBuffer("mask", 20, 20, activeRenderer as never);
     expect(listener).toHaveBeenCalledOnce();
     unsubscribe();
   });
 
   it("paints dots and strokes, expands bounds, and marks revisions dirty", () => {
-    const activeRenderer = renderer();
-    setBrushRenderer(activeRenderer as never);
     const listener = vi.fn();
     subscribeToBrushBuffer("mask", listener);
-    ensureBrushBuffer("mask", 100, 80);
+    ensureBrushBuffer("mask", 100, 80, activeRenderer as never);
     listener.mockClear();
 
     paintBrushDot("mask", 5, 6, 0, "paint");
@@ -227,9 +228,7 @@ describe("brushBufferRegistry behavior", () => {
   });
 
   it("clears, marks clean, and validates source readiness", () => {
-    const activeRenderer = renderer();
-    setBrushRenderer(activeRenderer as never);
-    ensureBrushBuffer("mask", 10, 20);
+    ensureBrushBuffer("mask", 10, 20, activeRenderer as never);
     paintBrushDot("mask", 2, 3, 1, "paint");
     const revision = getBrushBufferRevision("mask");
     expect(isBrushBufferRevision("mask", revision)).toBe(true);
@@ -259,7 +258,12 @@ describe("brushBufferRegistry behavior", () => {
   it("sets bounds, tracks edit sessions, and disposes resources", () => {
     const listener = vi.fn();
     subscribeToBrushBuffer("mask", listener);
-    const buffer = ensureBrushBuffer("mask", 10, 10);
+    const buffer = ensureBrushBuffer(
+      "mask",
+      10,
+      10,
+      activeRenderer as never,
+    );
     setBrushPaintedBounds("mask", { x: 1, y: 2, width: 3, height: 4 });
     expect(buffer.paintedBounds).toEqual({ x: 1, y: 2, width: 3, height: 4 });
     setBrushPaintedBounds("missing", null);
@@ -289,9 +293,8 @@ describe("brushBufferRegistry behavior", () => {
     vi.spyOn(canvas, "getContext").mockReturnValue({
       getImageData,
     } as never);
-    const activeRenderer = renderer({ canvas: Promise.resolve(canvas) });
-    setBrushRenderer(activeRenderer as never);
-    ensureBrushBuffer("mask", 2, 2);
+    activeRenderer = renderer({ canvas: Promise.resolve(canvas) });
+    ensureBrushBuffer("mask", 2, 2, activeRenderer as never);
     const listener = vi.fn();
     subscribeToBrushBuffer("mask", listener);
 
@@ -310,18 +313,25 @@ describe("brushBufferRegistry behavior", () => {
   });
 
   it("falls back when bounds extraction is unavailable", async () => {
-    const buffer = ensureBrushBuffer("mask", 2, 2);
+    activeRenderer = renderer({ hasExtract: false });
+    const buffer = ensureBrushBuffer(
+      "mask",
+      2,
+      2,
+      activeRenderer as never,
+    );
     buffer.paintedBounds = { x: 0, y: 0, width: 1, height: 1 };
     await expect(recalculateBrushPaintedBounds("mask")).resolves.toEqual(
       buffer.paintedBounds,
     );
-    setBrushRenderer(renderer({ hasExtract: false }) as never);
     await expect(recalculateBrushPaintedBounds("mask")).resolves.toEqual(
       buffer.paintedBounds,
     );
     const canvas = document.createElement("canvas");
     vi.spyOn(canvas, "getContext").mockReturnValue(null);
-    setBrushRenderer(renderer({ canvas }) as never);
+    activeRenderer.extract = {
+      canvas: vi.fn(() => canvas),
+    };
     await expect(recalculateBrushPaintedBounds("mask")).resolves.toEqual(
       buffer.paintedBounds,
     );
@@ -334,9 +344,13 @@ describe("brushBufferRegistry behavior", () => {
       value: (callback: BlobCallback) =>
         callback(new Blob(["png"], { type: "image/png" })),
     });
-    const activeRenderer = renderer({ canvas });
-    setBrushRenderer(activeRenderer as never);
-    const buffer = ensureBrushBuffer("extract", 20, 10);
+    activeRenderer = renderer({ canvas });
+    const buffer = ensureBrushBuffer(
+      "extract",
+      20,
+      10,
+      activeRenderer as never,
+    );
     buffer.paintedBounds = { x: 2, y: 3, width: 4.2, height: 5.1 };
 
     await expect(extractBrushPng("extract")).resolves.toBeInstanceOf(Blob);
@@ -351,9 +365,14 @@ describe("brushBufferRegistry behavior", () => {
 
   it("returns null for unavailable or empty PNG extraction", async () => {
     expect(await extractBrushPng("missing")).toBeNull();
-    const buffer = ensureBrushBuffer("extract", 10, 10);
+    activeRenderer = renderer({ hasExtract: false });
+    const buffer = ensureBrushBuffer(
+      "extract",
+      10,
+      10,
+      activeRenderer as never,
+    );
     expect(await extractBrushPng("extract")).toBeNull();
-    setBrushRenderer(renderer({ hasExtract: false }) as never);
     expect(
       await extractBrushPng("extract", { x: 0, y: 0, width: 0, height: 1 }),
     ).toBeNull();
@@ -361,38 +380,31 @@ describe("brushBufferRegistry behavior", () => {
     expect(await extractBrushPng("extract")).toBeNull();
   });
 
-  it("retries PNG hydration after the renderer becomes available", async () => {
+  it("keeps a dirty buffer bound to its owning renderer", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const buffer = ensureBrushBuffer(
+      "hydrate",
+      10,
+      20,
+      activeRenderer as never,
+    );
+    paintBrushDot("hydrate", 1, 2, 1, "paint");
+    const otherRenderer = renderer();
+
+    expect(
+      ensureBrushBuffer("hydrate", 10, 20, otherRenderer as never),
+    ).toBe(buffer);
+    expect(getBrushBuffer("hydrate")).toBe(buffer);
+    expect(otherRenderer.render).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Keeping dirty brush buffer "hydrate" on its original renderer',
+    );
+  });
+
+  it("hydrates PNG data through the buffer's explicit renderer", async () => {
     const listener = vi.fn();
     subscribeToBrushBuffer("hydrate", listener);
     const bounds = { x: 1, y: 2, width: 3, height: 4 };
-    const buffer = await hydrateBrushBufferFromUrl(
-      "hydrate",
-      "blob:mask",
-      10,
-      20,
-      bounds,
-      "asset-1",
-    );
-    expect(buffer).toMatchObject({
-      paintedBounds: null,
-      dirty: false,
-      sourceAssetId: null,
-    });
-    expect(
-      isBrushBufferReadyForSource(
-        "hydrate",
-        "asset-1",
-        10,
-        20,
-        bounds,
-      ),
-    ).toBe(false);
-    // Buffer creation notifies once, but the unavailable-renderer branch must
-    // not publish a false "hydrated" state.
-    expect(listener).toHaveBeenCalledTimes(1);
-
-    const activeRenderer = renderer();
-    setBrushRenderer(activeRenderer as never);
     class ImageMock {
       crossOrigin = "";
       onload: (() => void) | null = null;
@@ -403,12 +415,13 @@ describe("brushBufferRegistry behavior", () => {
     }
     vi.stubGlobal("Image", ImageMock);
 
-    await hydrateBrushBufferFromUrl(
+    const buffer = await hydrateBrushBufferFromUrl(
       "hydrate",
       "blob:mask",
       10,
       20,
       bounds,
+      activeRenderer as never,
       "asset-1",
     );
     expect(mocks.textureFrom).toHaveBeenCalled();
@@ -428,14 +441,13 @@ describe("brushBufferRegistry behavior", () => {
       10,
       20,
       bounds,
+      activeRenderer as never,
       "asset-2",
     );
     expect(mocks.textureFrom).not.toHaveBeenCalled();
   });
 
   it("loads and positions hydrated PNG textures", async () => {
-    const activeRenderer = renderer();
-    setBrushRenderer(activeRenderer as never);
     class ImageMock {
       crossOrigin = "";
       onload: (() => void) | null = null;
@@ -455,6 +467,7 @@ describe("brushBufferRegistry behavior", () => {
       20,
       10,
       bounds,
+      activeRenderer as never,
       "asset-1",
     );
 
@@ -475,7 +488,6 @@ describe("brushBufferRegistry behavior", () => {
   });
 
   it("rejects failed hydration image loads", async () => {
-    setBrushRenderer(renderer() as never);
     class ImageMock {
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
@@ -492,6 +504,7 @@ describe("brushBufferRegistry behavior", () => {
         10,
         10,
         null,
+        activeRenderer as never,
         "asset-new",
       ),
     ).rejects.toThrow("Failed to load brush PNG");

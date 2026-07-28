@@ -1,4 +1,4 @@
-import { Sprite } from "pixi.js";
+import { Sprite, type Renderer } from "pixi.js";
 import type { Asset } from "../../../types/Asset";
 import type {
   BrushPaintedBounds,
@@ -6,8 +6,9 @@ import type {
 } from "../../../types/TimelineTypes";
 import { createMaskBinaryThresholdFilter } from "../../transformations/catalogue/mask/maskBinaryThresholdFilter";
 import type { SourceFrameSyncRef } from "../../renderer/utils/sourceFrameSync";
-import { getBrushBuffer } from "./brushBufferRegistry";
+import { getBrushBufferForRenderer } from "./brushBufferRegistry";
 import { BrushBufferMaskSource } from "./BrushBufferMaskSource";
+import { ImageMaskSource } from "./ImageMaskSource";
 import { MaskVideoFramePlayer } from "./MaskVideoFramePlayer";
 import type { AssetMaskNodeEntry, AssetMaskFrameSource } from "./MaskSceneNodes";
 
@@ -31,19 +32,9 @@ export function getAssetBackedMaskId(maskClip: MaskTimelineClip): string | null 
     return maskClip.generationMaskAssetId ?? null;
   }
   if (maskClip.maskType === "brush") {
-    if (maskClip.brushMaskAssetId) {
-      return maskClip.brushMaskAssetId;
-    }
-    if (getBrushBuffer(maskClip.id)?.paintedBounds) {
-      return `${BRUSH_BUFFER_ASSET_ID_PREFIX}${maskClip.id}`;
-    }
-    return null;
+    return maskClip.brushMaskAssetId ?? null;
   }
   return null;
-}
-
-export function isAssetBackedMask(maskClip: MaskTimelineClip): boolean {
-  return getAssetBackedMaskId(maskClip) !== null;
 }
 
 export function getSam2MaskGrowAmount(maskClip: MaskTimelineClip): number {
@@ -87,9 +78,14 @@ function getImageMaskHydrationContext(
 }
 
 export class AssetMaskSourceFactory {
+  private readonly renderer: Renderer | null;
   private readonly onAssetMaskFrameReady?: () => void;
 
-  constructor(onAssetMaskFrameReady?: () => void) {
+  constructor(
+    renderer: Renderer | null,
+    onAssetMaskFrameReady?: () => void,
+  ) {
+    this.renderer = renderer;
     this.onAssetMaskFrameReady = onAssetMaskFrameReady;
   }
 
@@ -97,6 +93,31 @@ export class AssetMaskSourceFactory {
     maskClip: MaskTimelineClip,
     assetsById?: Map<string, Asset>,
   ): AssetMaskNodeEntry | null {
+    if (maskClip.maskType === "brush") {
+      const liveBuffer =
+        this.renderer &&
+        getBrushBufferForRenderer(maskClip.id, this.renderer);
+      if (liveBuffer?.paintedBounds) {
+        return {
+          maskId: maskClip.id,
+          assetId:
+            maskClip.brushMaskAssetId ??
+            `${BRUSH_BUFFER_ASSET_ID_PREFIX}${maskClip.id}`,
+          kind: "brush",
+        };
+      }
+
+      if (!maskClip.brushMaskAssetId) {
+        return null;
+      }
+
+      return {
+        maskId: maskClip.id,
+        assetId: maskClip.brushMaskAssetId,
+        kind: "image",
+      };
+    }
+
     const assetId = getAssetBackedMaskId(maskClip);
     if (!assetId) {
       return null;
@@ -108,10 +129,7 @@ export class AssetMaskSourceFactory {
     return {
       maskId: maskClip.id,
       assetId,
-      kind:
-        maskClip.maskType === "brush" || assetType === "image"
-          ? "image"
-          : "video",
+      kind: assetType === "image" ? "image" : "video",
     };
   }
 
@@ -119,10 +137,24 @@ export class AssetMaskSourceFactory {
     player: AssetMaskFrameSource;
     thresholdFilter: ReturnType<typeof createMaskBinaryThresholdFilter>;
   } {
-    const player: AssetMaskFrameSource =
-      entry.kind === "image"
-        ? new BrushBufferMaskSource(entry.maskId, this.onAssetMaskFrameReady)
-        : new MaskVideoFramePlayer(entry.maskId, this.onAssetMaskFrameReady);
+    let player: AssetMaskFrameSource;
+    if (entry.kind === "brush") {
+      if (!this.renderer) {
+        throw new Error("Brush mask source requires an owning renderer");
+      }
+      player = new BrushBufferMaskSource(
+        entry.maskId,
+        this.renderer,
+        this.onAssetMaskFrameReady,
+      );
+    } else if (entry.kind === "image") {
+      player = new ImageMaskSource(this.onAssetMaskFrameReady);
+    } else {
+      player = new MaskVideoFramePlayer(
+        entry.maskId,
+        this.onAssetMaskFrameReady,
+      );
+    }
     const thresholdFilter = createMaskBinaryThresholdFilter();
     player.sprite.filters = [thresholdFilter];
 
@@ -147,7 +179,10 @@ export class AssetMaskSourceFactory {
       hasUsableTexture: (sprite: Sprite) => boolean;
     },
   ): Promise<void> {
-    const maskAssetId = getAssetBackedMaskId(maskClip);
+    const maskAssetId =
+      node.player instanceof BrushBufferMaskSource
+        ? node.assetId
+        : getAssetBackedMaskId(maskClip);
     if (!maskAssetId) {
       return;
     }
@@ -162,11 +197,36 @@ export class AssetMaskSourceFactory {
           options.parentClipContentSize,
         ),
       );
+    } else if (node.player instanceof ImageMaskSource) {
+      const context = getImageMaskHydrationContext(
+        maskClip,
+        options.parentClipContentSize,
+      );
+      node.player.setGeometryContext({
+        canvasWidth: context.canvasWidth,
+        canvasHeight: context.canvasHeight,
+        imageBounds:
+          context.paintedBounds ?? {
+            x: 0,
+            y: 0,
+            width: context.canvasWidth,
+            height: context.canvasHeight,
+          },
+      });
     }
 
     if (asset) {
       node.assetId = asset.id;
-      await node.player.setSource(asset);
+      try {
+        await node.player.setSource(asset);
+      } catch (error) {
+        if (!(node.player instanceof ImageMaskSource)) {
+          throw error;
+        }
+        node.player.sprite.visible = false;
+        console.warn("Image mask source failed to load", error);
+        return;
+      }
     } else {
       node.assetId = maskAssetId;
     }

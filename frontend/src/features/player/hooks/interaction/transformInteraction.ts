@@ -46,6 +46,7 @@ export function commitTransformControls(
 ): CommitTransformControlResult | null {
   let nextTransforms = input.transforms;
   let transformId = input.transformId;
+  const applyLinkedControls = Object.keys(input.values).length <= 1;
 
   for (const [controlName, value] of Object.entries(input.values)) {
     if (value === undefined) continue;
@@ -59,6 +60,7 @@ export function commitTransformControls(
       pointEpsilonTicks: input.pointEpsilonTicks,
       transformId,
       keyframeSourceTimeTicks: input.keyframeSourceTimeTicks,
+      applyLinkedControls,
     });
     if (!result) continue;
     nextTransforms = result.nextTransforms;

@@ -99,6 +99,7 @@ interface InteractionState {
   path: PositionPathDragState;
   didMove: boolean;
   historyCoalesceKey: string | null;
+  scaleLinked: boolean;
 }
 
 function createInitialInteractionState(): InteractionState {
@@ -121,6 +122,7 @@ function createInitialInteractionState(): InteractionState {
     path: createInitialPositionPathDragState(),
     didMove: false,
     historyCoalesceKey: null,
+    scaleLinked: true,
   };
 }
 
@@ -400,6 +402,7 @@ export function useTransformInteractionController(
           x: newVisualScaleX / current.baseScale.x,
           y: newVisualScaleY / current.baseScale.y,
         },
+        current.scaleLinked,
       );
 
       return {
@@ -407,7 +410,7 @@ export function useTransformInteractionController(
         localDy: scaleDrag.localDelta.y,
         newParamX: lockedParamScale.x,
         newParamY: lockedParamScale.y,
-        newVisualScaleX,
+        newVisualScaleX: lockedParamScale.x * current.baseScale.x,
         newVisualScaleY: lockedParamScale.y * current.baseScale.y,
       };
     };
@@ -566,7 +569,7 @@ export function useTransformInteractionController(
       if (current.clipId && current.didMove) {
         const latestClip = findClipById(current.clipId);
         if (latestClip) {
-          let nextTransforms = [...(latestClip.transformations || [])];
+          const nextTransforms = [...(latestClip.transformations || [])];
 
           if (current.mode === "recordPath") {
             const startPosition: Point2D = {
@@ -689,29 +692,28 @@ export function useTransformInteractionController(
                 : current.lastScaleParams;
 
             if (finalScaleParams) {
-              const xCommit = applyCommit(
-                latestClip,
-                nextTransforms,
-                "scale",
-                "x",
-                finalScaleParams.x,
-                current.transformIds.scale ?? undefined,
-              );
-              if (xCommit) {
-                nextTransforms = xCommit.nextTransforms;
-                current.transformIds.scale = xCommit.transformId;
-              }
-
-              const yCommit = applyCommit(
-                latestClip,
-                nextTransforms,
-                "scale",
-                "y",
-                finalScaleParams.y,
-                current.transformIds.scale ?? undefined,
-              );
-              if (yCommit) {
-                current.transformIds.scale = yCommit.transformId;
+              const scaleCommit = commitTransformControls({
+                clip: latestClip,
+                transforms: nextTransforms,
+                groupId: "scale",
+                values: finalScaleParams,
+                transformId: current.transformIds.scale ?? undefined,
+                playheadTicks: playbackClock.time,
+                keyframeSourceTimeTicks: resolveSourceKeyframeTime(latestClip),
+                pointEpsilonTicks: POINT_EPSILON_TICKS,
+                actions: {
+                  addClipTransform: addTimelineClipTransform,
+                  updateClipTransform: updateTimelineClipTransform,
+                  setClipTransforms: (clipId, transforms) =>
+                    setTimelineClipTransforms(clipId, transforms, {
+                      historyCoalesce: current.historyCoalesceKey
+                        ? { key: current.historyCoalesceKey, end: true }
+                        : undefined,
+                    }),
+                },
+              });
+              if (scaleCommit) {
+                current.transformIds.scale = scaleCommit.transformId;
               }
             }
           } else if (current.mode === "rotate") {
@@ -847,6 +849,10 @@ export function useTransformInteractionController(
       const isRotateHandle = key.startsWith("rot-");
       const mode: InteractionMode =
         isRotateHandle || e.altKey ? "rotate" : "scale";
+      const historyCoalesceKey =
+        mode === "scale"
+          ? `canvas-scale-drag:${activeClip.id}:${++transformDragSequence}`
+          : null;
       let nextTransforms = [...(activeClip.transformations || [])];
       let scaleTransform = nextTransforms.find(
         (transform) => transform.type === "scale",
@@ -880,7 +886,11 @@ export function useTransformInteractionController(
       }
 
       if (didMaterializeTransform) {
-        setTimelineClipTransforms(activeClip.id, nextTransforms);
+        setTimelineClipTransforms(activeClip.id, nextTransforms, {
+          historyCoalesce: historyCoalesceKey
+            ? { key: historyCoalesceKey, end: false }
+            : undefined,
+        });
         activeClipRef.current = {
           ...activeClip,
           transformations: nextTransforms,
@@ -932,6 +942,8 @@ export function useTransformInteractionController(
           scale: scaleTransform?.id ?? null,
           rotation: rotationTransform?.id ?? null,
         },
+        historyCoalesceKey,
+        scaleLinked: scaleTransform?.parameters.isLinked !== false,
       };
 
       if (mode === "rotate") {

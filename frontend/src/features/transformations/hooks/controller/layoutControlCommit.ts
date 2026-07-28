@@ -21,6 +21,7 @@ export interface CommitLayoutControlInput {
    * retiming over the clip.
    */
   keyframeSourceTimeTicks?: number;
+  applyLinkedControls?: boolean;
 }
 
 export interface CommitLayoutControlResult {
@@ -46,6 +47,7 @@ export function commitLayoutControlToTransforms({
   pointEpsilonTicks,
   transformId,
   keyframeSourceTimeTicks,
+  applyLinkedControls,
 }: CommitLayoutControlInput): CommitLayoutControlResult | null {
   const commit = computeCommitMutation({
     groupId,
@@ -57,6 +59,7 @@ export function commitLayoutControlToTransforms({
     playheadTicks,
     pointEpsilonTicks,
     keyframeSourceTimeTicks,
+    applyLinkedControls,
   });
 
   if (commit.mode === "update") {

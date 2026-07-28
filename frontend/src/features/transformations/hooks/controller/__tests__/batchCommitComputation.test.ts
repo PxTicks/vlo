@@ -23,6 +23,29 @@ function createClip(transformations: TimelineClip["transformations"]): TimelineC
 }
 
 describe("computeBatchCommitMutations", () => {
+  it("keeps explicit scale axes authoritative when dimensions are linked", () => {
+    const transform = createAddTransform("scale");
+    expect(transform).not.toBeNull();
+    if (!transform) return;
+    const clip = createClip([transform]);
+
+    const next = computeBatchCommitMutations({
+      groupId: "scale",
+      values: { x: -2, y: 2 },
+      transformId: transform.id,
+      transforms: [transform],
+      activeClip: clip,
+      playheadTicks: 0,
+      pointEpsilonTicks: 1,
+    });
+
+    expect(next[0].parameters).toMatchObject({
+      x: -2,
+      y: 2,
+      isLinked: true,
+    });
+  });
+
   it("atomically preserves and extends wheel scalar splines", () => {
     const transform = createAddTransform("ColorGradeFilter", true);
     expect(transform).not.toBeNull();

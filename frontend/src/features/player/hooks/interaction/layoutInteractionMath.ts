@@ -80,9 +80,10 @@ export function lockCornerScaleAspectRatio(
   handle: string | null,
   startScale: ScaleLike,
   nextScale: ScaleLike,
+  forceLinked = false,
 ): ScaleLike {
   const isCornerHandle = typeof handle === "string" && handle.length === 2;
-  if (!isCornerHandle) {
+  if (!isCornerHandle && !forceLinked) {
     return nextScale;
   }
 
@@ -91,9 +92,27 @@ export function lockCornerScaleAspectRatio(
     return nextScale;
   }
 
+  const signOrFallback = (value: number, fallback: number): number =>
+    Math.sign(value) || Math.sign(fallback) || 1;
+  const isVerticalEdge =
+    typeof handle === "string" &&
+    handle.length === 1 &&
+    (handle === "n" || handle === "s");
+
+  if (isVerticalEdge) {
+    return {
+      x:
+        Math.abs(nextScale.y * ratio) *
+        signOrFallback(nextScale.x, startScale.x),
+      y: nextScale.y,
+    };
+  }
+
   return {
     x: nextScale.x,
-    y: nextScale.x / ratio,
+    y:
+      Math.abs(nextScale.x / ratio) *
+      signOrFallback(nextScale.y, startScale.y),
   };
 }
 

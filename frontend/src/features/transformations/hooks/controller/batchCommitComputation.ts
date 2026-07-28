@@ -51,6 +51,7 @@ export function computeBatchCommitMutations({
 
   let nextTransforms = transforms;
   let transformId = initialTransformId;
+  const applyLinkedControls = Object.keys(values).length <= 1;
 
   for (const [controlName, value] of Object.entries(values)) {
     const commit = computeCommitMutation({
@@ -63,6 +64,7 @@ export function computeBatchCommitMutations({
       playheadTicks,
       pointEpsilonTicks,
       keyframeSourceTimeTicks,
+      applyLinkedControls,
     });
 
     if (commit.mode === "update") {

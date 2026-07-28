@@ -75,6 +75,12 @@ export interface CommitComputationInput {
    * the clip.
    */
   keyframeSourceTimeTicks?: number;
+  /**
+   * Whether a commit to one control should derive its linked sibling value.
+   * Batch callers that already provide every linked value disable this so the
+   * second explicit value cannot overwrite the first one.
+   */
+  applyLinkedControls?: boolean;
 }
 
 interface CommitComputationBase {
@@ -110,6 +116,7 @@ export function computeCommitMutation({
   playheadTicks,
   pointEpsilonTicks,
   keyframeSourceTimeTicks,
+  applyLinkedControls = true,
 }: CommitComputationInput): CommitComputationResult {
   // 1. Resolve configuration
   let groupConfig: LayoutGroup | undefined;
@@ -187,7 +194,7 @@ export function computeCommitMutation({
   }
 
   // Link logic
-  if (finalParams["isLinked"] === true) {
+  if (applyLinkedControls && finalParams["isLinked"] === true) {
     const numberControls =
       groupConfig?.controls.filter((control) => control.type === "number") || [];
     const otherControl = numberControls.find((control) => control.name !== controlName);

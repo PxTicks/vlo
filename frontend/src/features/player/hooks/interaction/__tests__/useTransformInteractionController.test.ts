@@ -894,7 +894,7 @@ describe("useTransformInteractionController", () => {
           global: { x: 10, y: 10 },
           altKey: false,
         } as unknown as FederatedPointerEvent,
-        "se",
+        "e",
       );
     });
     const materialized = activeClipRef.current?.transformations.find(
@@ -927,11 +927,157 @@ describe("useTransformInteractionController", () => {
     const updated = useTimelineStore
       .getState()
       .clips.find((candidate) => candidate.id === clip.id);
-    expect(updated?.transformations.some((transform) => transform.type === "scale"))
-      .toBe(true);
+    const updatedScale = updated?.transformations.find(
+      (transform) => transform.type === "scale",
+    );
+    expect(updatedScale).toBeDefined();
+    expect(updatedScale?.parameters.x).not.toBe(1);
+    expect(updatedScale?.parameters.y).toBe(updatedScale?.parameters.x);
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(
+      useTimelineStore
+        .getState()
+        .clips.find((candidate) => candidate.id === clip.id)
+        ?.transformations.some((transform) => transform.type === "scale"),
+    ).toBe(false);
     expect(mockSprite.cursor).toBe("grab");
     expect(mockApp.stage.off).toHaveBeenCalled();
     notify.mockRestore();
+  });
+
+  it("commits a linked negative scale when an edge crosses the opposite side", () => {
+    const clip = {
+      id: "clip_negative_scale",
+      trackId: "track_1",
+      type: "video",
+      assetId: "asset_1",
+      name: "Negative scale",
+      start: 0,
+      timelineDuration: 100,
+      sourceDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      transformations: [
+        {
+          id: "scale_negative",
+          type: "scale",
+          isEnabled: true,
+          parameters: { x: 1, y: 1, isLinked: true },
+        },
+      ],
+    } as TimelineClip;
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    act(() => {
+      result.current.onHandlePointerDown(
+        {
+          stopPropagation: vi.fn(),
+          global: { x: 10, y: 10 },
+          altKey: false,
+        } as unknown as FederatedPointerEvent,
+        "e",
+      );
+      getStageHandler("pointermove")?.({
+        global: { x: -1000, y: 10 },
+      } as unknown as FederatedPointerEvent);
+      getStageHandler("pointerup")?.({
+        global: { x: -1000, y: 10 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const committedScale = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)
+      ?.transformations.find((transform) => transform.type === "scale");
+    expect(committedScale?.parameters.x).toBeLessThan(0);
+    expect(committedScale?.parameters.y).toBeGreaterThan(0);
+    expect(Math.abs(committedScale?.parameters.x as number)).toBe(
+      committedScale?.parameters.y,
+    );
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    const undoneScale = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)
+      ?.transformations.find((transform) => transform.type === "scale");
+    expect(undoneScale?.parameters).toMatchObject({ x: 1, y: 1 });
+  });
+
+  it("undoes both dimensions of an unlinked scale drag in one step", () => {
+    const clip = {
+      id: "clip_unlinked_scale",
+      trackId: "track_1",
+      type: "video",
+      assetId: "asset_1",
+      name: "Unlinked scale",
+      start: 0,
+      timelineDuration: 100,
+      sourceDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      transformations: [
+        {
+          id: "scale_unlinked",
+          type: "scale",
+          isEnabled: true,
+          parameters: { x: 1, y: 1, isLinked: false },
+        },
+      ],
+    } as TimelineClip;
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    act(() => {
+      result.current.onHandlePointerDown(
+        {
+          stopPropagation: vi.fn(),
+          global: { x: 10, y: 10 },
+          altKey: false,
+        } as unknown as FederatedPointerEvent,
+        "se",
+      );
+      getStageHandler("pointermove")?.({
+        global: { x: 30, y: 50 },
+      } as unknown as FederatedPointerEvent);
+      getStageHandler("pointerup")?.({
+        global: { x: 30, y: 50 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const committedScale = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)
+      ?.transformations.find((transform) => transform.type === "scale");
+    expect(committedScale?.parameters.x).not.toBe(1);
+    expect(committedScale?.parameters.y).not.toBe(1);
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    const undoneScale = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)
+      ?.transformations.find((transform) => transform.type === "scale");
+    expect(undoneScale?.parameters).toMatchObject({ x: 1, y: 1 });
   });
 
   it("materializes and commits rotation from rotate and alt-drag handles", () => {

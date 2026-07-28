@@ -169,10 +169,25 @@ export function buildWorkflowStoreState(
       set({ editorRef: iframe });
       iframeBridge.bindIframe(iframe);
 
-      const { selectedWorkflowId, isWorkflowLoading, workflowInputs } = get();
+      const {
+        selectedWorkflowId,
+        isWorkflowLoading,
+        workflowInputs,
+        preResolvedPromptEnabled,
+        iframeWorkflowInstanceId,
+        iframeWorkflowRevision,
+      } = get();
       if (!selectedWorkflowId) return;
 
-      if (isWorkflowLoading || workflowInputs.length === 0) {
+      const needsBridgeIdentity =
+        preResolvedPromptEnabled &&
+        (typeof iframeWorkflowInstanceId !== "string" ||
+          typeof iframeWorkflowRevision !== "number");
+      if (
+        isWorkflowLoading ||
+        workflowInputs.length === 0 ||
+        needsBridgeIdentity
+      ) {
         void get().loadWorkflow(selectedWorkflowId);
       }
     },
@@ -644,7 +659,7 @@ export function buildWorkflowStoreState(
         workflowId === TEMP_WORKFLOW_ID && tempWorkflow !== null;
 
       const scheduleRetry = (reason: string, delayMs = 750) => {
-        if (isTempWorkflow || isStale()) return;
+        if (isStale()) return;
         const nextAttempt = (bridgeLoadRetryCounts.get(workflowId) ?? 0) + 1;
         bridgeLoadRetryCounts.set(workflowId, nextAttempt);
         if (nextAttempt >= MAX_BRIDGE_LOAD_RETRIES) {
@@ -815,12 +830,12 @@ export function buildWorkflowStoreState(
           // editor's own health-check loop. isStale cancels the wait if the
           // user switches workflows mid-flight.
           //
-          // Temp workflows already carry their graph in `tempWorkflow`, so
-          // we never have to wait — if the iframe isn't ready synchronously
-          // we just skip the inject and let the panel mark ready off the
-          // optimistic sync above.
+          // Temp workflows already carry their graph in `tempWorkflow`, but
+          // submission still requires an iframe workflow identity for
+          // graphToPrompt. Treat them like persisted workflows here so replay
+          // cannot expose Generate before the hidden editor confirms the graph.
           let appReady = iframeBridge.isReady;
-          if (!appReady && !isTempWorkflow) {
+          if (!appReady) {
             appReady = await waitForAppReady(
               editorRef,
               isStale,
@@ -870,7 +885,7 @@ export function buildWorkflowStoreState(
                       : null,
                 },
               );
-            } else if (!isTempWorkflow && syncResult.deferred) {
+            } else if (syncResult.deferred) {
               // Iframe didn't confirm the new graph. Hold isWorkflowReady
               // false until the scheduled retry succeeds; the finally block
               // checks `deferred` to suppress its readiness flip.
@@ -881,13 +896,18 @@ export function buildWorkflowStoreState(
                 scheduleRetry(syncResult.reason ?? "workflow sync deferred");
               }
             }
-          } else if (!isTempWorkflow) {
+          } else {
             // The inline wait timed out — ComfyUI is unusually slow to come
             // up (or never will). Leave the panel in loading state and let
             // a delayed retry have another go without thrashing the backend.
             deferred = true;
             scheduleRetry("iframe app not ready", APP_NOT_READY_RETRY_DELAY_MS);
           }
+        } else if (isTempWorkflow && get().preResolvedPromptEnabled) {
+          // The editor can register one render after metadata replay begins.
+          // Keep replay loading in that window; registerEditor will retry the
+          // selected workflow once there is an iframe to confirm its identity.
+          deferred = true;
         }
       } catch (err) {
         console.error("[Generation] Failed to load workflow:", err);

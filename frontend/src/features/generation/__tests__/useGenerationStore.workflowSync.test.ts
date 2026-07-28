@@ -47,6 +47,7 @@ function makeConditioningInputs(): WorkflowInput[] {
 function makeReadyEditorRef(): HTMLIFrameElement {
   return {
     contentWindow: {
+      postMessage: vi.fn(),
       app: {
         handleFile: vi.fn(),
         canvas: {},
@@ -68,6 +69,8 @@ function resetGenerationStore() {
     selectedWorkflowId: null,
     syncedWorkflow: null,
     syncedGraphData: null,
+    iframeWorkflowInstanceId: null,
+    iframeWorkflowRevision: null,
     workflowInputs: [],
     workflowRuleWarnings: [],
     activeWorkflowRules: null,
@@ -1607,6 +1610,98 @@ describe("useGenerationStore workflow editor sync", () => {
     const state = useGenerationStore.getState();
     expect(state.isWorkflowReady).toBe(true);
     expect(state.isWorkflowLoading).toBe(false);
+  });
+
+  it("waits for iframe confirmation before marking a replayed temp workflow ready", async () => {
+    const graphData = {
+      nodes: [{ id: 1, type: "LoadImage" }],
+    };
+    const workflow = {
+      "1": { class_type: "LoadImage", inputs: { image: "input.png" } },
+    };
+    vi.spyOn(workflowSyncController, "waitForAppReady").mockResolvedValue(true);
+    vi.spyOn(workflowSyncController, "injectWorkflowAndRead").mockResolvedValue({
+      ok: true,
+      deferred: false,
+      workflowResult: {
+        workflow,
+        graphData,
+        inputs: makeInputs(),
+        filename: TEMP_WORKFLOW_ID,
+        workflowInstanceId: "temp-workflow-instance",
+        revision: 0,
+      },
+      reason: null,
+      warnings: null,
+    });
+
+    useGenerationStore.setState({
+      tempWorkflow: {
+        workflow,
+        graphData,
+        inputs: makeInputs(),
+      },
+      editorRef: {
+        contentWindow: {},
+      } as unknown as HTMLIFrameElement,
+    });
+
+    await useGenerationStore.getState().loadWorkflow(TEMP_WORKFLOW_ID);
+
+    expect(workflowSyncController.waitForAppReady).toHaveBeenCalled();
+    expect(workflowSyncController.injectWorkflowAndRead).toHaveBeenCalled();
+    expect(useGenerationStore.getState()).toMatchObject({
+      selectedWorkflowId: TEMP_WORKFLOW_ID,
+      iframeWorkflowInstanceId: "temp-workflow-instance",
+      iframeWorkflowRevision: 0,
+      isWorkflowLoading: false,
+      isWorkflowReady: true,
+    });
+  });
+
+  it("keeps temp replay loading until an editor registers", async () => {
+    const graphData = {
+      nodes: [{ id: 1, type: "LoadImage" }],
+    };
+    useGenerationStore.setState({
+      tempWorkflow: {
+        workflow: {
+          "1": { class_type: "LoadImage", inputs: { image: "input.png" } },
+        },
+        graphData,
+        inputs: makeInputs(),
+      },
+      editorRef: null,
+      preResolvedPromptEnabled: true,
+    });
+
+    await useGenerationStore.getState().loadWorkflow(TEMP_WORKFLOW_ID);
+
+    expect(useGenerationStore.getState()).toMatchObject({
+      selectedWorkflowId: TEMP_WORKFLOW_ID,
+      syncedGraphData: graphData,
+      isWorkflowLoading: true,
+      isWorkflowReady: false,
+      workflowLoadState: "loading",
+    });
+  });
+
+  it("reloads a selected workflow when the editor registers without a bridge identity", () => {
+    const originalLoadWorkflow = useGenerationStore.getState().loadWorkflow;
+    const loadWorkflow = vi.fn(async () => {});
+    useGenerationStore.setState({
+      selectedWorkflowId: TEMP_WORKFLOW_ID,
+      workflowInputs: makeInputs(),
+      preResolvedPromptEnabled: true,
+      iframeWorkflowInstanceId: null,
+      iframeWorkflowRevision: null,
+      loadWorkflow,
+    });
+
+    useGenerationStore.getState().registerEditor(makeReadyEditorRef());
+
+    expect(loadWorkflow).toHaveBeenCalledWith(TEMP_WORKFLOW_ID);
+    useGenerationStore.setState({ loadWorkflow: originalLoadWorkflow });
   });
 
   it("marks the workflow ready when no iframe is registered", async () => {

@@ -73,6 +73,37 @@ describe("sectionKeyframes", () => {
     expect(colorsByGroup.get("rotation")).toBe(getSectionGroupKeyframeColor(2));
   });
 
+  it("collects layout keyframes for the bundled Display section id", () => {
+    // The Adjust panel renders layout, fit mode and blend mode as one "Display"
+    // section, so the active section id names no definition of its own.
+    const clip: TimelineClip = {
+      ...baseClip,
+      transformations: [
+        {
+          id: "scale_1",
+          type: "scale",
+          isEnabled: true,
+          parameters: { x: 1, y: 1 },
+          keyframeTimes: [240],
+        },
+      ],
+    };
+
+    const markers = collectSectionKeyframes(
+      clip,
+      getDefaultSectionId("display"),
+    );
+
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({
+      groupId: "scale",
+      inputTime: 240,
+      // Layout leads the Display section, so its groups keep the same colors
+      // they had as a standalone section.
+      color: getSectionGroupKeyframeColor(1),
+    });
+  });
+
   it("collects keyframes for a dynamic section and uses the first group color", () => {
     const clip: TimelineClip = {
       ...baseClip,

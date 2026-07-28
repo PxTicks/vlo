@@ -2,11 +2,21 @@ import type {
   ClipTransform,
   TimelineClip,
 } from "../../../types/TimelineTypes";
+import type { TransformationDefinition } from "../catalogue/types";
 import {
   getDefaultTransforms,
   getEntryForTransform,
 } from "../catalogue/TransformationRegistry";
 import { clipSourceTimeToVisual } from "./clipTimeDomains";
+import { getDefaultTransformationSectionModels } from "./defaultSectionModels";
+import {
+  DEFAULT_SECTION_PREFIX,
+  DYNAMIC_SECTION_PREFIX,
+  getDefaultSectionId,
+  getDynamicSectionId,
+} from "./sectionIds";
+
+export { getDefaultSectionId, getDynamicSectionId };
 
 export const SECTION_GROUP_KEYFRAME_COLORS = [
   "#ffb000",
@@ -16,9 +26,6 @@ export const SECTION_GROUP_KEYFRAME_COLORS = [
   "#785ef0",
   "#fe6100",
 ] as const;
-
-const DEFAULT_SECTION_PREFIX = "default:";
-const DYNAMIC_SECTION_PREFIX = "dynamic:";
 
 interface ResolvedSectionGroup {
   groupId: string;
@@ -44,47 +51,68 @@ export function getSectionGroupKeyframeColor(index: number): string {
   return SECTION_GROUP_KEYFRAME_COLORS[normalizedIndex];
 }
 
-export function getDefaultSectionId(definitionType: string): string {
-  return `${DEFAULT_SECTION_PREFIX}${definitionType}`;
-}
+/**
+ * The definitions a default section renders, in panel order.
+ *
+ * Sections are not 1:1 with definitions: "Display" bundles layout, fit mode and
+ * blend mode, and "Audio" bundles volume with the audio effects, so their
+ * section ids ("default:display", "default:audio") name no definition at all.
+ * Resolve through the same section models the panel renders from, and fall back
+ * to a bare definition type for panels that address a definition's own section
+ * directly (the mask panel's standalone layout section).
+ */
+function resolveSectionDefinitions(
+  sectionType: string,
+): TransformationDefinition[] {
+  const definitions = getDefaultTransforms();
+  const sectionId = getDefaultSectionId(sectionType);
+  const section = getDefaultTransformationSectionModels(definitions).find(
+    (candidate) => candidate.sectionId === sectionId,
+  );
+  if (section) return section.definitions;
 
-export function getDynamicSectionId(transformId: string): string {
-  return `${DYNAMIC_SECTION_PREFIX}${transformId}`;
+  const definition = definitions.find((entry) => entry.type === sectionType);
+  return definition ? [definition] : [];
 }
 
 function resolveDefaultSectionGroups(
   clip: TimelineClip,
-  definitionType: string,
+  sectionType: string,
 ): ResolvedSectionGroup[] {
-  const definition = getDefaultTransforms().find(
-    (entry) => entry.type === definitionType,
-  );
-  if (!definition) return [];
+  const resolved: ResolvedSectionGroup[] = [];
+  // Group index runs across the whole section, matching the flattened order
+  // `DefaultTransformationSections` uses to colour each group's keyframe dot.
+  let groupIndex = 0;
 
-  return definition.uiConfig.groups.flatMap((group, groupIndex) => {
-    const transform = clip.transformations.find(
-      (candidate) => candidate.type === group.id,
-    );
-    if (!transform) return [];
-    if (
-      group.id === "position" &&
-      typeof transform.parameters === "object" &&
-      transform.parameters !== null &&
-      "path" in transform.parameters &&
-      transform.parameters.path
-    ) {
-      return [];
-    }
+  resolveSectionDefinitions(sectionType).forEach((definition) => {
+    definition.uiConfig.groups.forEach((group) => {
+      const currentGroupIndex = groupIndex;
+      groupIndex += 1;
 
-    return [
-      {
+      const transform = clip.transformations.find(
+        (candidate) => candidate.type === group.id,
+      );
+      if (!transform) return;
+      if (
+        group.id === "position" &&
+        typeof transform.parameters === "object" &&
+        transform.parameters !== null &&
+        "path" in transform.parameters &&
+        transform.parameters.path
+      ) {
+        return;
+      }
+
+      resolved.push({
         groupId: group.id,
-        groupIndex,
+        groupIndex: currentGroupIndex,
         transform,
-        color: getSectionGroupKeyframeColor(groupIndex),
-      },
-    ];
+        color: getSectionGroupKeyframeColor(currentGroupIndex),
+      });
+    });
   });
+
+  return resolved;
 }
 
 function resolveDynamicSectionGroups(

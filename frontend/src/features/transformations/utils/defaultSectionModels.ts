@@ -1,5 +1,5 @@
 import type { TransformationDefinition } from "../catalogue/types";
-import { getDefaultSectionId } from "./sectionKeyframes";
+import { getDefaultSectionId } from "./sectionIds";
 
 const DISPLAY_SECTION_TYPE = "display";
 // Layout (position/scale/rotation), Fit Mode and Blend Mode are unified into a

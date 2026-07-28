@@ -361,7 +361,7 @@ describe("brushBufferRegistry behavior", () => {
     expect(await extractBrushPng("extract")).toBeNull();
   });
 
-  it("hydrates metadata without a renderer and skips dirty or already-ready buffers", async () => {
+  it("retries PNG hydration after the renderer becomes available", async () => {
     const listener = vi.fn();
     subscribeToBrushBuffer("hydrate", listener);
     const bounds = { x: 1, y: 2, width: 3, height: 4 };
@@ -374,13 +374,35 @@ describe("brushBufferRegistry behavior", () => {
       "asset-1",
     );
     expect(buffer).toMatchObject({
-      paintedBounds: bounds,
+      paintedBounds: null,
       dirty: false,
-      sourceAssetId: "asset-1",
+      sourceAssetId: null,
     });
-    expect(listener).toHaveBeenCalled();
+    expect(
+      isBrushBufferReadyForSource(
+        "hydrate",
+        "asset-1",
+        10,
+        20,
+        bounds,
+      ),
+    ).toBe(false);
+    // Buffer creation notifies once, but the unavailable-renderer branch must
+    // not publish a false "hydrated" state.
+    expect(listener).toHaveBeenCalledTimes(1);
 
-    setBrushRenderer(renderer() as never);
+    const activeRenderer = renderer();
+    setBrushRenderer(activeRenderer as never);
+    class ImageMock {
+      crossOrigin = "";
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) {
+        this.onload?.();
+      }
+    }
+    vi.stubGlobal("Image", ImageMock);
+
     await hydrateBrushBufferFromUrl(
       "hydrate",
       "blob:mask",
@@ -389,7 +411,16 @@ describe("brushBufferRegistry behavior", () => {
       bounds,
       "asset-1",
     );
-    expect(mocks.textureFrom).not.toHaveBeenCalled();
+    expect(mocks.textureFrom).toHaveBeenCalled();
+    expect(activeRenderer.render).toHaveBeenCalled();
+    expect(buffer).toMatchObject({
+      paintedBounds: bounds,
+      dirty: false,
+      sourceAssetId: "asset-1",
+    });
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    mocks.textureFrom.mockClear();
     buffer.dirty = true;
     await hydrateBrushBufferFromUrl(
       "hydrate",

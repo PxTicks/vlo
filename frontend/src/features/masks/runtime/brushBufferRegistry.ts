@@ -509,10 +509,9 @@ export async function hydrateBrushBufferFromUrl(
   }
 
   if (!sharedRenderer) {
-    buffer.paintedBounds = bounds;
-    buffer.dirty = false;
-    buffer.sourceAssetId = sourceAssetId;
-    notify(maskId);
+    // The RenderTexture has not received the PNG yet, so it must not be marked
+    // ready for this asset. A later sync, once the renderer is connected, must
+    // retry hydration instead of binding a permanently empty mask buffer.
     return buffer;
   }
 

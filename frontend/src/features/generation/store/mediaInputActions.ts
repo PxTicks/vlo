@@ -115,6 +115,8 @@ export function buildMediaInputActions(
                 extractionRequestId: options?.extractionRequestId ?? 0,
                 preparedVideoFile: options?.preparedVideoFile ?? null,
                 preparedMaskFile: options?.preparedMaskFile ?? null,
+                preparedDerivedMaskSignature:
+                  options?.preparedDerivedMaskSignature ?? null,
                 extractionError: options?.extractionError ?? null,
               },
         ),

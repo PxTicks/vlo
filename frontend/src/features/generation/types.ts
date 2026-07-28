@@ -205,6 +205,7 @@ export interface GenerationVideoTimelineSelectionInputValue
   mediaType: "video";
   preparedVideoFile: File | null;
   preparedMaskFile: File | null;
+  preparedDerivedMaskSignature?: string | null;
 }
 
 export type GenerationTimelineSelectionInputValue =

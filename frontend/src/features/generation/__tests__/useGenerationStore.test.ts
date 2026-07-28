@@ -8,6 +8,7 @@ import {
   createDefaultWorkflowRules,
   type WorkflowRules,
 } from "../services/workflowRules";
+import { buildDerivedMaskRenderSignature } from "../utils/derivedMaskRenderSignature";
 import { useProjectStore } from "../../project";
 
 const { mockGetRuntimeStatus } = vi.hoisted(() => ({
@@ -892,6 +893,11 @@ describe("useGenerationStore workflow rules", () => {
         },
         preparedVideoFile,
         preparedMaskFile,
+        preparedDerivedMaskSignature: buildDerivedMaskRenderSignature([
+          {
+            maskType: "binary",
+          },
+        ]),
       },
     });
 

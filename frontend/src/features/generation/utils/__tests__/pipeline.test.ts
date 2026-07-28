@@ -8,6 +8,7 @@ import { useProjectStore } from "../../../project";
 import * as inputSelection from "../../utils/inputSelection";
 import * as mediaUtils from "../../pipeline/utils/media";
 import { buildGenerationFamilyAutoMatchKey } from "../familyAssignment";
+import { buildDerivedMaskRenderSignature } from "../derivedMaskRenderSignature";
 
 const {
   mockAddLocalAsset,
@@ -419,6 +420,14 @@ describe("generation pipeline", () => {
     const preparedMaskFile = new File(["mask"], "prepared-mask.mp4", {
       type: "video/mp4",
     });
+    const derivedMaskMappings = [
+      {
+        sourceNodeId: "video_input",
+        maskNodeId: "mask_input",
+        maskParam: "file",
+        maskType: "binary" as const,
+      },
+    ];
 
     const request = await frontendPreprocess(
       {},
@@ -445,22 +454,118 @@ describe("generation pipeline", () => {
           },
           preparedVideoFile,
           preparedMaskFile,
+          preparedDerivedMaskSignature:
+            buildDerivedMaskRenderSignature(derivedMaskMappings),
         },
       },
       "client-id",
-      [
-        {
-          sourceNodeId: "video_input",
-          maskNodeId: "mask_input",
-          maskParam: "file",
-          maskType: "binary",
-        },
-      ],
+      derivedMaskMappings,
     );
 
     expect(renderSpy).not.toHaveBeenCalled();
     expect(request.videoInputs.video_input).toBe(preparedVideoFile);
     expect(request.videoInputs.mask_input).toBe(preparedMaskFile);
+  });
+
+  it("re-renders a stale filtered source pair for TTM full-selection replay", async () => {
+    const renderedVideo = new File(["full-video"], "full-selection.mp4", {
+      type: "video/mp4",
+    });
+    const renderedMask = new File(["mask"], "included-tracks-mask.mp4", {
+      type: "video/mp4",
+    });
+    const renderSpy = vi
+      .spyOn(inputSelection, "renderTimelineSelectionToMp4WithDerivedMasks")
+      .mockResolvedValue({
+        video: renderedVideo,
+        masks: { video_binary: renderedMask },
+        maskContentByKey: { video_binary: true },
+      });
+    const staleFilteredVideo = new File(
+      ["filtered-video"],
+      "filtered-selection.mp4",
+      { type: "video/mp4" },
+    );
+    const staleMask = new File(["mask"], "stale-mask.mp4", {
+      type: "video/mp4",
+    });
+    const ttmMappings = [
+      {
+        sourceNodeId: "video_input",
+        maskNodeId: "mask_input",
+        maskParam: "file",
+        maskType: "binary" as const,
+        purpose: "video" as const,
+        sourceSelection: "full_selection" as const,
+        maskSelection: "input_selection" as const,
+        sourceVideoTreatment: "preserve_transparency" as const,
+      },
+    ];
+
+    const request = await frontendPreprocess(
+      {},
+      "vlo_wan_ttm.json",
+      [
+        {
+          nodeId: "video_input",
+          classType: "LoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Source video",
+          currentValue: null,
+          origin: "rule",
+        },
+      ],
+      {
+        video_input: {
+          type: "video_selection",
+          selection: {
+            start: 0,
+            end: 24,
+            clips: [],
+            tracks: [
+              {
+                id: "moving-object",
+                type: "visual",
+                label: "Moving object",
+                isVisible: true,
+                isMuted: false,
+                isLocked: false,
+              },
+              {
+                id: "background",
+                type: "visual",
+                label: "Background",
+                isVisible: true,
+                isMuted: false,
+                isLocked: false,
+              },
+            ],
+            includedTrackIds: ["moving-object"],
+            fps: 24,
+          },
+          preparedVideoFile: staleFilteredVideo,
+          preparedMaskFile: staleMask,
+          preparedDerivedMaskSignature: null,
+        },
+      },
+      "client-id",
+      ttmMappings,
+    );
+
+    expect(renderSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includedTrackIds: ["moving-object"],
+      }),
+      ttmMappings,
+      {
+        preparedMaskFile: undefined,
+        preparedVideoFile: undefined,
+        signal: undefined,
+      },
+    );
+    expect(request.videoInputs.video_input).toBe(renderedVideo);
+    expect(request.videoInputs.mask_input).toBe(renderedMask);
   });
 
   it("routes audio-timing derived masks to their own hidden video inputs", async () => {
@@ -738,6 +843,12 @@ describe("generation pipeline", () => {
           },
           preparedVideoFile,
           preparedMaskFile,
+          preparedDerivedMaskSignature: buildDerivedMaskRenderSignature([
+            {
+              maskType: "binary",
+              optional: true,
+            },
+          ]),
         },
       },
       "client-id",

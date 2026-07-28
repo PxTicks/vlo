@@ -102,6 +102,40 @@ describe("ImageMaskSource", () => {
     expect(onFrameReady).toHaveBeenCalledOnce();
   });
 
+  it("coalesces repeated source syncs while the image is loading", async () => {
+    let resolveHydration: ((asset: Asset) => void) | undefined;
+    mocks.ensureAssetSourceLoaded.mockReturnValue(
+      new Promise<Asset>((resolve) => {
+        resolveHydration = resolve;
+      }),
+    );
+    const source = new ImageMaskSource();
+    const asset = createAsset();
+
+    const firstLoad = source.setSource(asset);
+    const repeatedLoad = source.setSource(asset);
+
+    expect(mocks.ensureAssetSourceLoaded).toHaveBeenCalledOnce();
+    resolveHydration?.(createAsset({ src: "blob:hydrated-mask" }));
+    await Promise.all([firstLoad, repeatedLoad]);
+
+    expect(mocks.textureFrom).toHaveBeenCalledOnce();
+    expect(source.hasFrame()).toBe(true);
+  });
+
+  it("restores sprite visibility when an existing source becomes active again", async () => {
+    const source = new ImageMaskSource();
+    const asset = createAsset();
+    await source.setSource(asset);
+    source.sprite.visible = false;
+
+    await source.setSource(asset);
+
+    expect(source.sprite.visible).toBe(true);
+    expect(mocks.ensureAssetSourceLoaded).toHaveBeenCalledOnce();
+    expect(mocks.textureFrom).toHaveBeenCalledOnce();
+  });
+
   it("reconstructs cropped brush PNGs in canvas coordinates", async () => {
     const drawImage = vi.fn();
     const fillRect = vi.fn();

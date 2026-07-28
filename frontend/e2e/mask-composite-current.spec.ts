@@ -1,4 +1,5 @@
 import {
+    assetIndexDocumentSchema,
     compositeLibraryDocumentSchema,
     timelineDocumentSchema,
 } from '../src/features/project/schemas/projectPersistenceSchemas';
@@ -19,6 +20,7 @@ const MASK_CLIP_ID =
 const COMPOSITE_ID = 'composite_effce8c8-0ef9-4e17-8482-df81b50744d8';
 const COMPOSITE_PLACEMENT_ID = 'clip_6301d796-0663-4254-9462-a0848e62357d';
 const COMPOSITE_INNER_CLIP_ID = 'clip_0930e057-3b5e-41b2-8ebe-3846a163e0a8';
+const IMAGE_ASSET_ID = '5e0b23a4-62df-4b3b-9ad9-da1c79bb970c';
 
 function readTimeline(editor: EditorComponent) {
     return timelineDocumentSchema.parse(editor.fileSystem.readJson(TIMELINE_PATH));
@@ -27,6 +29,28 @@ function readTimeline(editor: EditorComponent) {
 function readComposites(editor: EditorComponent) {
     return compositeLibraryDocumentSchema.parse(
         editor.fileSystem.readJson('.vloproject/composites.json'),
+    );
+}
+
+async function writeProjectJson(
+    editor: EditorComponent,
+    path: string,
+    value: unknown,
+) {
+    await editor.page.evaluate(
+        async ({ filePath, document }) => {
+            const response = await fetch(`/__mock-fs/${filePath}`, {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: `${JSON.stringify(document, null, 2)}\n`,
+            });
+            if (!response.ok) {
+                throw new Error(
+                    `Failed to write ${filePath}: ${response.status}`,
+                );
+            }
+        },
+        { filePath: path, document: value },
     );
 }
 
@@ -68,6 +92,71 @@ async function waitForTimelinePersistenceIdle(editor: EditorComponent) {
 }
 
 test.describe('Current-project masks and composites', () => {
+    test('restores a persisted brush mask after scrubbing away from its clip', async ({
+        editorWithMasks,
+    }) => {
+        test.setTimeout(120_000);
+        const editor = editorWithMasks;
+        const { page, timeline } = editor;
+        const timelineDocument = readTimeline(editor);
+        const assetsDocument = assetIndexDocumentSchema.parse(
+            editor.fileSystem.readJson('.vloproject/assets.json'),
+        );
+        const imageAsset = assetsDocument.assets[IMAGE_ASSET_ID];
+        expect(imageAsset).toBeTruthy();
+
+        timelineDocument.clips = timelineDocument.clips.map((clip) => {
+            if (clip.id !== MASK_CLIP_ID || clip.type !== 'mask') {
+                return clip;
+            }
+            return {
+                ...clip,
+                maskType: 'brush' as const,
+                maskParameters: {
+                    baseWidth: 2752,
+                    baseHeight: 1536,
+                },
+                brushMaskAssetId: IMAGE_ASSET_ID,
+                brushPaintedBounds: {
+                    x: 0,
+                    y: 0,
+                    width: 2752,
+                    height: 1536,
+                },
+                generationMaskAssetId: undefined,
+            };
+        });
+        await writeProjectJson(editor, TIMELINE_PATH, timelineDocument);
+        await editor.reopenProject();
+
+        const maskFailures: string[] = [];
+        page.on('console', (message) => {
+            const text = message.text();
+            if (
+                /image mask source failed|failed to load image mask|failed to fetch/i.test(
+                    text,
+                )
+            ) {
+                maskFailures.push(text);
+            }
+        });
+
+        const canvas = editor.player.canvasContainer.locator('canvas').first();
+        await timeline.seekToTick(180_000);
+        await page.waitForTimeout(500);
+        const initialMaskedFrame = await canvas.screenshot();
+
+        await timeline.seekToTick(480_000);
+        await timeline.seekToTick(180_000);
+        await page.waitForTimeout(500);
+        expect(maskFailures).toEqual([]);
+        await expect
+            .poll(async () => (await canvas.screenshot()).equals(initialMaskedFrame), {
+                timeout: 10_000,
+            })
+            .toBe(true);
+    });
+
     test('retimes a masked clip, persists composition, then deletes the mask', async ({
         editorWithMasks,
     }) => {

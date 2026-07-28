@@ -28,6 +28,12 @@ export class ImageMaskSource {
   private geometryContext: ImageMaskGeometryContext | null = null;
   private geometrySignature = "";
   private texture: Texture | null = null;
+  private pendingLoad:
+    | {
+        key: string;
+        promise: Promise<void>;
+      }
+    | null = null;
   private loadGeneration = 0;
   private disposed = false;
 
@@ -63,7 +69,13 @@ export class ImageMaskSource {
   public async setSource(asset: Asset): Promise<void> {
     if (this.disposed) return;
     if (this.currentAssetId === asset.id && this.texture) {
+      this.sprite.visible = true;
       return;
+    }
+
+    const loadKey = `${asset.id}:${this.geometrySignature}`;
+    if (this.pendingLoad?.key === loadKey) {
+      return this.pendingLoad.promise;
     }
 
     if (this.currentAssetId !== asset.id) {
@@ -73,6 +85,18 @@ export class ImageMaskSource {
     }
     this.currentAssetId = asset.id;
     const generation = ++this.loadGeneration;
+    const promise = this.loadSource(asset, generation);
+    this.pendingLoad = { key: loadKey, promise };
+    try {
+      await promise;
+    } finally {
+      if (this.pendingLoad?.promise === promise) {
+        this.pendingLoad = null;
+      }
+    }
+  }
+
+  private async loadSource(asset: Asset, generation: number): Promise<void> {
     const hydratedAsset = await ensureAssetSourceLoaded(asset.id);
     if (!this.isLoadCurrent(asset.id, generation)) {
       return;

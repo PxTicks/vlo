@@ -45,6 +45,18 @@ describe("Wave 3 host menu subjects", () => {
       },
     ],
     [
+      "library.composite.actions",
+      {
+        slot: "library.composite.actions",
+        composite: {
+          id: "composite-1",
+          name: "Opening scene",
+          durationTicks: 240_000,
+          bakeStatus: "ready",
+        },
+      },
+    ],
+    [
       "app.settings",
       {
         slot: "app.settings",

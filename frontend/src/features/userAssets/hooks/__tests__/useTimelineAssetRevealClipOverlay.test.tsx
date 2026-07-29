@@ -159,6 +159,18 @@ describe("useTimelineAssetRevealClipOverlay", () => {
     expect(result.current).toEqual([]);
   });
 
+  it("leaves composite placements to the composite reveal overlay", () => {
+    const { result } = renderHook(() =>
+      useOverlayItems({
+        ...baseClip,
+        assetId: "asset-1",
+        compositeId: "composite-1",
+      }),
+    );
+
+    expect(result.current).toEqual([]);
+  });
+
   it("renders only the shifted reveal icon when the clip asset has no family siblings", () => {
     useAssetStore.setState({
       assets: [{ ...familyAssets[0], familyId: undefined }],

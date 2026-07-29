@@ -3,7 +3,10 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import { isAssetBackedClip } from "../../../types/TimelineTypes";
+import {
+  isAssetBackedClip,
+  isCompositeClip,
+} from "../../../types/TimelineTypes";
 import {
   createEndpointOverlayItem,
   type TimelineClipOverlayDefinition,
@@ -42,7 +45,10 @@ function useAssetRevealOverlayItems({
   const assets = useAssetStore((state) => state.assets);
   const families = useAssetStore((state) => state.families);
 
-  if (!isAssetBackedClip(clip)) {
+  // Composite placements are asset-backed by their bake, but the user-facing
+  // library item is the composite itself rather than that implementation
+  // asset. The composite overlay owns their reveal action.
+  if (!isAssetBackedClip(clip) || isCompositeClip(clip)) {
     return [];
   }
   const assetId = clip.assetId;

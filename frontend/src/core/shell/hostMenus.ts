@@ -83,6 +83,15 @@ export interface HostMenuSubjectMap {
     readonly slot: "library.item.actions";
     readonly asset: ExtensionEntityAssetSnapshot;
   };
+  readonly "library.composite.actions": {
+    readonly slot: "library.composite.actions";
+    readonly composite: {
+      readonly id: string;
+      readonly name: string;
+      readonly durationTicks: number;
+      readonly bakeStatus: string;
+    };
+  };
   readonly "library.sort.options": {
     readonly slot: "library.sort.options";
     readonly browser: {
@@ -268,6 +277,20 @@ function validateLibraryItemSubject(subject: unknown): boolean {
   return isRecord(asset) && hasStringFields(asset, ["id", "name", "type"]);
 }
 
+/** Subject: `{ slot, composite: detached composite library item }`. */
+function validateLibraryCompositeSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "library.composite.actions") {
+    return false;
+  }
+  const composite = subject.composite;
+  return (
+    isRecord(composite) &&
+    hasStringFields(composite, ["id", "name", "bakeStatus"]) &&
+    typeof composite.durationTicks === "number" &&
+    Number.isFinite(composite.durationTicks)
+  );
+}
+
 /** Subject: `{ slot, browser: { sortOption } }`. */
 function validateLibrarySortSubject(subject: unknown): boolean {
   if (!isRecord(subject) || subject.slot !== "library.sort.options") {
@@ -360,6 +383,7 @@ const HOST_MENU_SUBJECT_VALIDATORS = {
   "generation.generate.options": validateGenerateOptionsSubject,
   "app.view.select": validateViewSelectSubject,
   "library.item.actions": validateLibraryItemSubject,
+  "library.composite.actions": validateLibraryCompositeSubject,
   "library.sort.options": validateLibrarySortSubject,
   "library.browser.context": validateLibraryBrowserSubject,
   "player.canvas.context": validatePlayerCanvasSubject,
@@ -425,6 +449,15 @@ const HOST_MENU_SUBJECT_SCHEMAS = {
   "library.item.actions": {
     slot: "'library.item.actions'",
     asset: { id: "string", name: "string", type: "string" },
+  },
+  "library.composite.actions": {
+    slot: "'library.composite.actions'",
+    composite: {
+      id: "string",
+      name: "string",
+      durationTicks: "number",
+      bakeStatus: "string",
+    },
   },
   "library.sort.options": {
     slot: "'library.sort.options'",

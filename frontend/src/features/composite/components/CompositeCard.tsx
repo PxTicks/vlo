@@ -1,8 +1,15 @@
-import { memo, type MouseEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useState,
+  type MouseEvent,
+} from "react";
 import { useDraggable } from "@dnd-kit/core";
 import {
   Box,
   IconButton,
+  Paper,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -11,6 +18,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutline";
 import AddToTimelineIcon from "@mui/icons-material/PlaylistAdd";
 import LayersIcon from "@mui/icons-material/Layers";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SensorsIcon from "@mui/icons-material/Sensors";
 import { styled } from "@mui/material/styles";
@@ -24,6 +32,9 @@ import {
   useCompositeBakeRuntimeStatus,
   useIsCompositeForceLive,
 } from "../useCompositeRenderStatusStore";
+import { AppMenu } from "../../../core/shell/AppMenu";
+import type { HostMenuSubject } from "../../../core/shell/hostMenus";
+import type { HostMenuItemDescriptor } from "../../../core/shell/menuDescriptors";
 
 interface CompositeCardProps {
   composite: CompositeAsset;
@@ -36,44 +47,38 @@ interface CompositeCardProps {
   onPlaceOnTimeline: () => void;
 }
 
-const CardRoot = styled("div")({
+const CardRoot = styled(Paper)({
   position: "relative",
-  minHeight: 158,
-  borderRadius: 10,
+  width: "100%",
   overflow: "hidden",
-  background:
-    "linear-gradient(145deg, rgba(39, 28, 70, 0.92), rgba(16, 18, 27, 0.96))",
-  border: "1px solid rgba(255, 255, 255, 0.1)",
-  color: "#f8fafc",
+  backgroundColor: "#252525",
+  color: "white",
   cursor: "grab",
-  boxShadow: "0 10px 24px rgba(0, 0, 0, 0.24)",
-  transition: "border-color 0.14s ease, transform 0.14s ease",
+  transition: "transform 0.1s, box-shadow 0.1s, outline-color 0.1s",
   "&:hover": {
-    borderColor: "rgba(167, 139, 250, 0.72)",
-    transform: "translateY(-1px)",
+    transform: "scale(1.02)",
   },
 });
 
 const PreviewArea = styled("div")({
-  height: 86,
+  height: 80,
   position: "relative",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background:
-    "radial-gradient(circle at 20% 25%, rgba(167, 139, 250, 0.35), transparent 32%), linear-gradient(135deg, rgba(76, 29, 149, 0.38), rgba(15, 23, 42, 0.86))",
+  backgroundColor: "#000",
 });
 
-const ActionRail = styled("div")({
+const CardActionButton = styled(IconButton)({
   position: "absolute",
-  top: 6,
-  right: 6,
-  display: "flex",
-  gap: 4,
+  top: 4,
   padding: 4,
-  borderRadius: 999,
-  backgroundColor: "rgba(0, 0, 0, 0.38)",
-  backdropFilter: "blur(6px)",
+  zIndex: 10,
+  color: "white",
+  backgroundColor: "rgba(0, 0, 0, 0.5)",
+  "&:hover": {
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+  },
 });
 
 function CompositeCardComponent({
@@ -92,6 +97,24 @@ function CompositeCardComponent({
   );
   const runtimeBake = useCompositeBakeRuntimeStatus(composite.id);
   const forceLive = useIsCompositeForceLive(composite.id);
+  const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
+  const menuSubject = useMemo<HostMenuSubject<"library.composite.actions">>(
+    () => ({
+      slot: "library.composite.actions",
+      composite: {
+        id: composite.id,
+        name: composite.name,
+        durationTicks: composite.content.durationTicks,
+        bakeStatus: composite.bake?.status ?? "live_only",
+      },
+    }),
+    [
+      composite.bake?.status,
+      composite.content.durationTicks,
+      composite.id,
+      composite.name,
+    ],
+  );
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `composite-asset-${composite.id}`,
     data: {
@@ -102,160 +125,192 @@ function CompositeCardComponent({
     disabled: disableDrag,
   });
 
-  const stopAction = (event: MouseEvent) => {
+  const stopAction = useCallback((event: MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
-  };
+  }, []);
+
+  const handleOpenMenu = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      stopAction(event);
+      setMenuAnchorEl(event.currentTarget);
+    },
+    [stopAction],
+  );
+
+  const handleCloseMenu = useCallback(() => {
+    setMenuAnchorEl(null);
+  }, []);
+
+  const menuItems: HostMenuItemDescriptor[] = [
+    {
+      kind: "action",
+      id: "edit",
+      label: "Edit composite",
+      icon: <EditIcon fontSize="small" />,
+      group: "1_composite",
+      run: onOpen,
+    },
+    {
+      kind: "action",
+      id: "place-on-timeline",
+      label: "Place on timeline",
+      icon: <AddToTimelineIcon fontSize="small" />,
+      group: "1_composite",
+      run: onPlaceOnTimeline,
+    },
+    {
+      kind: "action",
+      id: "rename",
+      label: "Rename",
+      icon: <DriveFileRenameOutlineIcon fontSize="small" />,
+      group: "1_composite",
+      run: onRename,
+    },
+    ...(composite.bake?.status === "failed"
+      ? [
+          {
+            kind: "action",
+            id: "retry-bake",
+            label: "Retry background bake",
+            icon: <RefreshIcon fontSize="small" />,
+            group: "1_composite",
+            run: () => {
+              void retryCompositeBake(composite.id);
+            },
+          } satisfies HostMenuItemDescriptor,
+        ]
+      : []),
+    {
+      kind: "action",
+      id: "delete",
+      label: "Delete",
+      icon: <DeleteOutlineIcon fontSize="small" color="error" />,
+      group: "1_composite",
+      run: onDelete,
+    },
+  ];
 
   return (
-    <CardRoot
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      data-testid="composite-card"
-      data-composite-id={composite.id}
-      data-selected={isSelected ? "true" : "false"}
-      onClick={onSelect}
-      style={{
-        opacity: isDragging ? 0.55 : 1,
-        outline: isSelected ? "2px solid #fff" : "2px solid transparent",
-        outlineOffset: "-2px",
-        cursor: disableDrag ? "default" : "grab",
-      }}
-    >
-      <PreviewArea>
-        {bakedAsset?.thumbnail || bakedAsset?.src ? (
-          <img
-            src={bakedAsset.thumbnail || bakedAsset.src}
-            alt=""
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              opacity: 0.78,
-            }}
-          />
-        ) : (
-          <LayersIcon sx={{ fontSize: 34, color: "#ddd6fe" }} />
-        )}
-        <ActionRail>
-          <Tooltip title="Edit composite">
-            <IconButton
-              size="small"
-              aria-label="Edit composite"
-              onMouseDown={stopAction}
-              onClick={(event) => {
-                stopAction(event);
-                onOpen();
+    <>
+      <CardRoot
+        ref={setNodeRef}
+        {...attributes}
+        {...listeners}
+        elevation={2}
+        data-testid="composite-card"
+        data-composite-id={composite.id}
+        data-selected={isSelected ? "true" : "false"}
+        onClick={onSelect}
+        style={{
+          opacity: isDragging ? 0.55 : 1,
+          outline: isSelected ? "2px solid #4dabf5" : "2px solid transparent",
+          outlineOffset: "-2px",
+          boxShadow: isSelected
+            ? "0 0 0 1px rgba(77, 171, 245, 0.35)"
+            : "none",
+          cursor: disableDrag ? "pointer" : "grab",
+        }}
+      >
+        <PreviewArea>
+          {bakedAsset?.thumbnail || bakedAsset?.src ? (
+            <img
+              src={bakedAsset.thumbnail || bakedAsset.src}
+              alt={composite.name}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
               }}
-              sx={{ color: "#fff" }}
-            >
-              <EditIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Place on timeline">
-            <IconButton
-              size="small"
-              aria-label="Place composite on timeline"
-              onMouseDown={stopAction}
-              onClick={(event) => {
-                stopAction(event);
-                onPlaceOnTimeline();
-              }}
-              sx={{ color: "#fff" }}
-            >
-              <AddToTimelineIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </ActionRail>
-      </PreviewArea>
-      <Box sx={{ p: 1.1, display: "flex", flexDirection: "column", gap: 0.6 }}>
-        <Typography variant="subtitle2" noWrap title={composite.name}>
-          {composite.name}
-        </Typography>
-        <Typography variant="caption" sx={{ color: "#c4b5fd" }}>
-          {tickToMediaSeconds(composite.content.durationTicks).toFixed(2)}s
-        </Typography>
-        <Typography
-          variant="caption"
-          data-testid="composite-bake-status"
-          sx={{ color: composite.bake?.status === "failed" ? "#fecaca" : "#aeb4bd" }}
-          noWrap
-          title={composite.bake?.error}
+            />
+          ) : (
+            <LayersIcon sx={{ fontSize: 40, color: "#888" }} />
+          )}
+        </PreviewArea>
+
+        <Tooltip
+          title={forceLive ? "Use automatic source policy" : "Force live rendering"}
         >
-          {runtimeBake?.status === "rendering"
-            ? `Baking ${Math.round(runtimeBake.progress)}%`
-            : runtimeBake?.status === "queued"
-              ? "Bake queued"
-              : composite.bake?.status === "failed"
-                ? `Bake failed: ${composite.bake.error ?? "Retry available"}`
-                : composite.bake?.status === "ready"
-                  ? "Bake ready"
-                  : "Live only"}
-        </Typography>
-        <Box sx={{ display: "flex", gap: 0.5, justifyContent: "flex-end" }}>
-          {composite.bake?.status === "failed" ? (
-            <Tooltip title="Retry background bake">
-              <IconButton
-                size="small"
-                aria-label="Retry background bake"
-                onMouseDown={stopAction}
-                onClick={(event) => {
-                  stopAction(event);
-                  void retryCompositeBake(composite.id);
-                }}
-                sx={{ color: "#fecaca" }}
-              >
-                <RefreshIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          ) : null}
-          <Tooltip title={forceLive ? "Use automatic source policy" : "Force live rendering"}>
-            <IconButton
-              size="small"
-              aria-label={forceLive ? "Use automatic source policy" : "Force live rendering"}
-              aria-pressed={forceLive}
-              onMouseDown={stopAction}
-              onClick={(event) => {
-                stopAction(event);
-                setCompositeForceLive(composite.id, !forceLive);
-              }}
-              sx={{ color: forceLive ? "#86efac" : "#cbd5e1" }}
-            >
-              <SensorsIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Rename">
-            <IconButton
-              size="small"
-              aria-label="Rename composite"
-              onMouseDown={stopAction}
-              onClick={(event) => {
-                stopAction(event);
-                onRename();
-              }}
-              sx={{ color: "#cbd5e1" }}
-            >
-              <DriveFileRenameOutlineIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Delete">
-            <IconButton
-              size="small"
-              aria-label="Delete composite"
-              onMouseDown={stopAction}
-              onClick={(event) => {
-                stopAction(event);
-                onDelete();
-              }}
-              sx={{ color: "#fecaca" }}
-            >
-              <DeleteOutlineIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <CardActionButton
+            size="small"
+            aria-label={
+              forceLive ? "Use automatic source policy" : "Force live rendering"
+            }
+            aria-pressed={forceLive}
+            onMouseDown={stopAction}
+            onClick={(event) => {
+              stopAction(event);
+              setCompositeForceLive(composite.id, !forceLive);
+            }}
+            sx={{ left: 4, color: forceLive ? "#86efac" : "white" }}
+          >
+            <SensorsIcon fontSize="small" />
+          </CardActionButton>
+        </Tooltip>
+
+        <CardActionButton
+          size="small"
+          aria-label="Composite actions"
+          title="Composite actions"
+          aria-haspopup="menu"
+          aria-expanded={menuAnchorEl ? "true" : undefined}
+          onMouseDown={stopAction}
+          onClick={handleOpenMenu}
+          sx={{ right: 4 }}
+        >
+          <MoreVertIcon fontSize="small" />
+        </CardActionButton>
+
+        <Box sx={{ p: 1 }}>
+          <Typography
+            variant="caption"
+            noWrap
+            display="block"
+            sx={{ fontWeight: 500 }}
+            title={composite.name}
+            data-testid="composite-card-name"
+          >
+            {composite.name}
+          </Typography>
+          <Typography
+            variant="caption"
+            data-testid="composite-bake-status"
+            display="block"
+            noWrap
+            title={composite.bake?.error}
+            sx={{
+              fontSize: "0.65rem",
+              color: composite.bake?.status === "failed" ? "#fecaca" : "#aaa",
+            }}
+          >
+            {tickToMediaSeconds(composite.content.durationTicks).toFixed(2)}s
+            {" · "}
+            {runtimeBake?.status === "rendering"
+              ? `Baking ${Math.round(runtimeBake.progress)}%`
+              : runtimeBake?.status === "queued"
+                ? "Bake queued"
+                : composite.bake?.status === "failed"
+                  ? `Bake failed: ${composite.bake.error ?? "Retry available"}`
+                  : composite.bake?.status === "ready"
+                    ? "Bake ready"
+                    : "Live only"}
+          </Typography>
         </Box>
-      </Box>
-    </CardRoot>
+      </CardRoot>
+
+      <AppMenu
+        menuId="library.composite.actions"
+        subject={menuSubject}
+        items={menuItems}
+        open={Boolean(menuAnchorEl)}
+        anchorEl={menuAnchorEl}
+        onClose={handleCloseMenu}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        onClick={(event) => event.stopPropagation()}
+        extensionItemTestIdPrefix="extension-composite-menu-item-"
+      />
+    </>
   );
 }
 

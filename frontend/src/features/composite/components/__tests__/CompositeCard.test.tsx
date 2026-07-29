@@ -85,9 +85,11 @@ describe("CompositeCard", () => {
     );
     const card = screen.getByTestId("composite-card");
     expect(card).toHaveAttribute("data-selected", "true");
-    expect(card).toHaveStyle({ cursor: "default", opacity: "1" });
+    expect(card).toHaveStyle({ cursor: "pointer", opacity: "1" });
     expect(screen.getByText("Opening scene")).toBeInTheDocument();
-    expect(screen.getByText("2.50s")).toBeInTheDocument();
+    expect(screen.getByTestId("composite-bake-status")).toHaveTextContent(
+      "2.50s · Live only",
+    );
   });
 
   it("renders a thumbnail and dragging state", () => {
@@ -133,13 +135,16 @@ describe("CompositeCard", () => {
 
     for (const [name, handler] of [
       ["Edit composite", handlers.onOpen],
-      ["Place composite on timeline", handlers.onPlaceOnTimeline],
-      ["Rename composite", handlers.onRename],
-      ["Delete composite", handlers.onDelete],
+      ["Place on timeline", handlers.onPlaceOnTimeline],
+      ["Rename", handlers.onRename],
+      ["Delete", handlers.onDelete],
     ] as const) {
-      const button = screen.getByRole("button", { name });
-      fireEvent.mouseDown(button);
-      fireEvent.click(button);
+      const menuButton = screen.getByRole("button", {
+        name: "Composite actions",
+      });
+      fireEvent.mouseDown(menuButton);
+      fireEvent.click(menuButton);
+      fireEvent.click(screen.getByRole("menuitem", { name }));
       expect(handler).toHaveBeenCalledOnce();
     }
     expect(handlers.onSelect).toHaveBeenCalledOnce();
@@ -169,7 +174,10 @@ describe("CompositeCard", () => {
     expect(screen.getByTestId("composite-bake-status")).toHaveTextContent(
       "Bake failed: encoder failed",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Retry background bake" }));
+    fireEvent.click(screen.getByRole("button", { name: "Composite actions" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Retry background bake" }),
+    );
     expect(retryCompositeBake).toHaveBeenCalledWith(failed.id);
 
     const forceLive = screen.getByRole("button", { name: "Force live rendering" });

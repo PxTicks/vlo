@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { hostViewRegistry } from "../../core/shell/viewRegistry";
 import type {
   CompositeAsset,
   CompositeContent,
@@ -812,6 +813,7 @@ export function getCompositeAssetById(
 }
 
 export function revealCompositeInBrowser(compositeAssetId: string): void {
+  hostViewRegistry.select("left-sidebar", "host.composite");
   useCompositeLibraryStore
     .getState()
     .revealCompositeInBrowser(compositeAssetId);

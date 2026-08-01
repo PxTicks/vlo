@@ -18,6 +18,8 @@ import { FrameJobResolver } from "./FrameJobResolver";
 import { buildFrameResolutionGraph } from "./FrameResolutionGraph";
 import { buildScenePresentationPlan } from "./ScenePresentationPlanner";
 import type {
+  FrameExecutionPolicy,
+  FramePlanningDiagnostics,
   ResolvedClipFrameJob,
   ScenePresentationPlan,
 } from "./framePlanningTypes";
@@ -40,6 +42,8 @@ export interface LiveFrameGraphParticipant {
 export interface LiveFrameGraphRenderOptions {
   fps: number;
   logicalDimensions: { width: number; height: number };
+  /** Physical output demand for live materialised scope results. */
+  outputDimensions?: { width: number; height: number };
   visualTrackOrder: readonly string[];
   adjustmentEffectResolver: AdjustmentEffectResolver;
   tracks?: readonly TimelineTrack[];
@@ -79,6 +83,10 @@ export interface LiveFrameGraphCoordinatorOptions {
   onCompositeSceneRendered?: (
     job: ResolvedClipFrameJob,
     texture: Texture,
+  ) => void;
+  onDiagnostics?: (
+    diagnostics: FramePlanningDiagnostics,
+    policy: FrameExecutionPolicy,
   ) => void;
 }
 
@@ -120,6 +128,9 @@ export class LiveFrameGraphCoordinator {
           );
         }),
       onCompositeSceneRendered: options.onCompositeSceneRendered,
+      ...(options.onDiagnostics
+        ? { onDiagnostics: options.onDiagnostics }
+        : {}),
     });
   }
 
@@ -317,6 +328,9 @@ export class LiveFrameGraphCoordinator {
         render,
         temporalPreviewQuality:
           options.temporalPreviewQuality ?? "exact",
+        ...(options.outputDimensions
+          ? { outputDimensions: options.outputDimensions }
+          : {}),
       });
       if (epoch !== this.epoch || this.disposed) {
         return null;

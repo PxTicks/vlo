@@ -400,6 +400,9 @@ export class MaskVideoFramePlayer {
           error instanceof Error &&
           error.name === "TimeoutError"
         ) {
+          // A timed-out prepare cannot remain eligible for `pending` reuse:
+          // there may never be a ready reply to settle a later caller.
+          this.lease.disposeSource(this.clipId);
           const shouldRecover = this.recordDecoderTimeout();
           if (
             !shouldRecover ||
@@ -465,13 +468,20 @@ export class MaskVideoFramePlayer {
       timeoutMs: MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS,
     });
 
-    this.lease.prepare({
+    const prepareResult = this.lease.prepare({
       url: asset.src,
       clipId: this.clipId,
       kind: "mask_video",
       file: asset.file,
       ...(diagnostics ? { diagnostics } : {}),
     });
+    if (prepareResult === "reused") {
+      this.resolvePendingPrepare();
+    } else if (prepareResult === "ignored") {
+      this.rejectPendingPrepare(
+        new Error("Mask decoder source preparation was ignored"),
+      );
+    }
   }
 
   private resolvePendingPrepare(): void {

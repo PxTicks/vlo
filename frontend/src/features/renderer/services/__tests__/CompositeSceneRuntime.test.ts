@@ -7,6 +7,7 @@ import { CompositeSceneRuntimeManager } from "../CompositeSceneRuntime";
 import { TemporalRenderCoordinator } from "../TemporalRenderCoordinator";
 import { BatchFrameGraphExecutor } from "../framePlanning/BatchFrameGraphExecutor";
 import type { ResolvedCompositeSource } from "../framePlanning";
+import type { DecoderWorkerPool } from "../DecoderWorkerPool";
 
 const userAssetMocks = vi.hoisted(() => ({
   getAssetInput: vi.fn(),
@@ -146,8 +147,12 @@ describe("CompositeSceneRuntimeManager", () => {
 
   it("threads live epoch cancellation into the child executor", async () => {
     const renderer = { render: vi.fn() } as unknown as Renderer;
+    let epochChecks = 0;
+    let acceptAllEpochs = false;
     const manager = new CompositeSceneRuntimeManager(renderer, undefined, {
-      isLiveEpochCurrent: () => false,
+      // Let both manager guards pass, then supersede inside child execution.
+      isLiveEpochCurrent: () =>
+        acceptAllEpochs || (epochChecks += 1) <= 2,
     });
     const source: ResolvedCompositeSource = {
       mode: "live",
@@ -177,6 +182,25 @@ describe("CompositeSceneRuntimeManager", () => {
       samples: 0,
       cancelledSamples: 1,
       failedSamples: 0,
+    });
+    expect(manager.getDiagnostics()).toMatchObject({
+      runtimeCount: 0,
+    });
+
+    acceptAllEpochs = true;
+    const retry = await manager.renderCompositeScene(
+      { ...source, localPresentationTick: 600 },
+      [],
+      {
+        mode: "live",
+        epoch: 2,
+        temporalPreviewQuality: "approximate",
+      },
+    );
+    retry.release();
+    expect(renderer.render).toHaveBeenCalledTimes(1);
+    expect(manager.getDiagnostics()).toMatchObject({
+      runtimeCount: 1,
     });
     manager.dispose();
   });
@@ -254,6 +278,164 @@ describe("CompositeSceneRuntimeManager", () => {
     }
   });
 
+  it("retains prepared decoder sessions while replacing an aborted render generation", async () => {
+    const controller = new AbortController();
+    const renderer = {
+      render: vi.fn(() => {
+        if (renderer.render.mock.calls.length === 1) {
+          controller.abort();
+        }
+      }),
+    } as unknown as Renderer & { render: ReturnType<typeof vi.fn> };
+    const leaseReleases: Array<ReturnType<typeof vi.fn>> = [];
+    const decoderPool = {
+      warmUp: vi.fn(),
+      acquireLease: vi.fn((_meta, events) => {
+        const release = vi.fn();
+        leaseReleases.push(release);
+        return {
+          prepare: vi.fn((request) => {
+            events.onReady(request.clipId, request.kind);
+            return "posted" as const;
+          }),
+          render: vi.fn((request) => {
+            events.onFrame({
+              clipId: request.clipId,
+              bitmap: null,
+              time: request.time,
+              transformTime: request.transformTime,
+              requestId: request.requestId,
+            });
+          }),
+          disposeSource: vi.fn(),
+          reportStall: vi.fn(async () => "released" as const),
+          release,
+        };
+      }),
+      disposeSession: vi.fn(),
+      dispose: vi.fn(),
+    } satisfies DecoderWorkerPool;
+    const manager = new CompositeSceneRuntimeManager(renderer, decoderPool);
+    const plan = vi
+      .spyOn(TemporalRenderCoordinator.prototype, "plan")
+      .mockReturnValue({
+        warmup: [renderContext(100, true), renderContext(200, true)],
+        target: renderContext(300, false),
+        isDiscontinuous: true,
+      });
+    const asset = {
+      id: "source",
+      hash: "hash",
+      name: "source.mp4",
+      type: "video",
+      src: "blob:source",
+      file: new File(["video"], "source.mp4", { type: "video/mp4" }),
+      createdAt: 1,
+    } satisfies Asset;
+    userAssetMocks.getAssetInput.mockResolvedValue({
+      getPrimaryVideoTrack: vi.fn().mockResolvedValue({
+        displayWidth: 1280,
+        displayHeight: 720,
+      }),
+    });
+    const source: ResolvedCompositeSource = {
+      mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
+      compositeId: "temporal-video",
+      placementId: "placement",
+      revision: 1,
+      bakeKey: "key",
+      localPresentationTick: 300,
+      logicalDimensions: { width: 1280, height: 720 },
+      fps: 30,
+      content: {
+        durationTicks: 1000,
+        tracks: [
+          {
+            id: "track",
+            type: "visual",
+            label: "Video",
+            isVisible: true,
+            isMuted: false,
+            isLocked: false,
+          },
+        ],
+        clips: [
+          {
+            id: "clip",
+            trackId: "track",
+            type: "video",
+            name: "Clip",
+            assetId: asset.id,
+            sourceDuration: 1000,
+            start: 0,
+            timelineDuration: 1000,
+            offset: 0,
+            transformedDuration: 1000,
+            transformedOffset: 0,
+            croppedSourceDuration: 1000,
+            transformations: [],
+            components: [],
+          } as TimelineClip,
+        ],
+      },
+      fallbackAssetId: null,
+      isStateless: false,
+    };
+
+    try {
+      await expect(
+        manager.renderCompositeScene(source, [asset], {
+          mode: "live",
+          epoch: 1,
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      expect(leaseReleases[0]).toHaveBeenCalledWith({
+        retainPreparedSources: true,
+      });
+
+      const retry = await manager.renderCompositeScene(source, [asset], {
+        mode: "live",
+        epoch: 2,
+        signal: new AbortController().signal,
+      });
+      retry.release();
+      const resized = await manager.renderCompositeScene(source, [asset], {
+        mode: "live",
+        epoch: 3,
+        signal: new AbortController().signal,
+        outputDimensions: { width: 640, height: 360 },
+      });
+      resized.release();
+
+      expect(decoderPool.acquireLease).toHaveBeenCalledTimes(3);
+      const firstSessionKey =
+        decoderPool.acquireLease.mock.calls[0]?.[0]?.sessionKey;
+      const secondSessionKey =
+        decoderPool.acquireLease.mock.calls[1]?.[0]?.sessionKey;
+      const thirdSessionKey =
+        decoderPool.acquireLease.mock.calls[2]?.[0]?.sessionKey;
+      expect(firstSessionKey).toBeTypeOf("string");
+      expect(secondSessionKey).toBe(firstSessionKey);
+      expect(thirdSessionKey).toBe(firstSessionKey);
+      expect(leaseReleases[1]).toHaveBeenCalledWith({
+        retainPreparedSources: true,
+      });
+      expect(decoderPool.disposeSession).not.toHaveBeenCalled();
+    } finally {
+      plan.mockRestore();
+      manager.dispose();
+      userAssetMocks.getAssetInput.mockReset();
+    }
+
+    expect(leaseReleases[2]).toHaveBeenCalledWith({
+      retainPreparedSources: false,
+    });
+  });
+
   it("uses the largest referenced source resolution for its physical raster", async () => {
     const renderer = { render: vi.fn() } as unknown as Renderer;
     const manager = new CompositeSceneRuntimeManager(renderer);
@@ -327,6 +509,116 @@ describe("CompositeSceneRuntimeManager", () => {
       plan.mockRestore();
       manager.dispose();
     }
+  });
+
+  it("hydrates live sources before applying output demand and replaces the runtime after resize", async () => {
+    const renderer = { render: vi.fn() } as unknown as Renderer;
+    const manager = new CompositeSceneRuntimeManager(renderer);
+    const asset = {
+      id: "preview-source",
+      hash: "hash",
+      name: "preview-source.mp4",
+      type: "video",
+      src: "preview-source.mp4",
+      createdAt: 1,
+    } satisfies Asset;
+    userAssetMocks.getAssetInput.mockResolvedValue({
+      getPrimaryVideoTrack: vi.fn().mockResolvedValue({
+        displayWidth: 1920,
+        displayHeight: 1080,
+      }),
+    });
+    const source: ResolvedCompositeSource = {
+      mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
+      compositeId: "preview-sized",
+      placementId: "placement",
+      revision: 1,
+      bakeKey: "key",
+      localPresentationTick: 0,
+      logicalDimensions: { width: 1920, height: 1080 },
+      fps: 30,
+      content: {
+        durationTicks: 1000,
+        clips: [
+          {
+            id: "preview-source-clip",
+            trackId: "hidden-track",
+            type: "video",
+            assetId: asset.id,
+          } as unknown as TimelineClip,
+        ],
+        tracks: [
+          {
+            id: "hidden-track",
+            type: "visual",
+            label: "Hidden",
+            isVisible: false,
+            isMuted: false,
+            isLocked: false,
+          },
+        ],
+      },
+      fallbackAssetId: null,
+    };
+
+    const first = await manager.renderCompositeScene(source, [asset], {
+      mode: "live",
+      epoch: 1,
+      temporalPreviewQuality: "approximate",
+      outputDimensions: { width: 640, height: 360 },
+    });
+    const resized = await manager.renderCompositeScene(source, [asset], {
+      mode: "live",
+      epoch: 2,
+      temporalPreviewQuality: "approximate",
+      outputDimensions: { width: 960, height: 540 },
+    });
+    const sourceCapped = await manager.renderCompositeScene(source, [asset], {
+      mode: "live",
+      epoch: 3,
+      temporalPreviewQuality: "approximate",
+      outputDimensions: { width: 3840, height: 2160 },
+    });
+
+    expect(userAssetMocks.getAssetInput).toHaveBeenCalledOnce();
+    expect(userAssetMocks.getAssetInput).toHaveBeenCalledWith(asset.id);
+    expect(first.value).toMatchObject({
+      width: 640,
+      height: 360,
+      source: { pixelWidth: 640, pixelHeight: 360 },
+    });
+    expect(resized.value).toMatchObject({
+      width: 960,
+      height: 540,
+      source: { pixelWidth: 960, pixelHeight: 540 },
+    });
+    expect(sourceCapped.value).toMatchObject({
+      width: 1920,
+      height: 1080,
+      source: { pixelWidth: 1920, pixelHeight: 1080 },
+    });
+    expect(resized.value).not.toBe(first.value);
+    expect(sourceCapped.value).not.toBe(resized.value);
+    expect(manager.getDiagnostics()).toMatchObject({
+      runtimeCount: 3,
+      outputTextureBytes:
+        (640 * 360 + 960 * 540 + 1920 * 1080) * 4,
+      outstandingLeases: 3,
+    });
+
+    first.release();
+    expect(manager.getDiagnostics()).toMatchObject({
+      runtimeCount: 2,
+      outputTextureBytes: (960 * 540 + 1920 * 1080) * 4,
+      outstandingLeases: 2,
+    });
+    resized.release();
+    sourceCapped.release();
+    userAssetMocks.getAssetInput.mockReset();
+    manager.dispose();
   });
 
   it("rejects nested composite content before allocating a child runtime", async () => {

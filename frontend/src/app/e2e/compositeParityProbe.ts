@@ -32,10 +32,21 @@ interface PendingLiveCapture {
   resolve: (frame: LiveCompositeFrame) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
+  receivedFrames: number;
+  lastFrameDimensions: { width: number; height: number } | null;
+  receivedDimensionKeys: Set<string>;
 }
 
 let pendingLiveCapture: PendingLiveCapture | null = null;
 let probeInFlight = false;
+
+/**
+ * The canonical parity probe compares the production source-fidelity live and
+ * bake paths. Normal interactive frames continue to use preview output demand.
+ */
+export function requiresSourceFidelityCompositeFrame(): boolean {
+  return pendingLiveCapture !== null;
+}
 
 export interface CompositeParityProbeRequest {
   compositeId: string;
@@ -112,20 +123,29 @@ function waitForLiveFrame(compositeId: string): Promise<LiveCompositeFrame> {
   }
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      if (pendingLiveCapture?.resolve === resolve) {
+      const pending =
+        pendingLiveCapture?.resolve === resolve ? pendingLiveCapture : null;
+      if (pending) {
         pendingLiveCapture = null;
       }
       reject(
         new Error(
-          `composite parity probe: timed out waiting for ${compositeId}`,
+          `composite parity probe: timed out waiting for ${compositeId} ` +
+            `(received ${pending?.receivedFrames ?? 0} frames; ` +
+            `last dimensions ${pending?.lastFrameDimensions?.width ?? "n/a"}x` +
+            `${pending?.lastFrameDimensions?.height ?? "n/a"}; ` +
+            `observed ${[...(pending?.receivedDimensionKeys ?? [])].join(", ") || "none"})`,
         ),
       );
-    }, 20_000);
+    }, 60_000);
     pendingLiveCapture = {
       compositeId,
       resolve,
       reject,
       timeout,
+      receivedFrames: 0,
+      lastFrameDimensions: null,
+      receivedDimensionKeys: new Set(),
     };
   });
 }
@@ -139,6 +159,12 @@ export function acceptLiveCompositeFrame(frame: LiveCompositeFrame): void {
   if (!pending || pending.compositeId !== frame.compositeId) {
     return;
   }
+  pending.receivedFrames += 1;
+  pending.lastFrameDimensions = {
+    width: frame.width,
+    height: frame.height,
+  };
+  pending.receivedDimensionKeys.add(`${frame.width}x${frame.height}`);
   // A cold decoder can legitimately produce a transparent deferred frame
   // before its first source frame is resident. That is not a rendered parity
   // sample; keep the request pending until the live path has real pixels.

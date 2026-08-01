@@ -149,6 +149,7 @@ describe("LiveFrameGraphCoordinator", () => {
     const options = {
       fps: 30,
       logicalDimensions: { width: 1920, height: 1080 },
+      outputDimensions: { width: 800, height: 450 },
       visualTrackOrder: ["t1", "t2"],
       adjustmentEffectResolver: {
         deriveGroups: () => [],
@@ -160,6 +161,10 @@ describe("LiveFrameGraphCoordinator", () => {
     expect(first.decode).toHaveBeenCalledTimes(1);
     expect(second.decode).not.toHaveBeenCalled();
     expect(first.presentedTextures[0]).toBe(second.presentedTextures[0]);
+    expect(first.presentedPolicies[0]).toMatchObject({
+      mode: "live",
+      outputDimensions: { width: 800, height: 450 },
+    });
 
     coordinator.requestFrame(0);
     const pausedEdit = await coordinator.renderFrame(0, options);

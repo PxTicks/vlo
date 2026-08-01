@@ -166,7 +166,14 @@ interface TrackRenderEngineOptions {
   trackId?: string;
   adjustmentEffectResolver?: AdjustmentEffectResolver | null;
   decoderPool?: DecoderWorkerPool;
+  /**
+   * Stable owner identity used to retain prepared decoder sources while an
+   * abortable presentation generation is replaced.
+   */
+  decoderSessionKey?: string;
 }
+
+let nextTrackRenderEngineInstanceId = 0;
 
 function isDecoderRenderableClip(
   clip: TimelineClip | undefined | null,
@@ -302,6 +309,7 @@ export class TrackRenderEngine {
   private readonly lease: DecoderLease;
   private readonly renderer: Renderer | null;
   private readonly trackId: string | null;
+  private readonly decoderRequestNamespace: string;
   private readonly adjustmentEffectResolver: AdjustmentEffectResolver | null;
 
   // State
@@ -340,9 +348,10 @@ export class TrackRenderEngine {
   private pendingResolve: ((bitmap: ImageBitmap | null) => void) | null = null;
   private pendingReject: ((error: Error) => void) | null = null;
   private pendingAbortCleanup: (() => void) | null = null;
+  private pendingStrictFrameRequestId: string | null = null;
   private pendingLiveFrame: PendingLiveFrame | null = null;
   private pendingLiveFrameRequestId: string | null = null;
-  private nextLiveFrameRequestId = 0;
+  private nextDecoderFrameRequestId = 0;
   private liveDecoderTimeoutCount = 0;
   private strictRenderHealth = createEmptyStrictRenderHealth();
   private readonly reportedStrictFrameIssueClipIds = new Set<string>();
@@ -396,12 +405,20 @@ export class TrackRenderEngine {
   ) {
     this.renderer = renderer ?? null;
     this.trackId = options.trackId ?? null;
+    nextTrackRenderEngineInstanceId += 1;
+    this.decoderRequestNamespace =
+      `track-engine-${nextTrackRenderEngineInstanceId}`;
     this.adjustmentEffectResolver = options.adjustmentEffectResolver ?? null;
     this.onFrameReady = onFrameReady;
     this.lease = (options.decoderPool ?? getSharedDecoderWorkerPool()).acquireLease(
-      { label: this.trackId ?? undefined },
       {
-        onReady: () => {},
+        label: this.trackId ?? undefined,
+        ...(options.decoderSessionKey
+          ? { sessionKey: options.decoderSessionKey }
+          : {}),
+      },
+      {
+        onReady: () => undefined,
         onFrame: (message) => {
           this.handleLeaseFrame(message);
         },
@@ -667,6 +684,7 @@ export class TrackRenderEngine {
         new Error("Concurrent strict frame decode is not supported per track"),
       );
     }
+    const requestId = this.createDecoderFrameRequestId("strict");
 
     return new Promise<ImageBitmap | null>((resolve, reject) => {
       let isSettled = false;
@@ -691,11 +709,13 @@ export class TrackRenderEngine {
 
       this.pendingResolve = resolveFrame;
       this.pendingReject = rejectFrame;
+      this.pendingStrictFrameRequestId = requestId;
       this.lease.render({
         time: job.sourceFrame.snappedTimeSeconds,
         clipId: job.activeClip.id,
         transformTime: job.rawClipTick,
         strict: true,
+        requestId,
       });
     });
   }
@@ -1787,6 +1807,7 @@ export class TrackRenderEngine {
       { fps: clipFps, sourceFrame, waitForSam2: true },
     );
 
+    const requestId = this.createDecoderFrameRequestId("strict");
     return new Promise((resolve, reject) => {
       if (options.signal?.aborted) {
         reject(createRenderAbortError());
@@ -1850,12 +1871,14 @@ export class TrackRenderEngine {
         resolveFrame(bitmap);
       };
       this.pendingReject = (error) => rejectFrame(error);
+      this.pendingStrictFrameRequestId = requestId;
 
       this.lease.render({
         time: sourceFrame.snappedTimeSeconds,
         clipId: activeClip.id,
         transformTime: clipVisualTimeTicks,
         strict: true, // Export needs a response even if null
+        requestId,
       });
     });
   }
@@ -1874,18 +1897,49 @@ export class TrackRenderEngine {
   }) {
     const { bitmap, clipId, transformTime, error, requestId } = message;
     this.markLiveDecoderResponsive();
+    const responseKind = this.getDecoderFrameResponseKind(requestId);
 
-    if (this.pendingResolve) {
+    if (responseKind === "strict" && this.pendingResolve) {
+      if (
+        this.isStalePendingStrictFrameResponse(
+          requestId,
+          bitmap,
+        )
+      ) {
+        return;
+      }
       this.recordStrictFrameReply(message);
       this.pendingResolve(bitmap);
       return;
     }
 
-    if (this.pendingLiveFrame) {
+    if (responseKind === "live" && this.pendingLiveFrame) {
       const pendingLiveFrame = this.pendingLiveFrame;
       if (this.isStalePendingLiveFrameResponse(requestId, bitmap)) {
         return;
       }
+      if (error) {
+        pendingLiveFrame.reject(new Error(String(error)));
+        return;
+      }
+      pendingLiveFrame.resolve({
+        bitmap,
+        clipId,
+        transformTime:
+          typeof transformTime === "number" ? transformTime : undefined,
+      });
+      return;
+    }
+
+    // Legacy workers and test doubles may omit request ids. Preserve their
+    // historical slot dispatch while production replies declare a channel.
+    if (responseKind === null && this.pendingResolve) {
+      this.recordStrictFrameReply(message);
+      this.pendingResolve(bitmap);
+      return;
+    }
+    if (responseKind === null && this.pendingLiveFrame) {
+      const pendingLiveFrame = this.pendingLiveFrame;
       if (error) {
         pendingLiveFrame.reject(new Error(String(error)));
         return;
@@ -1975,22 +2029,23 @@ export class TrackRenderEngine {
       clipId: clip.id,
       label: this.trackId ?? undefined,
     });
-    logDecoderRequestSent(diagnostics, {
-      kind,
-      hasFile: !!asset.file,
-      fileSizeMB: asset.file
-        ? Number((asset.file.size / (1024 * 1024)).toFixed(2))
-        : null,
-      sourceScheme: getSourceScheme(asset),
-    });
-
-    this.lease.prepare({
+    const prepareResult = this.lease.prepare({
       url: asset.src,
       clipId: clip.id,
       kind,
       file: asset.file,
       ...(diagnostics ? { diagnostics } : {}),
     });
+    if (prepareResult === "posted") {
+      logDecoderRequestSent(diagnostics, {
+        kind,
+        hasFile: !!asset.file,
+        fileSizeMB: asset.file
+          ? Number((asset.file.size / (1024 * 1024)).toFixed(2))
+          : null,
+        sourceScheme: getSourceScheme(asset),
+      });
+    }
   }
 
   private syncPreparedClips(
@@ -2068,9 +2123,7 @@ export class TrackRenderEngine {
                 performance.now(),
               );
             })
-            .finally(() => {
-              this.pendingAssetHydrations.delete(asset.id);
-            });
+            .finally(() => this.pendingAssetHydrations.delete(asset.id));
         }
         return;
       }
@@ -2364,8 +2417,21 @@ export class TrackRenderEngine {
   }
 
   private createLiveFrameRequestId(): string {
-    this.nextLiveFrameRequestId += 1;
-    return `live-frame-${this.nextLiveFrameRequestId}`;
+    return this.createDecoderFrameRequestId("live");
+  }
+
+  private createDecoderFrameRequestId(kind: "live" | "strict"): string {
+    this.nextDecoderFrameRequestId += 1;
+    return `${this.decoderRequestNamespace}:${kind}:${this.nextDecoderFrameRequestId}`;
+  }
+
+  private getDecoderFrameResponseKind(
+    requestId: unknown,
+  ): "live" | "strict" | null {
+    if (typeof requestId !== "string") return null;
+    if (requestId.includes(":live:")) return "live";
+    if (requestId.includes(":strict:")) return "strict";
+    return null;
   }
 
   private createLiveRenderGeneration(): number {
@@ -2476,6 +2542,20 @@ export class TrackRenderEngine {
       return false;
     }
 
+    if (bitmap && typeof bitmap.close === "function") {
+      bitmap.close();
+    }
+    return true;
+  }
+
+  private isStalePendingStrictFrameResponse(
+    requestId: unknown,
+    bitmap: ImageBitmap | null,
+  ): boolean {
+    const expectedRequestId = this.pendingStrictFrameRequestId;
+    if (!expectedRequestId || requestId === expectedRequestId) {
+      return false;
+    }
     if (bitmap && typeof bitmap.close === "function") {
       bitmap.close();
     }
@@ -3291,7 +3371,7 @@ export class TrackRenderEngine {
     this.maskController.syncMaskSpriteTransform();
   }
 
-  public dispose() {
+  public dispose(options: { retainPreparedSources?: boolean } = {}) {
     if (this.disposed) return;
     this.disposed = true;
     this.inFlightSynchronizedRender = null;
@@ -3327,7 +3407,9 @@ export class TrackRenderEngine {
     this.maskedEffectRenderer?.dispose();
     this.extensionEntityRenderer?.dispose();
     this.maskController.dispose();
-    this.lease.release();
+    this.lease.release({
+      retainPreparedSources: options.retainPreparedSources === true,
+    });
     if (this.container) {
       if (this.container.parent) {
         this.container.removeFromParent();
@@ -3387,6 +3469,7 @@ export class TrackRenderEngine {
     }
     this.pendingResolve = null;
     this.pendingReject = null;
+    this.pendingStrictFrameRequestId = null;
   }
 
   private rejectPendingFrame(error: Error) {

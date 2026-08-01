@@ -88,7 +88,7 @@ describe("TrackRenderEngine active-clip re-binding", () => {
 
   it("prepares the canonical bake selected for a sentinel composite placement", () => {
     const lease = {
-      prepare: vi.fn(),
+      prepare: vi.fn(() => "posted" as const),
       render: vi.fn(),
       disposeSource: vi.fn(),
       reportStall: vi.fn(async () => "released" as const),
@@ -97,6 +97,7 @@ describe("TrackRenderEngine active-clip re-binding", () => {
     const decoderPool = {
       warmUp: vi.fn(),
       acquireLease: vi.fn(() => lease),
+      disposeSession: vi.fn(),
       dispose: vi.fn(),
     } satisfies DecoderWorkerPool;
     const engine = new TrackRenderEngine(1, undefined, undefined, {

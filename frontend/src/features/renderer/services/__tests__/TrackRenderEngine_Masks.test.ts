@@ -23,19 +23,27 @@ const sam2DisposeSpy = vi.fn();
 vi.mock("@decoder-worker-loader", () => ({
   default: class MockWorker {
     onmessage: ((e: MessageEvent) => void) | null = null;
-    postMessage = vi.fn((message: { type?: string; strict?: boolean; clipId?: string }) => {
-      if (message.type === "render" && message.strict && this.onmessage) {
-        setTimeout(() => {
-          this.onmessage?.({
-            data: {
-              type: "frame",
-              bitmap: {},
-              clipId: message.clipId,
-            },
-          } as MessageEvent);
-        }, 0);
-      }
-    });
+    postMessage = vi.fn(
+      (message: {
+        type?: string;
+        strict?: boolean;
+        clipId?: string;
+        requestId?: string;
+      }) => {
+        if (message.type === "render" && message.strict && this.onmessage) {
+          setTimeout(() => {
+            this.onmessage?.({
+              data: {
+                type: "frame",
+                bitmap: {},
+                clipId: message.clipId,
+                requestId: message.requestId,
+              },
+            } as MessageEvent);
+          }, 0);
+        }
+      },
+    );
     terminate = vi.fn();
 
     constructor() {

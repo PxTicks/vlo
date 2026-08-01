@@ -16,6 +16,15 @@ import {
 } from "../utils/decoderDiagnostics";
 
 type DecoderSourceKind = "video" | "image" | "mask_video";
+/**
+ * `reused` completes synchronously and emits no `ready` reply. `pending`
+ * means an identical prepare is already in flight and will still emit one.
+ */
+export type DecoderPrepareResult =
+  | "posted"
+  | "pending"
+  | "reused"
+  | "ignored";
 
 type WorkerReadyMessage = {
   type: "ready";
@@ -75,7 +84,7 @@ export interface DecoderLease {
     height?: number;
     fit?: "contain" | "cover" | "fill";
     diagnostics?: DecoderRequestDiagnostics;
-  }): void;
+  }): DecoderPrepareResult;
   render(request: {
     clipId: string;
     time: number;
@@ -86,15 +95,20 @@ export interface DecoderLease {
   }): void;
   disposeSource(clipId: string): void;
   reportStall(clipId: string, reason: string): Promise<DecoderStallResolution>;
-  release(): void;
+  release(options?: { retainPreparedSources?: boolean }): void;
 }
 
 export interface DecoderWorkerPool {
   warmUp(): void;
+  /**
+   * Concurrent sources must use separate leases; each lease is one affinity
+   * lane.
+   */
   acquireLease(
-    meta: { label?: string } | undefined,
+    meta: { label?: string; sessionKey?: string } | undefined,
     events: DecoderLeaseEvents,
   ): DecoderLease;
+  disposeSession(sessionKey: string): void;
   dispose(): void;
 }
 
@@ -110,18 +124,32 @@ interface DecoderWorkerPoolOptions {
 interface LeaseRecord {
   id: string;
   label?: string;
+  sessionKey?: string;
   released: boolean;
   events: DecoderLeaseEvents;
   assignmentsByClipId: Map<string, SourceAssignment>;
+  affinityWorker: WorkerRecord | null;
   lastRenderedKey: string | null;
+}
+
+interface PreparedSourceDescriptor {
+  url: string;
+  kind: DecoderSourceKind;
+  file?: File;
+  width?: number;
+  height?: number;
+  fit?: "contain" | "cover" | "fill";
 }
 
 interface SourceAssignment {
   clipId: string;
   key: string;
   kind: DecoderSourceKind | null;
-  lease: LeaseRecord;
+  lease: LeaseRecord | null;
   preparedAtMs: number | null;
+  preparedSource: PreparedSourceDescriptor | null;
+  retainedSessionKey: string | null;
+  retainedSessionClipKey: string | null;
   lastActivityAtMs: number;
   lastRenderedAtMs: number | null;
   workerRecord: WorkerRecord;
@@ -154,7 +182,7 @@ interface WorkerRecord {
 }
 
 const LIVE_POOL_MIN_SIZE = 2;
-const LIVE_POOL_MAX_SIZE = 4;
+const LIVE_POOL_MAX_SIZE = 6;
 const EXPORT_POOL_MIN_SIZE = 2;
 const EXPORT_POOL_MAX_SIZE = 6;
 const DEFAULT_HARDWARE_CONCURRENCY = 4;
@@ -222,6 +250,20 @@ function createWorkerError(message: string): Error {
   return new Error(message);
 }
 
+function samePreparedSource(
+  left: PreparedSourceDescriptor | null,
+  right: PreparedSourceDescriptor,
+): boolean {
+  return (
+    left !== null &&
+    left.url === right.url &&
+    left.kind === right.kind &&
+    left.width === right.width &&
+    left.height === right.height &&
+    left.fit === right.fit
+  );
+}
+
 class DecoderWorkerPoolImpl implements DecoderWorkerPool {
   private readonly bootWatchdogMs: number | null;
   private readonly idleRecycleMs: number | null;
@@ -235,6 +277,10 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
   private nextWorkerId = 0;
   private readonly lastRendererResetAtByKey = new Map<string, number>();
   private readonly leases = new Map<string, LeaseRecord>();
+  private readonly retainedAssignmentsBySessionClipKey = new Map<
+    string,
+    SourceAssignment
+  >();
   private readonly warmUpHandles = new Set<ReturnType<typeof setTimeout>>();
   private readonly workerRecords = new Set<WorkerRecord>();
 
@@ -269,7 +315,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
   }
 
   public acquireLease(
-    meta: { label?: string } | undefined,
+    meta: { label?: string; sessionKey?: string } | undefined,
     events: DecoderLeaseEvents,
   ): DecoderLease {
     if (this.disposed) {
@@ -280,9 +326,11 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     const leaseRecord: LeaseRecord = {
       id: `lease-${this.nextLeaseId}`,
       label: meta?.label,
+      sessionKey: meta?.sessionKey,
       released: false,
       events,
       assignmentsByClipId: new Map<string, SourceAssignment>(),
+      affinityWorker: null,
       lastRenderedKey: null,
     };
     this.leases.set(leaseRecord.id, leaseRecord);
@@ -290,13 +338,26 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     return {
       prepare: (request) => {
         if (this.disposed || leaseRecord.released) {
-          return;
+          return "ignored";
         }
 
         const assignment = this.ensureAssignment(leaseRecord, request.clipId);
+        const preparedSource: PreparedSourceDescriptor = {
+          url: request.url,
+          kind: request.kind,
+          file: request.file,
+          width: request.width,
+          height: request.height,
+          fit: request.fit,
+        };
+        assignment.lastActivityAtMs = performance.now();
+        if (samePreparedSource(assignment.preparedSource, preparedSource)) {
+          return assignment.preparedAtMs !== null ? "reused" : "pending";
+        }
+
         assignment.kind = request.kind;
         assignment.preparedAtMs = null;
-        assignment.lastActivityAtMs = performance.now();
+        assignment.preparedSource = preparedSource;
         assignment.workerRecord.worker.postMessage({
           type: "prepare",
           url: request.url,
@@ -308,6 +369,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
           fit: request.fit,
           ...(request.diagnostics ? { diagnostics: request.diagnostics } : {}),
         });
+        return "posted";
       },
       render: (request) => {
         if (this.disposed || leaseRecord.released) {
@@ -343,21 +405,55 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       reportStall: async (clipId, reason) => {
         return this.reportStall(leaseRecord, clipId, reason);
       },
-      release: () => {
+      release: (options = {}) => {
         if (leaseRecord.released) {
           return;
         }
         leaseRecord.released = true;
         leaseRecord.lastRenderedKey = null;
         for (const assignment of [...leaseRecord.assignmentsByClipId.values()]) {
-          this.disposeAssignment(assignment, {
-            sendDispose: true,
-            notifyEvicted: false,
-          });
+          if (
+            options.retainPreparedSources === true &&
+            leaseRecord.sessionKey &&
+            assignment.preparedSource !== null &&
+            (assignment.kind === "video" ||
+              assignment.kind === "mask_video")
+          ) {
+            this.retainAssignment(assignment, leaseRecord.sessionKey);
+          } else {
+            this.disposeAssignment(assignment, {
+              sendDispose: true,
+              notifyEvicted: false,
+            });
+          }
         }
         this.leases.delete(leaseRecord.id);
+        this.enforcePreparedSourceCap();
       },
     };
+  }
+
+  public disposeSession(sessionKey: string): void {
+    for (const leaseRecord of this.leases.values()) {
+      if (leaseRecord.sessionKey !== sessionKey) continue;
+      for (const assignment of [
+        ...leaseRecord.assignmentsByClipId.values(),
+      ]) {
+        this.disposeAssignment(assignment, {
+          sendDispose: true,
+          notifyEvicted: false,
+        });
+      }
+    }
+    for (const assignment of [
+      ...this.retainedAssignmentsBySessionClipKey.values(),
+    ]) {
+      if (assignment.retainedSessionKey !== sessionKey) continue;
+      this.disposeAssignment(assignment, {
+        sendDispose: true,
+        notifyEvicted: false,
+      });
+    }
   }
 
   public dispose(): void {
@@ -377,6 +473,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       leaseRecord.lastRenderedKey = null;
     }
     this.leases.clear();
+    this.retainedAssignmentsBySessionClipKey.clear();
 
     for (const workerRecord of [...this.workerRecords]) {
       this.terminateWorker(workerRecord, "pool disposed");
@@ -394,13 +491,49 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       return existingAssignment;
     }
 
-    const workerRecord = this.chooseWorkerForAssignment();
+    const retainedSessionClipKey = leaseRecord.sessionKey
+      ? this.sessionClipKey(leaseRecord.sessionKey, clipId)
+      : null;
+    const retainedAssignment = retainedSessionClipKey
+      ? this.retainedAssignmentsBySessionClipKey.get(retainedSessionClipKey)
+      : undefined;
+    if (retainedSessionClipKey && retainedAssignment) {
+      this.retainedAssignmentsBySessionClipKey.delete(
+        retainedSessionClipKey,
+      );
+      if (!retainedAssignment.workerRecord.disposed) {
+        leaseRecord.affinityWorker ??= retainedAssignment.workerRecord;
+        retainedAssignment.lease = leaseRecord;
+        retainedAssignment.retainedSessionKey = null;
+        retainedAssignment.retainedSessionClipKey = null;
+        retainedAssignment.lastActivityAtMs = performance.now();
+        leaseRecord.assignmentsByClipId.set(clipId, retainedAssignment);
+        this.logPoolEvent("main:pool:adopt-prepared", retainedAssignment.key, {
+          workerId: retainedAssignment.workerRecord.id,
+          assignedCount: retainedAssignment.workerRecord.assignedKeys.size,
+          activeCount: this.getActiveAssignmentCount(
+            retainedAssignment.workerRecord,
+          ),
+          leaseLabel: leaseRecord.label,
+        });
+        return retainedAssignment;
+      }
+    }
+
+    let workerRecord = leaseRecord.affinityWorker;
+    if (!workerRecord || workerRecord.disposed) {
+      workerRecord = this.chooseWorkerForLane();
+      leaseRecord.affinityWorker = workerRecord;
+    }
     const assignment: SourceAssignment = {
       clipId,
       key: this.namespaceClipId(leaseRecord.id, clipId),
       kind: null,
       lease: leaseRecord,
       preparedAtMs: null,
+      preparedSource: null,
+      retainedSessionKey: null,
+      retainedSessionClipKey: null,
       lastActivityAtMs: performance.now(),
       lastRenderedAtMs: null,
       workerRecord,
@@ -419,11 +552,53 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     return assignment;
   }
 
+  private sessionClipKey(sessionKey: string, clipId: string): string {
+    return JSON.stringify([sessionKey, clipId]);
+  }
+
+  private retainAssignment(
+    assignment: SourceAssignment,
+    sessionKey: string,
+  ): void {
+    const lease = assignment.lease;
+    if (!lease) return;
+
+    const retainedSessionClipKey = this.sessionClipKey(
+      sessionKey,
+      assignment.clipId,
+    );
+    const replaced =
+      this.retainedAssignmentsBySessionClipKey.get(retainedSessionClipKey);
+    if (replaced && replaced !== assignment) {
+      this.disposeAssignment(replaced, {
+        sendDispose: true,
+        notifyEvicted: false,
+      });
+    }
+
+    lease.assignmentsByClipId.delete(assignment.clipId);
+    assignment.lease = null;
+    assignment.retainedSessionKey = sessionKey;
+    assignment.retainedSessionClipKey = retainedSessionClipKey;
+    assignment.lastActivityAtMs = performance.now();
+    this.retainedAssignmentsBySessionClipKey.set(
+      retainedSessionClipKey,
+      assignment,
+    );
+    this.logPoolEvent("main:pool:retain-prepared", assignment.key, {
+      workerId: assignment.workerRecord.id,
+      assignedCount: assignment.workerRecord.assignedKeys.size,
+      activeCount: this.getActiveAssignmentCount(assignment.workerRecord),
+      leaseLabel: lease.label,
+    });
+  }
+
   private namespaceClipId(leaseId: string, clipId: string): string {
     return `${leaseId}/${clipId}`;
   }
 
-  private chooseWorkerForAssignment(): WorkerRecord {
+  private chooseWorkerForLane(): WorkerRecord {
+    this.materializeScheduledWorkerForLane();
     const candidates = [...this.workerRecords].filter(
       (workerRecord) => !workerRecord.disposed,
     );
@@ -431,25 +606,49 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       return this.spawnWorker();
     }
 
-    const availableWorkers = candidates.filter((workerRecord) =>
-      this.isWorkerAvailable(workerRecord),
-    );
-    const pool = availableWorkers.length > 0 ? availableWorkers : candidates;
-    pool.sort((left, right) => {
+    candidates.sort((left, right) => {
       const activeDelta =
-        this.getActiveAssignmentCount(left) - this.getActiveAssignmentCount(right);
+        this.getActiveAssignmentCount(left) -
+        this.getActiveAssignmentCount(right);
       if (activeDelta !== 0) {
         return activeDelta;
       }
 
-      const assignedDelta = left.assignedKeys.size - right.assignedKeys.size;
-      if (assignedDelta !== 0) {
-        return assignedDelta;
+      const laneDelta =
+        this.getAssignedLaneCount(left) - this.getAssignedLaneCount(right);
+      if (laneDelta !== 0) {
+        return laneDelta;
       }
 
+      const leftAvailable = this.isWorkerAvailable(left);
+      const rightAvailable = this.isWorkerAvailable(right);
+      if (leftAvailable !== rightAvailable) return leftAvailable ? -1 : 1;
+
+      const assignedDelta = left.assignedKeys.size - right.assignedKeys.size;
+      if (assignedDelta !== 0) return assignedDelta;
       return left.createdAtMs - right.createdAtMs;
     });
-    return pool[0];
+    return candidates[0];
+  }
+
+  private materializeScheduledWorkerForLane(): void {
+    if (this.workerRecords.size >= this.targetSize) return;
+    const workers = [...this.workerRecords];
+    if (
+      workers.length === 0 ||
+      workers.some(
+        (workerRecord) => this.getAssignedLaneCount(workerRecord) === 0,
+      )
+    ) {
+      return;
+    }
+
+    const scheduledHandle = this.warmUpHandles.values().next().value;
+    if (scheduledHandle) {
+      clearTimeout(scheduledHandle);
+      this.warmUpHandles.delete(scheduledHandle);
+    }
+    this.spawnWorker();
   }
 
   private maybeSpawnBackgroundWorker(): void {
@@ -653,7 +852,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
 
     if (typedMessage.type === "ready") {
       const assignment = workerRecord.assignedKeys.get(typedMessage.clipId);
-      if (!assignment || assignment.lease.released) {
+      if (!assignment) {
         return;
       }
 
@@ -661,14 +860,23 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       assignment.kind = typedMessage.kind;
       assignment.preparedAtMs = nowMs;
       assignment.lastActivityAtMs = nowMs;
-      assignment.lease.events.onReady(assignment.clipId, typedMessage.kind);
+      if (assignment.lease && !assignment.lease.released) {
+        assignment.lease.events.onReady(
+          assignment.clipId,
+          typedMessage.kind,
+        );
+      }
       this.enforcePreparedSourceCap();
       return;
     }
 
     if (typedMessage.type === "frame") {
       const assignment = workerRecord.assignedKeys.get(typedMessage.clipId);
-      if (!assignment || assignment.lease.released) {
+      if (
+        !assignment ||
+        !assignment.lease ||
+        assignment.lease.released
+      ) {
         closeBitmapIfPresent(typedMessage.bitmap);
         return;
       }
@@ -795,11 +1003,12 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
   ): void {
     const notifiedLeases = new Set<LeaseRecord>();
     for (const assignment of workerRecord.assignedKeys.values()) {
-      if (assignment.lease.released || notifiedLeases.has(assignment.lease)) {
+      const lease = assignment.lease;
+      if (!lease || lease.released || notifiedLeases.has(lease)) {
         continue;
       }
-      notifiedLeases.add(assignment.lease);
-      assignment.lease.events.onWorkerError(error);
+      notifiedLeases.add(lease);
+      lease.events.onWorkerError(error);
     }
   }
 
@@ -1031,11 +1240,29 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       return;
     }
 
-    const { workerRecord, lease, key, clipId } = assignment;
-    lease.assignmentsByClipId.delete(clipId);
-    if (lease.lastRenderedKey === key) {
-      lease.lastRenderedKey = null;
+    const {
+      workerRecord,
+      lease,
+      key,
+      clipId,
+      retainedSessionClipKey,
+    } = assignment;
+    if (lease) {
+      lease.assignmentsByClipId.delete(clipId);
+      if (lease.lastRenderedKey === key) {
+        lease.lastRenderedKey = null;
+      }
     }
+    if (
+      retainedSessionClipKey &&
+      this.retainedAssignmentsBySessionClipKey.get(retainedSessionClipKey) ===
+        assignment
+    ) {
+      this.retainedAssignmentsBySessionClipKey.delete(retainedSessionClipKey);
+    }
+    assignment.lease = null;
+    assignment.retainedSessionKey = null;
+    assignment.retainedSessionClipKey = null;
     workerRecord.assignedKeys.delete(key);
     workerRecord.recentlyRenderedKeys.delete(key);
     this.lastRendererResetAtByKey.delete(key);
@@ -1045,7 +1272,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       workerRecord.worker.postMessage({ type: "dispose", clipId: key });
     }
 
-    if (options.notifyEvicted && !lease.released) {
+    if (options.notifyEvicted && lease && !lease.released) {
       this.logPoolEvent("main:pool:evict", key, {
         workerId: workerRecord.id,
         assignedCount: workerRecord.assignedKeys.size,
@@ -1200,7 +1427,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     assignment: SourceAssignment,
     nowMs: number,
   ): boolean {
-    if (assignment.lease.lastRenderedKey === assignment.key) {
+    if (assignment.lease?.lastRenderedKey === assignment.key) {
       return false;
     }
 
@@ -1226,13 +1453,32 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
 
   private getActiveAssignmentCount(workerRecord: WorkerRecord): number {
     const nowMs = performance.now();
-    let count = 0;
-    for (const lastRenderedAtMs of workerRecord.recentlyRenderedKeys.values()) {
+    const activeLanes = new Set<LeaseRecord | string>();
+    for (const [key, lastRenderedAtMs] of workerRecord.recentlyRenderedKeys) {
       if (nowMs - lastRenderedAtMs <= ACTIVE_RENDER_WINDOW_MS) {
-        count += 1;
+        const assignment = workerRecord.assignedKeys.get(key);
+        if (assignment) activeLanes.add(this.getAssignmentLane(assignment));
       }
     }
-    return count;
+    return activeLanes.size;
+  }
+
+  private getAssignedLaneCount(workerRecord: WorkerRecord): number {
+    return new Set(
+      [...workerRecord.assignedKeys.values()].map((assignment) =>
+        this.getAssignmentLane(assignment),
+      ),
+    ).size;
+  }
+
+  private getAssignmentLane(
+    assignment: SourceAssignment,
+  ): LeaseRecord | string {
+    return (
+      assignment.lease ??
+      assignment.retainedSessionKey ??
+      assignment.key
+    );
   }
 
   private logPoolEvent(

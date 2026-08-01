@@ -40,6 +40,9 @@ export type {
 } from "./services/renderSelectionToVideoFile";
 export type { ProjectFrameCaptureOptions } from "./services/projectFrameCapture";
 export { getProjectDimensions } from "./utils/dimensions";
+export {
+  resolveCompositePreviewRasterDimensions,
+} from "./utils/compositeRasterDimensions";
 export { syncContainerTransformToTarget } from "./utils/displayObjectSync";
 export {
   calculatePlayerFrameTime,

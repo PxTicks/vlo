@@ -11,7 +11,10 @@ import { resolveTransitionFrame } from "../../transitions/rendering/TransitionRe
 import { namespaceCompositeRuntimeContent } from "../utils/compositeRuntimeNamespace";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
-import type { DecoderWorkerPool } from "./DecoderWorkerPool";
+import {
+  getSharedDecoderWorkerPool,
+  type DecoderWorkerPool,
+} from "./DecoderWorkerPool";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
 import { TemporalRenderCoordinator } from "./TemporalRenderCoordinator";
@@ -39,7 +42,11 @@ import {
   createEmptyCompositeChildPlanningDiagnostics,
 } from "./framePlanning/framePlanningTypes";
 import type { FilterRenderContext } from "../../transformations/catalogue/types";
-import { resolveCompositeRasterDimensionsForContent } from "../utils/compositeRasterDimensions";
+import {
+  capCompositePreviewRasterDimensions,
+  resolveCompositeRasterDimensions,
+  resolveCompositeSourceRasterCeilingForContent,
+} from "../utils/compositeRasterDimensions";
 
 export interface CompositeSceneFrameRenderer {
   renderCompositeScene(
@@ -117,15 +124,59 @@ function sameIdentity(left: RuntimeIdentity, right: RuntimeIdentity): boolean {
   );
 }
 
-async function resolveSourceRasterDimensions(
+function sameDecoderSessionIdentity(
+  left: RuntimeIdentity,
+  right: RuntimeIdentity,
+): boolean {
+  return (
+    left.compositeId === right.compositeId &&
+    left.revision === right.revision &&
+    left.bakeKey === right.bakeKey
+  );
+}
+
+async function resolveSourceRasterCeiling(
   source: ResolvedCompositeSource,
   assets: readonly Asset[],
-): Promise<{ width: number; height: number }> {
-  return resolveCompositeRasterDimensionsForContent(
+): Promise<{ width: number; height: number } | null> {
+  return resolveCompositeSourceRasterCeilingForContent(
     source.content,
     assets,
     source.logicalDimensions,
   );
+}
+
+function resolveRequestedLiveRasterDimensions(
+  policy: FrameExecutionPolicy,
+): { width: number; height: number } | null {
+  if (policy.mode !== "live" || !policy.outputDimensions) return null;
+  const { width, height } = policy.outputDimensions;
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return null;
+  }
+  return {
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+  };
+}
+
+function decoderSessionKeyFor(
+  source: ResolvedCompositeSource,
+  trackId: string,
+): string {
+  return JSON.stringify([
+    "composite-source",
+    source.compositeId,
+    source.revision,
+    source.bakeKey,
+    source.placementId,
+    trackId,
+  ]);
 }
 
 function buildMaskLookup(clips: readonly TimelineClip[]) {
@@ -200,10 +251,13 @@ class CompositePlacementRuntime {
   private readonly clips: TimelineClip[];
   private readonly transitions: Transition[];
   private readonly renderer: Renderer;
+  private readonly decoderPool: DecoderWorkerPool;
+  private readonly decoderSessionKeys: string[];
   private readonly source: ResolvedCompositeSource;
   private readonly temporal = new TemporalRenderCoordinator();
   private pendingDiagnostics = createEmptyCompositeChildPlanningDiagnostics();
   private epoch = 0;
+  private renderGenerationRetired = false;
 
   constructor(
     renderer: Renderer,
@@ -213,6 +267,7 @@ class CompositePlacementRuntime {
     executorOptions: BatchFrameGraphExecutorOptions = {},
   ) {
     this.renderer = renderer;
+    this.decoderPool = decoderPool ?? getSharedDecoderWorkerPool();
     this.source = source;
     const externalDiagnostics = executorOptions.onDiagnostics;
     this.executor = new BatchFrameGraphExecutor({
@@ -258,6 +313,9 @@ class CompositePlacementRuntime {
       (track) => track.type === "visual" && track.isVisible,
     );
     this.visualTrackOrder = visualTracks.map((track) => track.id);
+    this.decoderSessionKeys = visualTracks.map((track) =>
+      decoderSessionKeyFor(source, track.id),
+    );
     const maskClipsByParent = buildMaskLookup(this.clips);
     this.engines = visualTracks.map((track, index) => {
       const engine = new TrackRenderEngine(
@@ -267,7 +325,8 @@ class CompositePlacementRuntime {
         {
           trackId: track.id,
           adjustmentEffectResolver: this.adjustmentResolver,
-          ...(decoderPool ? { decoderPool } : {}),
+          decoderPool: this.decoderPool,
+          decoderSessionKey: decoderSessionKeyFor(source, track.id),
         },
       );
       this.orchestrator.registerTrack(track.id, engine.container);
@@ -454,10 +513,34 @@ class CompositePlacementRuntime {
     };
   }
 
-  dispose(): void {
+  getDecoderSessionKeys(): readonly string[] {
+    return this.decoderSessionKeys;
+  }
+
+  disposeRetainedDecoderSessions(): void {
+    for (const sessionKey of this.decoderSessionKeys) {
+      this.decoderPool.disposeSession(sessionKey);
+    }
+  }
+
+  retireRenderGeneration(options: {
+    retainPreparedSources: boolean;
+  }): void {
+    if (this.renderGenerationRetired) return;
+    this.renderGenerationRetired = true;
+    this.engines.forEach((engine) =>
+      engine.dispose({
+        retainPreparedSources: options.retainPreparedSources,
+      }),
+    );
+  }
+
+  dispose(options: { retainPreparedSources?: boolean } = {}): void {
+    this.retireRenderGeneration({
+      retainPreparedSources: options.retainPreparedSources === true,
+    });
     this.executor.dispose();
     this.orchestrator.dispose();
-    this.engines.forEach((engine) => engine.dispose());
     this.output.destroy(true);
     if (!this.root.destroyed) {
       this.root.destroy({ children: true });
@@ -474,7 +557,13 @@ interface CompositeRuntimeEntry {
   leaseCount: number;
   lastRenderedWorkKey: string | null;
   lastTexture: Texture | null;
+  retainPreparedSourcesOnDispose: boolean;
   disposed: boolean;
+}
+
+interface CompositeDecoderSessionRecord {
+  identity: RuntimeIdentity;
+  sessionKeys: readonly string[];
 }
 
 function runtimePoolKey(source: ResolvedCompositeSource): string {
@@ -515,13 +604,17 @@ export class CompositeSceneRuntimeManager
   >();
   private readonly allEntries = new Set<CompositeRuntimeEntry>();
   private readonly renderer: Renderer;
-  private readonly decoderPool?: DecoderWorkerPool;
+  private readonly decoderPool: DecoderWorkerPool;
+  private readonly decoderSessionsByPlacementKey = new Map<
+    string,
+    CompositeDecoderSessionRecord
+  >();
   private readonly maxRuntimeCount: number;
   private readonly maxTextureBytes: number;
   private readonly isLiveEpochCurrent?: (epoch: number) => boolean;
-  private readonly rasterDimensionsByIdentity = new Map<
+  private readonly sourceRasterCeilingsByIdentity = new Map<
     string,
-    Promise<{ width: number; height: number }>
+    Promise<{ width: number; height: number } | null>
   >();
   private useCounter = 0;
   private renderDedupHits = 0;
@@ -535,7 +628,7 @@ export class CompositeSceneRuntimeManager
     options: CompositeSceneRuntimeManagerOptions = {},
   ) {
     this.renderer = renderer;
-    this.decoderPool = decoderPool;
+    this.decoderPool = decoderPool ?? getSharedDecoderWorkerPool();
     this.isLiveEpochCurrent = options.isLiveEpochCurrent;
     this.maxRuntimeCount = Math.max(
       1,
@@ -558,18 +651,45 @@ export class CompositeSceneRuntimeManager
       throw new Error("Composite scene runtime manager has been disposed");
     }
     this.throwIfCancelled(policy);
+    const requestedLiveDimensions =
+      resolveRequestedLiveRasterDimensions(policy);
     const rasterIdentity = `${source.compositeId}:${source.revision}:${source.bakeKey}`;
-    let rasterDimensions = this.rasterDimensionsByIdentity.get(rasterIdentity);
-    if (!rasterDimensions) {
-      rasterDimensions = resolveSourceRasterDimensions(source, assets);
-      this.rasterDimensionsByIdentity.set(rasterIdentity, rasterDimensions);
+    let pendingSourceCeiling =
+      this.sourceRasterCeilingsByIdentity.get(rasterIdentity);
+    if (!pendingSourceCeiling) {
+      pendingSourceCeiling = resolveSourceRasterCeiling(source, assets);
+      this.sourceRasterCeilingsByIdentity.set(
+        rasterIdentity,
+        pendingSourceCeiling,
+      );
     }
-    const identity = identityFor(source, await rasterDimensions);
+    // Resolving source dimensions also hydrates file-backed media inputs. Do
+    // not bypass it when a live sink supplies a smaller output demand.
+    const sourceRasterCeiling = await pendingSourceCeiling;
+    const rasterDimensions = requestedLiveDimensions
+      ? capCompositePreviewRasterDimensions(
+          requestedLiveDimensions,
+          sourceRasterCeiling,
+        )
+      : resolveCompositeRasterDimensions(
+          source.logicalDimensions,
+          sourceRasterCeiling ? [sourceRasterCeiling] : [],
+        );
+    const identity = identityFor(source, rasterDimensions);
     this.throwIfCancelled(policy);
     const key = runtimePoolKey(source);
     let entry = this.runtimes.get(key);
     if (!entry || !sameIdentity(entry.identity, identity)) {
-      if (entry) this.retireEntry(entry);
+      if (entry) {
+        this.retireEntry(entry, "identity", {
+          retainPreparedSources: sameDecoderSessionIdentity(
+            entry.identity,
+            identity,
+          ),
+        });
+      } else {
+        this.disposeStaleDecoderSessions(key, identity);
+      }
       entry = {
         key,
         identity,
@@ -589,10 +709,15 @@ export class CompositeSceneRuntimeManager
         leaseCount: 0,
         lastRenderedWorkKey: null,
         lastTexture: null,
+        retainPreparedSourcesOnDispose: false,
         disposed: false,
       };
       this.runtimes.set(key, entry);
       this.allEntries.add(entry);
+      this.decoderSessionsByPlacementKey.set(key, {
+        identity,
+        sessionKeys: [...entry.runtime.getDecoderSessionKeys()],
+      });
     }
     entry.lastUsed = ++this.useCounter;
     const workKey = renderWorkKey(source, identity);
@@ -612,10 +737,9 @@ export class CompositeSceneRuntimeManager
         );
       } catch (error) {
         if (isAbortError(error)) {
-          // A cancelled temporal replay may have advanced only part of the
-          // placement-private filter state. Remove it from the active pool so
-          // the replacement request starts with fresh engines and history.
-          this.retireEntry(entry);
+          // A cancelled render may have advanced only part of the placement's
+          // private state. Rebuild it while retaining prepared decoder sources.
+          this.retireEntry(entry, "abort");
         }
         throw error;
       } finally {
@@ -725,8 +849,13 @@ export class CompositeSceneRuntimeManager
         )
         .sort((left, right) => left.lastUsed - right.lastUsed)[0];
       if (!candidate) break;
-      if (this.runtimes.get(candidate.key) === candidate) {
+      const isActivePlacementEntry =
+        this.runtimes.get(candidate.key) === candidate;
+      if (isActivePlacementEntry) {
         this.runtimes.delete(candidate.key);
+      }
+      if (isActivePlacementEntry) {
+        this.disposeDecoderSessions(candidate);
       }
       this.disposeEntry(candidate);
       resident = getResident();
@@ -737,10 +866,26 @@ export class CompositeSceneRuntimeManager
     }
   }
 
-  private retireEntry(entry: CompositeRuntimeEntry): void {
+  private retireEntry(
+    entry: CompositeRuntimeEntry,
+    reason: "abort" | "identity",
+    options: { retainPreparedSources?: boolean } = {},
+  ): void {
     if (this.runtimes.get(entry.key) === entry) {
       this.runtimes.delete(entry.key);
     }
+    if (reason === "abort") {
+      entry.retainPreparedSourcesOnDispose = true;
+    } else {
+      entry.retainPreparedSourcesOnDispose =
+        options.retainPreparedSources === true;
+      if (!entry.retainPreparedSourcesOnDispose) {
+        this.disposeDecoderSessions(entry);
+      }
+    }
+    entry.runtime.retireRenderGeneration({
+      retainPreparedSources: entry.retainPreparedSourcesOnDispose,
+    });
     this.disposeEntryIfUnleased(entry);
   }
 
@@ -751,17 +896,51 @@ export class CompositeSceneRuntimeManager
   private disposeEntry(entry: CompositeRuntimeEntry): void {
     if (entry.disposed) return;
     entry.disposed = true;
-    entry.runtime.dispose();
+    entry.runtime.dispose({
+      retainPreparedSources: entry.retainPreparedSourcesOnDispose,
+    });
     this.allEntries.delete(entry);
+  }
+
+  private disposeDecoderSessions(entry: CompositeRuntimeEntry): void {
+    entry.runtime.disposeRetainedDecoderSessions();
+    const record = this.decoderSessionsByPlacementKey.get(entry.key);
+    if (record && sameIdentity(record.identity, entry.identity)) {
+      this.decoderSessionsByPlacementKey.delete(entry.key);
+    }
+  }
+
+  private disposeStaleDecoderSessions(
+    placementKey: string,
+    nextIdentity: RuntimeIdentity,
+  ): void {
+    const record = this.decoderSessionsByPlacementKey.get(placementKey);
+    if (
+      !record ||
+      sameDecoderSessionIdentity(record.identity, nextIdentity)
+    ) {
+      return;
+    }
+    for (const sessionKey of record.sessionKeys) {
+      this.decoderPool.disposeSession(sessionKey);
+    }
+    this.decoderSessionsByPlacementKey.delete(placementKey);
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     for (const entry of [...this.allEntries]) {
+      entry.retainPreparedSourcesOnDispose = false;
       this.disposeEntry(entry);
     }
+    for (const record of this.decoderSessionsByPlacementKey.values()) {
+      for (const sessionKey of record.sessionKeys) {
+        this.decoderPool.disposeSession(sessionKey);
+      }
+    }
+    this.decoderSessionsByPlacementKey.clear();
     this.runtimes.clear();
-    this.rasterDimensionsByIdentity.clear();
+    this.sourceRasterCeilingsByIdentity.clear();
   }
 }

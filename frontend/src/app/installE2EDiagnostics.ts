@@ -93,6 +93,11 @@ declare global {
         placementTick: number;
       }) => Promise<unknown>;
       /**
+       * True only while the canonical parity probe needs the live renderer to
+       * omit interactive preview demand and use its source-fidelity policy.
+       */
+      requiresSourceFidelityCompositeFrame?: () => boolean;
+      /**
        * Internal synchronous receiver. The player calls it before releasing
        * the live Pixi texture; it is present only in strict diagnostic builds.
        */
@@ -179,6 +184,7 @@ export function installE2EDiagnostics(): void {
         ({
           acceptLiveCompositeFrame,
           rejectLiveCompositeFrame,
+          requiresSourceFidelityCompositeFrame,
           runCompositeParityProbe,
         }) => {
           if (window.__vloE2E) {
@@ -186,6 +192,8 @@ export function installE2EDiagnostics(): void {
               acceptLiveCompositeFrame;
             window.__vloE2E.rejectLiveCompositeFrame =
               rejectLiveCompositeFrame;
+            window.__vloE2E.requiresSourceFidelityCompositeFrame =
+              requiresSourceFidelityCompositeFrame;
             window.__vloE2E.runCompositeParityProbe =
               runCompositeParityProbe;
           }

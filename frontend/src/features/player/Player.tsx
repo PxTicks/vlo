@@ -6,6 +6,7 @@ import {
   getSharedDecoderWorkerPool,
   getProjectDimensions,
   renderProjectFrameFileAtTick,
+  resolveCompositePreviewRasterDimensions,
   useExportJobController,
   useViewport,
   mediaSecondsToTickExact,
@@ -60,9 +61,10 @@ import {
   useTimelineSelectionStore,
 } from "../timelineSelection";
 import {
-  abortSupersededPausedRender,
   enqueueSynchronizedPlaybackQueueEntry,
+  maxQueueSizeForMode,
   pruneSynchronizedPlaybackQueue,
+  SYNCHRONIZED_SCRUB_SETTLE_DELAY_MS,
   type SynchronizedPlaybackQueueEntry,
 } from "./utils/synchronizedPlaybackQueue";
 import { CanvasToolBar } from "./components/CanvasToolBar";
@@ -89,6 +91,8 @@ function PlayerImpl() {
     [] as SynchronizedPlaybackQueueEntry[],
   );
   const synchronizedPlaybackBusyRef = useRef(false);
+  // A retiring React effect hands queued work to the latest processor.
+  const synchronizedPlaybackProcessorRef = useRef<(() => void) | null>(null);
   const activePlaybackRenderAbortRef = useRef<AbortController | null>(null);
   const temporalWarmupTargetRef = useRef<RenderTexture | null>(null);
   const maxTimelineDurationRef = useRef(0);
@@ -267,6 +271,7 @@ function PlayerImpl() {
         if (
           import.meta.env.VITE_E2E_DIAGNOSTICS === "true" &&
           window.__vloE2E?.acceptLiveCompositeFrame &&
+          window.__vloE2E.requiresSourceFidelityCompositeFrame?.() === true &&
           job.compositeSource
         ) {
           try {
@@ -420,6 +425,8 @@ function PlayerImpl() {
   useEffect(() => {
     const activeClock = isPlaying ? playbackFrameClock : playbackClock;
     let isDisposed = false;
+    const temporalPreviewQuality = isPlaying ? "exact" : "approximate";
+    let scrubSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
     const processPendingPlaybackFrames = async () => {
       if (synchronizedPlaybackBusyRef.current || isDisposed) return;
@@ -435,6 +442,7 @@ function PlayerImpl() {
           pruneSynchronizedPlaybackQueue(
             pendingPlaybackFrameQueueRef.current,
             performance.now(),
+            { maxQueueSize: maxQueueSizeForMode(isPlaying) },
           );
 
           const nextFrame = pendingPlaybackFrameQueueRef.current.shift();
@@ -468,6 +476,21 @@ function PlayerImpl() {
                   compositeSourcePolicy,
                   fps: config.fps,
                   logicalDimensions,
+                  outputDimensions:
+                    import.meta.env.VITE_E2E_DIAGNOSTICS === "true" &&
+                    window.__vloE2E?.requiresSourceFidelityCompositeFrame?.()
+                      ? undefined
+                      : resolveCompositePreviewRasterDimensions(
+                          logicalDimensions,
+                          {
+                            width:
+                              pixiApp?.renderer.width ??
+                              logicalDimensions.width,
+                            height:
+                              pixiApp?.renderer.height ??
+                              logicalDimensions.height,
+                          },
+                        ),
                   visualTrackOrder: visualTrackIdsRef.current,
                   adjustmentEffectResolver,
                   signal: abortController.signal,
@@ -558,59 +581,60 @@ function PlayerImpl() {
         }
 
         synchronizedPlaybackBusyRef.current = false;
-        if (!isDisposed && pendingPlaybackFrameQueueRef.current.length > 0) {
-          void processPendingPlaybackFrames();
+        if (pendingPlaybackFrameQueueRef.current.length > 0) {
+          synchronizedPlaybackProcessorRef.current?.();
         }
       }
     };
 
-    pendingPlaybackFrameQueueRef.current = [];
-    enqueueSynchronizedPlaybackQueueEntry(
-      pendingPlaybackFrameQueueRef.current,
-      {
-        time: activeClock.time,
-        enqueuedAtMs: performance.now(),
-        temporalPreviewQuality: isPlaying ? "exact" : "approximate",
-      },
-    );
-    void processPendingPlaybackFrames();
+    synchronizedPlaybackProcessorRef.current = processPendingPlaybackFrames;
 
-    const unsubscribe = activeClock.subscribe((time) => {
+    const enqueueFrame = (time: number) => {
       enqueueSynchronizedPlaybackQueueEntry(
         pendingPlaybackFrameQueueRef.current,
         {
           time,
           enqueuedAtMs: performance.now(),
-          temporalPreviewQuality: isPlaying ? "exact" : "approximate",
+          temporalPreviewQuality,
         },
-        isPlaying ? undefined : { maxQueueSize: 1 },
-      );
-      abortSupersededPausedRender(
-        isPlaying,
-        activePlaybackRenderAbortRef.current,
+        { maxQueueSize: maxQueueSizeForMode(isPlaying) },
       );
       void processPendingPlaybackFrames();
-    });
-    const unsubscribeFrameRequests =
-      liveFrameGraphCoordinator?.subscribeFrameRequests((time) => {
+
+      if (isPlaying) return;
+      if (scrubSettleTimer !== null) clearTimeout(scrubSettleTimer);
+      scrubSettleTimer = setTimeout(() => {
+        scrubSettleTimer = null;
+        pendingPlaybackFrameQueueRef.current.length = 0;
         enqueueSynchronizedPlaybackQueueEntry(
           pendingPlaybackFrameQueueRef.current,
           {
             time,
             enqueuedAtMs: performance.now(),
-            temporalPreviewQuality: isPlaying ? "exact" : "approximate",
+            temporalPreviewQuality: "exact",
           },
-          isPlaying ? undefined : { maxQueueSize: 1 },
-        );
-        abortSupersededPausedRender(
-          isPlaying,
-          activePlaybackRenderAbortRef.current,
+          { maxQueueSize: maxQueueSizeForMode(false) },
         );
         void processPendingPlaybackFrames();
-      });
+      }, SYNCHRONIZED_SCRUB_SETTLE_DELAY_MS);
+    };
+
+    pendingPlaybackFrameQueueRef.current = [];
+    enqueueFrame(activeClock.time);
+
+    const unsubscribe = activeClock.subscribe(enqueueFrame);
+    const unsubscribeFrameRequests =
+      liveFrameGraphCoordinator?.subscribeFrameRequests(enqueueFrame);
 
     return () => {
       isDisposed = true;
+      if (
+        synchronizedPlaybackProcessorRef.current ===
+        processPendingPlaybackFrames
+      ) {
+        synchronizedPlaybackProcessorRef.current = null;
+      }
+      if (scrubSettleTimer !== null) clearTimeout(scrubSettleTimer);
       activePlaybackRenderAbortRef.current?.abort();
       activePlaybackRenderAbortRef.current = null;
       pendingPlaybackFrameQueueRef.current = [];

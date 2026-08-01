@@ -194,6 +194,174 @@ describe("DecoderWorkerPool", () => {
     pool.dispose();
   });
 
+  it("hands a prepared source to a replacement lease without preparing it again", () => {
+    const pool = createDecoderWorkerPool({ label: "test", size: 1 });
+    const firstReady = vi.fn();
+    const firstLease = pool.acquireLease(
+      { label: "first", sessionKey: "placement:track" },
+      {
+        onReady: firstReady,
+        onFrame: vi.fn(),
+        onWorkerError: vi.fn(),
+        onSourceEvicted: vi.fn(),
+      },
+    );
+
+    firstLease.prepare({
+      clipId: "clip-1",
+      url: "blob:source",
+      kind: "video",
+    });
+    const worker = mockWorkerInstances[0];
+    const firstPrepare = getWorkerMessages(worker, "prepare")[0];
+    worker.onmessage?.({
+      data: {
+        type: "ready",
+        clipId: firstPrepare?.clipId,
+        kind: "video",
+      },
+    } as MessageEvent);
+    expect(firstReady).toHaveBeenCalledWith("clip-1", "video");
+
+    firstLease.release({ retainPreparedSources: true });
+    expect(getWorkerMessages(worker, "dispose")).toHaveLength(0);
+
+    const replacementReady = vi.fn();
+    const replacementLease = pool.acquireLease(
+      { label: "replacement", sessionKey: "placement:track" },
+      {
+        onReady: replacementReady,
+        onFrame: vi.fn(),
+        onWorkerError: vi.fn(),
+        onSourceEvicted: vi.fn(),
+      },
+    );
+    expect(
+      replacementLease.prepare({
+        clipId: "clip-1",
+        url: "blob:source",
+        kind: "video",
+      }),
+    ).toBe("reused");
+
+    expect(getWorkerMessages(worker, "prepare")).toHaveLength(1);
+    expect(replacementReady).not.toHaveBeenCalled();
+
+    replacementLease.release({ retainPreparedSources: true });
+    pool.disposeSession("placement:track");
+    expect(getWorkerMessages(worker, "dispose")).toEqual([
+      expect.objectContaining({
+        clipId: firstPrepare?.clipId,
+      }),
+    ]);
+    pool.dispose();
+  });
+
+  it("hands an in-flight prepare to a replacement lease without posting twice", () => {
+    const pool = createDecoderWorkerPool({ label: "test", size: 1 });
+    const firstLease = pool.acquireLease(
+      { sessionKey: "placement:track" },
+      {
+        onReady: vi.fn(),
+        onFrame: vi.fn(),
+        onWorkerError: vi.fn(),
+        onSourceEvicted: vi.fn(),
+      },
+    );
+    firstLease.prepare({
+      clipId: "clip-1",
+      url: "blob:source",
+      kind: "video",
+    });
+    const worker = mockWorkerInstances[0];
+    const firstPrepare = getWorkerMessages(worker, "prepare")[0];
+
+    firstLease.release({ retainPreparedSources: true });
+    const replacementReady = vi.fn();
+    const replacementLease = pool.acquireLease(
+      { sessionKey: "placement:track" },
+      {
+        onReady: replacementReady,
+        onFrame: vi.fn(),
+        onWorkerError: vi.fn(),
+        onSourceEvicted: vi.fn(),
+      },
+    );
+
+    expect(
+      replacementLease.prepare({
+        clipId: "clip-1",
+        url: "blob:source",
+        kind: "video",
+      }),
+    ).toBe("pending");
+    expect(getWorkerMessages(worker, "prepare")).toHaveLength(1);
+
+    worker.onmessage?.({
+      data: {
+        type: "ready",
+        clipId: firstPrepare?.clipId,
+        kind: "video",
+      },
+    } as MessageEvent);
+    expect(replacementReady).toHaveBeenCalledWith("clip-1", "video");
+
+    replacementLease.release();
+    pool.dispose();
+  });
+
+  it("prepares again when an adopted session receives a different source", () => {
+    const pool = createDecoderWorkerPool({ label: "test", size: 1 });
+    const firstLease = pool.acquireLease(
+      { sessionKey: "placement:track" },
+      {
+        onReady: vi.fn(),
+        onFrame: vi.fn(),
+        onWorkerError: vi.fn(),
+        onSourceEvicted: vi.fn(),
+      },
+    );
+    firstLease.prepare({
+      clipId: "clip-1",
+      url: "blob:first",
+      kind: "video",
+    });
+    const worker = mockWorkerInstances[0];
+    const firstPrepare = getWorkerMessages(worker, "prepare")[0];
+    worker.onmessage?.({
+      data: {
+        type: "ready",
+        clipId: firstPrepare?.clipId,
+        kind: "video",
+      },
+    } as MessageEvent);
+    firstLease.release({ retainPreparedSources: true });
+
+    const replacementLease = pool.acquireLease(
+      { sessionKey: "placement:track" },
+      {
+        onReady: vi.fn(),
+        onFrame: vi.fn(),
+        onWorkerError: vi.fn(),
+        onSourceEvicted: vi.fn(),
+      },
+    );
+    replacementLease.prepare({
+      clipId: "clip-1",
+      url: "blob:replacement",
+      kind: "video",
+    });
+
+    expect(getWorkerMessages(worker, "prepare")).toHaveLength(2);
+    expect(getWorkerMessages(worker, "prepare")[1]).toMatchObject({
+      clipId: firstPrepare?.clipId,
+      url: "blob:replacement",
+    });
+
+    replacementLease.release();
+    pool.dispose();
+  });
+
   it("stagger-spawns warmup workers toward the target size", async () => {
     const pool = createDecoderWorkerPool({ label: "test", size: 3 });
 
@@ -209,6 +377,75 @@ describe("DecoderWorkerPool", () => {
 
     pool.dispose();
   });
+
+  it(
+    "keeps one lease on a worker while spreading an independent subordinate lease",
+    () => {
+      const pool = createDecoderWorkerPool({ label: "test", size: 2 });
+      const events = {
+        onReady: vi.fn(),
+        onFrame: vi.fn(),
+        onWorkerError: vi.fn(),
+        onSourceEvicted: vi.fn(),
+      };
+      const primaryLane = pool.acquireLease({ label: "track" }, events);
+      const maskLane = pool.acquireLease({ label: "mask" }, events);
+
+      primaryLane.prepare({ clipId: "clip-a", url: "blob:a", kind: "video" });
+      primaryLane.prepare({ clipId: "clip-b", url: "blob:b", kind: "video" });
+      maskLane.prepare({
+        clipId: "mask-a",
+        url: "blob:mask",
+        kind: "mask_video",
+      });
+
+      expect(mockWorkerInstances).toHaveLength(2);
+      expect(getWorkerMessages(mockWorkerInstances[0], "prepare")).toEqual([
+        expect.objectContaining({ clipId: expect.stringMatching(/\/clip-a$/) }),
+        expect.objectContaining({ clipId: expect.stringMatching(/\/clip-b$/) }),
+      ]);
+      expect(getWorkerMessages(mockWorkerInstances[1], "prepare")).toEqual([
+        expect.objectContaining({ clipId: expect.stringMatching(/\/mask-a$/) }),
+      ]);
+
+      primaryLane.release();
+      maskLane.release();
+      pool.dispose();
+    },
+  );
+
+  it(
+    "materializes staggered warmup capacity when a new lane needs it",
+    async () => {
+      const pool = createDecoderWorkerPool({ label: "test", size: 3 });
+      const events = {
+        onReady: vi.fn(),
+        onFrame: vi.fn(),
+        onWorkerError: vi.fn(),
+        onSourceEvicted: vi.fn(),
+      };
+      pool.warmUp();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockWorkerInstances).toHaveLength(1);
+
+      const firstLane = pool.acquireLease({ label: "first" }, events);
+      const secondLane = pool.acquireLease({ label: "second" }, events);
+      firstLane.prepare({ clipId: "clip-a", url: "blob:a", kind: "video" });
+      secondLane.prepare({ clipId: "clip-b", url: "blob:b", kind: "video" });
+
+      expect(mockWorkerInstances).toHaveLength(2);
+      expect(
+        getWorkerMessages(mockWorkerInstances[0], "prepare"),
+      ).toHaveLength(1);
+      expect(
+        getWorkerMessages(mockWorkerInstances[1], "prepare"),
+      ).toHaveLength(1);
+
+      firstLane.release();
+      secondLane.release();
+      pool.dispose();
+    },
+  );
 
   it("does a renderer reset on pong without replacing the worker", async () => {
     const pool = createDecoderWorkerPool({ label: "test", size: 1 });

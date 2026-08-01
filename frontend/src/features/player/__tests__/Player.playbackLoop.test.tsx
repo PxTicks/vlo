@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, render, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../timeline";
 
@@ -11,6 +11,7 @@ const {
   fileSystemServiceMock,
   mockDecoderWorkerPool,
   mockLiveFrameGraphConstructor,
+  mockLiveFrameGraphRenderFrame,
   mockLiveFrameGraphState,
   mockPixiApp,
   playerControlsProps,
@@ -67,8 +68,15 @@ const {
         warmUp: vi.fn(),
       },
       mockLiveFrameGraphConstructor: vi.fn(),
+      mockLiveFrameGraphRenderFrame: vi.fn(
+        async (
+          _time: number,
+          _options: { temporalPreviewQuality?: "exact" | "approximate" },
+        ) => null,
+      ),
       mockLiveFrameGraphState: {
         enabled: true,
+        participantCount: 0,
       },
       mockPixiApp: {
         canvas: { style: {} },
@@ -301,9 +309,9 @@ vi.mock("../../renderer", () => ({
       mockLiveFrameGraphConstructor();
     }
 
-    participantCount = 0;
+    participantCount = mockLiveFrameGraphState.participantCount;
     dispose = vi.fn();
-    renderFrame = vi.fn(async () => null);
+    renderFrame = mockLiveFrameGraphRenderFrame;
     requestFrame = vi.fn();
     subscribeFrameRequests = vi.fn(() => () => {});
   },
@@ -319,6 +327,9 @@ vi.mock("../../renderer", () => ({
   }),
   renderProjectFrameFileAtTick: renderProjectFrameFileAtTickMock,
   getProjectDimensions: () => ({ width: 1920, height: 1080 }),
+  resolveCompositePreviewRasterDimensions: (
+    logicalDimensions: { width: number; height: number },
+  ) => logicalDimensions,
   mediaSecondsToTickExact: (seconds: number) => seconds * TICKS_PER_SECOND,
 }));
 
@@ -332,6 +343,7 @@ import { useTimelineSelectionStore } from "../../timelineSelection";
 import { audioSystem } from "../services/AudioSystem";
 import { playbackClock, playbackFrameClock } from "../../../core/playback/PlaybackClock";
 import { addLocalAsset } from "../../userAssets";
+import { SYNCHRONIZED_SCRUB_SETTLE_DELAY_MS } from "../utils/synchronizedPlaybackQueue";
 
 const MP4_FORMAT = {
   format: "mp4",
@@ -340,9 +352,12 @@ const MP4_FORMAT = {
 } as const;
 
 describe("Player playback loop", () => {
+  afterEach(() => vi.useRealTimers());
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockLiveFrameGraphState.enabled = true;
+    mockLiveFrameGraphState.participantCount = 0;
     playerControlsProps.current = null;
     extractDialogProps.current = null;
     globalThis.requestAnimationFrame = vi.fn(() => 1);
@@ -487,6 +502,83 @@ describe("Player playback loop", () => {
     expect(audioSystem.resume).toHaveBeenCalled();
     expect(usePlayerStore.getState().isPlaying).toBe(true);
   });
+
+  it("refines the final paused scrub tick after input settles", async () => {
+    vi.useFakeTimers();
+    mockLiveFrameGraphState.participantCount = 1;
+    act(() => {
+      usePlayerStore.setState({ isPlaying: false });
+      playbackClock.setTime(100);
+    });
+
+    const view = render(<Player />);
+    await act(async () => Promise.resolve());
+
+    act(() => {
+      playbackClock.setTime(200);
+      playbackClock.setTime(300);
+    });
+    await act(async () => Promise.resolve());
+    expect(mockLiveFrameGraphRenderFrame).toHaveBeenLastCalledWith(
+      300,
+      expect.objectContaining({ temporalPreviewQuality: "approximate" }),
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(SYNCHRONIZED_SCRUB_SETTLE_DELAY_MS - 1);
+      await Promise.resolve();
+    });
+    expect(
+      mockLiveFrameGraphRenderFrame.mock.calls.some(
+        ([, options]) => options.temporalPreviewQuality === "exact",
+      ),
+    ).toBe(false);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
+    expect(mockLiveFrameGraphRenderFrame).toHaveBeenLastCalledWith(
+      300,
+      expect.objectContaining({ temporalPreviewQuality: "exact" }),
+    );
+
+    view.unmount();
+  });
+
+  it(
+    "hands queued work to a replacement processor after a React effect restart",
+    async () => {
+      mockLiveFrameGraphState.participantCount = 1;
+      let resolveFirstRender!: (result: null) => void;
+      mockLiveFrameGraphRenderFrame.mockImplementationOnce(
+        () =>
+          new Promise<null>((resolve) => {
+            resolveFirstRender = resolve;
+          }),
+      );
+
+      render(<Player />);
+      await waitFor(() => {
+        expect(mockLiveFrameGraphRenderFrame).toHaveBeenCalledTimes(1);
+      });
+
+      act(() => {
+        useProjectStore.setState((state) => ({
+          config: { ...state.config, fps: 60 },
+        }));
+      });
+      expect(mockLiveFrameGraphRenderFrame).toHaveBeenCalledTimes(1);
+
+      await act(async () => resolveFirstRender(null));
+      await waitFor(() => {
+        expect(mockLiveFrameGraphRenderFrame).toHaveBeenCalledTimes(2);
+      });
+      expect(mockLiveFrameGraphRenderFrame.mock.calls[1]?.[1]).toEqual(
+        expect.objectContaining({ fps: 60 }),
+      );
+    },
+  );
 
   it("pauses playback on the next frame boundary", () => {
     playbackClock.setTime(TICKS_PER_SECOND + 1);

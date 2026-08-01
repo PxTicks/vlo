@@ -155,6 +155,11 @@ export type FrameExecutionPolicy =
       signal?: AbortSignal;
       render?: FilterRenderContext;
       temporalPreviewQuality?: "exact" | "approximate";
+      /**
+       * Physical raster demand from the live presentation sink. Omit only for
+       * callers that intentionally require the source-fidelity fallback.
+       */
+      outputDimensions?: FrameDimensions;
     };
 
 export interface FrameResourceLease<T> {

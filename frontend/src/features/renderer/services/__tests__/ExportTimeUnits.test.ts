@@ -52,6 +52,7 @@ vi.mock("@decoder-worker-loader", () => {
                 bitmap: {}, // Mock bitmap
                 clipId: msg.clipId,
                 transformTime: msg.transformTime,
+                requestId: msg.requestId,
               },
             } as MessageEvent);
           }, 0);

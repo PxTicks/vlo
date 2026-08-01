@@ -327,6 +327,112 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     decoderPool.dispose();
   });
 
+  it("does not let a late aborted strict reply settle its replacement request", async () => {
+    mockWorkerBehaviors.push(["hang", "hang"]);
+
+    const { engine, decoderPool } = createEngine({ trackId: "track-1" });
+    const clip = createClip();
+    const asset = createAsset();
+    const job = engine.resolveFrameJob({
+      epoch: 1,
+      presentationTick: 2 * TICKS_PER_SECOND,
+      trackClips: [clip],
+      maskClipsByParent: new Map(),
+      assetsById: new Map([[asset.id, asset]]),
+      logicalDimensions: { width: 1920, height: 1080 },
+      fps: 30,
+    });
+    expect(job).not.toBeNull();
+    if (!job) {
+      throw new Error("Expected a resolved video frame job");
+    }
+
+    const controller = new AbortController();
+    const abortedDecode = engine.decodeResolvedSourceFrame(job, {
+      signal: controller.signal,
+    });
+    const worker = mockWorkerInstances[0];
+    const firstRender = worker.postMessage.mock.calls
+      .map(([message]) => message)
+      .find((message) => message.type === "render");
+    controller.abort();
+    await expect(abortedDecode).rejects.toMatchObject({ name: "AbortError" });
+
+    const replacementDecode = engine.decodeResolvedSourceFrame(job);
+    const renderMessages = worker.postMessage.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type === "render");
+    const replacementRender = renderMessages.at(-1);
+    expect(firstRender?.requestId).toBeTypeOf("string");
+    expect(replacementRender?.requestId).toBeTypeOf("string");
+    expect(replacementRender?.requestId).not.toBe(firstRender?.requestId);
+
+    const staleBitmap = {
+      width: 320,
+      height: 240,
+      close: vi.fn(),
+    };
+    engine["handleLeaseFrame"]({
+      bitmap: staleBitmap as unknown as ImageBitmap,
+      clipId: clip.id,
+      requestId: firstRender?.requestId,
+    });
+    expect(staleBitmap.close).toHaveBeenCalledTimes(1);
+    expect(engine["pendingStrictFrameRequestId"]).toBe(
+      replacementRender?.requestId,
+    );
+
+    const replacementBitmap = {
+      width: 320,
+      height: 240,
+      close: vi.fn(),
+    };
+    engine["handleLeaseFrame"]({
+      bitmap: replacementBitmap as unknown as ImageBitmap,
+      clipId: clip.id,
+      requestId: replacementRender?.requestId,
+    });
+    await expect(replacementDecode).resolves.toBe(replacementBitmap);
+    expect(replacementBitmap.close).not.toHaveBeenCalled();
+    replacementBitmap.close();
+
+    engine.dispose();
+    decoderPool.dispose();
+  });
+
+  it("routes a live reply to the live slot while a strict decode is pending", () => {
+    const { engine, decoderPool } = createEngine({ trackId: "track-1" });
+    const strictResolve = vi.fn();
+    const liveResolve = vi.fn();
+    const liveRequestId = engine["createDecoderFrameRequestId"]("live");
+
+    engine["pendingResolve"] = strictResolve;
+    engine["pendingStrictFrameRequestId"] =
+      engine["createDecoderFrameRequestId"]("strict");
+    engine["pendingLiveFrame"] = {
+      resolve: liveResolve,
+      reject: vi.fn(),
+    };
+    engine["pendingLiveFrameRequestId"] = liveRequestId;
+
+    engine["handleLeaseFrame"]({
+      bitmap: null,
+      clipId: "clip-1",
+      transformTime: 42,
+      requestId: liveRequestId,
+    });
+
+    expect(liveResolve).toHaveBeenCalledWith({
+      bitmap: null,
+      clipId: "clip-1",
+      transformTime: 42,
+    });
+    expect(strictResolve).not.toHaveBeenCalled();
+
+    engine.dispose();
+    decoderPool.dispose();
+  });
+
   it("retries the same synchronized frame when no texture has been applied yet", async () => {
     mockWorkerBehaviors.push(["frame"]);
 

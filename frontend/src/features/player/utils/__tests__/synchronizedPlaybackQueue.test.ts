@@ -1,22 +1,49 @@
 import { describe, expect, it } from "vitest";
 import {
-  abortSupersededPausedRender,
   enqueueSynchronizedPlaybackQueueEntry,
+  MAX_SYNCHRONIZED_PLAYBACK_REQUEST_AGE_MS,
+  maxQueueSizeForMode,
   pruneSynchronizedPlaybackQueue,
 } from "../synchronizedPlaybackQueue";
 
 describe("synchronizedPlaybackQueue", () => {
-  it("cancels paused replacements without cancelling playback", () => {
-    const playback = new AbortController();
-    const paused = new AbortController();
+  it("keeps a scrub backlog bounded by population, dropping oldest first", () => {
+    const queue: Array<{ time: number; enqueuedAtMs: number }> = [];
+    const maxQueueSize = maxQueueSizeForMode(false);
 
-    expect(abortSupersededPausedRender(true, playback)).toBe(false);
-    expect(playback.signal.aborted).toBe(false);
-    expect(abortSupersededPausedRender(false, paused)).toBe(true);
-    expect(paused.signal.aborted).toBe(true);
+    for (let index = 0; index < maxQueueSize + 3; index += 1) {
+      enqueueSynchronizedPlaybackQueueEntry(
+        queue,
+        { time: index, enqueuedAtMs: index },
+        { maxQueueSize },
+      );
+    }
+
+    expect(queue).toHaveLength(maxQueueSize);
+    expect(queue.at(-1)?.time).toBe(maxQueueSize + 2);
   });
 
-  it("keeps FIFO order for queued playback batches", () => {
+  it("bounds how stale the request a scrub commits to can be", () => {
+    const maxQueueSize = maxQueueSizeForMode(false);
+    const nowMs = 1_000;
+    const queue = [
+      { time: 10, enqueuedAtMs: nowMs - 500 },
+      { time: 20, enqueuedAtMs: nowMs - 300 },
+      { time: 30, enqueuedAtMs: nowMs - 40 },
+      { time: 40, enqueuedAtMs: nowMs - 10 },
+    ];
+
+    pruneSynchronizedPlaybackQueue(queue, nowMs, { maxQueueSize });
+
+    // The front is what the consumer commits to, so its age is the queue wait.
+    const frontAgeMs = nowMs - (queue[0]?.enqueuedAtMs ?? nowMs);
+    expect(frontAgeMs).toBeLessThanOrEqual(
+      MAX_SYNCHRONIZED_PLAYBACK_REQUEST_AGE_MS,
+    );
+    expect(queue.map((entry) => entry.time)).toEqual([30, 40]);
+  });
+
+  it("coalesces playback requests to the newest pending tick", () => {
     const queue: Array<{ time: number; enqueuedAtMs: number }> = [];
 
     enqueueSynchronizedPlaybackQueueEntry(queue, {
@@ -32,70 +59,29 @@ describe("synchronizedPlaybackQueue", () => {
       enqueuedAtMs: 30,
     });
 
-    expect(queue.map((entry) => entry.time)).toEqual([10, 20, 30]);
+    expect(queue.map((entry) => entry.time)).toEqual([30]);
+    expect(maxQueueSizeForMode(true)).toBe(1);
   });
 
-  it("replaces an older queued request for the same paused tick", () => {
+  it("replaces an older queued request for the same tick before pruning", () => {
     const queue = [
       { time: 10, enqueuedAtMs: 10 },
       { time: 20, enqueuedAtMs: 20 },
     ];
 
-    enqueueSynchronizedPlaybackQueueEntry(queue, {
-      time: 10,
-      enqueuedAtMs: 30,
-    });
+    enqueueSynchronizedPlaybackQueueEntry(
+      queue,
+      {
+        time: 10,
+        enqueuedAtMs: 30,
+      },
+      { maxQueueSize: 4 },
+    );
 
     expect(queue).toEqual([
       { time: 20, enqueuedAtMs: 20 },
       { time: 10, enqueuedAtMs: 30 },
     ]);
-  });
-
-  it("coalesces scrub approximations to the newest requested tick", () => {
-    const queue = [
-      { time: 10, enqueuedAtMs: 10, temporalPreviewQuality: "exact" as const },
-    ];
-
-    enqueueSynchronizedPlaybackQueueEntry(
-      queue,
-      {
-        time: 20,
-        enqueuedAtMs: 20,
-        temporalPreviewQuality: "approximate",
-      },
-      { maxQueueSize: 1 },
-    );
-    enqueueSynchronizedPlaybackQueueEntry(
-      queue,
-      {
-        time: 30,
-        enqueuedAtMs: 30,
-        temporalPreviewQuality: "approximate",
-      },
-      { maxQueueSize: 1 },
-    );
-
-    expect(queue).toEqual([
-      {
-        time: 30,
-        enqueuedAtMs: 30,
-        temporalPreviewQuality: "approximate",
-      },
-    ]);
-  });
-
-  it("drops the oldest queued batches when capacity is exceeded", () => {
-    const queue: Array<{ time: number; enqueuedAtMs: number }> = [];
-
-    [10, 20, 30, 40, 50].forEach((time) => {
-      enqueueSynchronizedPlaybackQueueEntry(queue, {
-        time,
-        enqueuedAtMs: time,
-      });
-    });
-
-    expect(queue.map((entry) => entry.time)).toEqual([20, 30, 40, 50]);
   });
 
   it("prunes stale queued batches before they are processed", () => {

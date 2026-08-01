@@ -4,10 +4,11 @@ import { expect, test } from './fixtures';
  * Phase 5.4 — real baked-versus-live composite pixel parity.
  *
  * The live frame is extracted from the composite-scene texture before parent
- * timeline operations. The same local tick is rendered through the production
- * alpha-preserving bake path, captured immediately before encoding, then
- * decoded back through Mediabunny/Chromium. Only comparison summaries cross
- * the Playwright boundary; the three 1080p RGBA frames stay in the browser.
+ * timeline operations. The diagnostic requests the production source-fidelity
+ * live policy, then renders the same local tick through the alpha-preserving
+ * bake path, captures it immediately before encoding, and decodes it back
+ * through Mediabunny/Chromium. Only comparison summaries cross the Playwright
+ * boundary; the RGBA frames stay in the browser.
  */
 
 const COMPOSITE_ID = 'composite_effce8c8-0ef9-4e17-8482-df81b50744d8';
@@ -40,7 +41,9 @@ test.describe('composite pixel parity', () => {
     test('live, pre-encode and decoded-bake frames remain within repository tolerances', async ({
         editorCurrent,
     }, testInfo) => {
-        test.setTimeout(180_000);
+        // Cold filesystem hydration on the software-rasterised media lane can
+        // consume most of the first minute before a non-transparent live frame.
+        test.setTimeout(240_000);
         const page = editorCurrent.page;
 
         await expect

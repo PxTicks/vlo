@@ -24,9 +24,11 @@ import {
   isExtensionTimelineClip,
 } from "../../types/TimelineTypes";
 import type {
+  ExtensionSelectionSnapshot,
   ExtensionTimelineEntitySnapshot,
   ExtensionTimelineClipSnapshot,
   ExtensionTimelineMaskSnapshot,
+  ExtensionTimelineTrackSnapshot,
   ExtensionTimelineTransitionSnapshot,
   ExtensionTimelineTransformSnapshot,
   JsonValue,
@@ -599,6 +601,37 @@ export function getExtensionTimelineClips(): readonly ExtensionTimelineClipSnaps
   return Object.freeze(
     useTimelineStore.getState().clips.map(toExtensionClipSnapshot),
   );
+}
+
+export function getExtensionTimelineTracks(): readonly ExtensionTimelineTrackSnapshot[] {
+  return Object.freeze(
+    useTimelineStore.getState().tracks.map((track, index) =>
+      Object.freeze({
+        id: track.id,
+        index,
+        label: track.label,
+        // Legacy tracks carry no type. The host treats those as visual, but
+        // the projection reports the absence rather than asserting a class the
+        // model never recorded.
+        type: track.type ?? null,
+        isVisible: track.isVisible,
+        isMuted: track.isMuted,
+        isLocked: track.isLocked,
+      }),
+    ),
+  );
+}
+
+/**
+ * The editor selection, detached. Clip and transition selection are mutually
+ * exclusive in the store, and this projection preserves that.
+ */
+export function getExtensionTimelineSelection(): ExtensionSelectionSnapshot {
+  const state = useTimelineStore.getState();
+  return Object.freeze({
+    clipIds: Object.freeze([...state.selectedClipIds]),
+    transitionId: state.selectedTransitionId,
+  });
 }
 
 export function getExtensionTimelineTransitions(): readonly ExtensionTimelineTransitionSnapshot[] {

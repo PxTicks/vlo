@@ -76,6 +76,49 @@ null target clip, cancellation, contribution disposal, and asynchronous ingest
 failure. Do not attach independent listeners to the host stage unless using the
 explicit trusted escape hatch.
 
+## Commands and keybindings
+
+The host keeps one command table; menus, keybindings, and the canvas toolbar are
+projections of it. Register with
+`ui.commands.register({ id, apiVersion: 1, title, icon?, when?, run })` using a
+local ID — the host qualifies it as `extensionId/id`. `run(invocation)` receives
+`{ source, subject? }`, where `subject` is the detached JSON subject of the
+invoking surface.
+
+Gate enablement declaratively with `when` over host context keys rather than
+checking inside `run`, so every surface renders the command consistently. Current
+keys: `project.open`, `editor.open`, `focus.region`, `playback.playing`,
+`selection.clipCount`, `selection.clipType`, `selection.transitionSelected`,
+`timeline.canUndo`, `timeline.canRedo`, `timeline.canPaste`. Read one directly
+with `ui.commands.getContextKey(key)`; an unknown key returns `undefined`.
+
+Request a chord with
+`ui.commands.registerKeybinding({ id, apiVersion: 1, chord, command, regions? })`.
+The command must already be registered. `"Mod"` is Ctrl, or Cmd on macOS. A chord
+that collides with an existing binding — including chords the host reserves for
+its own shortcuts — registers *inactive* with a diagnostic rather than failing
+activation, so check your diagnostics if a shortcut appears dead. Omit `regions`
+for a global binding; otherwise name the editor focus regions it applies in.
+
+`ui.commands.execute(localId, subject?)` invokes one of your own commands. It
+resolves without running when the command's `when` is false. Host commands are an
+authority surface and are not executable from an extension; contribute a menu
+placement and let the user invoke it.
+
+## Option catalogues
+
+A host catalogue is a named option list behind a host dropdown. Discover them with
+`ui.catalogues.listCatalogues()`, which returns each `id` with a
+documentation-grade `valueSchema`; the host's own validation is authoritative and
+rejects a value that does not fit. Contribute with
+`ui.catalogues.addOption({ id, apiVersion: 1, catalogueId, label, value, order?,
+when? })` — a local `id`, qualified by the host — and read the currently visible
+options of a catalogue, host and extension alike, with `ui.catalogues.list(id)`.
+
+Values are cloned and frozen on registration, and `when` gates visibility over
+context keys. A catalogue is not a general data bus: contribute only values its
+schema describes.
+
 ## Context/action menus
 
 Register a command first, then place it with

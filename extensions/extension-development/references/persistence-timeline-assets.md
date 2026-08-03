@@ -27,12 +27,49 @@ does not imply deleting referenced library assets.
 
 ## Read detached timeline state
 
-Use `timeline.listEntities()`, `listClips()`, and `getProject()` for activation,
-commands, and user-driven UI. These methods return detached snapshots and may clone
-payloads; never poll them from render or audio hot paths.
+Use `timeline.listEntities()`, `listClips()`, `listTracks()`, `listTransitions()`,
+`listClipMasks(clipId)`, and `getProject()` for activation, commands, and
+user-driven UI. These methods return detached snapshots and may clone payloads;
+never poll them from render or audio hot paths.
+
+Use `listTracks()` to resolve the `trackId` carried by clips, entities, and
+placement commands. It returns tracks in the project's visual order with `index`,
+`label`, `isVisible`, `isMuted`, and `isLocked`. A track that predates typed
+tracks reports `type: null`; the host treats those as visual.
 
 Use canonical ticks for all timeline fields. Obtain the time base from
 `timeline.ticksPerSecond` and project FPS from `getProject()`.
+
+## React to host changes instead of polling
+
+Every read domain that can change under the user publishes the same pair:
+`subscribe(listener)` and `getRevision()`. Listeners are payload-free — pull a
+fresh snapshot inside the listener — and are disposed with the extension.
+
+- `timeline` — fires on committed model changes (undo/redo included) and on
+  changes to the values `getProject()` reports. Deliberately commit-grained:
+  selection and in-progress interactions do not signal.
+- `assets` — fires on library changes.
+- `selection` — see below.
+- `storage.local` / `storage.project` — fire on this frontend's own writes.
+
+Cache a revision alongside derived state and recompute when it moves. Per-frame
+and time-driven work belongs in the render contracts, never in a subscriber.
+
+## Read the selection and the transport
+
+`selection.get()` returns `{ clipIds, transitionId }`, detached and in host
+selection order; clip and transition selection are mutually exclusive. It has its
+own `subscribe`/`getRevision` precisely so selecting a clip does not wake timeline
+subscribers. SDK 1 does not let an extension *set* the selection: contribute a
+command or a menu placement and let the user drive it.
+
+`playback` reads the transport: `getTime()` is the playhead in canonical ticks
+(continuous while scrubbing), `getFrameTime()` is the frame-aligned tick the
+renderer is presenting, and `isPlaying()` is the transport state. Its `subscribe`
+is the one signal in the API that is **not** commit-grained — during playback it
+fires once per frame, so keep the listener trivial and schedule your own work.
+Seeking and play/pause stay host-owned in SDK 1.
 
 ## Commit one synchronous transaction
 

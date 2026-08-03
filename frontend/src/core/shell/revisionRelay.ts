@@ -73,3 +73,30 @@ export function createRevisionRelay<TState>(
     },
   });
 }
+
+/**
+ * One revision source over several relays, for a read API whose snapshot is
+ * assembled from more than one store. The combined revision is the sum of the
+ * member revisions: monotonic because each member is, and it changes whenever
+ * any member does. Members keep their own lazy store subscriptions, so a
+ * combined source that nobody subscribes to attaches nothing.
+ */
+export function combineRevisionSources(
+  ...sources: readonly RevisionSource[]
+): RevisionSource {
+  if (sources.length === 0) {
+    throw new RangeError("A combined revision source needs at least one member.");
+  }
+  if (sources.length === 1) return sources[0];
+
+  return Object.freeze({
+    subscribe: (listener: () => void) => {
+      const unsubscribes = sources.map((source) => source.subscribe(listener));
+      return () => {
+        for (const unsubscribe of unsubscribes) unsubscribe();
+      };
+    },
+    getRevision: () =>
+      sources.reduce((total, source) => total + source.getRevision(), 0),
+  });
+}

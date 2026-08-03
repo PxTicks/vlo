@@ -626,6 +626,26 @@ export interface ExtensionTimelineClipSnapshot {
   readonly transformations: readonly ExtensionTimelineTransformSnapshot[];
 }
 
+/**
+ * One timeline track, in the project's visual order. Tracks are host-owned:
+ * this is a read projection, and `trackId` values on clips and entities resolve
+ * against it.
+ */
+export interface ExtensionTimelineTrackSnapshot {
+  readonly id: string;
+  /** Position in the project's track order, top to bottom. */
+  readonly index: number;
+  readonly label: string;
+  /**
+   * The content class a track accepts. Legacy tracks may carry no type, which
+   * the host treats as `"visual"`; those report `null` rather than guessing.
+   */
+  readonly type: string | null;
+  readonly isVisible: boolean;
+  readonly isMuted: boolean;
+  readonly isLocked: boolean;
+}
+
 export interface ExtensionTimelineMaskBounds {
   readonly x: number;
   readonly y: number;
@@ -893,11 +913,20 @@ export interface ExtensionTimelineApi {
   listEntities(): readonly ExtensionTimelineEntitySnapshot[];
   /** Detached snapshots for user-driven commands; not a render-loop accessor. */
   listClips(): readonly ExtensionTimelineClipSnapshot[];
+  /**
+   * Detached track snapshots in the project's visual order. Resolves the
+   * `trackId` carried by clips, entities, and placement commands.
+   */
+  listTracks(): readonly ExtensionTimelineTrackSnapshot[];
   /** Detached transition snapshots for user-driven commands. */
   listTransitions(): readonly ExtensionTimelineTransitionSnapshot[];
   /** Detached mask snapshots attached to a clip. */
   listClipMasks(clipId: string): readonly ExtensionTimelineMaskSnapshot[];
-  /** Current render-domain dimensions and timebase, detached from host state. */
+  /**
+   * Current render-domain dimensions and timebase, detached from host state.
+   * Changes to these values signal through `subscribe`/`getRevision`, so a
+   * cached copy can be refreshed rather than re-read every frame.
+   */
   getProject(): ExtensionTimelineProjectSnapshot;
   /** Converts a zero-based source frame index into vlo's canonical tick unit. */
   sourceFrameToTicks(frameIndex: number, sourceFps: number): number;
@@ -927,11 +956,66 @@ export interface ExtensionTimelineApi {
     definition: ExtensionClipOverlayDefinition,
   ): ExtensionClipOverlayRegistration;
   /**
-   * Fires after any committed timeline model change (undo/redo included).
-   * Commit-grained and payload-free: selection or in-progress interaction
-   * state does not signal; pull detached snapshots on demand. Per-frame and
-   * time-driven work belongs in the render contracts, not here.
+   * Fires after any committed timeline model change (undo/redo included) and
+   * after any change to the values `getProject()` reports. Commit-grained and
+   * payload-free: selection or in-progress interaction state does not signal
+   * (use `api.selection` for that); pull detached snapshots on demand.
+   * Per-frame and time-driven work belongs in the render contracts, not here.
    */
+  subscribe(listener: () => void): () => void;
+  /** Monotonic change token matching `subscribe` notifications. */
+  getRevision(): number;
+}
+
+// === Playback ===
+
+/**
+ * Read access to the transport. Seeking and play/pause remain host-owned in
+ * SDK 1: the player arbitrates frame snapping, the audio system, and export
+ * runs, so a transport write contract needs its own design.
+ */
+export interface ExtensionPlaybackApi {
+  /**
+   * The playhead, in the canonical tick unit (`timeline.ticksPerSecond`).
+   * Continuous while scrubbing — it is not snapped to a frame boundary.
+   */
+  getTime(): number;
+  /**
+   * The frame-aligned presentation tick currently being shown. This is the
+   * value the renderer draws, and it is what a frame-accurate reader wants.
+   */
+  getFrameTime(): number;
+  isPlaying(): boolean;
+  /**
+   * Fires when the playhead moves or the transport starts/stops. Unlike the
+   * other domains this is **not** commit-grained: during playback it fires once
+   * per frame. Keep the listener trivial — read `getTime()` and schedule your
+   * own work — and prefer the render contracts for anything per-frame.
+   */
+  subscribe(listener: () => void): () => void;
+}
+
+// === Selection ===
+
+/** The host's current editor selection, detached. */
+export interface ExtensionSelectionSnapshot {
+  /** Selected timeline clip IDs, in host selection order. */
+  readonly clipIds: readonly string[];
+  /** The selected transition, or null. Clips and transitions are exclusive. */
+  readonly transitionId: string | null;
+}
+
+/**
+ * Read access to the editor selection. Kept off `api.timeline` because the
+ * timeline's signal is deliberately commit-grained: selection changes are not
+ * model changes and must not wake timeline subscribers.
+ *
+ * Selection is a user-owned interaction state; SDK 1 does not let an extension
+ * set it. Contribute a command or menu placement and let the user drive it.
+ */
+export interface ExtensionSelectionApi {
+  get(): ExtensionSelectionSnapshot;
+  /** Fires after the selection changes. Payload-free; pull with `get()`. */
   subscribe(listener: () => void): () => void;
   /** Monotonic change token matching `subscribe` notifications. */
   getRevision(): number;
@@ -2298,6 +2382,10 @@ export interface VloExtensionApi {
   /** Trusted-first, executable Pixi entity providers. */
   readonly entityProviders: ExtensionEntityProviderApi;
   readonly timeline: ExtensionTimelineApi;
+  /** Transport reads: playhead, presented frame, and running state. */
+  readonly playback: ExtensionPlaybackApi;
+  /** The user's current editor selection, read-only. */
+  readonly selection: ExtensionSelectionApi;
   readonly transitions: ExtensionTransitionApi;
   readonly transformations: ExtensionTransformationApi;
   readonly ui: ExtensionUiApi;

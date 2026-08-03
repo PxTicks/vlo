@@ -1,6 +1,6 @@
 {
   "name": "@vlo/extension-sdk",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "private": true,
   "description": "Type-only authoring contract for trusted vlo extensions",
   "license": "AGPL-3.0-or-later",

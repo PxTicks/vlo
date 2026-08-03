@@ -326,26 +326,18 @@ function ExtensionCard({
                 Adds ready-made looks and presets only. Contains no code.
               </Typography>
             )}
-            <Box>
-              <Typography variant="caption" color="text.secondary">
-                What the author says it does
-              </Typography>
-              <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-                {manifest.capabilities.length > 0 ? (
-                  manifest.capabilities.map((capability) => (
-                    <Chip key={capability} size="small" label={capability} />
-                  ))
-                ) : (
-                  <Typography variant="body2">None declared</Typography>
-                )}
-              </Stack>
-            </Box>
-            {manifest.capabilities.includes("host.raw") ? (
-              <Alert severity="info">
-                This list is what the author declared, not a limit vlo enforces.
-                Allowing an extension gives it full access either way.
-              </Alert>
-            ) : null}
+            {/*
+              The manifest's `capabilities` are deliberately not listed here.
+              They are author-declared strings that vlo never enforces — an
+              extension that declares nothing still receives the full trusted
+              API, including raw host access — so presenting them beside an
+              Allow button reads as a scope limit that does not exist. Approval
+              is trust in the author and the digest, and the notice below says
+              exactly that, unconditionally rather than only for packages that
+              happened to declare `host.raw`. (The row's "Filter pack" chip
+              still reads one capability, as a browsing label rather than a
+              statement about access.)
+            */}
           </Stack>
         ) : null}
 

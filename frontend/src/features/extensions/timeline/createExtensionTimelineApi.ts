@@ -19,13 +19,17 @@ import {
   getExtensionTimelineClipMasks,
   getExtensionTimelineClips,
   getExtensionTimelineEntities,
+  getExtensionTimelineTracks,
   getExtensionTimelineTransitions,
   getTimelineClipById,
   getTimelineStoreForTrustedHostAccess,
   getTimelineTransitions,
   type ExtensionTimelineCommand,
 } from "../../timeline/api";
-import { createRevisionRelay } from "../../../core/shell/revisionRelay";
+import {
+  combineRevisionSources,
+  createRevisionRelay,
+} from "../../../core/shell/revisionRelay";
 import { bindOwnerScopedSubscribe } from "../utils/ownerScopedSubscribe";
 import {
   extensionPayloadSchema,
@@ -70,9 +74,26 @@ const BITMAP_MASK_TYPES = new Set<ClipMaskType>([
 // Commit-grained model signal: selection and interaction updates keep these
 // references stable, so only committed timeline changes (undo/redo included)
 // bump the revision.
-const timelineRevisionRelay = createRevisionRelay(
+const timelineModelRelay = createRevisionRelay(
   getTimelineStoreForTrustedHostAccess(),
   (state) => [state.clips, state.tracks, state.transitions],
+);
+
+// `getProject()` reads the project store, not the timeline store, so the model
+// relay alone would leave width/height/fps/fitMode changes silent: an extension
+// caching project dimensions would go stale whenever the user changed the
+// aspect ratio, frame rate, or fit mode. Watch exactly the config fields the
+// snapshot surfaces — other config (layout mode, browser display) is not part
+// of this API and must not signal.
+const projectSnapshotRelay = createRevisionRelay(useProjectStore, (state) => [
+  state.config.aspectRatio,
+  state.config.fps,
+  state.config.fitMode,
+]);
+
+const timelineRevisionRelay = combineRevisionSources(
+  timelineModelRelay,
+  projectSnapshotRelay,
 );
 
 function assertPositiveFinite(value: number, label: string): void {
@@ -449,6 +470,7 @@ export function createExtensionTimelineApi(
     listEntities: (): readonly ExtensionTimelineEntitySnapshot[] =>
       getExtensionTimelineEntities(scope.extension.id),
     listClips: () => getExtensionTimelineClips(),
+    listTracks: () => getExtensionTimelineTracks(),
     listTransitions: () => getExtensionTimelineTransitions(),
     listClipMasks: (clipId) => getExtensionTimelineClipMasks(clipId),
     getProject: getExtensionProjectSnapshot,

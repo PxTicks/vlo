@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRevisionRelay } from "../revisionRelay";
+import { combineRevisionSources, createRevisionRelay } from "../revisionRelay";
 
 interface FakeState {
   model: readonly string[];
@@ -76,5 +76,56 @@ describe("createRevisionRelay", () => {
     relay.subscribe(healthy);
     store.setState({ model: ["a"] });
     expect(healthy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("combineRevisionSources", () => {
+  it("notifies and advances when any member changes", () => {
+    const first = createFakeStore({ model: ["a"], selection: [] });
+    const second = createFakeStore({ model: ["x"], selection: [] });
+    const combined = combineRevisionSources(
+      createRevisionRelay(first, (state) => [state.model]),
+      createRevisionRelay(second, (state) => [state.model]),
+    );
+    const listener = vi.fn();
+    combined.subscribe(listener);
+    const initial = combined.getRevision();
+
+    first.setState({ model: ["b"] });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(combined.getRevision()).toBe(initial + 1);
+
+    second.setState({ model: ["y"] });
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(combined.getRevision()).toBe(initial + 2);
+
+    // Unwatched updates on either member stay silent.
+    first.setState({ selection: ["a"] });
+    second.setState({ selection: ["x"] });
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(combined.getRevision()).toBe(initial + 2);
+  });
+
+  it("detaches every member when the combined subscription ends", () => {
+    const first = createFakeStore({ model: [], selection: [] });
+    const second = createFakeStore({ model: [], selection: [] });
+    const combined = combineRevisionSources(
+      createRevisionRelay(first, (state) => [state.model]),
+      createRevisionRelay(second, (state) => [state.model]),
+    );
+    const unsubscribe = combined.subscribe(vi.fn());
+    expect(first.listenerCount()).toBe(1);
+    expect(second.listenerCount()).toBe(1);
+
+    unsubscribe();
+    expect(first.listenerCount()).toBe(0);
+    expect(second.listenerCount()).toBe(0);
+  });
+
+  it("returns the single member unwrapped and rejects an empty combination", () => {
+    const store = createFakeStore({ model: [], selection: [] });
+    const relay = createRevisionRelay(store, (state) => [state.model]);
+    expect(combineRevisionSources(relay)).toBe(relay);
+    expect(() => combineRevisionSources()).toThrow(RangeError);
   });
 });

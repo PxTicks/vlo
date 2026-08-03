@@ -191,12 +191,24 @@ function createConformanceApi() {
     entityProviders: {
       register: (definition) => ({ id: definition.id, dispose: () => undefined }),
     },
+    playback: {
+      getTime: () => 0,
+      getFrameTime: () => 0,
+      isPlaying: () => false,
+      subscribe: () => () => undefined,
+    },
+    selection: {
+      get: () => ({ clipIds: [], transitionId: null }),
+      subscribe: () => () => undefined,
+      getRevision: () => 0,
+    },
     timeline: {
       subscribe: () => () => undefined,
       getRevision: () => 0,
       ticksPerSecond: 96_000,
       listEntities: () => [],
       listClips: () => [clip],
+      listTracks: () => [],
       listTransitions: () => [],
       listClipMasks: () => [],
       getProject: () => ({

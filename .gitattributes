@@ -47,6 +47,7 @@
 /frontend/src/features/masks/runtime/OffscreenFilterApplicator.ts extension-surface=adapter
 /frontend/src/features/masks/runtime/SpriteClipMaskController.ts extension-surface=adapter
 /frontend/src/features/player/Player.tsx extension-surface=adapter
+/frontend/src/features/player/usePlayerStore.ts extension-surface=adapter
 /frontend/src/features/player/canvasToolPresetsCatalogue.ts extension-surface=adapter
 /frontend/src/features/player/components/TrackLayer.tsx extension-surface=adapter
 /frontend/src/features/player/components/CanvasToolBar.tsx extension-surface=adapter

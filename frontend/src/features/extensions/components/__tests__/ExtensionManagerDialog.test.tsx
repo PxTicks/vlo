@@ -91,8 +91,6 @@ describe("ExtensionManagerDialog", () => {
     render(<ExtensionManagerDialog open onClose={vi.fn()} />);
 
     expect(await screen.findByText("Dialog Extension")).toBeInTheDocument();
-    expect(screen.getByText("timeline.read")).toBeInTheDocument();
-    expect(screen.getByText("backend.jobs")).toBeInTheDocument();
     expect(
       screen.getByText(/Extensions are not sandboxed/i),
     ).toBeInTheDocument();
@@ -252,21 +250,44 @@ describe("ExtensionManagerDialog", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows raw-access metadata and blocks an incompatible VLO range", async () => {
+  it("blocks an incompatible VLO range", async () => {
     const incompatible = extensionItem("pending_approval");
     if (!incompatible.manifest) throw new Error("fixture manifest missing");
     incompatible.manifest.vlo = ">=0.3.0";
-    incompatible.manifest.capabilities = ["host.raw"];
     vi.mocked(globalThis.fetch).mockResolvedValue(
       response({ extensions: [incompatible] }),
     );
 
     render(<ExtensionManagerDialog open onClose={vi.fn()} />);
 
-    expect(await screen.findByText("host.raw")).toBeInTheDocument();
-    expect(screen.getByText(/does not support vlo/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/does not support vlo/i),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Allow" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // Declared capabilities are not enforced, so the approval panel must not
+  // present them as a scope: it states the real trust boundary instead, for
+  // every code-bearing package rather than only self-declared raw-access ones.
+  it("never presents declared capabilities as a limit on access", async () => {
+    const item = extensionItem("pending_approval");
+    if (!item.manifest) throw new Error("fixture manifest missing");
+    item.manifest.capabilities = ["ui.custom", "assets.read"];
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      response({ extensions: [item] }),
+    );
+
+    render(<ExtensionManagerDialog open onClose={vi.fn()} />);
+
+    expect(
+      await screen.findByText(/Extensions are not sandboxed/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("ui.custom")).not.toBeInTheDocument();
+    expect(screen.queryByText("assets.read")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/what the author says it does/i),
     ).not.toBeInTheDocument();
   });
 });

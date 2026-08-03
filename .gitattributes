@@ -19,6 +19,8 @@
 /extensions/.gitignore extension-surface=authoring
 /extensions/installed/.gitkeep extension-surface=authoring
 /extension-fixtures/** extension-surface=fixture
+# Shared stub of the timeline transaction contract; grows with every new command.
+/frontend/src/testUtils/extensionTimeline.ts extension-surface=fixture
 /backend/tests/test_extension*.py extension-surface=fixture
 /backend/tests/test_backend_extension_runtime.py extension-surface=fixture
 

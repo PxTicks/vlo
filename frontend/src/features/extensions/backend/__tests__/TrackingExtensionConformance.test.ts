@@ -5,7 +5,6 @@ import type {
   ExtensionSpatialPathDefinition,
   ExtensionTimelineClipSnapshot,
   ExtensionTimelineTransformInput,
-  ExtensionTimelineTransaction,
   ExtensionTrustedUiComponentDefinition,
   JsonValue,
   VloExtensionApi,
@@ -18,6 +17,7 @@ import {
   type TrackingResult,
 } from "../../../../../../extension-fixtures/tracking/frontend/src/index";
 import { extensionColorApi } from "../../services/extensionColorApi";
+import { createExtensionTimelineTransactionStub } from "../../../../testUtils/extensionTimeline";
 
 const clip: ExtensionTimelineClipSnapshot = {
   id: "clip-1",
@@ -227,24 +227,12 @@ function createConformanceApi() {
       }),
       transaction: (label, callback) => {
         transactionCount += 1;
-        const transaction: ExtensionTimelineTransaction = {
-          createEntity: () => "unused",
-          updatePayload: () => undefined,
-          moveEntity: () => undefined,
-          removeEntity: () => undefined,
+        const transaction = createExtensionTimelineTransactionStub({
           upsertTransform: (_clipId, transform) => {
             committedTransform = transform;
             return transform.id ?? "generated";
           },
-          removeTransform: () => undefined,
-          createTransition: () => "unused-transition",
-          updateTransitionParameters: () => undefined,
-          removeTransition: () => undefined,
-          addClipMask: () => "unused-mask",
-          updateMaskParameters: () => undefined,
-          setMaskActiveRange: () => undefined,
-          removeMask: () => undefined,
-        };
+        });
         callback(transaction);
         return { ok: true, changed: true, label };
       },

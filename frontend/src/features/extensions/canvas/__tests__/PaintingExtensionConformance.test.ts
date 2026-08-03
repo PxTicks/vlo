@@ -8,6 +8,7 @@ import {
   commitPaintedResult,
   splitStrokePoints,
 } from "../../../../../../extension-fixtures/painting/frontend/src/index";
+import { createExtensionTimelineTransactionStub } from "../../../../testUtils/extensionTimeline";
 
 describe("painting extension conformance fixture", () => {
   it("splits long interactions into endpoint-overlapping coalescible commits", () => {
@@ -32,21 +33,12 @@ describe("painting extension conformance fixture", () => {
         callback: (draft: ExtensionTimelineTransaction) => void,
         options?: ExtensionTimelineTransactionOptions,
       ) => {
-        callback({
-          addClipMask,
-          createEntity,
-          updatePayload: vi.fn(),
-          moveEntity: vi.fn(),
-          removeEntity: vi.fn(),
-          upsertTransform: vi.fn(() => "transform-1"),
-          removeTransform: vi.fn(),
-          createTransition: vi.fn(() => "transition-1"),
-          updateTransitionParameters: vi.fn(),
-          removeTransition: vi.fn(),
-          updateMaskParameters: vi.fn(),
-          setMaskActiveRange: vi.fn(),
-          removeMask: vi.fn(),
-        });
+        callback(
+          createExtensionTimelineTransactionStub({
+            addClipMask,
+            createEntity,
+          }),
+        );
         return { ok: true as const, changed: true, label, options };
       },
     );

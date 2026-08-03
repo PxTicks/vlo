@@ -21,6 +21,7 @@ import {
   getExtensionTimelineEntities,
   getExtensionTimelineTracks,
   getExtensionTimelineTransitions,
+  createTimelineClipFromAsset,
   getTimelineClipById,
   getTimelineStoreForTrustedHostAccess,
   getTimelineTransitions,
@@ -45,7 +46,7 @@ import {
 } from "../../transformations/utils/clipTimeDomains";
 import { extensionClipOverlayRegistry } from "./ExtensionClipOverlayRegistry";
 import { extensionTransitionRegistry } from "../../transitions/extensions/ExtensionTransitionRegistry";
-import type { Transition } from "../../../types/TimelineTypes";
+import type { TimelineClip, Transition } from "../../../types/TimelineTypes";
 import type {
   ClipMask,
   ClipMaskParameters,
@@ -172,6 +173,14 @@ function assertEntityId(entityId: string): void {
   if (typeof entityId !== "string" || entityId.trim().length === 0) {
     throw new InvalidExtensionTimelineCommandError(
       "Extension timeline commands require a non-empty entity ID.",
+    );
+  }
+}
+
+function assertFiniteTick(value: number, label: string): void {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new InvalidExtensionTimelineCommandError(
+      `${label} must be a finite non-negative number.`,
     );
   }
 }
@@ -650,6 +659,220 @@ export function createExtensionTimelineApi(
           assertOpen();
           assertEntityId(entityId);
           commands.push({ kind: "remove_entity", entityId });
+        },
+        // Clip and track commands carry shape checks only. Every structural
+        // rule — overlap, trim limits, track class, removal cascades — is
+        // enforced by the host applier, out of the extension's reach.
+        createClip: (input) => {
+          assertOpen();
+          if (typeof input !== "object" || input === null) {
+            throw new InvalidExtensionTimelineCommandError(
+              "createClip requires an input object.",
+            );
+          }
+          const assetId = assertIdentifier(input.assetId, "Asset ID");
+          assertFiniteTick(input.startTicks, "Clip startTicks");
+          const asset = getAssetById(assetId);
+          if (!asset) {
+            throw new InvalidExtensionTimelineCommandError(
+              `Project asset '${assetId}' was not found.`,
+              "asset_not_found",
+            );
+          }
+          if (asset.type === "lut") {
+            throw new InvalidExtensionTimelineCommandError(
+              `Asset '${assetId}' is a LUT and cannot be placed as a clip.`,
+            );
+          }
+          // The host derives the clip from the asset's own media properties;
+          // the extension contributes placement only. Track choice and final
+          // position stay with the applier.
+          const clipId = `extension_clip_${crypto.randomUUID()}`;
+          const clip = {
+            ...createTimelineClipFromAsset(asset),
+            id: clipId,
+            ...(input.name === undefined
+              ? {}
+              : { name: assertIdentifier(input.name, "Clip name") }),
+            trackId: input.trackId ?? "",
+            start: Math.round(input.startTicks),
+          } as TimelineClip;
+          commands.push({
+            kind: "create_clip",
+            clip,
+            ...(input.trackId === undefined
+              ? {}
+              : { trackId: assertIdentifier(input.trackId, "Track ID") }),
+          });
+          return clipId;
+        },
+        moveClip: (clipId, placement) => {
+          assertOpen();
+          const normalizedClipId = assertIdentifier(clipId, "Clip ID");
+          if (typeof placement !== "object" || placement === null) {
+            throw new InvalidExtensionTimelineCommandError(
+              "moveClip requires a placement object.",
+            );
+          }
+          if (
+            placement.startTicks === undefined &&
+            placement.trackId === undefined
+          ) {
+            throw new InvalidExtensionTimelineCommandError(
+              "moveClip requires startTicks, trackId, or both.",
+            );
+          }
+          if (placement.startTicks !== undefined) {
+            assertFiniteTick(placement.startTicks, "Clip startTicks");
+          }
+          commands.push({
+            kind: "move_clip",
+            clipId: normalizedClipId,
+            ...(placement.startTicks === undefined
+              ? {}
+              : { startTicks: Math.round(placement.startTicks) }),
+            ...(placement.trackId === undefined
+              ? {}
+              : { trackId: assertIdentifier(placement.trackId, "Track ID") }),
+          });
+        },
+        trimClip: (clipId, trim) => {
+          assertOpen();
+          const normalizedClipId = assertIdentifier(clipId, "Clip ID");
+          if (typeof trim !== "object" || trim === null) {
+            throw new InvalidExtensionTimelineCommandError(
+              "trimClip requires a trim object.",
+            );
+          }
+          if (trim.startTicks === undefined && trim.endTicks === undefined) {
+            throw new InvalidExtensionTimelineCommandError(
+              "trimClip requires startTicks, endTicks, or both.",
+            );
+          }
+          if (trim.startTicks !== undefined) {
+            assertFiniteTick(trim.startTicks, "Clip startTicks");
+          }
+          if (trim.endTicks !== undefined) {
+            assertFiniteTick(trim.endTicks, "Clip endTicks");
+          }
+          if (
+            trim.startTicks !== undefined &&
+            trim.endTicks !== undefined &&
+            trim.endTicks <= trim.startTicks
+          ) {
+            throw new InvalidExtensionTimelineCommandError(
+              "trimClip endTicks must be greater than startTicks.",
+            );
+          }
+          commands.push({
+            kind: "trim_clip",
+            clipId: normalizedClipId,
+            ...(trim.startTicks === undefined
+              ? {}
+              : { startTicks: Math.round(trim.startTicks) }),
+            ...(trim.endTicks === undefined
+              ? {}
+              : { endTicks: Math.round(trim.endTicks) }),
+          });
+        },
+        splitClip: (clipId, atTicks) => {
+          assertOpen();
+          const normalizedClipId = assertIdentifier(clipId, "Clip ID");
+          assertFiniteTick(atTicks, "Split tick");
+          commands.push({
+            kind: "split_clip",
+            clipId: normalizedClipId,
+            atTicks: Math.round(atTicks),
+          });
+        },
+        removeClip: (clipId) => {
+          assertOpen();
+          commands.push({
+            kind: "remove_clip",
+            clipId: assertIdentifier(clipId, "Clip ID"),
+          });
+        },
+        createTrack: (input) => {
+          assertOpen();
+          if (input !== undefined && (typeof input !== "object" || input === null)) {
+            throw new InvalidExtensionTimelineCommandError(
+              "createTrack requires an input object when supplied.",
+            );
+          }
+          if (
+            input?.type !== undefined &&
+            input.type !== "visual" &&
+            input.type !== "audio"
+          ) {
+            throw new InvalidExtensionTimelineCommandError(
+              'Track type must be "visual" or "audio" when supplied.',
+            );
+          }
+          if (
+            input?.index !== undefined &&
+            (!Number.isInteger(input.index) || input.index < 0)
+          ) {
+            throw new InvalidExtensionTimelineCommandError(
+              "Track index must be a non-negative integer when supplied.",
+            );
+          }
+          const trackId = `extension_track_${crypto.randomUUID()}`;
+          commands.push({
+            kind: "create_track",
+            trackId,
+            ...(input?.label === undefined
+              ? {}
+              : { label: assertIdentifier(input.label, "Track label") }),
+            ...(input?.type === undefined ? {} : { type: input.type }),
+            ...(input?.index === undefined ? {} : { index: input.index }),
+          });
+          return trackId;
+        },
+        updateTrack: (trackId, update) => {
+          assertOpen();
+          const normalizedTrackId = assertIdentifier(trackId, "Track ID");
+          if (typeof update !== "object" || update === null) {
+            throw new InvalidExtensionTimelineCommandError(
+              "updateTrack requires an update object.",
+            );
+          }
+          const flags = ["isVisible", "isMuted", "isLocked"] as const;
+          for (const flag of flags) {
+            if (update[flag] !== undefined && typeof update[flag] !== "boolean") {
+              throw new InvalidExtensionTimelineCommandError(
+                `Track ${flag} must be a boolean when supplied.`,
+              );
+            }
+          }
+          if (
+            update.label === undefined &&
+            flags.every((flag) => update[flag] === undefined)
+          ) {
+            throw new InvalidExtensionTimelineCommandError(
+              "updateTrack requires at least one property.",
+            );
+          }
+          commands.push({
+            kind: "update_track",
+            trackId: normalizedTrackId,
+            ...(update.label === undefined
+              ? {}
+              : { label: assertIdentifier(update.label, "Track label") }),
+            ...(update.isVisible === undefined
+              ? {}
+              : { isVisible: update.isVisible }),
+            ...(update.isMuted === undefined ? {} : { isMuted: update.isMuted }),
+            ...(update.isLocked === undefined
+              ? {}
+              : { isLocked: update.isLocked }),
+          });
+        },
+        removeTrack: (trackId) => {
+          assertOpen();
+          commands.push({
+            kind: "remove_track",
+            trackId: assertIdentifier(trackId, "Track ID"),
+          });
         },
         upsertTransform: (clipId, transform) => {
           assertOpen();

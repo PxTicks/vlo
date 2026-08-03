@@ -76,25 +76,52 @@ Seeking and play/pause stay host-owned in SDK 1.
 Use `timeline.transaction(label, callback, options?)` for persisted writes. Keep the
 callback synchronous and inspect the structured result. Available commands include:
 
-- `createEntity`;
-- `updatePayload`;
-- `moveEntity`;
-- `removeEntity`;
-- `upsertTransform`;
-- `removeTransform`;
-- `createTransition`;
-- `updateTransitionParameters`;
-- `removeTransition`;
-- `addClipMask`;
-- `updateMaskParameters`;
-- `setMaskActiveRange`;
-- `removeMask`.
+- `createEntity`, `updatePayload`, `moveEntity`, `removeEntity`;
+- `createClip`, `moveClip`, `trimClip`, `splitClip`, `removeClip`;
+- `createTrack`, `updateTrack`, `removeTrack`;
+- `upsertTransform`, `removeTransform`;
+- `createTransition`, `updateTransitionParameters`, `removeTransition`;
+- `addClipMask`, `updateMaskParameters`, `setMaskActiveRange`, `removeMask`.
 
 Stage all related commands in one transaction so the host validates ownership and
 creates one undo entry. Do not retain the transaction object or call it after the
 callback. Raw mutation of the live `timeline.store` is permitted for a trusted,
 version-coupled integration, but the extension then owns undo/history, validation,
 persistence consistency, cleanup, and missing-extension behaviour.
+
+## Let the host own correctness
+
+Clip and track commands stage *intent*. Overlap resolution, trim limits,
+track-class compatibility, and removal cascades are enforced inside the host's
+own mutation layer, through the same code a user's drag runs. An extension
+cannot author an invalid timeline and cannot opt out, so do not pre-compute
+placement defensively — state what you want and read back what happened.
+
+Two behaviours follow, and both are normal:
+
+- A request may be **adjusted**. A placement that clips a neighbour's head or
+  tail snaps to that edge; a trim clamps to the media's own bounds, the
+  neighbouring clips, and the minimum clip duration. Re-read `listClips()` after
+  the commit instead of assuming your requested tick.
+- A request may be **refused**, failing the whole transaction with a specific
+  code and committing nothing: `asset_not_found`, `track_not_found`,
+  `track_type_mismatch`, `track_not_empty`, `no_free_slot`. Landing a clip on
+  top of another is refused rather than adjusted — the host blocks that for a
+  user drag too, because a correction would be a guess about which side you
+  meant.
+
+`createClip` takes a project asset ID and placement only; the host builds the
+clip from the asset's media properties and returns its ID. Omit `trackId` to let
+the host pick a compatible track, creating one when nothing fits. `moveClip`
+slides a clip; `trimClip` changes which part of the source plays; they are
+separate commands because they are different edits. `splitClip` cuts at a tick
+strictly inside the clip and leaves the new right-hand clip for you to find via
+`listClips()`. `removeTrack` requires an empty track, so deleting a user's clips
+is always something you asked for explicitly.
+
+Extension entities keep their owner check and are not reachable through the clip
+commands — use `moveEntity`/`removeEntity`. Mask clips are subordinate and are
+likewise rejected; use the mask commands.
 
 Creation supplies common placement and an `ExtensionPayload`; the host generates the
 entity ID. Payload updates must remain compatible with the calling extension.

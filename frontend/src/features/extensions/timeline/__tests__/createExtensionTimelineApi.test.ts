@@ -833,3 +833,351 @@ describe("createExtensionTimelineApi", () => {
     expect(() => api.sourceFrameToTicks(-1, 30)).toThrow(/non-negative/);
   });
 });
+
+/**
+ * Clip and track writes let an extension express intent; the host keeps
+ * correctness. These cover both halves: the request the host adjusts, and the
+ * request it refuses.
+ */
+describe("createExtensionTimelineApi clip and track commands", () => {
+  const VIDEO_ASSET = {
+    id: "video-asset",
+    hash: "video-hash",
+    name: "Take 1.mp4",
+    type: "video" as const,
+    src: "blob:take-1",
+    duration: 4,
+    createdAt: 1,
+  };
+
+  const AUDIO_ASSET = {
+    id: "audio-asset",
+    hash: "audio-hash",
+    name: "Room tone.wav",
+    type: "audio" as const,
+    src: "blob:room-tone",
+    duration: 4,
+    createdAt: 2,
+  };
+
+  function seedTimeline(): void {
+    const tracks: TimelineTrack[] = [
+      {
+        id: "track-visual",
+        label: "Visual",
+        type: "visual",
+        isVisible: true,
+        isLocked: false,
+        isMuted: false,
+      },
+    ];
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks,
+      clips: [],
+      transitions: [],
+    });
+    useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+    useAssetStore.setState({ assets: [VIDEO_ASSET, AUDIO_ASSET] });
+  }
+
+  function clipById(clipId: string) {
+    return useTimelineStore.getState().clips.find((clip) => clip.id === clipId);
+  }
+
+  beforeEach(seedTimeline);
+
+  it("places an asset-backed clip and reports the host-generated ID", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let clipId = "";
+
+    const result = api.transaction("Place take", (transaction) => {
+      clipId = transaction.createClip({
+        assetId: "video-asset",
+        trackId: "track-visual",
+        startTicks: 500,
+      });
+    });
+
+    expect(result).toMatchObject({ ok: true, changed: true });
+    expect(clipById(clipId)).toMatchObject({
+      type: "video",
+      assetId: "video-asset",
+      trackId: "track-visual",
+      start: 500,
+    });
+  });
+
+  it("adjusts an overlapping placement instead of overlapping", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let firstId = "";
+    let secondId = "";
+
+    api.transaction("Place first", (transaction) => {
+      firstId = transaction.createClip({
+        assetId: "video-asset",
+        trackId: "track-visual",
+        startTicks: 0,
+      });
+    });
+    const first = clipById(firstId);
+    expect(first).toBeDefined();
+
+    // Ask for a start squarely inside the existing clip.
+    api.transaction("Place second", (transaction) => {
+      secondId = transaction.createClip({
+        assetId: "video-asset",
+        trackId: "track-visual",
+        startTicks: Math.round((first?.timelineDuration ?? 0) / 2),
+      });
+    });
+
+    const second = clipById(secondId);
+    expect(second).toBeDefined();
+    // The host resolved it exactly as a user's drag would: no overlap, and the
+    // extension's requested tick was not honoured verbatim.
+    const firstEnd = (first?.start ?? 0) + (first?.timelineDuration ?? 0);
+    expect(second?.start).toBeGreaterThanOrEqual(firstEnd);
+  });
+
+  it("refuses an unknown asset and commits nothing", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+
+    const result = api.transaction("Place missing", (transaction) => {
+      transaction.createClip({ assetId: "nope", startTicks: 0 });
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "asset_not_found" });
+    expect(useTimelineStore.getState().clips).toHaveLength(0);
+  });
+
+  it("refuses a populated track whose class cannot hold the media", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let audioTrackId = "";
+
+    // An empty typed track still takes the class of its first clip, so the
+    // track has to be populated for the mismatch to be real.
+    api.transaction("Seed audio", (transaction) => {
+      audioTrackId = transaction.createTrack({ label: "Audio", type: "audio" });
+      transaction.createClip({
+        assetId: "audio-asset",
+        startTicks: 0,
+        trackId: audioTrackId,
+      });
+    });
+    expect(
+      useTimelineStore
+        .getState()
+        .clips.filter((clip) => clip.trackId === audioTrackId),
+    ).toHaveLength(1);
+
+    const result = api.transaction("Misplace", (transaction) => {
+      transaction.createClip({
+        assetId: "video-asset",
+        startTicks: 0,
+        trackId: audioTrackId,
+      });
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "track_type_mismatch" });
+  });
+
+  it("snaps a move off a neighbour's edge but refuses to land on top of one", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let anchorId = "";
+    let movedId = "";
+    api.transaction("Seed", (transaction) => {
+      anchorId = transaction.createClip({
+        assetId: "video-asset",
+        trackId: "track-visual",
+        startTicks: 0,
+      });
+      movedId = transaction.createClip({
+        assetId: "video-asset",
+        trackId: "track-visual",
+        startTicks: 1_000_000,
+      });
+    });
+    const anchor = clipById(anchorId);
+    const anchorEnd = (anchor?.start ?? 0) + (anchor?.timelineDuration ?? 0);
+
+    // Overlapping the anchor's tail is a partial collision: the host snaps the
+    // clip to the anchor's end, the same as dragging there would.
+    const snapped = api.transaction("Nudge into anchor", (transaction) => {
+      transaction.moveClip(movedId, { startTicks: anchorEnd - 1_000 });
+    });
+    expect(snapped.ok).toBe(true);
+    expect(clipById(movedId)?.start).toBe(anchorEnd);
+
+    // Dropping squarely onto the anchor has no correct answer — the host blocks
+    // it for a user drag too — so the transaction fails and nothing moves.
+    const dropped = api.transaction("Drop onto anchor", (transaction) => {
+      transaction.moveClip(movedId, { startTicks: 0 });
+    });
+    expect(dropped).toMatchObject({ ok: false, code: "no_free_slot" });
+    expect(clipById(movedId)?.start).toBe(anchorEnd);
+  });
+
+  it("keeps entity ownership and mask subordination out of the clip commands", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let entityId = "";
+    api.transaction("Seed entity", (transaction) => {
+      entityId = transaction.createEntity({
+        name: "Owned",
+        startTicks: 0,
+        durationTicks: 100,
+        payload: {
+          extensionId: "example.importer",
+          typeId: "shape",
+          schemaVersion: 1,
+          data: {},
+        },
+      });
+    });
+
+    const moved = api.transaction("Move entity as clip", (transaction) => {
+      transaction.moveClip(entityId, { startTicks: 500 });
+    });
+    expect(moved).toMatchObject({ ok: false, code: "invalid_command" });
+    expect(moved.ok === false && moved.message).toMatch(/entity commands/);
+    expect(clipById(entityId)?.start).toBe(0);
+
+    const removed = api.transaction("Remove entity as clip", (transaction) => {
+      transaction.removeClip(entityId);
+    });
+    expect(removed).toMatchObject({ ok: false, code: "invalid_command" });
+    expect(clipById(entityId)).toBeDefined();
+  });
+
+  it("clamps a trim to the media and the minimum duration", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let clipId = "";
+    api.transaction("Seed", (transaction) => {
+      clipId = transaction.createClip({
+        assetId: "video-asset",
+        trackId: "track-visual",
+        startTicks: 0,
+      });
+    });
+    const original = clipById(clipId);
+    const originalDuration = original?.timelineDuration ?? 0;
+
+    // Ask for far more than the source holds.
+    const result = api.transaction("Over-extend", (transaction) => {
+      transaction.trimClip(clipId, { endTicks: originalDuration * 10 });
+    });
+
+    expect(result.ok).toBe(true);
+    expect(clipById(clipId)?.timelineDuration).toBeLessThanOrEqual(
+      originalDuration,
+    );
+  });
+
+  it("splits a clip inside its bounds and refuses a tick outside them", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let clipId = "";
+    api.transaction("Seed", (transaction) => {
+      clipId = transaction.createClip({
+        assetId: "video-asset",
+        trackId: "track-visual",
+        startTicks: 0,
+      });
+    });
+    const duration = clipById(clipId)?.timelineDuration ?? 0;
+
+    const outside = api.transaction("Split past end", (transaction) => {
+      transaction.splitClip(clipId, duration + 1_000);
+    });
+    expect(outside).toMatchObject({ ok: false, code: "invalid_command" });
+    expect(useTimelineStore.getState().clips).toHaveLength(1);
+
+    const inside = api.transaction("Split", (transaction) => {
+      transaction.splitClip(clipId, Math.round(duration / 2));
+    });
+    expect(inside.ok).toBe(true);
+    expect(useTimelineStore.getState().clips).toHaveLength(2);
+  });
+
+  it("removes a clip and round-trips through undo", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let clipId = "";
+    api.transaction("Seed", (transaction) => {
+      clipId = transaction.createClip({
+        assetId: "video-asset",
+        trackId: "track-visual",
+        startTicks: 0,
+      });
+    });
+
+    const result = api.transaction("Remove", (transaction) => {
+      transaction.removeClip(clipId);
+    });
+
+    expect(result.ok).toBe(true);
+    expect(clipById(clipId)).toBeUndefined();
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(clipById(clipId)).toBeDefined();
+  });
+
+  it("creates, updates, and removes tracks, refusing to drop a populated one", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let trackId = "";
+
+    api.transaction("Add track", (transaction) => {
+      trackId = transaction.createTrack({ label: "Overlays", index: 0 });
+    });
+    expect(api.listTracks()[0]).toMatchObject({
+      id: trackId,
+      label: "Overlays",
+      index: 0,
+    });
+
+    api.transaction("Hide track", (transaction) => {
+      transaction.updateTrack(trackId, { isVisible: false, isLocked: true });
+    });
+    expect(api.listTracks().find((track) => track.id === trackId)).toMatchObject(
+      { isVisible: false, isLocked: true },
+    );
+
+    api.transaction("Fill track", (transaction) => {
+      transaction.createClip({
+        assetId: "video-asset",
+        trackId,
+        startTicks: 0,
+      });
+    });
+    const occupied = api.transaction("Drop populated", (transaction) => {
+      transaction.removeTrack(trackId);
+    });
+    expect(occupied).toMatchObject({ ok: false, code: "track_not_empty" });
+    expect(api.listTracks().some((track) => track.id === trackId)).toBe(true);
+
+    const missing = api.transaction("Drop unknown", (transaction) => {
+      transaction.removeTrack("no-such-track");
+    });
+    expect(missing).toMatchObject({ ok: false, code: "track_not_found" });
+  });
+
+  it("rejects malformed input before any command is staged", () => {
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+
+    expect(
+      api.transaction("Bad tick", (transaction) => {
+        transaction.moveClip("clip-1", { startTicks: Number.NaN });
+      }),
+    ).toMatchObject({ ok: false, code: "invalid_command" });
+
+    expect(
+      api.transaction("Empty trim", (transaction) => {
+        transaction.trimClip("clip-1", {});
+      }),
+    ).toMatchObject({ ok: false, code: "invalid_command" });
+
+    expect(
+      api.transaction("Bad track type", (transaction) => {
+        transaction.createTrack({
+          type: "prompt" as unknown as "visual",
+        });
+      }),
+    ).toMatchObject({ ok: false, code: "invalid_command" });
+  });
+});

@@ -8,6 +8,8 @@ import type {
   ClipTransform,
   MaskActiveRange,
   MaskTimelineClip,
+  TimelineClip,
+  TrackType,
   Transition,
 } from "../../../types/TimelineTypes";
 import {
@@ -22,10 +24,20 @@ import {
   removeClipIdsFromDraft,
   addTransitionToDraft,
   addClipMaskToDraft,
+  finalizeModelDraft,
+  insertTrackIntoDraft,
   removeTransitionFromDraft,
+  splitClipInDraft,
   updateClipMaskInDraft,
   updateTransitionParametersInDraft,
 } from "./timelineCommands";
+import {
+  getMinimumClipDurationTicks,
+  getResizeConstraints,
+  resolveCollision,
+} from "../utils/collision";
+import { getResizedClipLeft, getResizedClipRight } from "../utils/clipMath";
+import { useProjectStore } from "../../project";
 import { makeMaskClipId } from "./maskClipModel";
 import { getExtensionMaskOwnerId } from "./extensionMaskOwnership";
 import {
@@ -103,6 +115,54 @@ export type ExtensionTimelineCommand =
       kind: "remove_mask";
       clipId: string;
       maskId: string;
+    }
+  | {
+      // The clip is built by the host from a project asset before it reaches
+      // here (resolving assets in this module would close a timeline↔userAssets
+      // import cycle). Placement remains this layer's decision.
+      kind: "create_clip";
+      clip: TimelineClip;
+      trackId?: string;
+    }
+  | {
+      kind: "move_clip";
+      clipId: string;
+      startTicks?: number;
+      trackId?: string;
+    }
+  | {
+      kind: "trim_clip";
+      clipId: string;
+      startTicks?: number;
+      endTicks?: number;
+    }
+  | {
+      kind: "split_clip";
+      clipId: string;
+      atTicks: number;
+    }
+  | {
+      kind: "remove_clip";
+      clipId: string;
+    }
+  | {
+      kind: "create_track";
+      trackId: string;
+      label?: string;
+      type?: TrackType;
+      index?: number;
+    }
+  | {
+      kind: "update_track";
+      trackId: string;
+      label?: string;
+      isVisible?: boolean;
+      isMuted?: boolean;
+      isLocked?: boolean;
+    }
+  | {
+      kind: "remove_track";
+      trackId: string;
     };
 
 export class ExtensionTimelineCommandError extends Error {
@@ -148,6 +208,120 @@ function insertTransformInDefaultOrder(
   });
   if (insertionIndex < 0) transforms.push(transform);
   else transforms.splice(insertionIndex, 0, transform);
+}
+
+/**
+ * Structural rules for extension clip/track writes.
+ *
+ * These call the same pure validators the timeline's own drag and resize
+ * interactions use (`resolveCollision`, `getResizeConstraints`,
+ * `getMinimumClipDurationTicks`), rather than re-deriving them. The UI keeps
+ * its copies for live feedback while a pointer is down; this is the authority
+ * for what actually reaches the model, so an extension supplies intent and
+ * never correctness. Adding a rule here covers extensions automatically.
+ */
+
+/** Rejects the subordinate and owner-checked clip kinds a clip command must not touch. */
+function assertOrdinaryClip(
+  clip: TimelineClip,
+  operation: string,
+): void {
+  if (clip.type === "mask") {
+    throw new ExtensionTimelineCommandError(
+      "invalid_command",
+      `Clip '${clip.id}' is a mask; use the mask commands instead of ${operation}.`,
+    );
+  }
+  if (isExtensionTimelineClip(clip)) {
+    // Entities stay behind their owner check: routing them through the clip
+    // commands would let any extension move or delete another's content.
+    throw new ExtensionTimelineCommandError(
+      "invalid_command",
+      `Clip '${clip.id}' is an extension entity; use the entity commands instead of ${operation}.`,
+    );
+  }
+}
+
+function requireTrack(draft: TimelineModelState, trackId: string) {
+  const track = draft.tracks.find((candidate) => candidate.id === trackId);
+  if (!track) {
+    throw new ExtensionTimelineCommandError(
+      "track_not_found",
+      `Timeline track '${trackId}' was not found.`,
+    );
+  }
+  return track;
+}
+
+/**
+ * A populated typed track only accepts clips of its own class; an empty track
+ * takes the class of whatever lands on it. Mirrors `addClipToDraft`.
+ */
+function assertTrackAccepts(
+  draft: TimelineModelState,
+  trackId: string,
+  clip: TimelineClip,
+): void {
+  const track = requireTrack(draft, trackId);
+  const clipType = getTrackTypeFromClip(clip);
+  const trackHasOtherClips = draft.clips.some(
+    (candidate) =>
+      candidate.trackId === trackId &&
+      candidate.type !== "mask" &&
+      candidate.id !== clip.id,
+  );
+  if (track.type && trackHasOtherClips && track.type !== clipType) {
+    throw new ExtensionTimelineCommandError(
+      "track_type_mismatch",
+      `Timeline track '${trackId}' holds "${track.type}" clips and cannot accept ` +
+        `'${clip.id}', which resolves to "${clipType}".`,
+    );
+  }
+}
+
+/**
+ * The nearest legal start for a clip on a track, using the host's own overlap
+ * resolution. A request that cannot be corrected fails rather than overlapping.
+ */
+function resolveLegalStart(
+  draft: TimelineModelState,
+  clip: TimelineClip,
+  requestedStart: number,
+  trackId: string,
+): number {
+  const resolved = resolveCollision(
+    clip.id,
+    Math.max(0, requestedStart),
+    clip.timelineDuration,
+    trackId,
+    draft.clips,
+  );
+  if (resolved === null) {
+    throw new ExtensionTimelineCommandError(
+      "no_free_slot",
+      `Clip '${clip.id}' has no free position on track '${trackId}'.`,
+    );
+  }
+  return resolved;
+}
+
+/** The first track that can accept the clip, preferring the bottom-most. */
+function findCompatibleTrackId(
+  draft: TimelineModelState,
+  clip: TimelineClip,
+): string | null {
+  const clipType = getTrackTypeFromClip(clip);
+  for (let index = draft.tracks.length - 1; index >= 0; index -= 1) {
+    const track = draft.tracks[index];
+    const trackHasClips = draft.clips.some(
+      (candidate) =>
+        candidate.trackId === track.id && candidate.type !== "mask",
+    );
+    if (!track.type || !trackHasClips || track.type === clipType) {
+      return track.id;
+    }
+  }
+  return null;
 }
 
 export function applyExtensionTimelineCommands(
@@ -324,6 +498,188 @@ export function applyExtensionTimelineCommands(
         );
       }
       clip.transformations.splice(existingIndex, 1);
+      continue;
+    }
+
+    if (command.kind === "create_clip") {
+      const candidate = structuredClone(command.clip);
+      const trackId =
+        command.trackId ?? findCompatibleTrackId(draft, candidate);
+      if (trackId === null) {
+        // Nothing existing can hold this media class; give it its own track
+        // rather than failing a legitimate placement.
+        const newTrack = createNewTrack(
+          candidate.name,
+          getTrackTypeFromClip(candidate),
+        );
+        draft.tracks.push(newTrack);
+        candidate.trackId = newTrack.id;
+      } else {
+        assertTrackAccepts(draft, trackId, candidate);
+        candidate.trackId = trackId;
+      }
+
+      candidate.start = resolveLegalStart(
+        draft,
+        candidate,
+        candidate.start,
+        candidate.trackId,
+      );
+      addClipToDraft(draft, candidate);
+      if (!draft.clips.some((clip) => clip.id === candidate.id)) {
+        throw new ExtensionTimelineCommandError(
+          "invalid_command",
+          `Clip '${candidate.id}' could not be placed on track '${candidate.trackId}'.`,
+        );
+      }
+      continue;
+    }
+
+    if (command.kind === "move_clip") {
+      const clip = getClip(command.clipId);
+      assertOrdinaryClip(clip, "moveClip");
+      const targetTrackId = command.trackId ?? clip.trackId;
+      assertTrackAccepts(draft, targetTrackId, clip);
+      const start = resolveLegalStart(
+        draft,
+        clip,
+        command.startTicks ?? clip.start,
+        targetTrackId,
+      );
+      moveClipsInDraft(draft, [
+        { clipId: clip.id, start, trackId: targetTrackId },
+      ]);
+      continue;
+    }
+
+    if (command.kind === "trim_clip") {
+      const clip = getClip(command.clipId);
+      assertOrdinaryClip(clip, "trimClip");
+      const minDuration = getMinimumClipDurationTicks(
+        useProjectStore.getState().config.fps,
+      );
+
+      // Each edge is clamped by the host's own resize constraints: the source
+      // media's bounds, the neighbouring clips, and the minimum duration.
+      if (command.startTicks !== undefined) {
+        const bounds = getResizeConstraints(
+          clip,
+          draft.clips,
+          "left",
+          minDuration,
+        );
+        if (bounds.min > bounds.max) {
+          throw new ExtensionTimelineCommandError(
+            "no_free_slot",
+            `Clip '${clip.id}' cannot be trimmed from the left.`,
+          );
+        }
+        const nextStart = Math.round(
+          Math.min(Math.max(command.startTicks, bounds.min), bounds.max),
+        );
+        const delta = nextStart - clip.start;
+        if (delta !== 0) Object.assign(clip, getResizedClipLeft(clip, delta));
+      }
+
+      if (command.endTicks !== undefined) {
+        const bounds = getResizeConstraints(
+          clip,
+          draft.clips,
+          "right",
+          minDuration,
+        );
+        if (bounds.min > bounds.max) {
+          throw new ExtensionTimelineCommandError(
+            "no_free_slot",
+            `Clip '${clip.id}' cannot be trimmed from the right.`,
+          );
+        }
+        const nextEnd = Math.round(
+          Math.min(Math.max(command.endTicks, bounds.min), bounds.max),
+        );
+        const delta = nextEnd - (clip.start + clip.timelineDuration);
+        if (delta !== 0) Object.assign(clip, getResizedClipRight(clip, delta));
+      }
+
+      finalizeModelDraft(draft);
+      continue;
+    }
+
+    if (command.kind === "split_clip") {
+      const clip = getClip(command.clipId);
+      assertOrdinaryClip(clip, "splitClip");
+      // splitClipInDraft owns the bounds check, the source-time split, and the
+      // mask/transition consequences.
+      const created = splitClipInDraft(
+        draft,
+        clip.id,
+        Math.round(command.atTicks),
+      );
+      if (created === null) {
+        throw new ExtensionTimelineCommandError(
+          "invalid_command",
+          `Split tick ${command.atTicks} is not strictly inside clip '${clip.id}'.`,
+        );
+      }
+      continue;
+    }
+
+    if (command.kind === "remove_clip") {
+      const clip = getClip(command.clipId);
+      assertOrdinaryClip(clip, "removeClip");
+      const removal = planTimelineRemoval(draft.clips, [clip.id]);
+      removeClipIdsFromDraft(draft, removal.clipIdsToRemove);
+      continue;
+    }
+
+    if (command.kind === "create_track") {
+      if (draft.tracks.some((track) => track.id === command.trackId)) {
+        throw new ExtensionTimelineCommandError(
+          "invalid_command",
+          `Timeline track '${command.trackId}' already exists.`,
+        );
+      }
+      const track = {
+        ...createNewTrack(
+          command.label ?? `Track ${draft.tracks.length + 1}`,
+          command.type,
+        ),
+        id: command.trackId,
+      };
+      insertTrackIntoDraft(
+        draft,
+        command.index ?? draft.tracks.length,
+        track,
+      );
+      continue;
+    }
+
+    if (command.kind === "update_track") {
+      const track = requireTrack(draft, command.trackId);
+      if (command.label !== undefined) track.label = command.label;
+      if (command.isVisible !== undefined) track.isVisible = command.isVisible;
+      if (command.isMuted !== undefined) track.isMuted = command.isMuted;
+      if (command.isLocked !== undefined) track.isLocked = command.isLocked;
+      continue;
+    }
+
+    if (command.kind === "remove_track") {
+      requireTrack(draft, command.trackId);
+      const occupant = draft.clips.find(
+        (clip) => clip.trackId === command.trackId && clip.type !== "mask",
+      );
+      if (occupant) {
+        // Removing a populated track would delete a user's content as a side
+        // effect of a structural edit. Make the extension do it explicitly.
+        throw new ExtensionTimelineCommandError(
+          "track_not_empty",
+          `Timeline track '${command.trackId}' still holds clip '${occupant.id}'.`,
+        );
+      }
+      draft.tracks = draft.tracks.filter(
+        (track) => track.id !== command.trackId,
+      );
+      finalizeModelDraft(draft);
       continue;
     }
 

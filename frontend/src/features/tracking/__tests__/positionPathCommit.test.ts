@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import type {
   ExtensionTimelineApi,
   ExtensionTimelineTransformInput,
-  ExtensionTimelineTransaction,
 } from "../../extensions/types";
 import type { PositionPathParameter } from "../../transformations/types";
 import { commitTrackingPositionPath } from "../positionPathCommit";
+import { createExtensionTimelineTransactionStub } from "../../../testUtils/extensionTimeline";
 
 const path: PositionPathParameter = {
   type: "path2d",
@@ -59,24 +59,12 @@ describe("commitTrackingPositionPath", () => {
         },
       ],
       transaction: (label, callback) => {
-        const draft: ExtensionTimelineTransaction = {
-          createEntity: () => "unused",
-          updatePayload: () => undefined,
-          moveEntity: () => undefined,
-          removeEntity: () => undefined,
+        const draft = createExtensionTimelineTransactionStub({
           upsertTransform: (_clipId, transform) => {
             committedTransforms.push(transform);
             return transform.id ?? "generated";
           },
-          removeTransform: () => undefined,
-          createTransition: () => "unused-transition",
-          updateTransitionParameters: () => undefined,
-          removeTransition: () => undefined,
-          addClipMask: () => "unused-mask",
-          updateMaskParameters: () => undefined,
-          setMaskActiveRange: () => undefined,
-          removeMask: () => undefined,
-        };
+        });
         callback(draft);
         return { ok: true, changed: true, label };
       },

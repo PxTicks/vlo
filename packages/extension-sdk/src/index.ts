@@ -737,6 +737,64 @@ export interface ExtensionTimelineMaskCreateInput {
   readonly activeRange?: ExtensionTimelineMaskActiveRange;
 }
 
+/**
+ * Places one ordinary clip from a project asset. The host builds the clip from
+ * the asset's own media properties; an extension supplies placement only.
+ */
+export interface ExtensionTimelineClipCreateInput {
+  /** A project asset ID, from `assets.list()`/`get()`/`ingest()`. */
+  readonly assetId: string;
+  /** Optional override for the host's name (defaults to the asset's). */
+  readonly name?: string;
+  /**
+   * Target track. Omit to let the host choose a compatible one, creating a
+   * track when none fits. A named track must accept the asset's media class.
+   */
+  readonly trackId?: string;
+  /**
+   * Requested start. The host resolves overlaps exactly as it does for a user
+   * drag — snapping off a neighbour's edge, refusing to land on top of one — so
+   * the committed start may differ. Read it back with `listClips()`.
+   */
+  readonly startTicks: number;
+}
+
+/** Requested placement. Omitted fields keep their current value. */
+export interface ExtensionTimelineClipPlacement {
+  readonly startTicks?: number;
+  readonly trackId?: string;
+}
+
+/**
+ * Requested clip edges, in timeline ticks. Omitted edges are left alone.
+ * Trimming changes which part of the source plays, unlike `moveClip`, which
+ * slides the same content. The host clamps both edges to the media's own
+ * bounds, the neighbouring clips, and the minimum clip duration.
+ */
+export interface ExtensionTimelineClipTrim {
+  readonly startTicks?: number;
+  readonly endTicks?: number;
+}
+
+/** Host track classes. A track's class fixes what media it accepts. */
+export type ExtensionTimelineTrackType = "visual" | "audio";
+
+export interface ExtensionTimelineTrackCreateInput {
+  readonly label?: string;
+  /** Omit to leave the track untyped until its first clip fixes the class. */
+  readonly type?: ExtensionTimelineTrackType;
+  /** Insertion position in track order; clamped. Appends when omitted. */
+  readonly index?: number;
+}
+
+/** Track properties an extension may set. Omitted fields are left alone. */
+export interface ExtensionTimelineTrackUpdate {
+  readonly label?: string;
+  readonly isVisible?: boolean;
+  readonly isMuted?: boolean;
+  readonly isLocked?: boolean;
+}
+
 export interface ExtensionTimelineCoalescingOptions {
   /** Fresh extension-local key for one interaction, such as one brush stroke. */
   readonly key: string;
@@ -752,6 +810,26 @@ export interface ExtensionTimelineTransactionOptions {
   readonly coalesce?: ExtensionTimelineCoalescingOptions;
 }
 
+/**
+ * Commands stage *intent*; the host decides the outcome. Every structural rule
+ * that keeps a project coherent — overlap resolution, trim limits, track-class
+ * compatibility, mask and transition cascades — is enforced inside the host's
+ * own mutation layer, using the same code paths a user's drag goes through. An
+ * extension therefore cannot author an invalid timeline, and cannot opt out.
+ *
+ * Two consequences worth designing around:
+ *
+ * - A request may be **adjusted**. A placement that clips the head or tail of a
+ *   neighbour snaps to that neighbour's edge, and a trim is clamped to the
+ *   media's own bounds — exactly what dragging there would do. Re-read
+ *   `listClips()` after the commit rather than assuming the requested value.
+ * - A request may be **refused**. Where the host has no sensible correction it
+ *   fails the whole transaction with a specific
+ *   {@link ExtensionTimelineTransactionFailureCode} and commits nothing. Note
+ *   that landing a clip *on top of* another is refused rather than adjusted
+ *   (`no_free_slot`): the host blocks that for a user drag too, because any
+ *   "correction" would be a guess about which side you meant.
+ */
 export interface ExtensionTimelineTransaction {
   /** Returns the host-generated entity ID used by later commands in this transaction. */
   createEntity(input: ExtensionTimelineEntityCreateInput): string;
@@ -761,6 +839,39 @@ export interface ExtensionTimelineTransaction {
     placement: { readonly startTicks?: number; readonly trackId?: string },
   ): void;
   removeEntity(entityId: string): void;
+  /**
+   * Places an ordinary clip from a project asset and returns its host-generated
+   * ID for later commands in this transaction. The host builds the clip and
+   * decides the final position; see `ExtensionTimelineClipCreateInput`.
+   */
+  createClip(input: ExtensionTimelineClipCreateInput): string;
+  /**
+   * Slides a clip without changing which part of the source plays. A start that
+   * clips a neighbour snaps to that neighbour's edge; one that lands on top of
+   * a clip fails with `no_free_slot`. Extension entities keep their owner
+   * check — use `moveEntity` for those.
+   */
+  moveClip(clipId: string, placement: ExtensionTimelineClipPlacement): void;
+  /**
+   * Retimes a clip's edges, clamped by the host to the media bounds, the
+   * neighbouring clips, and the minimum clip duration.
+   */
+  trimClip(clipId: string, trim: ExtensionTimelineClipTrim): void;
+  /**
+   * Cuts a clip in two at a timeline tick strictly inside it. The right-hand
+   * clip is host-generated; read it back with `listClips()` after the commit.
+   */
+  splitClip(clipId: string, atTicks: number): void;
+  /**
+   * Removes an ordinary clip and its attached masks. Extension entities keep
+   * their owner check — use `removeEntity` for those.
+   */
+  removeClip(clipId: string): void;
+  /** Adds a track and returns its host-generated ID. */
+  createTrack(input?: ExtensionTimelineTrackCreateInput): string;
+  updateTrack(trackId: string, update: ExtensionTimelineTrackUpdate): void;
+  /** Removes a track. The track must hold no clips. */
+  removeTrack(trackId: string): void;
   /** Adds or replaces a transform by ID and returns its stable ID. */
   upsertTransform(
     clipId: string,
@@ -799,6 +910,14 @@ export type ExtensionTimelineTransactionFailureCode =
   | "transform_not_found"
   | "mask_not_found"
   | "mask_type_not_supported"
+  | "asset_not_found"
+  | "track_not_found"
+  /** The destination track's class does not accept this clip's media. */
+  | "track_type_mismatch"
+  /** A track must be empty before it can be removed. */
+  | "track_not_empty"
+  /** The clip has no legal position or size on its track. */
+  | "no_free_slot"
   | "wrong_owner"
   | "incompatible_payload"
   | "callback_failed";

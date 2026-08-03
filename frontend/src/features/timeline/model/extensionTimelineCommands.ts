@@ -24,6 +24,7 @@ import {
   removeClipIdsFromDraft,
   addTransitionToDraft,
   addClipMaskToDraft,
+  attachGenerationMaskToDraft,
   finalizeModelDraft,
   insertTrackIntoDraft,
   removeTransitionFromDraft,
@@ -123,6 +124,8 @@ export type ExtensionTimelineCommand =
       kind: "create_clip";
       clip: TimelineClip;
       trackId?: string;
+      /** Linked matte of a generated asset, resolved with the clip. */
+      generationMaskAssetId?: string;
     }
   | {
       kind: "move_clip";
@@ -530,6 +533,15 @@ export function applyExtensionTimelineCommands(
         throw new ExtensionTimelineCommandError(
           "invalid_command",
           `Clip '${candidate.id}' could not be placed on track '${candidate.trackId}'.`,
+        );
+      }
+      // A generated asset's matte travels with it, so an extension-placed clip
+      // renders identically to the same asset dropped in by hand.
+      if (command.generationMaskAssetId) {
+        attachGenerationMaskToDraft(
+          draft,
+          candidate.id,
+          command.generationMaskAssetId,
         );
       }
       continue;

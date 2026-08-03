@@ -407,10 +407,16 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     redoLabel: null,
 
     commitExtensionTransaction: (label, ownerId, commands, options) => {
+      // Every command that can delete a clip must be listed here, not just the
+      // ones that delete extension-owned content: the plan is what releases
+      // brush buffers and mask backing assets after the commit, and the draft
+      // applier's own removal plan is discarded. Post-commit effects only run
+      // when the mutation actually committed, so a rejected command is inert.
       const removalPlan = planTimelineRemoval(
         get().clips,
         commands.flatMap((command) => {
           if (command.kind === "remove_entity") return [command.entityId];
+          if (command.kind === "remove_clip") return [command.clipId];
           if (command.kind === "remove_mask") {
             return [makeMaskClipId(command.clipId, command.maskId)];
           }

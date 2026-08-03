@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const disposeBrushBuffer = vi.fn();
+vi.mock("../../../masks/runtime/brushBufferRegistry", () => ({
+  disposeBrushBuffer: (maskClipId: string) => disposeBrushBuffer(maskClipId),
+}));
+
 import type {
   ExtensionApiScope,
   ExtensionResource,
@@ -939,6 +945,46 @@ describe("createExtensionTimelineApi clip and track commands", () => {
     expect(second?.start).toBeGreaterThanOrEqual(firstEnd);
   });
 
+  it("places a generated asset's linked matte with the clip", () => {
+    useAssetStore.setState({
+      assets: [
+        {
+          ...VIDEO_ASSET,
+          id: "generated-asset",
+          creationMetadata: {
+            source: "generated" as const,
+            workflowName: "inpaint",
+            inputs: [],
+            generationMaskAssetId: "matte-asset",
+          },
+        },
+        AUDIO_ASSET,
+      ],
+    });
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let clipId = "";
+
+    api.transaction("Place generated", (transaction) => {
+      clipId = transaction.createClip({
+        assetId: "generated-asset",
+        trackId: "track-visual",
+        startTicks: 0,
+      });
+    });
+
+    // Without this the clip renders differently from the same asset dropped in
+    // by hand, which is a silent divergence rather than an error.
+    const masks = api.listClipMasks(clipId);
+    expect(masks).toHaveLength(1);
+    expect(masks[0]).toMatchObject({
+      maskType: "generation",
+      assetId: "matte-asset",
+    });
+    // Undo covers the clip and its mask as one entry.
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(useTimelineStore.getState().clips).toHaveLength(0);
+  });
+
   it("refuses an unknown asset and commits nothing", () => {
     const api = createExtensionTimelineApi(createScope("example.importer"));
 
@@ -1095,6 +1141,60 @@ describe("createExtensionTimelineApi clip and track commands", () => {
     });
     expect(inside.ok).toBe(true);
     expect(useTimelineStore.getState().clips).toHaveLength(2);
+  });
+
+  it("releases the brush buffers of masks it cascades away", async () => {
+    // The applier removes attached masks from the draft, but the resources
+    // behind them are freed by the store's post-commit plan — which has to know
+    // that remove_clip deletes clips too, or the buffers leak.
+    disposeBrushBuffer.mockClear();
+    const parent = {
+      id: "video-1",
+      trackId: "track-visual",
+      type: "video" as const,
+      name: "Take",
+      assetId: "video-asset",
+      sourceDuration: 100,
+      start: 0,
+      timelineDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      croppedSourceDuration: 100,
+      transformations: [],
+      components: [
+        {
+          id: "mask-ref-1",
+          type: "mask_ref" as const,
+          parameters: { maskClipId: "video-1::mask::mask-1" },
+        },
+      ],
+    };
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        {
+          id: "track-visual",
+          label: "Visual",
+          type: "visual",
+          isVisible: true,
+          isLocked: false,
+          isMuted: false,
+        },
+      ],
+      clips: [parent, createMaskClip("video-1")],
+      transitions: [],
+    });
+    useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    const result = api.transaction("Remove", (transaction) => {
+      transaction.removeClip("video-1");
+    });
+
+    expect(result.ok).toBe(true);
+    await vi.waitFor(() =>
+      expect(disposeBrushBuffer).toHaveBeenCalledWith("video-1::mask::mask-1"),
+    );
   });
 
   it("removes a clip and round-trips through undo", () => {

@@ -67,7 +67,15 @@ export function createExtensionPlaybackApi(
 ): ExtensionPlaybackApi {
   return Object.freeze({
     getTime: () => playbackClock.time,
-    getFrameTime: () => playbackFrameClock.time,
+    // The presented frame comes from whichever clock the renderer is currently
+    // reading — the same choice `Player` and `useTrackRenderEngine` make. Only
+    // playback advances the frame clock; every seek and scrub path writes the
+    // playhead alone, so returning the frame clock unconditionally would report
+    // the frame from before the scrub while paused.
+    getFrameTime: () =>
+      usePlayerStore.getState().isPlaying
+        ? playbackFrameClock.time
+        : playbackClock.time,
     isPlaying: () => usePlayerStore.getState().isPlaying,
     subscribe: bindOwnerScopedSubscribe(scope, playbackSignal, "Playback"),
   });

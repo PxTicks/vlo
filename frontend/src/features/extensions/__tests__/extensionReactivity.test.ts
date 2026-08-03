@@ -280,16 +280,16 @@ describe("extension playback", () => {
   it("reads the playhead, the presented frame, and the transport", () => {
     playbackClock.setTime(4_800);
     playbackFrameClock.setTime(3_200);
-    usePlayerStore.setState({ isPlaying: false });
+    usePlayerStore.setState({ isPlaying: true });
     const { scope } = createScope("example.playback");
     const api = createExtensionPlaybackApi(scope);
 
     expect(api.getTime()).toBe(4_800);
     expect(api.getFrameTime()).toBe(3_200);
-    expect(api.isPlaying()).toBe(false);
-
-    usePlayerStore.setState({ isPlaying: true });
     expect(api.isPlaying()).toBe(true);
+
+    usePlayerStore.setState({ isPlaying: false });
+    expect(api.isPlaying()).toBe(false);
   });
 
   it("notifies on playhead moves and transport edges, once each", () => {
@@ -313,6 +313,30 @@ describe("extension playback", () => {
     unsubscribe();
     playbackClock.setTime(2_000);
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports the presented frame after a paused scrub", () => {
+    // Seek and scrub paths write the playhead only; the frame clock is left
+    // where playback stopped. A paused frame is drawn at the playhead, so the
+    // API must follow the clock the renderer is actually reading.
+    usePlayerStore.setState({ isPlaying: false });
+    playbackFrameClock.setTime(1_000);
+    playbackClock.setTime(1_000);
+    const { scope } = createScope("example.playback-scrub");
+    const api = createExtensionPlaybackApi(scope);
+
+    playbackClock.setTime(7_500);
+
+    expect(api.getFrameTime()).toBe(7_500);
+    expect(api.getTime()).toBe(7_500);
+
+    // While playing the two legitimately differ: the playhead runs on the
+    // continuous audio clock while the displayed frame is snapped to the grid.
+    usePlayerStore.setState({ isPlaying: true });
+    playbackFrameClock.setTime(7_200);
+    expect(api.getFrameTime()).toBe(7_200);
+    expect(api.getTime()).toBe(7_500);
+    usePlayerStore.setState({ isPlaying: false });
   });
 
   it("isolates listener failures with an owner diagnostic", () => {

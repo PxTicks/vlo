@@ -697,12 +697,20 @@ export function createExtensionTimelineApi(
             trackId: input.trackId ?? "",
             start: Math.round(input.startTicks),
           } as TimelineClip;
+          // A generated asset carries its matte as a separate asset; place it
+          // with the clip so the result matches a host-placed copy.
+          const creation = asset.creationMetadata;
+          const generationMaskAssetId =
+            creation?.source === "generated"
+              ? creation.generationMaskAssetId
+              : undefined;
           commands.push({
             kind: "create_clip",
             clip,
             ...(input.trackId === undefined
               ? {}
               : { trackId: assertIdentifier(input.trackId, "Track ID") }),
+            ...(generationMaskAssetId ? { generationMaskAssetId } : {}),
           });
           return clipId;
         },

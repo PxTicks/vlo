@@ -1100,8 +1100,11 @@ export interface ExtensionPlaybackApi {
    */
   getTime(): number;
   /**
-   * The frame-aligned presentation tick currently being shown. This is the
-   * value the renderer draws, and it is what a frame-accurate reader wants.
+   * The tick the renderer is currently presenting — what a frame-accurate
+   * reader wants. During playback the displayed frame is snapped to the frame
+   * grid while the playhead runs continuously, so this trails `getTime()`;
+   * while paused the two agree, because a paused frame is drawn at the
+   * playhead itself.
    */
   getFrameTime(): number;
   isPlaying(): boolean;

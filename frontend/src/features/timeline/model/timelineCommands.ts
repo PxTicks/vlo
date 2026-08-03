@@ -998,6 +998,70 @@ export function setClipMaskCompositeTransformsInDraft(
   });
 }
 
+const DEFAULT_GENERATED_MASK_OUTER_FEATHER = 30;
+
+/** Shared mask feathering seeded on a clip carrying a generated mask. */
+export function createDefaultGeneratedMaskTransforms(): ClipTransform[] {
+  return [
+    {
+      id: crypto.randomUUID(),
+      type: "feather",
+      isEnabled: true,
+      parameters: {
+        mode: "hard_outer",
+        amount: DEFAULT_GENERATED_MASK_OUTER_FEATHER,
+        invert: false,
+      },
+    },
+  ];
+}
+
+/**
+ * Attaches an asset's linked generation mask to a clip, inside one draft.
+ *
+ * A generated asset carries its matte as a separate asset ID; a clip placed
+ * without it renders differently from the same asset placed by the host. The
+ * store-based `attachGenerationMask` in utils/insertAssetToTimeline.ts is the
+ * drag-and-drop path and must stay behaviourally identical to this one.
+ */
+export function attachGenerationMaskToDraft(
+  draft: TimelineModelState,
+  clipId: string,
+  generationMaskAssetId: string,
+): void {
+  addClipMaskToDraft(draft, clipId, {
+    id: crypto.randomUUID(),
+    type: "generation",
+    isEnabled: true,
+    mode: "apply",
+    inverted: false,
+    parameters: { baseWidth: 1, baseHeight: 1 },
+    generationMaskAssetId,
+    transformations: [],
+  });
+  setClipMaskCompositionAlgebraInDraft(draft, clipId, "normal");
+
+  const parent = draft.clips.find(
+    (clip): clip is StandardTimelineClip =>
+      clip.id === clipId && isNonMaskTimelineClip(clip),
+  );
+  if (!parent) return;
+  const existingComposition = (parent.components ?? []).find(
+    (component) => component.type === "mask_composition",
+  );
+  const existingTransforms =
+    existingComposition?.type === "mask_composition"
+      ? existingComposition.parameters.compositeTransformations
+      : [];
+  if (existingTransforms.length === 0) {
+    setClipMaskCompositeTransformsInDraft(
+      draft,
+      clipId,
+      createDefaultGeneratedMaskTransforms(),
+    );
+  }
+}
+
 export function setClipMaskCompositionAlgebraInDraft(
   draft: TimelineModelState,
   clipId: string,

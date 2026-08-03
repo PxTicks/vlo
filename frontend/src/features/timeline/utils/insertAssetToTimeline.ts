@@ -1,14 +1,9 @@
 import type { Asset } from "../../../types/Asset";
-import type {
-  BaseClip,
-  ClipTransform,
-  TimelineClip,
-} from "../../../types/TimelineTypes";
+import type { BaseClip, TimelineClip } from "../../../types/TimelineTypes";
 import { createClipFromAsset } from "./clipFactory";
 import { useTimelineStore } from "../useTimelineStore";
+import { createDefaultGeneratedMaskTransforms } from "../model/timelineCommands";
 import { getTrackTypeFromClip } from "./formatting";
-
-const DEFAULT_GENERATED_MASK_OUTER_FEATHER = 30;
 
 function clipOverlapsRange(
   clip: TimelineClip,
@@ -28,21 +23,6 @@ function isCompatibleTrackType(
   expectedTrackType: string,
 ): boolean {
   return !trackType || trackType === expectedTrackType;
-}
-
-function createDefaultGeneratedMaskTransforms(): ClipTransform[] {
-  return [
-    {
-      id: crypto.randomUUID(),
-      type: "feather",
-      isEnabled: true,
-      parameters: {
-        mode: "hard_outer",
-        amount: DEFAULT_GENERATED_MASK_OUTER_FEATHER,
-        invert: false,
-      },
-    },
-  ];
 }
 
 /**

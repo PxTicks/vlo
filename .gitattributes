@@ -132,6 +132,9 @@
 /frontend/src/features/transformations/utils/__tests__/hydrateTransformationParameters.test.ts extension-surface=adapter
 /frontend/src/features/timeline/utils/formatting.ts extension-surface=adapter
 /frontend/src/features/timeline/utils/clipPresentation.ts extension-surface=adapter
+# Host drag-drop placement; must stay behaviourally identical to the extension
+# createClip path, which shares its generated-mask helper.
+/frontend/src/features/timeline/utils/insertAssetToTimeline.ts extension-surface=adapter
 /frontend/src/features/renderer/utils/clipLookup.ts extension-surface=adapter
 /frontend/src/features/panelUI/customControlRegistry.ts extension-surface=adapter
 /frontend/src/features/panelUI/types.ts extension-surface=adapter

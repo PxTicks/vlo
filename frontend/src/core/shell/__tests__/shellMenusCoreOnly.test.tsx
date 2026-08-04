@@ -24,6 +24,11 @@ const CLIP_SUBJECT: HostMenuSubject<"timeline.clip.context"> = {
     trackId: "track-1",
     startTicks: 0,
     durationTicks: 100,
+    sourceOffsetTicks: 0,
+    sourceDurationTicks: 100,
+    croppedSourceDurationTicks: 100,
+    isMuted: false,
+    rangeMasks: [],
     transformations: [],
   },
 };

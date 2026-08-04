@@ -40,7 +40,9 @@ function wrapListener(
 function createLocalStore(scope: ExtensionApiScope): ExtensionKeyValueStore {
   const extensionId = scope.extension.id;
   const listeners = new Set<() => void>();
+  let revision = 0;
   const notify = () => {
+    revision += 1;
     for (const listener of [...listeners]) listener();
   };
   return Object.freeze({
@@ -79,6 +81,7 @@ function createLocalStore(scope: ExtensionApiScope): ExtensionKeyValueStore {
         void owned.dispose();
       };
     },
+    getRevision: () => revision,
   });
 }
 
@@ -105,6 +108,7 @@ function createProjectStore(scope: ExtensionApiScope): ExtensionKeyValueStore {
         void owned.dispose();
       };
     },
+    getRevision: () => extensionProjectStorage.getRevision(extensionId),
   });
 }
 

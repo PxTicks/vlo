@@ -47,6 +47,7 @@ describe("tagging storage conformance fixture", () => {
         listeners.add(listener);
         return () => listeners.delete(listener);
       },
+      getRevision: () => values.size,
     };
     const completed = succeededJob({
       schemaVersion: 1,

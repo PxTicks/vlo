@@ -37,6 +37,15 @@ placement commands. It returns tracks in the project's visual order with `index`
 `label`, `isVisible`, `isMuted`, and `isLocked`. A track that predates typed
 tracks reports `type: null`; the host treats those as visual.
 
+A clip snapshot reports everything the write commands can set, so a read-modify-
+write round trip is possible without re-deriving host state: `sourceOffsetTicks`
+(the in-point) and `sourceDurationTicks` bound a trim, `croppedSourceDurationTicks`
+against `durationTicks` reveals a retime, and `isMuted`, `compositeId`,
+`maskComposition`, and `rangeMasks` expose the rest of the clip. `maskComposition`
+is present only when the clip carries an explicit mask equation; its `expression`
+is `null` when the user disabled composed masking, which is distinct from the
+field being absent.
+
 Use canonical ticks for all timeline fields. Obtain the time base from
 `timeline.ticksPerSecond` and project FPS from `getProject()`.
 
@@ -52,6 +61,15 @@ fresh snapshot inside the listener — and are disposed with the extension.
 - `assets` — fires on library changes.
 - `selection` — see below.
 - `storage.local` / `storage.project` — fire on this frontend's own writes.
+- `ui.catalogues` — fires when any catalogue's contents change, *including*
+  options registered by other extensions.
+- `ui.commands.subscribeContextKeys` — fires on host context-key changes, for
+  extension UI that mirrors host enablement. Prefer a declarative `when` on the
+  command itself where that works.
+
+`playback` is the one exception: it publishes `subscribe` without a revision,
+because the playhead is continuous and a token would carry no information the
+tick does not.
 
 Cache a revision alongside derived state and recompute when it moves. Per-frame
 and time-driven work belongs in the render contracts, never in a subscriber.
@@ -77,7 +95,7 @@ Use `timeline.transaction(label, callback, options?)` for persisted writes. Keep
 callback synchronous and inspect the structured result. Available commands include:
 
 - `createEntity`, `updatePayload`, `moveEntity`, `removeEntity`;
-- `createClip`, `moveClip`, `trimClip`, `splitClip`, `removeClip`;
+- `createClip`, `moveClip`, `trimClip`, `updateClip`, `splitClip`, `removeClip`;
 - `createTrack`, `updateTrack`, `removeTrack`;
 - `upsertTransform`, `removeTransform`;
 - `createTransition`, `updateTransitionParameters`, `removeTransition`;
@@ -114,7 +132,9 @@ Two behaviours follow, and both are normal:
 clip from the asset's media properties and returns its ID. Omit `trackId` to let
 the host pick a compatible track, creating one when nothing fits. `moveClip`
 slides a clip; `trimClip` changes which part of the source plays; they are
-separate commands because they are different edits. `splitClip` cuts at a tick
+separate commands because they are different edits. `updateClip` sets
+non-structural properties — currently `isMuted` — declaratively rather than as a
+toggle, so staging a write needs no read first. `splitClip` cuts at a tick
 strictly inside the clip and leaves the new right-hand clip for you to find via
 `listClips()`. `removeTrack` requires an empty track, so deleting a user's clips
 is always something you asked for explicitly.

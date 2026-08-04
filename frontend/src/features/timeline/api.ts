@@ -4,6 +4,7 @@ import type {
   Component,
   MaskCompositionAlgebra,
 } from "../../types/Components";
+import { resolveMaskCompositionAlgebra } from "../../types/Components";
 import type {
   AdjustmentDepth,
   AdjustmentRetimingMode,
@@ -24,6 +25,9 @@ import {
   isExtensionTimelineClip,
 } from "../../types/TimelineTypes";
 import type {
+  ExtensionMaskCompositionSnapshot,
+  ExtensionMaskExpression,
+  ExtensionRangeMaskSnapshot,
   ExtensionSelectionSnapshot,
   ExtensionTimelineEntitySnapshot,
   ExtensionTimelineClipSnapshot,
@@ -491,9 +495,74 @@ export function getExtensionTimelineEntities(
   );
 }
 
+/** Projects the host's boolean mask tree, naming masks by clip-local ID. */
+function toExtensionMaskExpression(
+  expression: MaskBooleanExpression,
+): ExtensionMaskExpression {
+  if (expression.kind === "mask_ref") {
+    return Object.freeze({
+      kind: "mask" as const,
+      maskId: parseMaskClipId(expression.maskId)?.maskId ?? expression.maskId,
+    });
+  }
+  return Object.freeze({
+    kind: "operation" as const,
+    operator: expression.operator,
+    left: toExtensionMaskExpression(expression.left),
+    right: toExtensionMaskExpression(expression.right),
+  });
+}
+
+function toExtensionMaskComposition(
+  clip: TimelineClip,
+): ExtensionMaskCompositionSnapshot | undefined {
+  if (clip.type === "mask") return undefined;
+  const component = (clip.components ?? []).find(
+    (candidate) => candidate.type === "mask_composition",
+  );
+  if (component?.type !== "mask_composition") return undefined;
+  const { expression, expressionEnabled } = component.parameters;
+  return Object.freeze({
+    // The model's tri-state is absent = auto-union, null = explicitly off,
+    // object = authored. Collapsing the first two would report a clip that
+    // merely carries edge transforms or an algebra — which is what attaching a
+    // generated mask produces — as having masking switched off.
+    expression:
+      expression === undefined
+        ? ("auto" as const)
+        : expression === null
+          ? ("none" as const)
+          : toExtensionMaskExpression(expression),
+    isEnabled: expressionEnabled !== false,
+    algebra: resolveMaskCompositionAlgebra(component.parameters),
+  });
+}
+
+function toExtensionRangeMasks(
+  clip: TimelineClip,
+): readonly ExtensionRangeMaskSnapshot[] {
+  if (clip.type === "mask") return Object.freeze([]);
+  return Object.freeze(
+    (clip.components ?? [])
+      .filter((component) => component.type === "range_mask")
+      .map((component) =>
+        Object.freeze({
+          id: component.id,
+          startSourceTicks: component.parameters.startSourceTicks,
+          endSourceTicks: component.parameters.endSourceTicks,
+          isActive: component.parameters.isActive,
+          ...(component.parameters.name === undefined
+            ? {}
+            : { name: component.parameters.name }),
+        }),
+      ),
+  );
+}
+
 export function toExtensionClipSnapshot(
   clip: TimelineClip,
 ): ExtensionTimelineClipSnapshot {
+  const composition = toExtensionMaskComposition(clip);
   return Object.freeze({
     id: clip.id,
     type: clip.type,
@@ -501,6 +570,16 @@ export function toExtensionClipSnapshot(
     trackId: clip.trackId,
     startTicks: clip.start,
     durationTicks: clip.timelineDuration,
+    sourceOffsetTicks: clip.offset,
+    sourceDurationTicks: clip.sourceDuration,
+    croppedSourceDurationTicks: clip.croppedSourceDuration,
+    isMuted:
+      clip.type !== "mask" && "isMuted" in clip ? clip.isMuted === true : false,
+    ...("compositeId" in clip && typeof clip.compositeId === "string"
+      ? { compositeId: clip.compositeId }
+      : {}),
+    ...(composition ? { maskComposition: composition } : {}),
+    rangeMasks: toExtensionRangeMasks(clip),
     ...("assetId" in clip && typeof clip.assetId === "string"
       ? { assetId: clip.assetId }
       : {}),

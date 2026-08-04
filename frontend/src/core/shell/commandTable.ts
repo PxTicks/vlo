@@ -15,6 +15,14 @@ const HOST_COMMAND_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
 export interface HostCommandDefinition {
   readonly id: string;
   readonly title: string;
+  /**
+   * Opts this command into `api.ui.commands.execute()`. Host commands are an
+   * authority surface, so this is per-command review by construction: someone
+   * writes it at the definition site, and it lives and dies with the entry.
+   * The intended path for extensions remains contributing a menu item the
+   * *user* invokes; reach for this only when there is no scoped equivalent.
+   */
+  readonly allowExtensionExecute?: boolean;
   readonly when?: ExtensionContextKeyExpression;
   readonly run: (
     invocation: ExtensionCommandInvocation,
@@ -35,6 +43,8 @@ export interface CommandTableEntry {
     invocation: ExtensionCommandInvocation,
   ) => void | Promise<void>;
   readonly source: "host" | "extension";
+  /** Host entries only; see {@link HostCommandDefinition.allowExtensionExecute}. */
+  readonly allowExtensionExecute?: boolean;
   readonly reportError: (message: string, error: unknown) => void;
 }
 
@@ -47,12 +57,6 @@ export interface CommandTableEntry {
  */
 export class HostCommandTable {
   private readonly entries = new Map<string, CommandTableEntry>();
-  /**
-   * Host commands extensions may invoke via `execute()`. Deliberately empty
-   * until real use cases justify each entry: contributing a menu item the
-   * user clicks is the intended path, not programmatic host control.
-   */
-  private readonly hostExecuteAllowlist = new Set<string>();
   private revision = 0;
   private readonly listeners = new Set<() => void>();
   private readonly contextKeys: HostContextKeyService;
@@ -78,6 +82,9 @@ export class HostCommandTable {
       when: definition.when,
       run: definition.run,
       source: "host",
+      ...(definition.allowExtensionExecute === true
+        ? { allowExtensionExecute: true }
+        : {}),
       reportError: (message, error) => console.error(message, error),
     });
   }
@@ -125,8 +132,15 @@ export class HostCommandTable {
     return this.entries.get(commandId)?.source === "host";
   }
 
+  /**
+   * Carried on the entry rather than a parallel set, so an allowance cannot
+   * outlive the command it was granted for. No host command opts in today;
+   * the mechanism exists so the SDK's documented capability is reachable and
+   * each future grant is a reviewable one-line change.
+   */
   isHostExecuteAllowlisted(commandId: string): boolean {
-    return this.hostExecuteAllowlist.has(commandId);
+    const entry = this.entries.get(commandId);
+    return entry?.source === "host" && entry.allowExtensionExecute === true;
   }
 
   isEnabled(commandId: string): boolean {

@@ -1,5 +1,36 @@
 import { vi } from "vitest";
-import type { ExtensionTimelineTransaction } from "@vlo/extension-sdk";
+import type {
+  ExtensionTimelineClipSnapshot,
+  ExtensionTimelineTransaction,
+} from "@vlo/extension-sdk";
+
+/**
+ * A complete `ExtensionTimelineClipSnapshot` with plausible defaults.
+ *
+ * Same reasoning as the transaction stub below: the snapshot grows as the read
+ * surface widens, and a fixture that spells out every field has to be edited
+ * each time for reasons unrelated to what it tests. Override the fields the
+ * test is actually about.
+ */
+export function createExtensionClipSnapshot(
+  overrides: Partial<ExtensionTimelineClipSnapshot> = {},
+): ExtensionTimelineClipSnapshot {
+  return Object.freeze({
+    id: "clip-1",
+    type: "video",
+    name: "Clip 1",
+    trackId: "track-1",
+    startTicks: 0,
+    durationTicks: 96_000,
+    sourceOffsetTicks: 0,
+    sourceDurationTicks: 96_000,
+    croppedSourceDurationTicks: 96_000,
+    isMuted: false,
+    rangeMasks: [],
+    transformations: [],
+    ...overrides,
+  });
+}
 
 /**
  * A complete `ExtensionTimelineTransaction` of no-op spies, for tests that care
@@ -21,6 +52,7 @@ export function createExtensionTimelineTransactionStub(
     createClip: vi.fn(() => "stub-clip"),
     moveClip: vi.fn(),
     trimClip: vi.fn(),
+    updateClip: vi.fn(),
     splitClip: vi.fn(),
     removeClip: vi.fn(),
     createTrack: vi.fn(() => "stub-track"),

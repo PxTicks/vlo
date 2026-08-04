@@ -783,6 +783,33 @@ export function createExtensionTimelineApi(
               : { endTicks: Math.round(trim.endTicks) }),
           });
         },
+        updateClip: (clipId, update) => {
+          assertOpen();
+          const normalizedClipId = assertIdentifier(clipId, "Clip ID");
+          if (typeof update !== "object" || update === null) {
+            throw new InvalidExtensionTimelineCommandError(
+              "updateClip requires an update object.",
+            );
+          }
+          if (
+            update.isMuted !== undefined &&
+            typeof update.isMuted !== "boolean"
+          ) {
+            throw new InvalidExtensionTimelineCommandError(
+              "Clip isMuted must be a boolean when supplied.",
+            );
+          }
+          if (update.isMuted === undefined) {
+            throw new InvalidExtensionTimelineCommandError(
+              "updateClip requires at least one property.",
+            );
+          }
+          commands.push({
+            kind: "update_clip",
+            clipId: normalizedClipId,
+            isMuted: update.isMuted,
+          });
+        },
         splitClip: (clipId, atTicks) => {
           assertOpen();
           const normalizedClipId = assertIdentifier(clipId, "Clip ID");

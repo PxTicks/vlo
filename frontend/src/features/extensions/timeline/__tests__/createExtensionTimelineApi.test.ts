@@ -13,6 +13,7 @@ import type {
 import type {
   ClipTransform,
   ExtensionTimelineClip,
+  MaskBooleanExpression,
   MaskTimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
@@ -1279,5 +1280,276 @@ describe("createExtensionTimelineApi clip and track commands", () => {
         });
       }),
     ).toMatchObject({ ok: false, code: "invalid_command" });
+  });
+});
+
+describe("createExtensionTimelineApi clip snapshot fidelity", () => {
+  it("reports everything the write commands can set", () => {
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        {
+          id: "track-visual",
+          label: "Visual",
+          type: "visual",
+          isVisible: true,
+          isLocked: false,
+          isMuted: false,
+        },
+      ],
+      clips: [
+        {
+          id: "video-1",
+          trackId: "track-visual",
+          type: "video",
+          name: "Take",
+          assetId: "asset-1",
+          compositeId: "composite-1",
+          sourceDuration: 1_000,
+          start: 50,
+          timelineDuration: 200,
+          offset: 120,
+          transformedDuration: 1_000,
+          transformedOffset: 120,
+          croppedSourceDuration: 400,
+          isMuted: true,
+          transformations: [],
+          components: [
+            {
+              id: "range-1",
+              type: "range_mask",
+              parameters: {
+                startSourceTicks: 10,
+                endSourceTicks: 90,
+                isActive: true,
+                name: "Hide",
+              },
+            },
+            {
+              id: "composition-1",
+              type: "mask_composition",
+              parameters: {
+                algebra: "normal",
+                expressionEnabled: false,
+                expression: {
+                  kind: "operation",
+                  operator: "subtract",
+                  left: { kind: "mask_ref", maskId: "video-1::mask::a" },
+                  right: { kind: "mask_ref", maskId: "video-1::mask::b" },
+                },
+                compositeTransformations: [],
+              },
+            },
+          ],
+        },
+      ],
+      transitions: [],
+    });
+    useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+
+    const api = createExtensionTimelineApi(createScope("example.reader"));
+    const [clip] = api.listClips();
+
+    expect(clip).toMatchObject({
+      id: "video-1",
+      startTicks: 50,
+      durationTicks: 200,
+      // Trim, source bounds, and retime: a trimClip round trip needs all three.
+      sourceOffsetTicks: 120,
+      sourceDurationTicks: 1_000,
+      croppedSourceDurationTicks: 400,
+      isMuted: true,
+      compositeId: "composite-1",
+    });
+    expect(clip.rangeMasks).toEqual([
+      {
+        id: "range-1",
+        startSourceTicks: 10,
+        endSourceTicks: 90,
+        isActive: true,
+        name: "Hide",
+      },
+    ]);
+    // Masks are named by clip-local ID, matching listClipMasks().localId
+    // rather than leaking the host's composite clip IDs.
+    expect(clip.maskComposition).toEqual({
+      algebra: "normal",
+      isEnabled: false,
+      expression: {
+        kind: "operation",
+        operator: "subtract",
+        left: { kind: "mask", maskId: "a" },
+        right: { kind: "mask", maskId: "b" },
+      },
+    });
+  });
+
+  it("distinguishes an auto-union composition from a disabled one", () => {
+    function seedComposition(
+      expression: MaskBooleanExpression | null | undefined,
+    ): void {
+      useTimelineStore.getState().replaceTimelineSnapshot({
+        tracks: [
+          {
+            id: "track-visual",
+            label: "Visual",
+            type: "visual",
+            isVisible: true,
+            isLocked: false,
+            isMuted: false,
+          },
+        ],
+        clips: [
+          {
+            id: "video-1",
+            trackId: "track-visual",
+            type: "video",
+            name: "Take",
+            assetId: "asset-1",
+            sourceDuration: 500,
+            start: 0,
+            timelineDuration: 100,
+            offset: 0,
+            transformedDuration: 500,
+            transformedOffset: 0,
+            croppedSourceDuration: 100,
+            transformations: [],
+            components: [
+              {
+                id: "composition-1",
+                type: "mask_composition",
+                parameters: {
+                  algebra: "normal",
+                  compositeTransformations: [],
+                  ...(expression === undefined ? {} : { expression }),
+                },
+              },
+            ],
+          },
+        ],
+        transitions: [],
+      });
+      useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+    }
+
+    const api = createExtensionTimelineApi(createScope("example.reader"));
+
+    // A composition carrying only an algebra or edge transforms — which is what
+    // attaching a generated mask produces — still unions its masks. Reporting
+    // that as "off" would invert the clip's appearance for a reader.
+    seedComposition(undefined);
+    expect(api.listClips()[0]?.maskComposition?.expression).toBe("auto");
+
+    seedComposition(null);
+    expect(api.listClips()[0]?.maskComposition?.expression).toBe("none");
+  });
+
+  it("omits mask composition on a clip that has no equation", () => {
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        {
+          id: "track-visual",
+          label: "Visual",
+          type: "visual",
+          isVisible: true,
+          isLocked: false,
+          isMuted: false,
+        },
+      ],
+      clips: [
+        {
+          id: "video-2",
+          trackId: "track-visual",
+          type: "video",
+          name: "Plain",
+          assetId: "asset-1",
+          sourceDuration: 500,
+          start: 0,
+          timelineDuration: 100,
+          offset: 0,
+          transformedDuration: 500,
+          transformedOffset: 0,
+          croppedSourceDuration: 100,
+          transformations: [],
+        },
+      ],
+      transitions: [],
+    });
+    useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+
+    const api = createExtensionTimelineApi(createScope("example.reader"));
+    const [clip] = api.listClips();
+
+    expect(clip.maskComposition).toBeUndefined();
+    expect(clip.rangeMasks).toEqual([]);
+    expect(clip.isMuted).toBe(false);
+  });
+});
+
+describe("createExtensionTimelineApi clip mute", () => {
+  beforeEach(() => {
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        {
+          id: "track-visual",
+          label: "Visual",
+          type: "visual",
+          isVisible: true,
+          isLocked: false,
+          isMuted: false,
+        },
+      ],
+      clips: [
+        {
+          id: "video-1",
+          trackId: "track-visual",
+          type: "video",
+          name: "Take",
+          assetId: "asset-1",
+          sourceDuration: 500,
+          start: 0,
+          timelineDuration: 100,
+          offset: 0,
+          transformedDuration: 500,
+          transformedOffset: 0,
+          croppedSourceDuration: 100,
+          transformations: [],
+        },
+        createExtensionClip("entity-1", "example.other"),
+      ],
+      transitions: [],
+    });
+    useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+  });
+
+  it("sets mute declaratively and round-trips through the snapshot", () => {
+    const api = createExtensionTimelineApi(createScope("example.muter"));
+
+    expect(api.transaction("Mute", (t) => t.updateClip("video-1", { isMuted: true })).ok).toBe(true);
+    expect(api.listClips().find((clip) => clip.id === "video-1")?.isMuted).toBe(
+      true,
+    );
+
+    // Idempotent: stating the same value again is not a toggle.
+    api.transaction("Mute again", (t) => t.updateClip("video-1", { isMuted: true }));
+    expect(api.listClips().find((clip) => clip.id === "video-1")?.isMuted).toBe(
+      true,
+    );
+
+    api.transaction("Unmute", (t) => t.updateClip("video-1", { isMuted: false }));
+    expect(api.listClips().find((clip) => clip.id === "video-1")?.isMuted).toBe(
+      false,
+    );
+  });
+
+  it("keeps entities and empty updates out", () => {
+    const api = createExtensionTimelineApi(createScope("example.muter"));
+
+    const entity = api.transaction("Mute entity", (t) =>
+      t.updateClip("entity-1", { isMuted: true }),
+    );
+    expect(entity).toMatchObject({ ok: false, code: "invalid_command" });
+
+    const empty = api.transaction("Nothing", (t) => t.updateClip("video-1", {}));
+    expect(empty).toMatchObject({ ok: false, code: "invalid_command" });
   });
 });

@@ -100,10 +100,14 @@ its own shortcuts — registers *inactive* with a diagnostic rather than failing
 activation, so check your diagnostics if a shortcut appears dead. Omit `regions`
 for a global binding; otherwise name the editor focus regions it applies in.
 
-`ui.commands.execute(localId, subject?)` invokes one of your own commands. It
-resolves without running when the command's `when` is false. Host commands are an
-authority surface and are not executable from an extension; contribute a menu
-placement and let the user invoke it.
+`ui.commands.execute(localId, subject?)` invokes one of your own commands and
+resolves `true` when it ran, `false` when its `when` clause was false — a
+disabled command is a state of the editor, not an error, so branch on the
+result rather than assuming it ran. It throws for an unregistered ID.
+
+Host commands are an authority surface: they execute only if the host opted
+that specific command in, and none do today. Contribute a menu placement and
+let the user invoke it.
 
 ## Option catalogues
 

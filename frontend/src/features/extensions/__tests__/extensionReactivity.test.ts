@@ -13,6 +13,10 @@ import {
   playbackFrameClock,
 } from "../../../core/playback/PlaybackClock";
 import type { Asset } from "../../../types/Asset";
+import type { JsonValue } from "../types";
+import { createExtensionCatalogueApi } from "../catalogues/createExtensionCatalogueApi";
+import { HostOptionCatalog } from "../../../core/shell/optionCatalog";
+import { HostContextKeyService } from "../../../core/shell/contextKeys";
 
 function createScope(
   extensionId: string,
@@ -382,5 +386,71 @@ describe("extension asset reactivity", () => {
     expect(listener).toHaveBeenCalledTimes(1);
     expect(api.getRevision()).toBe(initial + 1);
     expect(api.list().map((snapshot) => snapshot.id)).toEqual(["asset-1"]);
+  });
+});
+
+describe("extension catalogue reactivity", () => {
+  it("signals options registered by other extensions", () => {
+    const catalog = new HostOptionCatalog();
+    catalog.declare({
+      id: "test.catalogue",
+      validateValue: (value): value is JsonValue => typeof value === "string",
+      valueSchema: "string",
+    });
+    const { scope } = createScope("example.reader");
+    const api = createExtensionCatalogueApi(scope, catalog);
+    const listener = vi.fn();
+    api.subscribe(listener);
+    const initial = api.getRevision();
+
+    // A catalogue's contents are not owned by its readers, so polling list()
+    // is not enough — another extension's registration must wake them.
+    const { scope: writerScope } = createScope("example.writer");
+    createExtensionCatalogueApi(writerScope, catalog).addOption({
+      id: "extra",
+      apiVersion: 1,
+      catalogueId: "test.catalogue",
+      label: "Extra",
+      value: "extra",
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(api.getRevision()).toBeGreaterThan(initial);
+    expect(api.list("test.catalogue").map((option) => option.label)).toEqual([
+      "Extra",
+    ]);
+  });
+
+  it("signals when a context key changes which options are visible", () => {
+    const contextKeys = new HostContextKeyService();
+    const catalog = new HostOptionCatalog();
+    catalog.declare({
+      id: "test.gated",
+      validateValue: (value): value is JsonValue => typeof value === "string",
+      valueSchema: "string",
+    });
+    const { scope } = createScope("example.gated");
+    const api = createExtensionCatalogueApi(scope, catalog, contextKeys);
+    api.addOption({
+      id: "editor-only",
+      apiVersion: 1,
+      catalogueId: "test.gated",
+      label: "Editor only",
+      value: "x",
+      when: { key: "project.open" },
+    });
+
+    const listener = vi.fn();
+    api.subscribe(listener);
+    expect(api.list("test.gated")).toHaveLength(0);
+    const initial = api.getRevision();
+
+    // `list()` filters by `when`, so visibility moves without any registration
+    // changing. Watching the catalogue alone would leave this silent.
+    contextKeys.set("project.open", true);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(api.getRevision()).toBeGreaterThan(initial);
+    expect(api.list("test.gated")).toHaveLength(1);
   });
 });

@@ -18,17 +18,12 @@ import {
 } from "../../../../../../extension-fixtures/tracking/frontend/src/index";
 import { extensionColorApi } from "../../services/extensionColorApi";
 import { createExtensionTimelineTransactionStub } from "../../../../testUtils/extensionTimeline";
+import { createExtensionClipSnapshot } from "../../../../testUtils/extensionTimeline";
 
-const clip: ExtensionTimelineClipSnapshot = {
-  id: "clip-1",
-  type: "video",
+const clip: ExtensionTimelineClipSnapshot = createExtensionClipSnapshot({
   name: "Source clip",
-  trackId: "track-1",
-  startTicks: 0,
-  durationTicks: 96_000,
   assetId: "asset-1",
-  transformations: [],
-};
+});
 
 const trackingResult: TrackingResult = {
   schemaVersion: 1,
@@ -164,6 +159,7 @@ function createConformanceApi() {
         delete: async () => undefined,
         keys: async () => [],
         subscribe: () => () => undefined,
+        getRevision: () => 0,
       },
       project: null,
     },
@@ -287,6 +283,8 @@ function createConformanceApi() {
         }),
         list: () => [],
         listCatalogues: () => [],
+        subscribe: () => () => undefined,
+        getRevision: () => 0,
       },
       canvasTools: {
         register: (definition) => ({
@@ -304,8 +302,9 @@ function createConformanceApi() {
           id: request.id,
           dispose: () => undefined,
         }),
-        execute: async () => undefined,
+        execute: async () => true,
         getContextKey: () => undefined,
+        subscribeContextKeys: () => () => undefined,
       },
     },
   };

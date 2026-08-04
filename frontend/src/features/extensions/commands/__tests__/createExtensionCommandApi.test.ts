@@ -65,7 +65,7 @@ describe("createExtensionCommandApi", () => {
     const ownRun = vi.fn();
     api.register({ id: "tag", apiVersion: 1, title: "Tag", run: ownRun });
 
-    await api.execute("tag", { assetId: "a1" });
+    await expect(api.execute("tag", { assetId: "a1" })).resolves.toBe(true);
     expect(ownRun).toHaveBeenCalledWith({
       subject: { assetId: "a1" },
       source: "api",
@@ -76,6 +76,119 @@ describe("createExtensionCommandApi", () => {
     );
     expect(hostRun).not.toHaveBeenCalled();
     await expect(api.execute("missing")).rejects.toThrow(/not registered/);
+  });
+
+  it("reports a disabled command as an outcome rather than a silent success", async () => {
+    const scope = createScope("example.cmd");
+    const { api, contextKeys } = createHarness(scope);
+    const run = vi.fn();
+    contextKeys.set("project.open", false);
+    api.register({
+      id: "tag",
+      apiVersion: 1,
+      title: "Tag",
+      when: { key: "project.open" },
+      run,
+    });
+
+    // The caller has to be able to tell "did not run" from "ran": a silent
+    // resolve made a gated command indistinguishable from a successful one.
+    await expect(api.execute("tag")).resolves.toBe(false);
+    expect(run).not.toHaveBeenCalled();
+
+    contextKeys.set("project.open", true);
+    await expect(api.execute("tag")).resolves.toBe(true);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("executes a host command only once the host opts that command in", async () => {
+    const scope = createScope("example.cmd");
+    const { api, table } = createHarness(scope);
+    const openRun = vi.fn();
+    const closedRun = vi.fn();
+    table.registerHostCommand({
+      id: "project.open-thing",
+      title: "Open",
+      allowExtensionExecute: true,
+      run: openRun,
+    });
+    table.registerHostCommand({
+      id: "project.close-thing",
+      title: "Close",
+      run: closedRun,
+    });
+
+    await expect(api.execute("project.open-thing")).resolves.toBe(true);
+    expect(openRun).toHaveBeenCalledTimes(1);
+
+    await expect(api.execute("project.close-thing")).rejects.toThrow(
+      /not allowlisted/,
+    );
+    expect(closedRun).not.toHaveBeenCalled();
+  });
+
+  it("drops the allowance when the command is unregistered", async () => {
+    const scope = createScope("example.cmd");
+    const { api, table } = createHarness(scope);
+    const registration = table.registerHostCommand({
+      id: "project.open-thing",
+      title: "Open",
+      allowExtensionExecute: true,
+      run: vi.fn(),
+    });
+    await expect(api.execute("project.open-thing")).resolves.toBe(true);
+
+    void registration.dispose();
+
+    // The grant lives on the entry, so it cannot outlive it and be inherited
+    // by a later command that happens to reuse the ID.
+    table.registerHostCommand({
+      id: "project.open-thing",
+      title: "Open again",
+      run: vi.fn(),
+    });
+    await expect(api.execute("project.open-thing")).rejects.toThrow(
+      /not allowlisted/,
+    );
+  });
+
+  it("resolves its own command ahead of a host command with the same ID", async () => {
+    const scope = createScope("example.cmd");
+    const { api, table } = createHarness(scope);
+    const hostRun = vi.fn();
+    const ownRun = vi.fn();
+    // Local IDs may contain dots, so a collision with a host ID is legal and
+    // an extension must not be locked out of its own command by one.
+    table.registerHostCommand({
+      id: "project.open-thing",
+      title: "Host open",
+      run: hostRun,
+    });
+    api.register({
+      id: "project.open-thing",
+      apiVersion: 1,
+      title: "Own open",
+      run: ownRun,
+    });
+
+    await expect(api.execute("project.open-thing")).resolves.toBe(true);
+    expect(ownRun).toHaveBeenCalledTimes(1);
+    expect(hostRun).not.toHaveBeenCalled();
+  });
+
+  it("notifies extension subscribers when host context keys change", () => {
+    const scope = createScope("example.cmd");
+    const { api, contextKeys } = createHarness(scope);
+    const listener = vi.fn();
+    const unsubscribe = api.subscribeContextKeys(listener);
+
+    contextKeys.set("project.open", true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(api.getContextKey("project.open")).toBe(true);
+
+    unsubscribe();
+    contextKeys.set("project.open", false);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it("validates command definitions before registration", () => {

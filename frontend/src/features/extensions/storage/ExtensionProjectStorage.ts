@@ -69,6 +69,8 @@ function serializedByteLength(
 export class ExtensionProjectStorage {
   private readonly namespaces = new Map<string, Record<string, JsonValue>>();
   private readonly listeners = new Map<string, Set<() => void>>();
+  private readonly revisions = new Map<string, number>();
+  private documentGeneration = 0;
   private readonly pendingWrites = new Map<
     string,
     ReturnType<typeof setTimeout>
@@ -94,6 +96,7 @@ export class ExtensionProjectStorage {
       this.namespaces.set(extensionId, structuredClone(record));
     }
     this.open = true;
+    this.documentGeneration += 1;
     this.notifyAll();
   }
 
@@ -108,6 +111,7 @@ export class ExtensionProjectStorage {
       this.clearPendingTimers();
       this.dirtyNamespaces.clear();
       this.namespaces.clear();
+      this.documentGeneration += 1;
       this.notifyAll();
     }
   }
@@ -253,7 +257,18 @@ export class ExtensionProjectStorage {
     this.pendingWrites.clear();
   }
 
+  /**
+   * Monotonic change token for one namespace. Combines the namespace's own
+   * write count with a document generation, so a project switch registers even
+   * for a namespace nobody wrote to and for extensions that poll without
+   * subscribing.
+   */
+  getRevision(extensionId: string): number {
+    return this.documentGeneration + (this.revisions.get(extensionId) ?? 0);
+  }
+
   private notify(extensionId: string): void {
+    this.revisions.set(extensionId, (this.revisions.get(extensionId) ?? 0) + 1);
     for (const listener of this.listeners.get(extensionId) ?? []) {
       try {
         listener();

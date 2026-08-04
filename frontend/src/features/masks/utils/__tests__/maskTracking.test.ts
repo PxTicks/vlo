@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createExtensionClipSnapshot } from "../../../../testUtils/extensionTimeline";
 import type {
   ExtensionAssetApi,
   ExtensionTimelineApi,
@@ -8,16 +9,13 @@ import type {
 import { createPositionPathFromMaskTracking } from "../maskTracking";
 
 function createClip(): ExtensionTimelineClipSnapshot {
-  return {
+  return createExtensionClipSnapshot({
     id: "clip_1",
-    type: "video",
     name: "Clip",
     trackId: "track_1",
-    startTicks: 0,
     durationTicks: 100,
     assetId: "asset_1",
-    transformations: [],
-  };
+  });
 }
 
 function createMovingMask(): ExtensionTimelineMaskSnapshot {

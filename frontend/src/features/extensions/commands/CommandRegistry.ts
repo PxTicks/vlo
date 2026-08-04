@@ -9,6 +9,7 @@ import type {
   JsonValue,
 } from "../types";
 import { jsonValueSchema } from "../../../core/shell/jsonValue";
+import { bindOwnerScopedSubscribe } from "../utils/ownerScopedSubscribe";
 import {
   hostCommandTable,
   type CommandTableEntry,
@@ -140,29 +141,45 @@ export function createExtensionCommandApi(
         dispose: () => void owned.dispose(),
       });
     },
-    execute: async (commandId: string, subject?: JsonValue): Promise<void> => {
+    // Resolves false rather than throwing when the command's `when` is false:
+    // a disabled command is an ordinary runtime state, not an author error, so
+    // it is reported as an outcome. Unknown or non-allowlisted IDs still throw
+    // — those are mistakes in the extension, not states of the editor.
+    execute: async (commandId: string, subject?: JsonValue): Promise<boolean> => {
       const invocation: ExtensionCommandInvocation = Object.freeze({
         subject: cloneSubject(subject),
         source: "api",
       });
+      // Own commands resolve first. Local IDs may contain dots, so an
+      // extension can legitimately name one `project.open-thing`; checking the
+      // host table first would make its own command unreachable — and would
+      // send it into the allowlist gate for a command it owns.
+      const ownId = `${scope.extension.id}/${commandId}`;
+      const entry = table.getEntry(ownId);
+      if (entry) {
+        if (!table.isEnabled(ownId)) return false;
+        await entry.run(invocation);
+        return true;
+      }
       if (table.isHostCommand(commandId)) {
         if (!table.isHostExecuteAllowlisted(commandId)) {
           throw new Error(
             `Host command '${commandId}' is not allowlisted for extension execution.`,
           );
         }
-        if (!table.isEnabled(commandId)) return;
+        if (!table.isEnabled(commandId)) return false;
         await table.getEntry(commandId)?.run(invocation);
-        return;
+        return true;
       }
-      const ownId = `${scope.extension.id}/${commandId}`;
-      const entry = table.getEntry(ownId);
-      if (!entry) {
-        throw new Error(`Command '${commandId}' is not registered.`);
-      }
-      if (!table.isEnabled(ownId)) return;
-      await entry.run(invocation);
+      throw new Error(`Command '${commandId}' is not registered.`);
     },
     getContextKey: (key: string): JsonValue | undefined => contextKeys.get(key),
+    subscribeContextKeys: bindOwnerScopedSubscribe(
+      scope,
+      // The key service notifies without a revision of its own; keys are a
+      // read-through view, so the token would have no independent meaning.
+      { subscribe: (listener) => contextKeys.subscribe(listener), getRevision: () => 0 },
+      "Context key",
+    ),
   });
 }

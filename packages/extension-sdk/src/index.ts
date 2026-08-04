@@ -1,3 +1,24 @@
+/*
+ * How this API reports failure, so a caller can predict it without reading
+ * every signature:
+ *
+ * - Thrown errors are your mistakes. Malformed input, an unknown or unowned
+ *   ID, a contribution registered twice, a call after deactivation. These are
+ *   bugs in the extension and should surface loudly in development rather than
+ *   be caught and swallowed.
+ * - Returned results are the editor's answer. A transaction the host refused,
+ *   a command whose `when` is false, an `openView` the user has hidden. These
+ *   are ordinary states of a running editor, so they come back as typed values
+ *   — `ExtensionTimelineTransactionResult`, `false` — worth branching on
+ *   rather than treating as errors.
+ * - Diagnostics are advisory. A shadowed keybinding or an orphaned menu
+ *   placement leaves the extension running; the host reports through
+ *   `context.logger` and the extension manager instead of failing activation.
+ *
+ * Asynchronous work follows the same split: a rejected promise is a mistake, a
+ * resolved typed value is an answer.
+ */
+
 /**
  * Contribution metadata reserved for the trusted/restricted dispatch split.
  * SDK 1 records this value but does not enforce isolation.
@@ -490,6 +511,8 @@ export interface ExtensionKeyValueStore {
    * scope) do not notify.
    */
   subscribe(listener: () => void): () => void;
+  /** Monotonic change token matching `subscribe` notifications. */
+  getRevision(): number;
 }
 
 /**
@@ -615,6 +638,54 @@ export interface ExtensionTimelineTransformSnapshot {
   readonly filterName?: string;
 }
 
+/**
+ * A boolean mask equation over a clip's masks, as the host stores it. Leaves
+ * name masks by their clip-local ID, matching
+ * `ExtensionTimelineMaskSnapshot.localId`.
+ */
+export type ExtensionMaskExpression =
+  | { readonly kind: "mask"; readonly maskId: string }
+  | {
+      readonly kind: "operation";
+      readonly operator: "union" | "intersect" | "subtract";
+      readonly left: ExtensionMaskExpression;
+      readonly right: ExtensionMaskExpression;
+    };
+
+/** How a clip's masks combine. */
+export interface ExtensionMaskCompositionSnapshot {
+  /**
+   * Three distinct states, spelled out rather than encoded as null vs.
+   * undefined so neither can be mistaken for the other:
+   *
+   * - `"auto"` — no equation was authored; the host unions the clip's masks.
+   *   A clip can reach this state while still carrying a composition (edge
+   *   transforms or a non-default algebra), so it is not the same as having
+   *   no `maskComposition` at all.
+   * - `"none"` — composed masking was explicitly turned off.
+   * - an expression — the authored equation.
+   *
+   * Narrow with `typeof expression === "string"` before walking the tree.
+   */
+  readonly expression: ExtensionMaskExpression | "auto" | "none";
+  /**
+   * The separate on/off switch: false renders the clip unmasked while keeping
+   * the equation intact, so it is reversible in a way `"none"` is not.
+   */
+  readonly isEnabled: boolean;
+  /** Whether operations evaluate in coverage or inverse ("hole") space. */
+  readonly algebra: "normal" | "inverse";
+}
+
+/** A source-time window of transparency carried on the clip. */
+export interface ExtensionRangeMaskSnapshot {
+  readonly id: string;
+  readonly startSourceTicks: number;
+  readonly endSourceTicks: number;
+  readonly isActive: boolean;
+  readonly name?: string;
+}
+
 export interface ExtensionTimelineClipSnapshot {
   readonly id: string;
   readonly type: string;
@@ -623,6 +694,26 @@ export interface ExtensionTimelineClipSnapshot {
   readonly startTicks: number;
   readonly durationTicks: number;
   readonly assetId?: string;
+  /**
+   * Source ticks trimmed from the head — the clip's in-point. Pair with
+   * `sourceDurationTicks` to know how much media is left to trim into.
+   */
+  readonly sourceOffsetTicks: number;
+  /** Full source length, or null for unbounded media (stills, adjustments). */
+  readonly sourceDurationTicks: number | null;
+  /**
+   * Source span this clip covers, excluding speed. Comparing it with
+   * `durationTicks` tells you the clip is retimed without re-deriving the
+   * speed transform.
+   */
+  readonly croppedSourceDurationTicks: number;
+  /** Per-clip audio mute. */
+  readonly isMuted: boolean;
+  /** Present when the clip is a placement of a composite. */
+  readonly compositeId?: string;
+  /** Present when the clip's masks carry an explicit equation. */
+  readonly maskComposition?: ExtensionMaskCompositionSnapshot;
+  readonly rangeMasks: readonly ExtensionRangeMaskSnapshot[];
   readonly transformations: readonly ExtensionTimelineTransformSnapshot[];
 }
 
@@ -776,6 +867,12 @@ export interface ExtensionTimelineClipTrim {
   readonly endTicks?: number;
 }
 
+/** Clip properties an extension may set. Omitted fields are left alone. */
+export interface ExtensionTimelineClipUpdate {
+  /** Per-clip audio mute; the audio renderer bypasses a muted clip. */
+  readonly isMuted?: boolean;
+}
+
 /** Host track classes. A track's class fixes what media it accepts. */
 export type ExtensionTimelineTrackType = "visual" | "audio";
 
@@ -857,6 +954,11 @@ export interface ExtensionTimelineTransaction {
    * neighbouring clips, and the minimum clip duration.
    */
   trimClip(clipId: string, trim: ExtensionTimelineClipTrim): void;
+  /**
+   * Sets clip properties that carry no structural consequences. Declarative,
+   * not a toggle: state the value you want rather than reading first.
+   */
+  updateClip(clipId: string, update: ExtensionTimelineClipUpdate): void;
   /**
    * Cuts a clip in two at a timeline tick strictly inside it. The right-hand
    * clip is host-generated; read it back with `listClips()` after the commit.
@@ -1865,14 +1967,26 @@ export interface ExtensionCommandApi {
     request: ExtensionKeybindingRequest,
   ): ExtensionUiRegistration;
   /**
-   * Executes one of this extension's own commands by local ID, or an
-   * explicitly allowlisted host command by its full dotted ID. Executing any
-   * other host command rejects: host commands are an authority surface, and
-   * contributing a menu item the *user* invokes is the intended path.
+   * Executes one of this extension's own commands by local ID, or a host
+   * command the host has opted in, by its full dotted ID. Resolves `true` when
+   * the command ran and `false` when its `when` clause was false — a disabled
+   * command is a state of the editor, not an error.
+   *
+   * Throws for an unregistered ID, or for a host command that has not opted
+   * in: host commands are an authority surface, and contributing a menu item
+   * the *user* invokes remains the intended path. No host command opts in
+   * today; each grant is reviewed individually at its definition site.
    */
-  execute(commandId: string, subject?: JsonValue): Promise<void>;
+  execute(commandId: string, subject?: JsonValue): Promise<boolean>;
   /** Reads one host context key, detached. Unknown keys return `undefined`. */
   getContextKey(key: string): JsonValue | undefined;
+  /**
+   * Fires when any host context key changes. Payload-free: re-read the keys
+   * you care about with `getContextKey`. Prefer a declarative `when` on the
+   * command itself — this is for extension-owned UI that has to mirror host
+   * enablement, not for gating execution.
+   */
+  subscribeContextKeys(listener: () => void): () => void;
 }
 
 /**
@@ -1922,6 +2036,14 @@ export interface ExtensionCatalogueApi {
   list(catalogueId: string): readonly ExtensionCatalogueOptionView[];
   /** Enumerate catalogue IDs the host has declared, with value schema info. */
   listCatalogues(): readonly ExtensionCatalogueInfo[];
+  /**
+   * Fires when any catalogue's contents change — including options registered
+   * by *other* extensions, which is why polling `list()` is not enough for UI
+   * built on a catalogue.
+   */
+  subscribe(listener: () => void): () => void;
+  /** Monotonic change token matching `subscribe` notifications. */
+  getRevision(): number;
 }
 
 export interface ExtensionCanvasPointerEvent {

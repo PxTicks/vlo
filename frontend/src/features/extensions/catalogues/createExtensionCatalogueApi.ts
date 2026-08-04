@@ -11,9 +11,15 @@ import {
   hostOptionCatalog,
   type HostOptionCatalog,
 } from "../../../core/shell/optionCatalog";
-import { assertContextKeyExpression } from "../../../core/shell/contextKeys";
+import {
+  assertContextKeyExpression,
+  hostContextKeys,
+  type HostContextKeyService,
+} from "../../../core/shell/contextKeys";
+import { combineRevisionSources } from "../../../core/shell/revisionRelay";
 import { jsonValueSchema } from "../../../core/shell/jsonValue";
 import { cloneAndFreezeJsonValue } from "../registry/frozenJson";
+import { bindOwnerScopedSubscribe } from "../utils/ownerScopedSubscribe";
 
 // Matches the contribution registries' local-ID grammar.
 const LOCAL_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
@@ -27,7 +33,13 @@ const LOCAL_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 export function createExtensionCatalogueApi(
   scope: ExtensionApiScope,
   catalog: HostOptionCatalog = hostOptionCatalog,
+  contextKeys: HostContextKeyService = hostContextKeys,
 ): ExtensionCatalogueApi {
+  // `list()` filters by each option's `when`, so its result changes with the
+  // context keys as well as with registrations. Watching the catalogue alone
+  // would leave a visibility change silent — the reader would keep rendering a
+  // stale option set with no signal that anything moved.
+  const changes = combineRevisionSources(catalog, contextKeys);
   return Object.freeze({
     addOption: (
       option: ExtensionCatalogueOptionContribution,
@@ -84,7 +96,7 @@ export function createExtensionCatalogueApi(
     },
     list: (catalogueId: string): readonly ExtensionCatalogueOptionView[] =>
       Object.freeze(
-        catalog.resolveOptions(catalogueId).map((option) =>
+        catalog.resolveOptions(catalogueId, contextKeys).map((option) =>
           cloneAndFreezeJsonValue({
             id: option.id,
             label: option.label,
@@ -102,5 +114,7 @@ export function createExtensionCatalogueApi(
           }),
         ),
       ),
+    subscribe: bindOwnerScopedSubscribe(scope, changes, "Catalogue"),
+    getRevision: () => changes.getRevision(),
   });
 }

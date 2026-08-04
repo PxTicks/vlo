@@ -5,7 +5,10 @@ import type {
 } from "../../extensions/types";
 import type { PositionPathParameter } from "../../transformations/types";
 import { commitTrackingPositionPath } from "../positionPathCommit";
-import { createExtensionTimelineTransactionStub } from "../../../testUtils/extensionTimeline";
+import {
+  createExtensionClipSnapshot,
+  createExtensionTimelineTransactionStub,
+} from "../../../testUtils/extensionTimeline";
 
 const path: PositionPathParameter = {
   type: "path2d",
@@ -28,12 +31,8 @@ describe("commitTrackingPositionPath", () => {
     const committedTransforms: ExtensionTimelineTransformInput[] = [];
     const timeline: Pick<ExtensionTimelineApi, "listClips" | "transaction"> = {
       listClips: () => [
-        {
-          id: "clip-1",
-          type: "video",
+        createExtensionClipSnapshot({
           name: "Clip",
-          trackId: "track-1",
-          startTicks: 0,
           durationTicks: 100,
           transformations: [
             {
@@ -56,7 +55,7 @@ describe("commitTrackingPositionPath", () => {
               },
             },
           ],
-        },
+        }),
       ],
       transaction: (label, callback) => {
         const draft = createExtensionTimelineTransactionStub({

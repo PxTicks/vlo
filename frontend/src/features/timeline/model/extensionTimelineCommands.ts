@@ -28,6 +28,7 @@ import {
   finalizeModelDraft,
   insertTrackIntoDraft,
   removeTransitionFromDraft,
+  setClipMutedInDraft,
   splitClipInDraft,
   updateClipMaskInDraft,
   updateTransitionParametersInDraft,
@@ -138,6 +139,11 @@ export type ExtensionTimelineCommand =
       clipId: string;
       startTicks?: number;
       endTicks?: number;
+    }
+  | {
+      kind: "update_clip";
+      clipId: string;
+      isMuted?: boolean;
     }
   | {
       kind: "split_clip";
@@ -614,6 +620,15 @@ export function applyExtensionTimelineCommands(
       }
 
       finalizeModelDraft(draft);
+      continue;
+    }
+
+    if (command.kind === "update_clip") {
+      const clip = getClip(command.clipId);
+      assertOrdinaryClip(clip, "updateClip");
+      if (command.isMuted !== undefined) {
+        setClipMutedInDraft(draft, clip.id, command.isMuted);
+      }
       continue;
     }
 

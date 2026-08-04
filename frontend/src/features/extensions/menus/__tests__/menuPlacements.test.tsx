@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createExtensionClipSnapshot } from "../../../../testUtils/extensionTimeline";
 import type {
   ExtensionApiScope,
   ExtensionDisposable,
@@ -21,15 +22,7 @@ installExtensionMenuContributions();
 
 const CLIP_SUBJECT: HostMenuSubject<"timeline.clip.context"> = {
   slot: "timeline.clip.context",
-  clip: {
-    id: "clip-1",
-    type: "video",
-    name: "Clip",
-    trackId: "track-1",
-    startTicks: 0,
-    durationTicks: 100,
-    transformations: [],
-  },
+  clip: createExtensionClipSnapshot({ name: "Clip", durationTicks: 100 }),
 };
 
 function createScope(

@@ -1404,14 +1404,29 @@ export function toggleTrackMuteInDraft(
   );
 }
 
+/**
+ * Sets per-clip audio mute. Declarative rather than a toggle so a caller that
+ * cannot see current state — an extension staging a transaction — gets an
+ * idempotent write instead of a read-then-flip race.
+ */
+export function setClipMutedInDraft(
+  draft: TimelineModelState,
+  clipId: string,
+  isMuted: boolean,
+): void {
+  draft.clips = draft.clips.map((clip) => {
+    if (clip.id !== clipId || clip.type === "mask") return clip;
+    return { ...clip, isMuted };
+  });
+}
+
 export function toggleClipMuteInDraft(
   draft: TimelineModelState,
   clipId: string,
 ): void {
-  draft.clips = draft.clips.map((clip) => {
-    if (clip.id !== clipId || clip.type === "mask") return clip;
-    return { ...clip, isMuted: !clip.isMuted };
-  });
+  const clip = draft.clips.find((candidate) => candidate.id === clipId);
+  if (!clip || clip.type === "mask") return;
+  setClipMutedInDraft(draft, clipId, !clip.isMuted);
 }
 
 export function trimAndPadTracksInDraft(draft: TimelineModelState): void {

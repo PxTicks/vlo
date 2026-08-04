@@ -401,6 +401,54 @@ describe("workflowBridge", () => {
       expect(inputs[0].currentValue).toBe("a martini glass");
     });
 
+    it("prefers the instance's promoted value over the inner node's stale one", () => {
+      const definition = buildSubgraphDefinition();
+      const inputs = parseInputsFromGraphData(
+        {
+          nodes: [
+            {
+              id: 30,
+              type: SUBGRAPH_ID,
+              inputs: [
+                {
+                  name: "text",
+                  type: "STRING",
+                  widget: { name: "text" },
+                  link: null,
+                },
+              ],
+              widgets_values: ["a negroni"],
+            },
+          ],
+          definitions: {
+            subgraphs: [
+              {
+                ...definition,
+                nodes: [
+                  {
+                    ...definition.nodes[0],
+                    inputs: [
+                      {
+                        name: "text",
+                        type: "STRING",
+                        widget: { name: "text" },
+                        link: 45,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        { inputNodeMap: INPUT_NODE_MAP_FIXTURE },
+      );
+
+      // The promoted widget on the instance is what graphToPrompt resolves,
+      // even though the inner node still serializes "a martini glass".
+      expect(inputs[0].currentValue).toBe("a negroni");
+    });
+
     it("treats promoted params as linked when the outer slot is wired externally", () => {
       const inputs = parseInputsFromGraphData(
         {

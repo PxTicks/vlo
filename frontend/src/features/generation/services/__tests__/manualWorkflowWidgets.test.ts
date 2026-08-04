@@ -548,4 +548,161 @@ describe("resolveManualWidgetInputs", () => {
     expect(widgets[0]?.config.defaultRandomize).toBe(false);
     expect(widgets[1]?.config.defaultRandomize).toBeUndefined();
   });
+
+  describe("subgraph discovery", () => {
+    const SUBGRAPH_ID = "8a2b9d1c-2f4e-4f0a-9c11-2b0f7c3a55de";
+
+    const RANDOM_NOISE_OBJECT_INFO = {
+      RandomNoise: {
+        input: {
+          required: {
+            noise_seed: [
+              "INT",
+              { control_after_generate: true, default: 0, min: 0, max: 1000 },
+            ],
+          },
+        },
+        input_order: { required: ["noise_seed"] },
+      },
+    };
+
+    /** Mirrors a stock template: the seed is promoted to the subgraph
+     * boundary, so the instance node carries the live value while the inner
+     * node keeps whatever it was last saved with. */
+    function buildSubgraphDefinition() {
+      return {
+        id: SUBGRAPH_ID,
+        name: "Image to Video",
+        inputNode: { id: -10 },
+        inputs: [
+          { id: "in-image", name: "first_frame", type: "IMAGE", linkIds: [20] },
+          { id: "in-seed", name: "noise_seed", type: "INT", linkIds: [21] },
+        ],
+        nodes: [
+          {
+            id: 8,
+            type: "VAEEncode",
+            inputs: [{ name: "pixels", type: "IMAGE", link: 20 }],
+          },
+          {
+            id: 9,
+            type: "RandomNoise",
+            inputs: [
+              {
+                name: "noise_seed",
+                type: "INT",
+                widget: { name: "noise_seed" },
+                link: 21,
+              },
+            ],
+            widgets_values: [1, "randomize"],
+          },
+        ],
+        links: [
+          { id: 20, origin_id: -10, origin_slot: 0, target_id: 8, target_slot: 0 },
+          { id: 21, origin_id: -10, origin_slot: 1, target_id: 9, target_slot: 0 },
+        ],
+      };
+    }
+
+    it("discovers seeds inside subgraphs under instance-scoped node ids", () => {
+      const widgets = resolveManualWidgetInputs(null, RANDOM_NOISE_OBJECT_INFO, {
+        nodes: [{ id: 105, type: SUBGRAPH_ID, inputs: [], widgets_values: [8675309] }],
+        definitions: { subgraphs: [buildSubgraphDefinition()] },
+      });
+
+      expect(widgets).toHaveLength(1);
+      expect(widgets[0]).toMatchObject({
+        nodeId: "105:9",
+        param: "noise_seed",
+        // The instance's promoted value is what executes, not the inner
+        // node's stale `1`.
+        currentValue: 8675309,
+      });
+      expect(widgets[0]?.config.controlAfterGenerate).toBe(true);
+      expect(widgets[0]?.config.defaultRandomize).toBe(true);
+    });
+
+    it("discovers subgraph seeds through the fallback layout without object_info", () => {
+      const widgets = resolveManualWidgetInputs(null, null, {
+        nodes: [{ id: 105, type: SUBGRAPH_ID, inputs: [], widgets_values: [8675309] }],
+        definitions: { subgraphs: [buildSubgraphDefinition()] },
+      });
+
+      expect(widgets).toEqual([
+        expect.objectContaining({
+          nodeId: "105:9",
+          param: "noise_seed",
+          currentValue: 8675309,
+        }),
+      ]);
+    });
+
+    it("resolves graph values for subgraph nodes when an API workflow is present", () => {
+      const widgets = resolveManualWidgetInputs(
+        {
+          "105:9": {
+            class_type: "RandomNoise",
+            inputs: { noise_seed: 8675309 },
+          },
+        },
+        RANDOM_NOISE_OBJECT_INFO,
+        {
+          nodes: [
+            { id: 105, type: SUBGRAPH_ID, inputs: [], widgets_values: [8675309] },
+          ],
+          definitions: { subgraphs: [buildSubgraphDefinition()] },
+        },
+      );
+
+      expect(widgets).toHaveLength(1);
+      expect(widgets[0]?.currentValue).toBe(8675309);
+      // The randomize mode is never promoted, so it comes from the inner node.
+      expect(widgets[0]?.config.defaultRandomize).toBe(true);
+    });
+
+    it("skips subgraph widgets that are wired from outside the instance", () => {
+      const widgets = resolveManualWidgetInputs(null, RANDOM_NOISE_OBJECT_INFO, {
+        nodes: [
+          { id: 100, type: "PrimitiveInt", widgets_values: [5, "fixed"] },
+          {
+            id: 105,
+            type: SUBGRAPH_ID,
+            inputs: [
+              {
+                name: "noise_seed",
+                type: "INT",
+                widget: { name: "noise_seed" },
+                link: 50,
+              },
+            ],
+            widgets_values: [8675309],
+          },
+        ],
+        links: [[50, 100, 0, 105, 0, "INT"]],
+        definitions: { subgraphs: [buildSubgraphDefinition()] },
+      });
+
+      expect(
+        widgets.some((widget) => widget.nodeId === "105:9"),
+      ).toBe(false);
+    });
+
+    it("ignores everything inside a muted subgraph instance", () => {
+      const widgets = resolveManualWidgetInputs(null, RANDOM_NOISE_OBJECT_INFO, {
+        nodes: [
+          {
+            id: 105,
+            type: SUBGRAPH_ID,
+            inputs: [],
+            widgets_values: [8675309],
+            mode: 4,
+          },
+        ],
+        definitions: { subgraphs: [buildSubgraphDefinition()] },
+      });
+
+      expect(widgets).toEqual([]);
+    });
+  });
 });

@@ -4,6 +4,10 @@ import {
   resolveClassInfo,
   resolveNodeDisplayTitle,
 } from "./nodeTitles";
+import {
+  buildFlatGraphNodeIndex,
+  type FlatGraphNode,
+} from "./graphSubgraphs";
 
 function isPrimitiveOption(
   value: unknown,
@@ -92,47 +96,22 @@ function buildFallbackWidgetSlots(
   return slots;
 }
 
-function resolveGraphNode(
-  graphData: Record<string, unknown> | null,
-  nodeId: string,
-): Record<string, unknown> | null {
-  const nodes = graphData?.nodes;
-  if (!Array.isArray(nodes)) return null;
-
-  const node = nodes.find((candidate) => {
-    if (!isRecord(candidate)) return false;
-    return String(candidate.id) === nodeId;
-  });
-  return isRecord(node) ? node : null;
-}
-
-function resolveGraphNodes(
-  graphData: Record<string, unknown> | null,
-): Record<string, unknown>[] {
-  const nodes = graphData?.nodes;
-  if (!Array.isArray(nodes)) return [];
-  return nodes.filter(isRecord);
-}
-
 function resolveNodeTitle(
   nodeId: string,
   node: Record<string, unknown>,
-  graphData: Record<string, unknown> | null,
+  graphNode: FlatGraphNode | null,
   objectInfo: Record<string, unknown> | null,
 ): string {
   const meta = isRecord(node._meta) ? node._meta : null;
-  const graphNode = resolveGraphNode(graphData, nodeId);
   const classType =
     typeof node.class_type === "string"
       ? node.class_type
-      : typeof graphNode?.type === "string"
-        ? graphNode.type
-        : undefined;
+      : graphNode?.classType;
 
   return (
     resolveNodeDisplayTitle({
       workflowTitle: meta?.title,
-      graphTitle: graphNode?.title,
+      graphTitle: graphNode?.node.title,
       classType,
       objectInfo,
     }) ??
@@ -305,15 +284,19 @@ function getWidgetValueIndexMap(
 }
 
 function resolveGraphWidgetValue(
-  graphData: Record<string, unknown> | null,
-  nodeId: string,
+  graphNode: FlatGraphNode | null,
   param: string,
   classInfo: Record<string, unknown> | null,
 ): unknown {
-  const graphNode = resolveGraphNode(graphData, nodeId);
   if (!graphNode) return undefined;
 
-  const widgetsValues = graphNode.widgets_values;
+  // A promoted widget's value lives on the enclosing subgraph instance node
+  // and is what executes, even when the inner node still carries a different
+  // (stale) value of its own.
+  const promoted = graphNode.promotedValues.get(param);
+  if (promoted !== undefined) return promoted;
+
+  const widgetsValues = graphNode.node.widgets_values;
   if (!Array.isArray(widgetsValues)) return undefined;
 
   const widgetIndex = getWidgetValueIndexMap(classInfo).get(param);
@@ -321,19 +304,18 @@ function resolveGraphWidgetValue(
   return widgetsValues[widgetIndex];
 }
 
+// The control-after-generate mode is never promoted to the subgraph instance —
+// only the value is — so it always comes from the node's own widgets_values.
 function resolveGraphWidgetMode(
-  graphData: Record<string, unknown> | null,
-  nodeId: string,
+  graphNode: FlatGraphNode | null,
   param: string,
   classInfo: Record<string, unknown> | null,
   opts: Record<string, unknown>,
 ): "fixed" | "randomize" | "increment" | "decrement" | null {
   if (!hasControlAfterGenerate(opts)) return null;
-
-  const graphNode = resolveGraphNode(graphData, nodeId);
   if (!graphNode) return null;
 
-  const widgetsValues = graphNode.widgets_values;
+  const widgetsValues = graphNode.node.widgets_values;
   if (!Array.isArray(widgetsValues)) return null;
 
   const widgetIndex = getWidgetValueIndexMap(classInfo).get(param);
@@ -393,25 +375,29 @@ export function resolveManualWidgetInputs(
   }
 
   const widgets: WorkflowWidgetInput[] = [];
+  // Subgraph instances are expanded here exactly as `graphToPrompt` expands
+  // them, so widgets living inside a subgraph — seeds, most of all — are
+  // discovered under the same `<instanceId>:<innerId>` ids the submitted
+  // prompt uses.
+  const graphNodesById = buildFlatGraphNodeIndex(graphData);
   const graphOnlyNodes = !workflow
-    ? resolveGraphNodes(graphData).flatMap((node) => {
-        if (node.id == null) return [];
-        if (node.mode === 2 || node.mode === 4) return [];
-        const nodeId = String(node.id);
-        const classType = typeof node.type === "string" ? node.type : undefined;
-        return [[
-          nodeId,
-          {
-            class_type: classType,
-            inputs: {},
-            _meta:
-              typeof node.title === "string"
-                ? {
-                    title: node.title,
-                  }
-                : {},
-          },
-        ] as const];
+    ? [...graphNodesById.values()].flatMap((flat) => {
+        if (flat.muted) return [];
+        return [
+          [
+            flat.nodeId,
+            {
+              class_type: flat.classType || undefined,
+              inputs: {},
+              _meta:
+                typeof flat.node.title === "string"
+                  ? {
+                      title: flat.node.title,
+                    }
+                  : {},
+            },
+          ] as const,
+        ];
       })
     : [];
   const workflowEntries = workflow ? Object.entries(workflow) : graphOnlyNodes;
@@ -419,15 +405,16 @@ export function resolveManualWidgetInputs(
   for (const [nodeId, nodeData] of workflowEntries) {
     if (!isRecord(nodeData)) continue;
     if (nodeData.mode === 2 || nodeData.mode === 4) continue;
+    const graphNode = graphNodesById.get(nodeId) ?? null;
     if (workflow) {
-      const graphMode = resolveGraphNode(graphData, nodeId)?.mode;
+      const graphMode = graphNode?.node.mode;
       if (graphMode === 2 || graphMode === 4) continue;
     }
 
     const nodeInputs = isRecord(nodeData.inputs) ? nodeData.inputs : {};
     const classType =
       typeof nodeData.class_type === "string" ? nodeData.class_type : undefined;
-    const nodeTitle = resolveNodeTitle(nodeId, nodeData, graphData, objectInfo);
+    const nodeTitle = resolveNodeTitle(nodeId, nodeData, graphNode, objectInfo);
     const classInfo = resolveClassInfo(objectInfo, classType);
     const inputSpec = resolveInputSpec(classInfo);
     const candidateParams = new Set<string>();
@@ -435,8 +422,7 @@ export function resolveManualWidgetInputs(
     for (const param of getOrderedObjectInfoParams(inputSpec, classInfo)) {
       const definition = resolveParamDefinition(inputSpec, param);
       const graphMode = resolveGraphWidgetMode(
-        graphData,
-        nodeId,
+        graphNode,
         param,
         classInfo,
         definition?.[1] ?? {},
@@ -462,13 +448,17 @@ export function resolveManualWidgetInputs(
 
     const surfacedParams = new Set<string>();
     for (const param of candidateParams) {
+      // Params fed by a link carry no editable widget value. Promoted subgraph
+      // widgets whose outer slot is unconnected are not links — the graph walk
+      // has already resolved that distinction.
+      if (graphNode?.linkedParams.has(param)) continue;
+
       const definition = resolveParamDefinition(inputSpec, param);
       const typeSpec = definition?.[0];
       const opts = definition?.[1] ?? {};
-      const graphValue = resolveGraphWidgetValue(graphData, nodeId, param, classInfo);
+      const graphValue = resolveGraphWidgetValue(graphNode, param, classInfo);
       const graphMode = resolveGraphWidgetMode(
-        graphData,
-        nodeId,
+        graphNode,
         param,
         classInfo,
         opts,
@@ -531,7 +521,7 @@ export function resolveManualWidgetInputs(
       nodeId,
       nodeTitle,
       classType,
-      graphData,
+      graphNode,
       surfacedParams,
     });
   }
@@ -544,27 +534,30 @@ function appendFallbackWidgets(args: {
   nodeId: string;
   nodeTitle: string;
   classType: string | undefined;
-  graphData: Record<string, unknown> | null;
+  graphNode: FlatGraphNode | null;
   surfacedParams: Set<string>;
 }): void {
-  const { widgets, nodeId, nodeTitle, classType, graphData, surfacedParams } =
+  const { widgets, nodeId, nodeTitle, classType, graphNode, surfacedParams } =
     args;
   const slots = buildFallbackWidgetSlots(classType);
   if (slots.length === 0) return;
 
-  const graphNode = resolveGraphNode(graphData, nodeId);
-  const rawWidgetsValues = graphNode?.widgets_values;
+  const rawWidgetsValues = graphNode?.node.widgets_values;
   const widgetsValues = Array.isArray(rawWidgetsValues)
     ? rawWidgetsValues
     : null;
 
   for (const slot of slots) {
     if (surfacedParams.has(slot.name)) continue;
+    if (graphNode?.linkedParams.has(slot.name)) continue;
 
+    const promoted = graphNode?.promotedValues.get(slot.name);
     const value =
-      widgetsValues && slot.slot < widgetsValues.length
-        ? widgetsValues[slot.slot]
-        : undefined;
+      promoted !== undefined
+        ? promoted
+        : widgetsValues && slot.slot < widgetsValues.length
+          ? widgetsValues[slot.slot]
+          : undefined;
     const modeCandidate =
       slot.controlAfterGenerate &&
       widgetsValues &&

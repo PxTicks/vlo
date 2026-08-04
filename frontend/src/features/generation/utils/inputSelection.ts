@@ -787,6 +787,15 @@ export async function renderTimelineSelectionToMp4WithMask(
       options.outputHeight,
       exportConfig.outputHeight,
     ),
+    // Encode the video over opaque black. The composite stays faithful — masks
+    // are still applied, so an underlying clip shows through a mask — but where
+    // the final scene is genuinely EMPTY (see-through to nothing on the
+    // timeline) the pixels are transparent, and an MP4 (no alpha channel) would
+    // flatten those to white. `backgroundAlpha` only affects the final encode
+    // canvas, not the frame texture the mask output samples (Pixi applies the
+    // app background as a clear colour only for the screen target, never for a
+    // render texture), so the derived mask matte is unaffected.
+    backgroundAlpha: 1,
   };
   const normalizedSelection = normalizeTimelineSelection(
     preparedTimelineSelection,

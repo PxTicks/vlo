@@ -10,8 +10,8 @@ import type { WorkflowOption } from "../store/types";
 const UNKNOWN_WORKFLOW_NAME = "Unknown Workflow";
 /** Placeholder label the backend stamps on adopted in-editor deliveries
  * (see adopt_delivery). It is not a saved workflow, so it must never count
- * as a resolvable name — legacy adopted assets without a captured prompt or
- * graph cannot be regenerated. */
+ * as a resolvable name: an adopted asset whose history enrichment never landed
+ * has neither a captured graph nor a saved workflow to fall back to. */
 const IN_EDITOR_WORKFLOW_NAME = "ComfyUI (in-editor)";
 
 function normalizeWorkflowMatchValue(
@@ -78,9 +78,17 @@ export function canRegenerateFromAssetMetadata(
     return false;
   }
 
+  // The captured prompt/graph is the strongest signal, but the asset index only
+  // keeps an abridged copy of generated metadata — the payload itself lives in
+  // the sidecar, hydrated later by loadWorkflowFromAssetMetadata. Panel and
+  // in-editor generations are split the same way, so both answer this the same
+  // way after a project reload.
   return (
-    Boolean(metadata.comfyuiPrompt || metadata.comfyuiWorkflow) ||
-    hasResolvableWorkflowName(metadata.workflowName)
+    Boolean(
+      metadata.comfyuiPrompt ||
+        metadata.comfyuiWorkflow ||
+        metadata.replayPayloadInSidecar,
+    ) || hasResolvableWorkflowName(metadata.workflowName)
   );
 }
 

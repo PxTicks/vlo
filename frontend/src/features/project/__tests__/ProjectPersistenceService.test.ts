@@ -918,6 +918,42 @@ describe("ProjectPersistenceService", () => {
         .replayState,
     ).toBeUndefined();
     expect(generated.sidecarMetadata).toBeDefined();
+    // Replay state alone is not a replayable workflow, so no marker.
+    expect(
+      (generated.entry.creationMetadata as { replayPayloadInSidecar?: boolean })
+        .replayPayloadInSidecar,
+    ).toBeUndefined();
+
+    const inEditor = prepareAssetForPersistence({
+      id: "in-editor",
+      hash: "hash",
+      name: "In editor",
+      type: "video",
+      src: "https://runtime/in-editor.mp4",
+      sourcePath: "in-editor.mp4",
+      createdAt: 1,
+      creationMetadata: {
+        source: "generated",
+        workflowName: "ComfyUI (in-editor)",
+        inputs: [],
+        generatedInEditor: true,
+        comfyuiPrompt: { "1": { class_type: "KSampler", inputs: {} } },
+        comfyuiWorkflow: { nodes: [] },
+      },
+    });
+    expect(inEditor.entry.creationMetadata).toMatchObject({
+      workflowName: "ComfyUI (in-editor)",
+      generatedInEditor: true,
+      replayPayloadInSidecar: true,
+    });
+    expect(
+      (inEditor.entry.creationMetadata as { comfyuiWorkflow?: unknown })
+        .comfyuiWorkflow,
+    ).toBeUndefined();
+    expect(inEditor.sidecarMetadata).toMatchObject({
+      comfyuiPrompt: { "1": { class_type: "KSampler", inputs: {} } },
+      comfyuiWorkflow: { nodes: [] },
+    });
 
     const lightweightComposite = prepareAssetForPersistence({
       id: "composite",

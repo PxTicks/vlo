@@ -97,6 +97,10 @@ export interface GeneratedCreationMetadata {
   comfyuiPrompt?: Record<string, unknown>;
   /** The authored ComfyUI visual workflow graph (LiteGraph format) used for editing/replay. */
   comfyuiWorkflow?: Record<string, unknown>;
+  /** Set only on the abridged copy the asset index keeps: `comfyuiPrompt`/
+   *  `comfyuiWorkflow` were moved into the metadata sidecar. Lets synchronous
+   *  callers know a replay payload exists before the sidecar is hydrated. */
+  replayPayloadInSidecar?: boolean;
   /** Generated inside the ComfyUI editor iframe (adopted delivery); regeneration
    *  reopens the editor instead of staying in the generation panel. */
   generatedInEditor?: boolean;

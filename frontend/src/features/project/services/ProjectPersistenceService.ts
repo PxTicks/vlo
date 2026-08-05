@@ -418,10 +418,20 @@ function toLightweightCreationMetadata(
     return metadata;
   }
 
+  // Regeneration replays the captured prompt/graph, so record that the sidecar
+  // holds one. Without this marker the index copy of an in-editor generation is
+  // indistinguishable from the un-enriched adopt stub, and the Regenerate gate
+  // (which runs before hydration) would hide the action after a reload.
+  const hasReplayPayload = Boolean(
+    metadata.comfyuiPrompt || metadata.comfyuiWorkflow,
+  );
   const lightweight = { ...metadata };
   delete lightweight.replayState;
   delete lightweight.comfyuiPrompt;
   delete lightweight.comfyuiWorkflow;
+  if (hasReplayPayload) {
+    lightweight.replayPayloadInSidecar = true;
+  }
 
   return lightweight as CreationMetadata;
 }

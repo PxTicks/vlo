@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "example.navigation",
+  "name": "Transport, Selection, and Project Conformance Fixture",
+  "version": "1.0.0",
+  "sdk": ">=1.10.0 <2.0.0",
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "capabilities": ["ui.custom"]
+}

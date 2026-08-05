@@ -2,7 +2,10 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Project } from "../../types/ProjectState";
 import { runPreSaveHooks } from "../../core/persistence/preSaveHooks";
-import { runProjectClosingHooks } from "../../core/project/projectLifecycleHooks";
+import {
+  notifyProjectSaved,
+  runProjectClosingHooks,
+} from "../../core/project/projectLifecycleHooks";
 import { fileSystemService } from "./services/FileSystemService";
 import { projectPersistenceService } from "./services/ProjectPersistenceService";
 import { projectTemporaryFileService } from "./services/ProjectTemporaryFileService";
@@ -108,12 +111,22 @@ function createTimelineSnapshotRequest(
 
 interface FlushOpenProjectPersistenceOptions {
   warnIfNoPreSaveHooks?: boolean;
+  /**
+   * Set by callers that already ran the hooks earlier in their sequence. A
+   * project switch has to: producers must write into the persistence queues
+   * before the closing hooks tear anything down, and running the hooks twice
+   * would invoke every registered producer — including extensions — a second
+   * time for no additional state.
+   */
+  preSaveHooksAlreadyRan?: boolean;
 }
 
 async function flushOpenProjectPersistence(
   options: FlushOpenProjectPersistenceOptions = {},
 ): Promise<void> {
-  const preSaveHookCount = await runPreSaveHooks();
+  const preSaveHookCount = options.preSaveHooksAlreadyRan
+    ? null
+    : await runPreSaveHooks();
   if (
     options.warnIfNoPreSaveHooks &&
     preSaveHookCount === 0 &&
@@ -134,6 +147,21 @@ async function flushOpenProjectPersistence(
   } catch (error) {
     console.warn("Failed to flush pending asset persistence", error);
   }
+}
+
+/**
+ * Runs the pre-save hooks at the top of a project switch, before
+ * {@link runProjectClosingHooks} tears the outgoing project down.
+ *
+ * Ordering matters and is not interchangeable: the extension-storage closing
+ * hook closes the project storage projection, so a hook that flushes state
+ * into `api.storage.project` has to run while it is still open. The closing
+ * hooks stay ahead of `flushAll()` for the opposite reason — they cancel
+ * background producers and enqueue their own final writes, which the flush
+ * then drains.
+ */
+async function runPreSaveHooksBeforeClosing(): Promise<void> {
+  await runPreSaveHooks();
 }
 
 async function clearProjectDeferredCleanupTrash(): Promise<void> {
@@ -197,8 +225,9 @@ export const useProjectStore = create<ProjectState>()(
         configOverrides?: Partial<ProjectConfig>,
       ) => {
         try {
+          await runPreSaveHooksBeforeClosing();
           await runProjectClosingHooks();
-          await flushOpenProjectPersistence();
+          await flushOpenProjectPersistence({ preSaveHooksAlreadyRan: true });
           await clearProjectDeferredCleanupTrash();
           await clearProjectTemporaryFiles();
 
@@ -254,8 +283,9 @@ export const useProjectStore = create<ProjectState>()(
 
       loadProject: async (handle: FileSystemDirectoryHandle) => {
         try {
+          await runPreSaveHooksBeforeClosing();
           await runProjectClosingHooks();
-          await flushOpenProjectPersistence();
+          await flushOpenProjectPersistence({ preSaveHooksAlreadyRan: true });
           await clearProjectDeferredCleanupTrash();
           await clearProjectTemporaryFiles();
 
@@ -399,6 +429,7 @@ export const useProjectStore = create<ProjectState>()(
             draft.config = structuredClone(config);
           });
 
+          notifyProjectSaved(project.id);
           return project.id;
         } catch (e) {
           console.error("Failed to save project manifest", e);

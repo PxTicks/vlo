@@ -191,12 +191,23 @@ function createConformanceApi() {
       getTime: () => 0,
       getFrameTime: () => 0,
       isPlaying: () => false,
+      seek: () => ({ ok: true, changed: false }),
+      play: () => ({ ok: true, changed: false }),
+      pause: () => ({ ok: true, changed: false }),
       subscribe: () => () => undefined,
     },
     selection: {
       get: () => ({ clipIds: [], transitionId: null }),
+      setClips: () => ({ ok: true, changed: false }),
+      setTransition: () => ({ ok: true, changed: false }),
       subscribe: () => () => undefined,
       getRevision: () => 0,
+    },
+    project: {
+      get: () => null,
+      subscribe: () => () => undefined,
+      getRevision: () => 0,
+      onBeforeSave: () => () => undefined,
     },
     timeline: {
       subscribe: () => () => undefined,

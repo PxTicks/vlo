@@ -2,10 +2,19 @@ import {
   playbackClock,
   playbackFrameClock,
 } from "../../../core/playback/PlaybackClock";
+import {
+  getHostTransportController,
+  type HostTransportController,
+} from "../../../core/playback/transportController";
 import type { RevisionSource } from "../../../core/shell/revisionRelay";
 import { usePlayerStore } from "../../player";
 import { bindOwnerScopedSubscribe } from "../utils/ownerScopedSubscribe";
-import type { ExtensionApiScope, ExtensionPlaybackApi } from "../types";
+import type {
+  ExtensionApiScope,
+  ExtensionPlaybackApi,
+  ExtensionTransportFailureCode,
+  ExtensionTransportResult,
+} from "../types";
 
 /**
  * Transport signal for the scoped playback read API.
@@ -62,6 +71,45 @@ function createPlaybackSignal(): RevisionSource {
 
 const playbackSignal = createPlaybackSignal();
 
+function transportFailure(
+  code: ExtensionTransportFailureCode,
+  message: string,
+): ExtensionTransportResult {
+  return Object.freeze({ ok: false as const, code, message });
+}
+
+/**
+ * Runs a transport write against the installed player, reporting what actually
+ * happened rather than what was asked for: the player clamps, snaps, and may
+ * settle the playhead on a frame boundary, so `changed` is measured from the
+ * clock and the transport store, not assumed.
+ */
+function requestTransport(
+  action: (controller: HostTransportController) => void,
+): ExtensionTransportResult {
+  const controller = getHostTransportController();
+  if (controller === null) {
+    return transportFailure(
+      "no_transport",
+      "No player is mounted, so the transport cannot be driven.",
+    );
+  }
+  if (!controller.canControl()) {
+    return transportFailure(
+      "transport_busy",
+      "An export or capture flow currently owns the transport.",
+    );
+  }
+
+  const timeBefore = playbackClock.time;
+  const playingBefore = usePlayerStore.getState().isPlaying;
+  action(controller);
+  const changed =
+    playbackClock.time !== timeBefore ||
+    usePlayerStore.getState().isPlaying !== playingBefore;
+  return Object.freeze({ ok: true as const, changed });
+}
+
 export function createExtensionPlaybackApi(
   scope: ExtensionApiScope,
 ): ExtensionPlaybackApi {
@@ -77,6 +125,14 @@ export function createExtensionPlaybackApi(
         ? playbackFrameClock.time
         : playbackClock.time,
     isPlaying: () => usePlayerStore.getState().isPlaying,
+    seek: (timeTicks: number) => {
+      if (typeof timeTicks !== "number" || !Number.isFinite(timeTicks)) {
+        throw new TypeError("Seek time must be a finite number of ticks.");
+      }
+      return requestTransport((controller) => controller.seek(timeTicks));
+    },
+    play: () => requestTransport((controller) => controller.play()),
+    pause: () => requestTransport((controller) => controller.pause()),
     subscribe: bindOwnerScopedSubscribe(scope, playbackSignal, "Playback"),
   });
 }

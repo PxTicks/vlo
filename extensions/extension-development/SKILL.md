@@ -42,7 +42,7 @@ reference in the same change. Do not promote an aspirational plan item into a V1
 |---|---|
 | Package identity, activation, ownership, disposal, host runtimes | [trusted-lifecycle.md](references/trusted-lifecycle.md) |
 | Host internals, live stores/renderer, raw DOM/panel UI, monkeypatching, deep Python imports | [trusted-host-access.md](references/trusted-host-access.md) |
-| Payloads, migrations, timeline reads/writes, tracks, selection, playhead, change subscriptions, assets, coordinate/time mapping | [persistence-timeline-assets.md](references/persistence-timeline-assets.md) |
+| Payloads, migrations, timeline reads/writes, tracks, selection, transport (seek/play/pause), project identity and pre-save, change subscriptions, assets, coordinate/time mapping | [persistence-timeline-assets.md](references/persistence-timeline-assets.md) |
 | Pixi filters, transformations, rendered entities, live/export parity | [rendering-entities-transformations.md](references/rendering-entities-transformations.md) |
 | Custom GLSL/WGSL filter extensions, shader controls, alpha, coordinates, time/history, black output, or inert sliders | [shader-filter-extensions.md](references/shader-filter-extensions.md) |
 | Procedural scalars, keyframe interpolation, paths, overlays | [animation-and-paths.md](references/animation-and-paths.md) |

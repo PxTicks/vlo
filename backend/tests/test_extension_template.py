@@ -44,6 +44,9 @@ COMMAND_HOTKEYS_FIXTURE_ROOT = (
     REPOSITORY_ROOT / "extension-fixtures" / "command-hotkeys"
 )
 TAGGING_FIXTURE_ROOT = REPOSITORY_ROOT / "extension-fixtures" / "tagging"
+NAVIGATION_FIXTURE_ROOT = (
+    REPOSITORY_ROOT / "extension-fixtures" / "navigation"
+)
 SDK_ROOT = REPOSITORY_ROOT / "packages" / "extension-sdk"
 NODE_EXECUTABLE = shutil.which("node")
 TYPESCRIPT_CLI = (
@@ -127,6 +130,16 @@ def _copy_command_hotkeys_fixture_workspace(tmp_path: Path) -> Path:
     fixture = workspace / "extension-fixtures" / "command-hotkeys"
     fixture.parent.mkdir(parents=True)
     shutil.copytree(COMMAND_HOTKEYS_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
+
+
+def _copy_navigation_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "navigation"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(NAVIGATION_FIXTURE_ROOT, fixture)
     shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
     shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
     return fixture
@@ -322,6 +335,20 @@ def test_command_hotkeys_fixture_builds_as_an_ordinary_trusted_extension(
     assert b"bump-counter" in contents
     assert b"Mod+Alt+B" in contents
     assert b"timeline.clip.context" in contents
+
+
+def test_navigation_fixture_builds_with_transport_and_project_contracts(
+    tmp_path: Path,
+):
+    fixture = _copy_navigation_fixture_workspace(tmp_path)
+    _build_template(fixture)
+
+    bundle = fixture / "frontend" / "dist" / "index.js"
+    assert bundle.is_file()
+    contents = bundle.read_bytes()
+    assert b"next-edit" in contents
+    assert b"select-asset-siblings" in contents
+    assert b"last-playhead-tick" in contents
 
 
 def test_tagging_fixture_builds_with_storage_and_backend_job_contracts(

@@ -1190,10 +1190,36 @@ export interface ExtensionTimelineApi {
 
 // === Playback ===
 
+export type ExtensionTransportFailureCode =
+  /** No player is mounted — the projects page, or an editor still booting. */
+  | "no_transport"
+  /**
+   * Another flow owns the transport: an export or extraction is running, or a
+   * frame/range capture is armed and waiting on the user.
+   *
+   * This is deliberately stricter than what the host allows the *user* to do —
+   * the play button and the ruler stay live during a capture, because someone
+   * who armed the mode can see it and decide to move anyway. An extension
+   * acting in the background cannot, and moving the playhead under an armed
+   * capture would silently change what gets captured.
+   */
+  | "transport_busy";
+
+/** The editor's answer to a transport write. */
+export type ExtensionTransportResult =
+  | { readonly ok: true; readonly changed: boolean }
+  | {
+      readonly ok: false;
+      readonly code: ExtensionTransportFailureCode;
+      readonly message: string;
+    };
+
 /**
- * Read access to the transport. Seeking and play/pause remain host-owned in
- * SDK 1: the player arbitrates frame snapping, the audio system, and export
- * runs, so a transport write contract needs its own design.
+ * The transport. Reads are free; writes are requests the player may refuse,
+ * because the host — not the extension — arbitrates frame snapping, the audio
+ * clock, and export runs. Writes route through the same player entry points a
+ * user's click uses, so an extension cannot reach a transport state the UI
+ * cannot.
  */
 export interface ExtensionPlaybackApi {
   /**
@@ -1210,6 +1236,23 @@ export interface ExtensionPlaybackApi {
    */
   getFrameTime(): number;
   isPlaying(): boolean;
+  /**
+   * Moves the playhead. The tick is clamped at zero and snapped to the
+   * project's frame grid, as every host seek is, so `getTime()` afterwards may
+   * differ from the tick you asked for. Seeking during playback is allowed and
+   * resyncs audio, matching a user scrub.
+   *
+   * Throws for a non-finite tick — that is a bug in the caller, not a state of
+   * the editor.
+   */
+  seek(timeTicks: number): ExtensionTransportResult;
+  /** Starts playback from the playhead. Already playing reports `changed: false`. */
+  play(): ExtensionTransportResult;
+  /**
+   * Stops playback. Like the host's own pause, this settles the playhead on a
+   * frame boundary, so a pause can move `getTime()`.
+   */
+  pause(): ExtensionTransportResult;
   /**
    * Fires when the playhead moves or the transport starts/stops. Unlike the
    * other domains this is **not** commit-grained: during playback it fires once
@@ -1229,21 +1272,111 @@ export interface ExtensionSelectionSnapshot {
   readonly transitionId: string | null;
 }
 
+export type ExtensionSelectionFailureCode =
+  | "clip_not_found"
+  /** Mask clips are edited through the mask contracts, never selected. */
+  | "clip_not_selectable"
+  | "transition_not_found";
+
+/** The editor's answer to a selection write. */
+export type ExtensionSelectionResult =
+  | { readonly ok: true; readonly changed: boolean }
+  | {
+      readonly ok: false;
+      readonly code: ExtensionSelectionFailureCode;
+      readonly message: string;
+    };
+
 /**
- * Read access to the editor selection. Kept off `api.timeline` because the
- * timeline's signal is deliberately commit-grained: selection changes are not
- * model changes and must not wake timeline subscribers.
+ * The editor selection. Kept off `api.timeline` because the timeline's signal
+ * is deliberately commit-grained: selection changes are not model changes and
+ * must not wake timeline subscribers.
  *
- * Selection is a user-owned interaction state; SDK 1 does not let an extension
- * set it. Contribute a command or menu placement and let the user drive it.
+ * Writes replace the whole selection rather than adding to it — an extension
+ * naming what it wants selected is predictable, while an extension toggling
+ * whatever the user had selected is not. Selection is not undoable and does
+ * not persist.
  */
 export interface ExtensionSelectionApi {
   get(): ExtensionSelectionSnapshot;
+  /**
+   * Replaces the selection with these clips; an empty array clears it. IDs are
+   * deduplicated, order is preserved, and any unknown or unselectable ID
+   * refuses the whole request — a selection never partially applies.
+   */
+  setClips(clipIds: readonly string[]): ExtensionSelectionResult;
+  /**
+   * Selects one transition, clearing any clip selection; `null` clears the
+   * selection entirely.
+   */
+  setTransition(transitionId: string | null): ExtensionSelectionResult;
   /** Fires after the selection changes. Payload-free; pull with `get()`. */
   subscribe(listener: () => void): () => void;
   /** Monotonic change token matching `subscribe` notifications. */
   getRevision(): number;
 }
+
+// === Project ===
+
+/**
+ * The open project's identity, detached. Deliberately path-free: an extension
+ * addresses project-scoped state through `api.storage.project`, not through
+ * the filesystem.
+ */
+export interface ExtensionProjectSnapshot {
+  /** Stable across renames and reopens; the key project storage is scoped by. */
+  readonly id: string;
+  readonly title: string;
+  readonly createdAt: number;
+  /** As recorded in the project manifest when it was loaded. */
+  readonly lastModified: number;
+  /**
+   * When the project document was last written *since this project opened*, or
+   * null if it has not been saved yet. Moves on every save, which is what makes
+   * a save observable through the shared `subscribe`/`getRevision` pair, and
+   * resets when the project closes — reopening the same project starts null
+   * again rather than reporting the previous session.
+   */
+  readonly lastSavedAt: number | null;
+}
+
+/**
+ * Project identity and lifecycle. `api.timeline.getProject()` is the
+ * neighbouring read for the *render* domain — dimensions, fps, fit mode; this
+ * one answers "which project, and is one open at all".
+ *
+ * `subscribe` also covers `api.storage.project` becoming available, so one
+ * subscription is enough to watch both. They are not the same condition,
+ * though: the storage document hydrates asynchronously, so a project can be
+ * open while `storage.project` is still null. Re-read it inside the listener
+ * rather than caching what it was when the project opened.
+ */
+export interface ExtensionProjectApi {
+  /** The open project, or null when the editor has none. */
+  get(): ExtensionProjectSnapshot | null;
+  /**
+   * Fires when a project opens or closes, when its identity changes, after
+   * every successful save, and when project storage finishes hydrating or is
+   * torn down. Payload-free; pull with `get()`.
+   */
+  subscribe(listener: () => void): () => void;
+  /** Monotonic change token matching `subscribe` notifications. */
+  getRevision(): number;
+  /**
+   * Runs before the host writes the project document, which is where an
+   * extension flushes in-memory state into `api.storage.project` so the save
+   * that follows includes it. It also runs at the head of a project switch,
+   * while the outgoing project's storage is still open — that is the last
+   * moment unwritten state can be saved.
+   *
+   * The host awaits the hook, so keep it short: a hook that throws is reported
+   * as a diagnostic and skipped, and one that outlives the host's budget is
+   * abandoned so a save can never hang on an extension.
+   */
+  onBeforeSave(hook: ExtensionProjectSaveHook): () => void;
+}
+
+export type ExtensionProjectSaveHook = () => void | Promise<void>;
 
 /** Restricted-ready convenience filters executed entirely by the host. */
 export type ExtensionDeclarativeHostFilter =
@@ -2626,10 +2759,12 @@ export interface VloExtensionApi {
   /** Trusted-first, executable Pixi entity providers. */
   readonly entityProviders: ExtensionEntityProviderApi;
   readonly timeline: ExtensionTimelineApi;
-  /** Transport reads: playhead, presented frame, and running state. */
+  /** The transport: playhead, presented frame, running state, and writes. */
   readonly playback: ExtensionPlaybackApi;
-  /** The user's current editor selection, read-only. */
+  /** The editor selection, readable and settable. */
   readonly selection: ExtensionSelectionApi;
+  /** Project identity and lifecycle; the scope `storage.project` follows. */
+  readonly project: ExtensionProjectApi;
   readonly transitions: ExtensionTransitionApi;
   readonly transformations: ExtensionTransformationApi;
   readonly ui: ExtensionUiApi;

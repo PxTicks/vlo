@@ -12,6 +12,7 @@ import { fileSystemService } from "../services/FileSystemService";
 import { projectPersistenceService } from "../services/ProjectPersistenceService";
 import { recentProjectsService } from "../services/RecentProjectsService";
 import { registerPreSaveHook } from "../../../core/persistence/preSaveHooks";
+import { registerProjectClosingHook } from "../../../core/project/projectLifecycleHooks";
 import {
   PROJECT_MANIFEST_SCHEMA_VERSION,
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
@@ -407,4 +408,40 @@ describe("useProjectStore", () => {
     expect(snapshot?.clips).toHaveLength(0);
     expect(snapshot?.tracks).toHaveLength(1);
   });
+
+  // Pre-save hooks are producers flushing into the persistence queues; closing
+  // hooks tear the outgoing project down, and the extension-storage one closes
+  // `api.storage.project`. A hook that flushes into project storage therefore
+  // only works if no closing hook has run yet.
+  it.each([
+    ["loadProject", () => useProjectStore.getState().loadProject(mockHandle)],
+    [
+      "createProject",
+      () => useProjectStore.getState().createProject("Switched", mockHandle),
+    ],
+  ])(
+    "runs pre-save hooks once, before any closing hook, on %s",
+    async (_name, switchProject) => {
+      const order: string[] = [];
+      const unregisterClosing = registerProjectClosingHook(() => {
+        order.push("closing");
+      });
+      const unregisterOrdering = registerPreSaveHook(() => {
+        order.push("pre-save");
+      });
+
+      try {
+        await switchProject();
+      } finally {
+        unregisterOrdering();
+        unregisterClosing();
+      }
+
+      expect(order[0]).toBe("pre-save");
+      expect(order.indexOf("closing")).toBe(1);
+      // Running them twice would invoke every registered producer — including
+      // extensions — a second time for no additional state.
+      expect(order.filter((entry) => entry === "pre-save")).toHaveLength(1);
+    },
+  );
 });

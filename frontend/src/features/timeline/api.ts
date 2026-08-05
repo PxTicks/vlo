@@ -28,6 +28,8 @@ import type {
   ExtensionMaskCompositionSnapshot,
   ExtensionMaskExpression,
   ExtensionRangeMaskSnapshot,
+  ExtensionSelectionFailureCode,
+  ExtensionSelectionResult,
   ExtensionSelectionSnapshot,
   ExtensionTimelineEntitySnapshot,
   ExtensionTimelineClipSnapshot,
@@ -711,6 +713,80 @@ export function getExtensionTimelineSelection(): ExtensionSelectionSnapshot {
     clipIds: Object.freeze([...state.selectedClipIds]),
     transitionId: state.selectedTransitionId,
   });
+}
+
+function selectionFailure(
+  code: ExtensionSelectionFailureCode,
+  message: string,
+): ExtensionSelectionResult {
+  return Object.freeze({ ok: false as const, code, message });
+}
+
+/**
+ * Replaces the clip selection on behalf of an extension. Validation is
+ * all-or-nothing so a selection never half-applies: an unknown ID is a bug in
+ * the caller's bookkeeping, and applying the rest would hide it behind a
+ * plausible-looking selection.
+ *
+ * Mask clips live in the same `clips` array but are filtered out of the
+ * rendered timeline, so the host can never select one; neither can an
+ * extension.
+ */
+export function setExtensionTimelineClipSelection(
+  clipIds: readonly string[],
+): ExtensionSelectionResult {
+  const state = useTimelineStore.getState();
+  const unique: string[] = [];
+  for (const clipId of clipIds) {
+    if (unique.includes(clipId)) continue;
+    const clip = state.clips.find((candidate) => candidate.id === clipId);
+    if (!clip) {
+      return selectionFailure(
+        "clip_not_found",
+        `No clip with id "${clipId}" exists.`,
+      );
+    }
+    if (clip.type === "mask") {
+      return selectionFailure(
+        "clip_not_selectable",
+        `Clip "${clipId}" is a mask clip, which the timeline never selects.`,
+      );
+    }
+    unique.push(clipId);
+  }
+
+  const before = state.selectedClipIds;
+  const hadTransition = state.selectedTransitionId !== null;
+  state.setSelectedClips(unique);
+  const changed =
+    hadTransition ||
+    before.length !== unique.length ||
+    before.some((clipId, index) => clipId !== unique[index]);
+  return Object.freeze({ ok: true as const, changed });
+}
+
+/** Selects one transition, or clears the selection entirely with null. */
+export function setExtensionTimelineTransitionSelection(
+  transitionId: string | null,
+): ExtensionSelectionResult {
+  // Clearing goes through the clip path: the store's `selectTransition(null)`
+  // leaves a clip selection standing, and the contract promises an empty
+  // selection.
+  if (transitionId === null) return setExtensionTimelineClipSelection([]);
+
+  const state = useTimelineStore.getState();
+  if (!state.transitions.some((transition) => transition.id === transitionId)) {
+    return selectionFailure(
+      "transition_not_found",
+      `No transition with id "${transitionId}" exists.`,
+    );
+  }
+
+  const changed =
+    state.selectedTransitionId !== transitionId ||
+    state.selectedClipIds.length > 0;
+  state.selectTransition(transitionId);
+  return Object.freeze({ ok: true as const, changed });
 }
 
 export function getExtensionTimelineTransitions(): readonly ExtensionTimelineTransitionSnapshot[] {

@@ -12,6 +12,7 @@ import { extensionEntityProviderRegistry } from "../entities/ExtensionEntityProv
 import { createExtensionTimelineApi } from "../timeline/createExtensionTimelineApi";
 import { createExtensionPlaybackApi } from "../playback/createExtensionPlaybackApi";
 import { createExtensionSelectionApi } from "../selection/createExtensionSelectionApi";
+import { createExtensionProjectApi } from "../project/createExtensionProjectApi";
 import { extensionTransformationRegistry } from "../../transformations/extensionApi";
 import { extensionTransitionRegistry } from "../../transitions/extensions/ExtensionTransitionRegistry";
 import { createExtensionAnimationApi } from "../../transformations/animation";
@@ -408,6 +409,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
       timeline: createExtensionTimelineApi(scope),
       playback: createExtensionPlaybackApi(scope),
       selection: createExtensionSelectionApi(scope),
+      project: createExtensionProjectApi(scope),
       transitions: extensionTransitionRegistry.bind(scope),
       // Presets live in their own generic registry but belong to the
       // transformation they patch, so authors register them next to it.

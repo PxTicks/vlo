@@ -204,6 +204,7 @@ interface TimelineState extends TimelineModelState {
   replaceClipAsset: (clipId: string, asset: Asset) => void;
 
   selectClip: (id: string | null, isMulti?: boolean) => void;
+  setSelectedClips: (ids: readonly string[]) => void;
   selectTransition: (id: string | null) => void;
   addTransition: (
     transition: Transition,
@@ -769,6 +770,22 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         }
 
         return { selectedClipIds: [id], selectedTransitionId: null };
+      });
+    },
+
+    // Replaces the whole clip selection at once. `selectClip` only ever adds,
+    // removes, or replaces a single ID, so a caller naming a set of clips (the
+    // extension selection API, "select all clips using this asset") would
+    // otherwise have to emit a burst of toggles and reason about the result.
+    setSelectedClips: (ids) => {
+      set((state) => {
+        const next = [...ids];
+        const unchanged =
+          state.selectedTransitionId === null &&
+          state.selectedClipIds.length === next.length &&
+          state.selectedClipIds.every((id, index) => id === next[index]);
+        if (unchanged) return state;
+        return { selectedClipIds: next, selectedTransitionId: null };
       });
     },
 

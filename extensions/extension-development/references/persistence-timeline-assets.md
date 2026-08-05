@@ -60,6 +60,7 @@ fresh snapshot inside the listener — and are disposed with the extension.
   selection and in-progress interactions do not signal.
 - `assets` — fires on library changes.
 - `selection` — see below.
+- `project` — fires on open, close, rename, and every successful save.
 - `storage.local` / `storage.project` — fire on this frontend's own writes.
 - `ui.catalogues` — fires when any catalogue's contents change, *including*
   options registered by other extensions.
@@ -74,20 +75,68 @@ tick does not.
 Cache a revision alongside derived state and recompute when it moves. Per-frame
 and time-driven work belongs in the render contracts, never in a subscriber.
 
-## Read the selection and the transport
+## Read and set the selection
 
 `selection.get()` returns `{ clipIds, transitionId }`, detached and in host
 selection order; clip and transition selection are mutually exclusive. It has its
 own `subscribe`/`getRevision` precisely so selecting a clip does not wake timeline
-subscribers. SDK 1 does not let an extension *set* the selection: contribute a
-command or a menu placement and let the user drive it.
+subscribers.
+
+`setClips(clipIds)` replaces the selection — it never adds to it — and
+`setTransition(id)` selects one transition, with `null` on either clearing the
+selection entirely. Both return a typed result. An unknown ID, or a mask clip
+(which the timeline never selects), refuses the *whole* request rather than
+applying the valid part, so a stale ID cannot leave you with a plausible-looking
+selection you did not ask for. Selection is not undoable and does not persist.
+
+## Drive the transport
 
 `playback` reads the transport: `getTime()` is the playhead in canonical ticks
 (continuous while scrubbing), `getFrameTime()` is the frame-aligned tick the
 renderer is presenting, and `isPlaying()` is the transport state. Its `subscribe`
 is the one signal in the API that is **not** commit-grained — during playback it
 fires once per frame, so keep the listener trivial and schedule your own work.
-Seeking and play/pause stay host-owned in SDK 1.
+
+`seek(ticks)`, `play()`, and `pause()` route through the player rather than the
+clock, and each returns a typed result:
+
+- the tick is clamped at zero and snapped to the project's frame grid exactly as
+  a user's scrub is, so read `getTime()` back instead of assuming the playhead
+  landed where you asked;
+- `changed: false` is an ordinary answer — seeking inside the current frame, or
+  playing while already playing, moves nothing;
+- `no_transport` means no player is mounted (the projects page), and
+  `transport_busy` means an export is running or a frame/range capture is armed.
+  Both are states of a running editor, not errors. `transport_busy` is
+  deliberately stricter than what the user can do — the play button and the
+  ruler stay live during a capture — because someone who armed the mode can see
+  it and move the playhead knowingly, while an extension moving it in the
+  background would silently change what gets captured.
+
+A non-finite tick throws, because that is a bug in the caller rather than a state
+of the editor.
+
+## Track the open project
+
+`project.get()` returns the open project's `id`, `title`, `createdAt`,
+`lastModified`, and `lastSavedAt`, or `null` when none is open. `lastSavedAt`
+counts only saves since *this* open: reopening the same project starts null
+again. Identity is deliberately path-free: address project-scoped state through
+`storage.project`, never the filesystem. `api.timeline.getProject()` is the
+neighbouring read for the *render* domain (dimensions, fps, fit mode).
+
+One `project.subscribe` covers `storage.project` becoming available too, but the
+two are not the same condition — the storage document hydrates asynchronously,
+so a project can be open while `storage.project` is still null. Re-read it
+inside the listener instead of caching what it was when the project opened.
+
+`project.onBeforeSave(hook)` runs before the host writes the project document,
+which is where you flush in-memory state into `storage.project` so the same save
+persists it. It also runs at the head of a project switch, while the outgoing
+project's storage is still open — the last moment unwritten state can be saved.
+The host awaits the hook, so keep it short: one that throws is reported as a
+diagnostic and skipped, and one that overruns the host's budget is abandoned —
+a save never hangs on an extension.
 
 ## Commit one synchronous transaction
 

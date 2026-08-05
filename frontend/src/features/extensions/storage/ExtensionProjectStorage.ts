@@ -69,6 +69,7 @@ function serializedByteLength(
 export class ExtensionProjectStorage {
   private readonly namespaces = new Map<string, Record<string, JsonValue>>();
   private readonly listeners = new Map<string, Set<() => void>>();
+  private readonly availabilityListeners = new Set<() => void>();
   private readonly revisions = new Map<string, number>();
   private documentGeneration = 0;
   private readonly pendingWrites = new Map<
@@ -118,6 +119,23 @@ export class ExtensionProjectStorage {
 
   isOpen(): boolean {
     return this.open;
+  }
+
+  /**
+   * Fires when the projection opens or closes. Separate from the per-extension
+   * write subscription because that one is unreachable while the store is
+   * closed — `api.storage.project` is null then — so availability itself needs
+   * a channel an observer can hold across the gap. Hydration is asynchronous,
+   * so a project can be open before its storage document has arrived.
+   */
+  subscribeAvailability(listener: () => void): () => void {
+    this.availabilityListeners.add(listener);
+    return () => this.availabilityListeners.delete(listener);
+  }
+
+  /** Monotonic token for {@link subscribeAvailability}. */
+  getDocumentGeneration(): number {
+    return this.documentGeneration;
   }
 
   get(extensionId: string, key: string): JsonValue | undefined {
@@ -281,6 +299,13 @@ export class ExtensionProjectStorage {
   private notifyAll(): void {
     for (const extensionId of [...this.listeners.keys()]) {
       this.notify(extensionId);
+    }
+    for (const listener of [...this.availabilityListeners]) {
+      try {
+        listener();
+      } catch {
+        // Owner-scoped isolation with diagnostics wraps these in the adapter.
+      }
     }
   }
 }

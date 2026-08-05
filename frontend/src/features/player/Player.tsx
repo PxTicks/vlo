@@ -39,6 +39,11 @@ import {
   playbackClock,
   playbackFrameClock,
 } from "../../core/playback/PlaybackClock";
+import { installHostTransportController } from "../../core/playback/transportController";
+import {
+  isTransportAvailable,
+  readTransportArbitrationState,
+} from "./utils/transportArbitration";
 import { usePixiApp } from "./hooks/usePixiApp";
 import { useCanvasSelectionManager } from "./hooks/interaction/useCanvasSelectionManager";
 import { useCanvasSelectionKeyboard } from "./hooks/interaction/useCanvasSelectionKeyboard";
@@ -349,6 +354,31 @@ function PlayerImpl() {
     }
     togglePlay();
   }, [togglePlay]);
+
+  // Transport authority for callers outside the player feature (today the
+  // extension API). Play and pause run the same entry point as the transport
+  // button, and seek runs the same clamp-and-snap as a ruler scrub, so a
+  // programmatic transport move cannot reach a state a click cannot.
+  useEffect(
+    () =>
+      installHostTransportController({
+        canControl: () =>
+          isTransportAvailable(readTransportArbitrationState()),
+        play: () => {
+          if (!isPlayingRef.current) handleTogglePlay();
+        },
+        pause: () => {
+          if (isPlayingRef.current) handleTogglePlay();
+        },
+        seek: (timeTicks: number) => {
+          const fps = useProjectStore.getState().config.fps;
+          playbackClock.setTime(
+            snapTickToFrameGrid(Math.max(0, timeTicks), fps),
+          );
+        },
+      }),
+    [handleTogglePlay],
+  );
 
   // --- Playback Loop ---
   useEffect(() => {

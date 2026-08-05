@@ -2,6 +2,8 @@ import { createRevisionRelay } from "../../../core/shell/revisionRelay";
 import {
   getExtensionTimelineSelection,
   getTimelineStoreForTrustedHostAccess,
+  setExtensionTimelineClipSelection,
+  setExtensionTimelineTransitionSelection,
 } from "../../timeline/api";
 import { bindOwnerScopedSubscribe } from "../utils/ownerScopedSubscribe";
 import type { ExtensionApiScope, ExtensionSelectionApi } from "../types";
@@ -33,6 +35,31 @@ export function createExtensionSelectionApi(
 ): ExtensionSelectionApi {
   return Object.freeze({
     get: () => getExtensionTimelineSelection(),
+    // Malformed input throws (the caller's bug); unknown IDs come back as a
+    // typed refusal (the editor's answer). Validation itself lives beside the
+    // model in features/timeline, next to the state it checks.
+    setClips: (clipIds: readonly string[]) => {
+      if (!Array.isArray(clipIds)) {
+        throw new TypeError("Clip selection must be an array of clip IDs.");
+      }
+      for (const clipId of clipIds) {
+        if (typeof clipId !== "string" || clipId.length === 0) {
+          throw new TypeError("Clip selection IDs must be non-empty strings.");
+        }
+      }
+      return setExtensionTimelineClipSelection(clipIds);
+    },
+    setTransition: (transitionId: string | null) => {
+      if (
+        transitionId !== null &&
+        (typeof transitionId !== "string" || transitionId.length === 0)
+      ) {
+        throw new TypeError(
+          "Transition selection must be a non-empty string or null.",
+        );
+      }
+      return setExtensionTimelineTransitionSelection(transitionId);
+    },
     subscribe: bindOwnerScopedSubscribe(scope, selectionRelay, "Selection"),
     getRevision: () => selectionRelay.getRevision(),
   });

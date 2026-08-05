@@ -41,6 +41,10 @@
 /frontend/src/app/layout/rightSidebarHostViews.ts extension-surface=adapter
 /frontend/src/core/pixi/activeApplication.ts extension-surface=adapter
 /frontend/src/core/playback/PlaybackClock.ts extension-surface=adapter
+# Transport authority the player installs and api.playback dispatches through.
+/frontend/src/core/playback/transportController.ts extension-surface=adapter
+/frontend/src/core/project/projectLifecycleHooks.ts extension-surface=adapter
+/frontend/src/core/persistence/preSaveHooks.ts extension-surface=adapter
 /frontend/src/features/colorGrading/components/GradeManagementControl.tsx extension-surface=adapter
 /frontend/src/features/colorGrading/components/LutControl.tsx extension-surface=adapter
 /frontend/src/features/colorGrading/gradeParameters.ts extension-surface=adapter
@@ -55,6 +59,7 @@
 /frontend/src/features/player/components/CanvasToolBar.tsx extension-surface=adapter
 /frontend/src/features/player/components/ExtractDialog.tsx extension-surface=adapter
 /frontend/src/features/player/exportFormatsCatalogue.ts extension-surface=adapter
+/frontend/src/features/player/utils/transportArbitration.ts extension-surface=adapter
 /frontend/src/features/player/hooks/useSpriteInteraction.ts extension-surface=adapter
 /frontend/src/features/player/hooks/useCanvasToolHost.ts extension-surface=adapter
 /frontend/src/features/player/hooks/useTrackRenderer.ts extension-surface=adapter

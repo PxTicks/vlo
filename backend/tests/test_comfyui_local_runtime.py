@@ -1,4 +1,5 @@
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -16,6 +17,28 @@ from services.comfyui.local_runtime import (
     _environment_python,
     verify_comfyui_install,
 )
+
+
+@pytest.fixture(autouse=True)
+def _git_on_path(monkeypatch):
+    """Keep the git preflight deterministic regardless of the host machine."""
+
+    real_which = shutil.which
+    monkeypatch.setattr(
+        local_runtime.shutil,
+        "which",
+        lambda cmd, *args, **kwargs: (
+            "/usr/bin/git" if cmd == "git" else real_which(cmd, *args, **kwargs)
+        ),
+    )
+
+
+def _without_git(monkeypatch) -> None:
+    monkeypatch.setattr(
+        local_runtime.shutil,
+        "which",
+        lambda cmd, *args, **kwargs: None if cmd == "git" else shutil.which(cmd),
+    )
 
 
 def _write_comfyui_checkout(path: Path) -> None:
@@ -147,6 +170,37 @@ def test_installer_clones_creates_venv_installs_and_persists(
             "comfyui_install_dir_prompt_status": "accepted",
         }
     ]
+
+
+def test_install_reports_a_missing_git_before_starting_work(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _without_git(monkeypatch)
+    manager = ComfyuiLocalRuntime()
+
+    with pytest.raises(ValueError, match="git is required"):
+        manager.start_install(tmp_path)
+
+    assert manager.get_install_status()["phase"] == "idle"
+    assert manager.get_install_status()["running"] is False
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_environment_setup_reports_a_missing_git_before_starting_work(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checkout = tmp_path / "ComfyUI"
+    _write_comfyui_checkout(checkout)
+    _without_git(monkeypatch)
+    manager = ComfyuiLocalRuntime()
+
+    with pytest.raises(ValueError, match="git is required"):
+        manager.start_environment_setup(checkout)
+
+    assert manager.get_install_status()["running"] is False
+    assert not (checkout / ".venv").exists()
 
 
 def test_install_refuses_to_mutate_an_existing_checkout(tmp_path: Path) -> None:

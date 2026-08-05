@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -37,6 +38,10 @@ MANAGED_CUSTOM_NODE_REPOSITORY_URLS = (
 # index is only worth reaching for on Windows with an Nvidia driver present.
 TORCH_CUDA_INDEX_URL = "https://download.pytorch.org/whl/cu130"
 TORCH_CUDA_PACKAGES = ("torch", "torchvision", "torchaudio")
+_GIT_REQUIRED_MESSAGE = (
+    "git is required to install ComfyUI and its custom nodes. Install it from "
+    "https://git-scm.com/downloads, then restart vlo so it picks up the new PATH."
+)
 _CPU_TORCH_WARNING = (
     "CUDA PyTorch could not be installed, so ComfyUI may run on the CPU. "
     f"Install torch, torchvision and torchaudio from {TORCH_CUDA_INDEX_URL} "
@@ -257,6 +262,19 @@ def _environment_python(
     return next((candidate for candidate in candidates if candidate.is_file()), None)
 
 
+def _require_git() -> None:
+    """Fail before any long-running work when git cannot be executed.
+
+    Both install paths clone with git, and the exec failure would otherwise
+    surface as a bare "No such file or directory: 'git'" once the worker is
+    already underway — after a venv and ComfyUI's requirements in the
+    existing-checkout case.
+    """
+
+    if shutil.which("git") is None:
+        raise ValueError(_GIT_REQUIRED_MESSAGE)
+
+
 def _needs_cuda_torch_index(platform_name: str | None = None) -> bool:
     """Report whether a managed environment must reach for the CUDA wheel index."""
 
@@ -317,6 +335,7 @@ class ComfyuiLocalRuntime:
             }
 
     def start_install(self, parent_path: str | Path) -> ComfyuiInstallStatus:
+        _require_git()
         parent = Path(parent_path).expanduser().resolve()
         if not parent.is_dir():
             raise ValueError("The selected installation parent directory does not exist")
@@ -356,6 +375,7 @@ class ComfyuiLocalRuntime:
         self,
         install_path: str | Path,
     ) -> ComfyuiInstallStatus:
+        _require_git()
         verification = verify_comfyui_install(install_path)
         if not verification["valid"] or not verification["installPath"]:
             raise ValueError("A verified ComfyUI checkout is required")

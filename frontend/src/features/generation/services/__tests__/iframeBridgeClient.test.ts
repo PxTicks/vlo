@@ -38,6 +38,8 @@ function dispatchFromIframe(
   );
 }
 
+const PEER_DOCUMENT_ID = "document-1";
+
 function announceReady(
   contentWindow: Window,
   hello: PostedMessage,
@@ -47,6 +49,7 @@ function announceReady(
     protocol: BRIDGE_PROTOCOL,
     version: BRIDGE_VERSION,
     channelId: hello.channelId,
+    documentId: PEER_DOCUMENT_ID,
     type: "ready",
     capabilities: [...REQUIRED_BRIDGE_CAPABILITIES],
     ...overrides,
@@ -80,6 +83,7 @@ describe("IframeBridgeClient", () => {
       protocol: BRIDGE_PROTOCOL,
       version: BRIDGE_VERSION,
       channelId: hello.channelId,
+      documentId: PEER_DOCUMENT_ID,
       type: "response",
       requestId: request.requestId,
       ok: true,
@@ -118,6 +122,7 @@ describe("IframeBridgeClient", () => {
       protocol: BRIDGE_PROTOCOL,
       version: BRIDGE_VERSION,
       channelId: hello.channelId,
+      documentId: PEER_DOCUMENT_ID,
       type: "ready",
       capabilities: [...REQUIRED_BRIDGE_CAPABILITIES],
     };
@@ -142,6 +147,127 @@ describe("IframeBridgeClient", () => {
     expect(client.currentStatus).toBe("handshaking");
   });
 
+  it("ignores a handshake answered by the document being reloaded away", async () => {
+    const { client, contentWindow, postMessage, hello } = setupClient();
+    announceReady(contentWindow, hello);
+    expect(client.currentStatus).toBe("ready");
+
+    client.notifyIframeReloaded();
+    const rehello = postMessage.mock.calls.at(-1)?.[0] as PostedMessage;
+    expect(rehello.type).toBe("hello");
+
+    // `location.reload()` does not unload synchronously: the outgoing document
+    // answers the new handshake before its replacement exists.
+    announceReady(contentWindow, rehello);
+    expect(client.currentStatus).toBe("handshaking");
+
+    // The document that replaces it completes the handshake for real.
+    announceReady(contentWindow, rehello, { documentId: "document-2" });
+    expect(client.currentStatus).toBe("ready");
+  });
+
+  it("rejects a runtime that does not identify its document", () => {
+    const { client, contentWindow, hello } = setupClient();
+    announceReady(contentWindow, hello, { documentId: undefined });
+    expect(client.currentStatus).toBe("incompatible");
+    expect(client.currentError?.message).toMatch(/did not identify its document/i);
+
+    const blank = setupClient();
+    announceReady(blank.contentWindow, blank.hello, { documentId: "" });
+    expect(blank.client.currentStatus).toBe("incompatible");
+  });
+
+  it("drops responses and events from a document it is replacing", async () => {
+    const { client, contentWindow, postMessage, hello } = setupClient();
+    announceReady(contentWindow, hello);
+    const graphHandler = vi.fn();
+    client.onGraphChanged(graphHandler);
+
+    const pending = client.readActive();
+    const request = postMessage.mock.calls.at(-1)?.[0] as PostedMessage;
+    client.notifyIframeReloaded();
+    await expect(pending).rejects.toMatchObject({ code: "iframe-reloaded" });
+
+    const rehello = postMessage.mock.calls.at(-1)?.[0] as PostedMessage;
+    const snapshot = {
+      graphData: { nodes: [] },
+      filename: "workflow.json",
+      isModified: false,
+      workflowInstanceId: "workflow-1",
+      revision: 4,
+    };
+    // The outgoing document adopted the new channel from that hello, so channel
+    // alone no longer distinguishes it — only its document id does.
+    dispatchFromIframe(contentWindow, {
+      protocol: BRIDGE_PROTOCOL,
+      version: BRIDGE_VERSION,
+      channelId: rehello.channelId,
+      documentId: PEER_DOCUMENT_ID,
+      type: "response",
+      requestId: request.requestId,
+      ok: true,
+      result: snapshot,
+    });
+    dispatchFromIframe(contentWindow, {
+      protocol: BRIDGE_PROTOCOL,
+      version: BRIDGE_VERSION,
+      channelId: rehello.channelId,
+      documentId: PEER_DOCUMENT_ID,
+      type: "event",
+      event: "graph-changed",
+      data: snapshot,
+    });
+    expect(graphHandler).not.toHaveBeenCalled();
+
+    // Its replacement is heard normally once the handshake completes.
+    announceReady(contentWindow, rehello, { documentId: "document-2" });
+    dispatchFromIframe(contentWindow, {
+      protocol: BRIDGE_PROTOCOL,
+      version: BRIDGE_VERSION,
+      channelId: rehello.channelId,
+      documentId: "document-2",
+      type: "event",
+      event: "graph-changed",
+      data: snapshot,
+    });
+    expect(graphHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-opens the handshake when a ready peer stops answering", async () => {
+    vi.useFakeTimers();
+    const { client, contentWindow, postMessage, hello } = setupClient();
+    announceReady(contentWindow, hello);
+
+    const promise = client.health();
+    const assertion = expect(promise).rejects.toMatchObject({ code: "timeout" });
+    await vi.advanceTimersByTimeAsync(3_001);
+    await assertion;
+
+    expect(client.currentStatus).toBe("handshaking");
+    expect(postMessage.mock.calls.at(-1)?.[0]).toMatchObject({ type: "hello" });
+
+    // The live document binds the channel on that hello and the client recovers.
+    const rehello = postMessage.mock.calls.at(-1)?.[0] as PostedMessage;
+    announceReady(contentWindow, rehello, { documentId: "document-2" });
+    expect(client.currentStatus).toBe("ready");
+  });
+
+  it("waits instead of reloading while the iframe reports it is booting", () => {
+    const { client, contentWindow, hello } = setupClient();
+    expect(client.isPeerBooting()).toBe(false);
+
+    dispatchFromIframe(contentWindow, {
+      protocol: BRIDGE_PROTOCOL,
+      version: BRIDGE_VERSION,
+      channelId: hello.channelId,
+      documentId: PEER_DOCUMENT_ID,
+      type: "booting",
+    });
+
+    expect(client.isPeerBooting()).toBe(true);
+    expect(client.currentStatus).toBe("handshaking");
+  });
+
   it("preserves structured remote errors", async () => {
     const { client, contentWindow, postMessage, hello } = setupClient();
     announceReady(contentWindow, hello);
@@ -155,6 +281,7 @@ describe("IframeBridgeClient", () => {
       protocol: BRIDGE_PROTOCOL,
       version: BRIDGE_VERSION,
       channelId: hello.channelId,
+      documentId: PEER_DOCUMENT_ID,
       type: "response",
       requestId: request.requestId,
       ok: false,
@@ -184,6 +311,7 @@ describe("IframeBridgeClient", () => {
       protocol: BRIDGE_PROTOCOL,
       version: BRIDGE_VERSION,
       channelId: hello.channelId,
+      documentId: PEER_DOCUMENT_ID,
       type: "event",
       event: "graph-changed",
       data: {
@@ -198,6 +326,7 @@ describe("IframeBridgeClient", () => {
       protocol: BRIDGE_PROTOCOL,
       version: BRIDGE_VERSION,
       channelId: hello.channelId,
+      documentId: PEER_DOCUMENT_ID,
       type: "event",
       event: "health-changed",
       data: { appReady: true, backendConnected: false },
@@ -222,6 +351,7 @@ describe("IframeBridgeClient", () => {
       protocol: BRIDGE_PROTOCOL,
       version: BRIDGE_VERSION,
       channelId: hello.channelId,
+      documentId: PEER_DOCUMENT_ID,
       type: "event",
       event: "iframe-generation",
       data: { promptId: "p-1", phase: "progress", value: 3, max: 4, node: "n" },
@@ -231,6 +361,7 @@ describe("IframeBridgeClient", () => {
       protocol: BRIDGE_PROTOCOL,
       version: BRIDGE_VERSION,
       channelId: hello.channelId,
+      documentId: PEER_DOCUMENT_ID,
       type: "event",
       event: "iframe-generation",
       data: { phase: "started" },

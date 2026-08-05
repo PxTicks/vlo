@@ -199,7 +199,7 @@ function request(
 }
 
 describe("hosted iframe bridge runtime", () => {
-  it("announces the complete v2 contract only to its same-origin parent", () => {
+  it("announces the complete v3 contract only to its same-origin parent", () => {
     const harness = createHarness();
     expect(
       startVloBridge({
@@ -245,6 +245,64 @@ describe("hosted iframe bridge runtime", () => {
       channelId: "channel-1",
       capabilities: [...BRIDGE_CAPABILITIES],
     });
+  });
+
+  it("answers a handshake with 'booting' until ComfyUI is ready", () => {
+    const harness = createHarness();
+    harness.app.extensionManager.spinner = true;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+
+    hello(harness);
+    hello(harness);
+    expect(harness.posted).toHaveLength(2);
+    expect(harness.posted.every((message) => message.type === "booting")).toBe(
+      true,
+    );
+    expect(harness.posted.at(-1)).toMatchObject({
+      type: "booting",
+      channelId: "channel-1",
+      documentId: expect.any(String),
+    });
+
+    harness.app.extensionManager.spinner = false;
+    hello(harness);
+    expect(harness.posted.at(-1)).toMatchObject({
+      type: "ready",
+      documentId: expect.any(String),
+    });
+  });
+
+  it("stamps one document id on every message it sends, not just the handshake", async () => {
+    const harness = createHarness();
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+
+    hello(harness);
+    request(harness, "health-1", "health");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "health-1"),
+      ).toBe(true),
+    );
+    harness.emitApi("status");
+
+    expect(harness.posted.map((message) => message.type)).toEqual([
+      "ready",
+      "response",
+      "event",
+    ]);
+    const documentIds = new Set(
+      harness.posted.map((message) => message.documentId),
+    );
+    expect(documentIds.size).toBe(1);
+    expect([...documentIds][0]).toEqual(expect.any(String));
   });
 
   it("forwards the iframe's own generation lifecycle, scoped to prompts it started", () => {

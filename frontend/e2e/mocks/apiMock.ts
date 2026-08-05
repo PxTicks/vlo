@@ -31,7 +31,8 @@ function buildMockComfyFrameHtml(): string {
     <script>
       (() => {
         const BRIDGE_PROTOCOL = 'vlo-bridge';
-        const BRIDGE_VERSION = 2;
+        const BRIDGE_VERSION = 3;
+        const BRIDGE_DOCUMENT_ID = 'mock-document-' + Math.random().toString(16).slice(2);
         const BRIDGE_CAPABILITIES = [
           'health',
           'health-changed',
@@ -178,6 +179,7 @@ function buildMockComfyFrameHtml(): string {
             protocol: BRIDGE_PROTOCOL,
             version: BRIDGE_VERSION,
             channelId,
+            documentId: BRIDGE_DOCUMENT_ID,
             ...message,
           }, window.location.origin);
         }

@@ -543,9 +543,12 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           setEditorNeedsReconnect(true);
           // If the backend reports ComfyUI as reachable but the bridge never
           // announced, the iframe likely loaded a dead/stale page (e.g.
-          // ComfyUI was down on first load). Trigger recovery.
+          // ComfyUI was down on first load). Trigger recovery — unless the
+          // bridge answered "still booting", in which case reloading would
+          // only restart the load it is already most of the way through.
           if (
-            useGenerationStore.getState().connectionStatus === "connected"
+            useGenerationStore.getState().connectionStatus === "connected" &&
+            !iframeBridge.isPeerBooting()
           ) {
             recoverIframe("app initialization failed while backend connected");
           }
@@ -579,6 +582,11 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           });
 
           if (!syncResult.workflowResult) {
+            console.warn(
+              `[ComfyUIEditor] Workflow sync did not complete: ${
+                syncResult.reason ?? "unknown reason"
+              }`,
+            );
             setEditorNeedsReconnect(true);
             return false;
           }
@@ -712,7 +720,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     if (connectionStatus !== "connected") return;
     const iframe = iframeRef.current;
     if (!iframe) return;
-    if (iframeBridge.isReady) return;
+    if (iframeBridge.isReady || iframeBridge.isPeerBooting()) return;
     recoverIframe("ComfyUI became reachable; iframe app never initialized");
   }, [connectionStatus, recoverIframe]);
 

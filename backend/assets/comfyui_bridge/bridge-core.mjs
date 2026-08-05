@@ -1,5 +1,7 @@
 export const BRIDGE_PROTOCOL = "vlo-bridge";
-export const BRIDGE_VERSION = 2;
+// v3 stamps `documentId` on every message so the parent can fence traffic from
+// a document it is replacing; v2 parents cannot tell the two apart.
+export const BRIDGE_VERSION = 3;
 export const BRIDGE_CAPABILITIES = Object.freeze([
   "health",
   "health-changed",
@@ -268,9 +270,17 @@ function isSameOriginEmbedded(windowObject) {
 export function startVloBridge({ app, api, windowObject = window }) {
   if (!isSameOriginEmbedded(windowObject)) return null;
 
+  // Identifies this document to the parent. A reload replaces the runtime but
+  // not the iframe element, so the parent cannot otherwise tell an answer from
+  // the outgoing document apart from one by the document replacing it.
+  const documentId =
+    windowObject.crypto?.randomUUID?.() ??
+    `document-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
   let activeChannelId = null;
   let workflowCounter = 0;
   let graphChangedTimer = null;
+  let announcePending = false;
   let stopped = false;
   const workflowIds = new WeakMap();
   const workflowRevisions = new WeakMap();
@@ -343,6 +353,9 @@ export function startVloBridge({ app, api, windowObject = window }) {
         protocol: BRIDGE_PROTOCOL,
         version: BRIDGE_VERSION,
         channelId: activeChannelId,
+        // Every message, not just the handshake: responses and push events
+        // emitted while a document unloads must be attributable too.
+        documentId,
         ...message,
       },
       windowObject.location.origin,
@@ -370,8 +383,16 @@ export function startVloBridge({ app, api, windowObject = window }) {
     return true;
   }
 
+  // The parent retries `hello` while it waits, so without this guard every
+  // retry would start another readiness poll against the same app.
   async function announceWhenReady() {
-    if (await waitForAppReady()) announceReady();
+    if (announcePending) return;
+    announcePending = true;
+    try {
+      if (await waitForAppReady()) announceReady();
+    } finally {
+      announcePending = false;
+    }
   }
 
   async function captureWarnings(workflow) {
@@ -737,7 +758,12 @@ export function startVloBridge({ app, api, windowObject = window }) {
         return;
       }
       activeChannelId = data.channelId;
-      if (!announceReady()) void announceWhenReady();
+      if (!announceReady()) {
+        // Tell the parent the document is alive but ComfyUI is still booting,
+        // so it waits instead of reloading the app out from under itself.
+        post({ type: "booting" });
+        void announceWhenReady();
+      }
       return;
     }
     if (

@@ -1,5 +1,7 @@
 export const BRIDGE_PROTOCOL = "vlo-bridge";
-export const BRIDGE_VERSION = 2;
+// v3 stamps `documentId` on every message so traffic from a document being
+// replaced can be fenced off; a v2 runtime cannot be fenced and is rejected.
+export const BRIDGE_VERSION = 3;
 
 export const REQUIRED_BRIDGE_CAPABILITIES = [
   "health",
@@ -213,6 +215,11 @@ export class IframeBridgeClient {
   private statusError: IframeBridgeError | null = null;
   private requestCounter = 0;
   private listening = false;
+  /** Document that most recently completed the handshake. */
+  private peerDocumentId: string | null = null;
+  /** Document we asked to go away; its answers no longer count. */
+  private outgoingDocumentId: string | null = null;
+  private lastBootingAt = 0;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly readyHandlers = new Set<() => void>();
   private readonly statusHandlers = new Set<
@@ -244,12 +251,24 @@ export class IframeBridgeClient {
     return this.iframe;
   }
 
+  /**
+   * Whether the iframe answered a recent handshake with "still booting".
+   * A booting peer is alive and will announce on its own, so reloading it
+   * would only restart the load it is already most of the way through.
+   */
+  isPeerBooting(withinMs = 4_000): boolean {
+    return this.lastBootingAt > 0 && Date.now() - this.lastBootingAt < withinMs;
+  }
+
   bindIframe(iframe: HTMLIFrameElement | null): void {
     if (this.iframe === iframe) return;
     this.rejectAllPending(
       new IframeBridgeError("iframe-replaced", "ComfyUI iframe was replaced"),
     );
     this.iframe = iframe;
+    this.peerDocumentId = null;
+    this.outgoingDocumentId = null;
+    this.lastBootingAt = 0;
     this.ensureListener();
     if (!iframe) {
       this.channelId = null;
@@ -263,6 +282,15 @@ export class IframeBridgeClient {
     this.rejectAllPending(
       new IframeBridgeError("iframe-reloaded", "ComfyUI iframe reloaded"),
     );
+    // `location.reload()` does not unload synchronously, so the document on its
+    // way out can still answer this handshake — and would then leave us bound
+    // to a channel the replacement document knows nothing about. Remember which
+    // document we are discarding so its answers can be ignored, keeping the
+    // previous id when no handshake completed since the last reload (a second
+    // recovery must not forget which document is still on its way out).
+    this.outgoingDocumentId = this.peerDocumentId ?? this.outgoingDocumentId;
+    this.peerDocumentId = null;
+    this.lastBootingAt = 0;
     if (this.iframe) this.beginHandshake();
   }
 
@@ -429,6 +457,20 @@ export class IframeBridgeClient {
       return;
     }
 
+    const documentId =
+      typeof data.documentId === "string" && data.documentId
+        ? data.documentId
+        : null;
+    if (documentId !== null && documentId === this.outgoingDocumentId) {
+      // The document we just reloaded away from; its replacement will answer.
+      return;
+    }
+
+    if (data.type === "booting") {
+      this.lastBootingAt = Date.now();
+      return;
+    }
+
     if (data.type === "ready") {
       const capabilities = Array.isArray(data.capabilities)
         ? new Set(data.capabilities.filter((entry): entry is string => typeof entry === "string"))
@@ -436,25 +478,42 @@ export class IframeBridgeClient {
       const missingCapabilities = REQUIRED_BRIDGE_CAPABILITIES.filter(
         (capability) => !capabilities.has(capability),
       );
-      if (data.version !== BRIDGE_VERSION || missingCapabilities.length > 0) {
-        const error = new IframeBridgeError(
-          "incompatible",
-          data.version !== BRIDGE_VERSION
-            ? `Iframe bridge protocol ${String(data.version)} is incompatible with version ${BRIDGE_VERSION}`
-            : `Iframe bridge is missing capabilities: ${missingCapabilities.join(", ")}`,
-          { receivedVersion: data.version, missingCapabilities },
-        );
+      // An unidentified peer cannot be fenced off once we replace it, which is
+      // precisely the case the fence exists for — so treat it as incompatible
+      // rather than binding to a document we could never tell apart later.
+      const incompatibility =
+        data.version !== BRIDGE_VERSION
+          ? `Iframe bridge protocol ${String(data.version)} is incompatible with version ${BRIDGE_VERSION}`
+          : missingCapabilities.length > 0
+            ? `Iframe bridge is missing capabilities: ${missingCapabilities.join(", ")}`
+            : documentId === null
+              ? "Iframe bridge did not identify its document"
+              : null;
+      if (incompatibility !== null) {
+        const error = new IframeBridgeError("incompatible", incompatibility, {
+          receivedVersion: data.version,
+          missingCapabilities,
+        });
         this.rejectAllPending(error);
         this.setStatus("incompatible", error);
         return;
       }
       const wasReady = this.isReady;
+      this.peerDocumentId = documentId;
+      this.outgoingDocumentId = null;
+      this.lastBootingAt = 0;
       this.setStatus("ready", null);
       if (!wasReady) for (const handler of this.readyHandlers) handler();
       return;
     }
 
     if (data.version !== BRIDGE_VERSION) return;
+
+    // Past the handshake, only the document that completed it may be heard.
+    // A reloading document can adopt the current channel (it answers whatever
+    // `hello` it last saw), so channel alone does not establish provenance for
+    // a late response or push event.
+    if (documentId === null || documentId !== this.peerDocumentId) return;
 
     if (data.type === "event" && data.event === "graph-changed") {
       try {
@@ -558,6 +617,7 @@ export class IframeBridgeClient {
     return new Promise((resolve, reject) => {
       const timer = globalThis.setTimeout(() => {
         this.pending.delete(requestId);
+        this.handleUnresponsivePeer();
         reject(
           new IframeBridgeError(
             "timeout",
@@ -583,6 +643,21 @@ export class IframeBridgeClient {
         );
       }
     });
+  }
+
+  /**
+   * A "ready" peer that stops answering has almost always been replaced by a
+   * document that never saw our `hello` (an in-iframe reload, or one we
+   * triggered whose outgoing document answered the handshake first). Ready
+   * status would otherwise latch until the next rebind, so every later request
+   * times out against a channel nobody listens on. Re-open the handshake — the
+   * live document binds the channel on its next `hello`.
+   */
+  private handleUnresponsivePeer(): void {
+    if (this.status !== "ready") return;
+    this.peerDocumentId = null;
+    this.setStatus("handshaking", null);
+    this.sendHello();
   }
 
   private toHealth(value: unknown): BridgeHealth {

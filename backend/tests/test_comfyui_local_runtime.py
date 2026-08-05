@@ -458,6 +458,93 @@ def test_launch_uses_install_venv_and_requested_local_port(
     assert captured["kwargs"]["stdout"].closed is True
 
 
+def _write_cli_args(checkout: Path, flags: tuple[str, ...]) -> None:
+    parser_source = "\n".join(
+        f'parser.add_argument("{flag}", action="store_true")' for flag in flags
+    )
+    (checkout / "comfy").mkdir(parents=True, exist_ok=True)
+    (checkout / "comfy" / "cli_args.py").write_text(parser_source, encoding="utf-8")
+
+
+def test_launch_passes_manager_and_taesd_previews_when_supported(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checkout = tmp_path / "ComfyUI"
+    _write_comfyui_checkout(checkout)
+    _write_cli_args(checkout, ("--enable-manager", "--preview-method"))
+    python = checkout / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    class FakeProcess:
+        pid = 4322
+
+        def poll(self):
+            return None
+
+    def fake_popen(command, **kwargs):
+        del kwargs
+        captured["command"] = command
+        return FakeProcess()
+
+    monkeypatch.setattr(local_runtime.subprocess, "Popen", fake_popen)
+
+    ComfyuiLocalRuntime().launch(checkout, "http://127.0.0.1:8188")
+
+    assert captured["command"] == [
+        str(python),
+        str(checkout / "main.py"),
+        "--port",
+        "8188",
+        "--disable-auto-launch",
+        "--enable-manager",
+        "--preview-method",
+        "taesd",
+    ]
+
+
+def test_launch_omits_arguments_an_older_checkout_would_reject(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checkout = tmp_path / "ComfyUI"
+    _write_comfyui_checkout(checkout)
+    _write_cli_args(checkout, ("--preview-method",))
+    python = checkout / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    class FakeProcess:
+        pid = 4323
+
+        def poll(self):
+            return None
+
+    def fake_popen(command, **kwargs):
+        del kwargs
+        captured["command"] = command
+        return FakeProcess()
+
+    monkeypatch.setattr(local_runtime.subprocess, "Popen", fake_popen)
+
+    ComfyuiLocalRuntime().launch(checkout, "http://127.0.0.1:8188")
+
+    assert "--enable-manager" not in captured["command"]
+    assert captured["command"][-2:] == ["--preview-method", "taesd"]
+
+
+def test_launch_arguments_are_dropped_without_a_readable_cli_args(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "ComfyUI"
+    _write_comfyui_checkout(checkout)
+
+    assert local_runtime._supported_launch_arguments(checkout) == []
+
+
 def test_launch_uses_windows_portable_python_flags(
     tmp_path: Path,
     monkeypatch,

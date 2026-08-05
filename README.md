@@ -381,15 +381,18 @@ python scripts/install-comfyui-nodes.py
 - https://github.com/kijai/ComfyUI-KJNodes
 <!-- comfyui-custom-nodes:end -->
 
-For better live previews from Wan workflows, start ComfyUI with TAESD previews
-enabled:
+When vlo launches ComfyUI itself, it passes `--enable-manager` and
+`--preview-method taesd`, so ComfyUI-Manager is available and sampling streams
+live previews. Flags a checkout's argument parser does not advertise are
+dropped, so older ComfyUI versions still start. Starting ComfyUI yourself, the
+equivalent is:
 
 ```bash
 cd /path/to/ComfyUI
-python main.py --preview-method taesd
+python main.py --enable-manager --preview-method taesd
 ```
 
-You will also need the Wan TAESD model. Download
+For previews from Wan workflows you will also need the Wan TAESD model. Download
 [`taew2_1.safetensors`](https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/taew2_1.safetensors)
 and place it at `ComfyUI/models/vae_approx/taew2_1.safetensors`, creating the
 `vae_approx` directory if it does not already exist.

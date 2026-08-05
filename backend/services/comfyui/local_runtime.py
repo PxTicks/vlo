@@ -38,6 +38,16 @@ MANAGED_CUSTOM_NODE_REPOSITORY_URLS = (
 # index is only worth reaching for on Windows with an Nvidia driver present.
 TORCH_CUDA_INDEX_URL = "https://download.pytorch.org/whl/cu130"
 TORCH_CUDA_PACKAGES = ("torch", "torchvision", "torchaudio")
+# Extras vlo passes when it launches ComfyUI itself: the bundled manager, and
+# TAESD latent previews so sampling streams useful progress frames (this needs
+# a matching model in models/vae_approx, and degrades quietly without one).
+# `--enable-manager` is recent, so each flag is only passed when the checkout's
+# parser advertises it — argparse aborts startup on an unknown argument.
+OPTIONAL_LAUNCH_ARGUMENTS: tuple[tuple[str, ...], ...] = (
+    ("--enable-manager",),
+    ("--preview-method", "taesd"),
+)
+_CLI_ARGS_SOURCE_LIMIT_BYTES = 128 * 1024
 _GIT_REQUIRED_MESSAGE = (
     "git is required to install ComfyUI and its custom nodes. Install it from "
     "https://git-scm.com/downloads, then restart vlo so it picks up the new PATH."
@@ -260,6 +270,25 @@ def _environment_python(
         for environment in (".venv", "venv", "env")
     ]
     return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+def _supported_launch_arguments(install_path: Path) -> list[str]:
+    """Keep only the extra launch flags this checkout's parser understands."""
+
+    try:
+        source = (install_path / "comfy" / "cli_args.py").read_text(
+            encoding="utf-8",
+            errors="ignore",
+        )[:_CLI_ARGS_SOURCE_LIMIT_BYTES]
+    except OSError:
+        return []
+
+    arguments: list[str] = []
+    for flag, *values in OPTIONAL_LAUNCH_ARGUMENTS:
+        if f'"{flag}"' in source or f"'{flag}'" in source:
+            arguments.append(flag)
+            arguments.extend(values)
+    return arguments
 
 
 def _require_git() -> None:
@@ -615,6 +644,7 @@ class ComfyuiLocalRuntime:
                 "--port",
                 str(port),
                 "--disable-auto-launch",
+                *_supported_launch_arguments(resolved),
             ]
         )
         if uses_portable_python:

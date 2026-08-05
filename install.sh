@@ -336,14 +336,14 @@ case "${install_sam2}" in
         VENV_PY="$SCRIPT_DIR/backend/.venv/bin/python"
 
         # 1. Install CUDA-enabled Torch if requested
-        read -r -p "Would you like to install PyTorch with CUDA 12.8 support? (Highly recommended for SAM2 on Nvidia GPUs) [Y/n]: " install_cuda_torch
+        read -r -p "Would you like to install PyTorch with CUDA 13.0 support? (Highly recommended for SAM2 on Nvidia GPUs) [Y/n]: " install_cuda_torch
         case "${install_cuda_torch}" in
             n|N|no|NO)
                 info "Skipping CUDA PyTorch installation, using existing PyTorch."
                 ;;
             *)
                 info "Installing CUDA PyTorch..."
-                if ! "$UV_BIN" pip install --python "$VENV_PY" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128; then
+                if ! "$UV_BIN" pip install --python "$VENV_PY" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130; then
                     warn "CUDA PyTorch installation failed. Attempting to proceed anyway..."
                 fi
                 ;;

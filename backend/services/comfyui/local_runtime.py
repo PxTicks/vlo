@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
@@ -13,6 +14,9 @@ from typing import Any, Literal, TypedDict
 from urllib.parse import urlparse
 
 from config import RUNTIME_ROOT
+from services.hardware import detect_local_vram
+
+logger = logging.getLogger(__name__)
 
 COMFYUI_REPOSITORY_URL = "https://github.com/Comfy-Org/ComfyUI.git"
 # WanVideoWrapper remains documented for legacy workflows but is intentionally
@@ -26,6 +30,17 @@ MANAGED_CUSTOM_NODE_REPOSITORY_URLS = (
     "https://github.com/kijai/ComfyUI-MelBandRoFormer",
     "https://github.com/kosinkadink/ComfyUI-VideoHelperSuite",
     "https://github.com/kijai/ComfyUI-KJNodes",
+)
+# ComfyUI's requirements.txt takes torch from PyPI, whose Windows wheels are
+# CPU-only, so an unassisted install leaves ComfyUI without CUDA. Linux wheels
+# already bundle CUDA and macOS has no CUDA builds at all, so the dedicated
+# index is only worth reaching for on Windows with an Nvidia driver present.
+TORCH_CUDA_INDEX_URL = "https://download.pytorch.org/whl/cu130"
+TORCH_CUDA_PACKAGES = ("torch", "torchvision", "torchaudio")
+_CPU_TORCH_WARNING = (
+    "CUDA PyTorch could not be installed, so ComfyUI may run on the CPU. "
+    f"Install torch, torchvision and torchaudio from {TORCH_CUDA_INDEX_URL} "
+    "inside the ComfyUI environment to fix that."
 )
 _MAIN_SOURCE_LIMIT_BYTES = 256 * 1024
 _SOURCE_MARKERS = {
@@ -242,6 +257,14 @@ def _environment_python(
     return next((candidate for candidate in candidates if candidate.is_file()), None)
 
 
+def _needs_cuda_torch_index(platform_name: str | None = None) -> bool:
+    """Report whether a managed environment must reach for the CUDA wheel index."""
+
+    if (platform_name or os.name) != "nt":
+        return False
+    return detect_local_vram().source == "nvidia_smi"
+
+
 def _managed_venv_python(install_path: Path) -> Path:
     binary = (
         Path("Scripts") / "python.exe"
@@ -366,6 +389,35 @@ class ComfyuiLocalRuntime:
             stdin=subprocess.DEVNULL,
         )
 
+    def _install_cuda_torch(self, target: Path, python: Path) -> str | None:
+        """Install CUDA torch first so requirements.txt keeps it. Returns a warning."""
+
+        self._set_install_status(
+            phase="installing_requirements",
+            running=True,
+            target_path=target,
+            message="Installing PyTorch with CUDA support…",
+        )
+        try:
+            self._run_install_command(
+                [
+                    str(python),
+                    "-m",
+                    "pip",
+                    "install",
+                    *TORCH_CUDA_PACKAGES,
+                    "--index-url",
+                    TORCH_CUDA_INDEX_URL,
+                ],
+                cwd=target,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            # A CPU-only ComfyUI still runs, so this is reported at the end
+            # rather than failing an otherwise complete installation.
+            logger.warning("CUDA PyTorch installation failed: %s", exc)
+            return _CPU_TORCH_WARNING
+        return None
+
     def _install_custom_nodes(self, target: Path, python: Path) -> None:
         custom_nodes_dir = target / "custom_nodes"
         custom_nodes_dir.mkdir(exist_ok=True)
@@ -439,6 +491,17 @@ class ComfyuiLocalRuntime:
                 [str(python), "-m", "pip", "install", "--upgrade", "pip"],
                 cwd=target,
             )
+            cuda_torch_warning = (
+                self._install_cuda_torch(target, python)
+                if _needs_cuda_torch_index()
+                else None
+            )
+            self._set_install_status(
+                phase="installing_requirements",
+                running=True,
+                target_path=target,
+                message="Installing ComfyUI requirements…",
+            )
             self._run_install_command(
                 [str(python), "-m", "pip", "install", "-r", "requirements.txt"],
                 cwd=target,
@@ -465,7 +528,11 @@ class ComfyuiLocalRuntime:
                 phase="complete",
                 running=False,
                 target_path=target,
-                message=completion_message,
+                message=(
+                    f"{completion_message} {cuda_torch_warning}"
+                    if cuda_torch_warning
+                    else completion_message
+                ),
             )
         except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as exc:
             self._set_install_status(

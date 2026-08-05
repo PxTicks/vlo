@@ -176,14 +176,14 @@ goto :skip_sam2
 
 :do_install_sam2
 set "INSTALL_CUDA_TORCH="
-set /p INSTALL_CUDA_TORCH=Would you like to install PyTorch with CUDA 12.8 support? (Highly recommended for SAM2 on Nvidia GPUs) [Y/n]: 
+set /p INSTALL_CUDA_TORCH=Would you like to install PyTorch with CUDA 13.0 support? (Highly recommended for SAM2 on Nvidia GPUs) [Y/n]: 
 if /I "!INSTALL_CUDA_TORCH!"=="N" goto :skip_cuda_torch
 if /I "!INSTALL_CUDA_TORCH!"=="NO" goto :skip_cuda_torch
 
 echo [INFO]  Installing CUDA PyTorch...
 :: The backend venv is created by `uv sync` and does NOT contain pip, so install
 :: through `uv pip` targeting that venv rather than `python -m pip`.
-call "%UV_BIN%" pip install --python "%SCRIPT_DIR%backend\.venv\Scripts\python.exe" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+call "%UV_BIN%" pip install --python "%SCRIPT_DIR%backend\.venv\Scripts\python.exe" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 if %errorlevel% neq 0 (
     echo [WARN]  CUDA PyTorch installation failed. Attempting to proceed anyway...
 )

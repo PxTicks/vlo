@@ -1,10 +1,12 @@
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from services import runtime_settings
 from services.comfyui import local_runtime
+from services.hardware import VramInfo
 from services.comfyui.local_runtime import (
     COMFYUI_REPOSITORY_URL,
     MANAGED_CUSTOM_NODE_REPOSITORY_URLS,
@@ -196,6 +198,121 @@ def test_environment_setup_skips_clone_for_existing_checkout(
     ] == list(MANAGED_CUSTOM_NODE_REPOSITORY_URLS)
     assert commands[0][1:3] == ["-m", "venv"]
     assert manager.get_install_status()["message"] == "Environment ready."
+
+
+def _install_with_stubbed_commands(
+    manager: ComfyuiLocalRuntime,
+    target: Path,
+    monkeypatch,
+    *,
+    fail_cuda_torch: bool = False,
+) -> list[list[str]]:
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], cwd: Path | None = None) -> None:
+        del cwd
+        commands.append(command)
+        if command[:4] == ["git", "clone", "--depth", "1"]:
+            clone_target = Path(command[-1])
+            if clone_target == target:
+                _write_comfyui_checkout(target)
+            else:
+                clone_target.mkdir(parents=True)
+        if command[1:3] == ["-m", "venv"]:
+            python = target / ".venv" / "bin" / "python"
+            python.parent.mkdir(parents=True)
+            python.write_text("", encoding="utf-8")
+        if fail_cuda_torch and local_runtime.TORCH_CUDA_INDEX_URL in command:
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(manager, "_run_install_command", fake_run)
+    monkeypatch.setattr(runtime_settings, "update_runtime_settings", lambda **_kwargs: None)
+    manager._install_worker(target)
+    return commands
+
+
+def test_cuda_torch_index_is_used_only_for_windows_nvidia_hosts(monkeypatch) -> None:
+    monkeypatch.setattr(
+        local_runtime,
+        "detect_local_vram",
+        lambda: VramInfo(total_mb=24576, source="nvidia_smi"),
+    )
+    assert local_runtime._needs_cuda_torch_index(platform_name="nt") is True
+    assert local_runtime._needs_cuda_torch_index(platform_name="posix") is False
+
+    monkeypatch.setattr(
+        local_runtime,
+        "detect_local_vram",
+        lambda: VramInfo(total_mb=None, source=None),
+    )
+    assert local_runtime._needs_cuda_torch_index(platform_name="nt") is False
+
+
+def test_installer_installs_cuda_torch_before_comfyui_requirements(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(local_runtime, "_needs_cuda_torch_index", lambda: True)
+    manager = ComfyuiLocalRuntime()
+    target = tmp_path / "ComfyUI"
+
+    commands = _install_with_stubbed_commands(manager, target, monkeypatch)
+
+    cuda_index = next(
+        index
+        for index, command in enumerate(commands)
+        if local_runtime.TORCH_CUDA_INDEX_URL in command
+    )
+    requirements_index = next(
+        index
+        for index, command in enumerate(commands)
+        if command[-2:] == ["-r", "requirements.txt"]
+    )
+    assert cuda_index < requirements_index
+    assert commands[cuda_index][2:] == [
+        "pip",
+        "install",
+        *local_runtime.TORCH_CUDA_PACKAGES,
+        "--index-url",
+        local_runtime.TORCH_CUDA_INDEX_URL,
+    ]
+    assert manager.get_install_status()["phase"] == "complete"
+
+
+def test_failed_cuda_torch_install_completes_with_a_cpu_warning(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(local_runtime, "_needs_cuda_torch_index", lambda: True)
+    manager = ComfyuiLocalRuntime()
+    target = tmp_path / "ComfyUI"
+
+    commands = _install_with_stubbed_commands(
+        manager,
+        target,
+        monkeypatch,
+        fail_cuda_torch=True,
+    )
+
+    assert any(command[-2:] == ["-r", "requirements.txt"] for command in commands)
+    status = manager.get_install_status()
+    assert status["phase"] == "complete"
+    assert "may run on the CPU" in (status["message"] or "")
+
+
+def test_installer_skips_the_cuda_index_when_not_needed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(local_runtime, "_needs_cuda_torch_index", lambda: False)
+    manager = ComfyuiLocalRuntime()
+    target = tmp_path / "ComfyUI"
+
+    commands = _install_with_stubbed_commands(manager, target, monkeypatch)
+
+    assert all(
+        local_runtime.TORCH_CUDA_INDEX_URL not in command for command in commands
+    )
 
 
 def test_windows_environment_discovery_uses_scripts_python(tmp_path: Path) -> None:

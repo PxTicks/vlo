@@ -32,12 +32,6 @@ Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, 
 1. It uses the File System Access API for smooth and efficient file management directly on disk. This allows for a unified file management interface, whether you launch vlo on your own computer or on a remote service (e.g. runpod). You can still access your locally-stored project files. One caveat: it is best to keep your projects in a folder where you can easily find them, as clearing browser data will forget their location.
 2. The media renderer is built on mediabunny, which wraps webcodecs. Webcodecs has implementation differences between firefox and chrome, and during early testing, this led to noticeable lag. The Webcodecs API is the basis of frame-accurate web video, and is indispensable for a project like this.
 
-## Known issues and TODOs
-
-Known compatibility limitations and their current workarounds are tracked in
-[`docs/todos/known_issues.md`](docs/todos/known_issues.md). This includes the
-partially supported arrangement where vlo runs in WSL and ComfyUI runs on
-Windows.
 
 ## Features
 
@@ -81,17 +75,109 @@ Runpod is a paid GPU-rental service. You can try vlo on runpod [here](https://co
 
 ## Install
 
-If the idea of the command line makes you uncomfortable, you can skip to the [one-click install](#one-click-setup) section. You will still need to install ComfyUI and some custom nodes yourself if you want to use generative AI features.
+Vlo needs three things: the app itself, a Chromium-based browser to run it in,
+and — for generative AI features only — ComfyUI. The installer sets up the app,
+and vlo installs, launches and feeds ComfyUI from inside the editor.
 
-### Manual install prerequisites
+**The only prerequisite is [git](https://git-scm.com/downloads).** Node.js,
+Python and uv are downloaded by the installer if your machine does not already
+have suitable versions. Git is also what vlo uses to fetch ComfyUI and its
+custom nodes later, so install it first.
 
-- Git
-- Python 3.10 or newer
-- Node.js 22 LTS or newer (includes npm)
-- ComfyUI for generative AI features
-- \[optional\] the nodes listed [here](#comfyui-integration) for default workflows
+### Quick start
 
-### Manual Setup
+Linux / macOS:
+
+```bash
+git clone https://github.com/PxTicks/vlo
+cd vlo
+./install.sh
+./run.sh
+```
+
+Windows:
+
+```batch
+git clone https://github.com/PxTicks/vlo
+cd vlo
+install.bat
+run.bat
+```
+
+`install.sh` / `install.bat`:
+
+- finds a compatible Node.js (20.19+ or 22.13+) and Python (3.10+), or offers to
+  install VLO-managed copies. Those are per-user, and change neither your PATH
+  nor your shell profile;
+- installs the npm and Python dependencies and builds the frontend;
+- offers to install SAM2 for segmentation and masking, along with PyTorch with
+  CUDA 13.0. Answer yes if you have an Nvidia GPU and want masking. To add it
+  afterwards, rerun the installer.
+
+`run.sh` / `run.bat` starts vlo and opens `http://127.0.0.1:6332`. Pass
+`--no-browser` to skip opening the browser.
+
+That is the whole install. The rest of the setup happens inside the app.
+
+### First launch: connecting ComfyUI
+
+On first start vlo asks how you want to use ComfyUI:
+
+- **Install ComfyUI** — choose a folder, and vlo clones ComfyUI, creates a
+  dedicated virtual environment for it, installs its requirements, adds vlo's
+  recommended custom nodes, and remembers the location. Nothing to configure
+  afterwards.
+- **Choose ComfyUI folder** — point vlo at an install you already have. See
+  [Existing ComfyUI installs](#existing-comfyui-installs).
+- **Continue without generative AI** — everything except generation still works.
+  You can set ComfyUI up later in **App settings → Runtime settings**.
+
+Once vlo knows about a ComfyUI install, the Generate panel offers **Launch
+ComfyUI**, which starts the process and connects to it; there is no need to run
+ComfyUI in a second terminal. If the checkout has no virtual environment, vlo
+offers to create a managed one.
+
+Models are fetched from inside the app as well:
+
+- **Workflow models** — pick a workflow in the Generate panel and vlo lists what
+  is missing and downloads it into `<ComfyUI>/models/…`.
+- **SAM2 checkpoints** — offered in the mask editor when no model is present.
+- **SAM-Audio models** — offered by the audio separation flow.
+
+Models gated on Hugging Face ask for an access token in the download dialog.
+
+> **Nvidia users on Windows:** ComfyUI's own `requirements.txt` takes PyTorch
+> from PyPI, whose Windows wheels are CPU-only, so vlo installs CUDA 13.0
+> PyTorch into the environment first. If that step fails, the install still
+> finishes and says so; run it again by hand with
+> `<ComfyUI>\.venv\Scripts\python.exe -m pip install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130`
+
+### Existing ComfyUI installs
+
+Point vlo at the folder containing ComfyUI's `main.py`, either from the
+first-launch dialog or from **App settings → Runtime settings → ComfyUI install
+directory**. Vlo verifies the folder and enables in-app model downloads for it.
+
+Vlo does not install custom nodes into an environment it did not create, so add
+the ones the default workflows use yourself. Run this inside whichever Python
+environment your ComfyUI uses:
+
+```bash
+python scripts/install-comfyui-nodes.py
+```
+
+The node list, and what the sidecar rules system does with them, is in
+[ComfyUI Integration](#comfyui-integration).
+
+Running vlo in WSL against a ComfyUI on Windows is only partly supported: the
+install and launch actions are not WSL-aware, so start ComfyUI from Windows and
+give vlo the `/mnt/...` path to the same checkout. See
+[`docs/todos/known_issues.md`](docs/todos/known_issues.md).
+
+### Manual install (development)
+
+Prerequisites for the manual path: git, Python 3.10 or newer, and Node.js
+20.19+ or 22.13+ (includes npm).
 
 It is recommended to set up a Python virtual environment (`venv`) before installing dependencies and to run all commands within that environment. Use Python 3.10 or newer.
 
@@ -137,12 +223,16 @@ Copy-Item backend\.env.example backend\.env
 When backend dependencies change, update `backend/pyproject.toml` and regenerate the
 pip requirements files with `python scripts/sync-backend-requirements.py`.
 
-### SAM2
+### SAM2 (manual setup)
 
-For SAM2 setup, make sure that torch with CUDA is installed in the backend venv, e.g.
+The installer does this for you; follow these steps only if you declined its
+SAM2 prompt or are installing manually. Checkpoints themselves are easier to
+fetch from the mask editor than by hand.
+
+First make sure that torch with CUDA is installed in the backend venv, e.g.
 
 ```bash
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 ```
 
 Being sure to install the version for your correct cuda environment, see <https://pytorch.org/>.
@@ -167,28 +257,70 @@ Transient source uploads, generated stems, and Hugging Face scratch files use `p
 
 The app currently uses the lean isolate path and does not expose SAM-Audio's optional high-quality reranking/span-prediction mode. The backend still guards that experimental API path behind `SAM_AUDIO_LOAD_OPTIONAL_MODELS=1`; only enable it after explicitly caching/installing the CLAP, ImageBind, judge, and PE span-predictor dependencies. Compatible `xformers`, `flash-attn`, and `torchcodec` installs are used when available; if those version-sensitive packages are absent or mismatched, vlo falls back to import shims for the default tensor-based path. Restart the backend after changing any of these packages.
 
-### Almost-one-click Setup
+## Run
+
+### Everyday use
 
 Linux / macOS:
 
 ```bash
-./install.sh
+./run.sh
 ```
 
 Windows:
 
 ```batch
-install.bat
+run.bat
 ```
 
-This installs all dependencies (npm + Python via [uv](https://docs.astral.sh/uv/)),
-builds the frontend, and creates `backend/.venv` for later runs.
+Opens `http://127.0.0.1:6332` in your browser. Pass `--no-browser` to skip that,
+or `--host=` / `--port=` to change where vlo listens.
 
-The one-click installer will prompt you to optionally set up SAM2 (including installing PyTorch with CUDA and cloning/installing SAM2) automatically.
+Start ComfyUI from the Generate panel's **Launch ComfyUI** button, or run it
+yourself if you prefer. By default vlo expects it at `http://127.0.0.1:8188`;
+change that in **App settings → Runtime settings** if it lives elsewhere.
 
-After installation, continue to [Using Scripts](#using-scripts-almost-one-click-installer) to start vlo.
+### Dev servers
 
-## Run
+Run both dev servers (Vite + FastAPI with hot reload):
+
+```bash
+npm run dev
+```
+
+### Production build by hand
+
+Linux / macOS:
+
+```bash
+npm run build
+cd backend
+python -m uvicorn main:app --host 127.0.0.1 --port 6332
+```
+
+Windows (PowerShell):
+
+```powershell
+npm run build
+Set-Location backend
+python -m uvicorn main:app --host 127.0.0.1 --port 6332
+```
+
+### Configuration
+
+Settings you change in the app — ComfyUI URL, ComfyUI install directory,
+workflow mode — are persisted under `backend/runtime/` and survive restarts. A
+normal install needs no configuration by hand.
+
+`backend/.env` (copied from `backend/.env.example`) is still read at startup,
+which is useful for headless or scripted setups:
+
+- `COMFYUI_URL`: default `http://127.0.0.1:8188`. The value set in the app wins once you change it there
+- `COMFYUI_INSTALL_DIR`: path to an existing ComfyUI install, used as the starting value until the app records one. Model downloads need a configured install directory and a local ComfyUI URL
+- `SAM2_DEVICE`: `auto`, `cpu`, or a CUDA/MPS-capable value supported by your environment
+- `SAM2_CACHE_DIR`: cache location for prepared SAM2 data
+
+## Development
 
 ### End-to-end tests
 
@@ -216,69 +348,6 @@ Vite development server; CI builds first and uses `vite preview`. Pull requests
 run `@smoke` tests, while the complete Chromium suite runs nightly and through
 manual workflow dispatch.
 
-### 1. Start ComfyUI
-
-Run ComfyUI separately on the machine that will host vlo. By default vlo expects
-it at `http://127.0.0.1:8188`, but you can change that from the editor UI.
-
-Optionally, point `COMFYUI_INSTALL_DIR` in `backend/.env` at your existing ComfyUI
-installation directory. When set, vlo activates its in-app model download facility,
-letting you fetch models required by workflows directly from the editor (downloaded
-into `<COMFYUI_INSTALL_DIR>/models/...`). Leave it unset to disable in-app downloads.
-
-### 2. Run vlo
-
-#### Option 1: Build and run in production mode manually:
-
-Linux / macOS:
-
-```bash
-npm run build
-cd backend
-python -m uvicorn main:app --host 127.0.0.1 --port 6332
-```
-
-Windows (PowerShell):
-
-```powershell
-npm run build
-Set-Location backend
-python -m uvicorn main:app --host 127.0.0.1 --port 6332
-```
-
-#### Option 2: Dev Servers
-
-Run both dev servers (Vite + FastAPI with hot reload):
-
-```bash
-npm run dev
-```
-
-#### Using Scripts (almost-one-click installer)
-
-Linux / macOS:
-
-```bash
-./run.sh
-```
-
-Windows:
-
-```batch
-run.bat
-```
-
-Opens `http://127.0.0.1:6332` in your browser. Pass `--no-browser` to skip that.
-
-### Configuration
-
-If needed, create `backend/.env` from `backend/.env.example` to adjust settings. You may be able to ignore this step.
-
-- `COMFYUI_URL`: default `http://127.0.0.1:8188`
-- `COMFYUI_INSTALL_DIR`: path to an existing ComfyUI install. When set, enables the in-app model download facility (models are saved to `<COMFYUI_INSTALL_DIR>/models/...`); leave unset to disable
-- `SAM2_DEVICE`: `auto`, `cpu`, or a CUDA/MPS-capable value supported by your environment
-- `SAM2_CACHE_DIR`: cache location for prepared SAM2 data
-
 ## ComfyUI Integration
 
 It should be possible for the majority of workflows to function with vlo as-is. If you need enhanced functionality, then there is a sidecar rules system, which deals with aspect ratio adjustment, mask processing etc.
@@ -289,10 +358,11 @@ aspect ratio processing, and the generation pipeline — see the
 [default workflows](backend/assets/.config/default_workflows/) include working
 sidecar examples. A custom GPT is available [here](https://chatgpt.com/g/g-69f93b02dc108191a7b6cfed9dd6b08e-vlo-workflow-rules), into which you can plug in a workflow and request a rules file for if you need more complex functionality.
 
-The following nodes are used in some capacity in the default workflows. Either install them yourself, or use the small helper script:
-[`scripts/install-comfyui-nodes.py`](scripts/install-comfyui-nodes.py), running it in whichever venv ComfyUI uses on your machine.
-New ComfyUI installations managed by vlo install these nodes automatically,
-apart from ComfyUI-WanVideoWrapper.
+The following nodes are used in some capacity in the default workflows. A
+ComfyUI installed by vlo already has them all except ComfyUI-WanVideoWrapper. For
+any other install, either add them yourself or use the small helper script
+[`scripts/install-comfyui-nodes.py`](scripts/install-comfyui-nodes.py), running it
+in whichever venv ComfyUI uses on your machine.
 
 ```bash
 python scripts/install-comfyui-nodes.py

@@ -10,8 +10,8 @@ import {
   resolveClipRenderTime,
 } from "../utils/clipRenderTime";
 import { resolveLiveActiveClip } from "../utils/clipLookup";
-import type { AudioEffectTransform, ScalarParameter } from "../../transformations";
-import type { TimelineClip } from "../../../types/TimelineTypes";
+import type { ScalarParameter } from "../../transformations";
+import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 import type { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import {
   buildAudioEffectChain,
@@ -104,7 +104,7 @@ interface ManagedAudioEffectChain {
 
 interface ScheduledAudioEffectChain {
   managed: ManagedAudioEffectChain;
-  transforms: AudioEffectTransform[];
+  transforms: ClipTransform[];
 }
 
 export interface TrackAudioActiveClipResolution {

@@ -28,6 +28,8 @@ Choose the least restrictive contract that matches the behaviour:
   Pixi `Filter`, including custom GLSL/WGSL, through `runtime.pixi`.
 - Use `trusted-transformation` for arbitrary synchronous changes to the documented
   render state rather than a filter object.
+- Use `trusted-audio-effect` for context-bound Web Audio nodes. Read the dedicated
+  [audio reference](audio.md) for scheduling, automation, tails, and cleanup.
 - Use `host-filter` only as a declarative convenience over the bounded host list.
   Do not widen that list to simulate trusted extensibility.
 

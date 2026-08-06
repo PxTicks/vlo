@@ -23,7 +23,7 @@ import {
   getExtensionTimelineTransitions,
   createTimelineClipFromAsset,
   getTimelineClipById,
-  getTimelineStoreForTrustedHostAccess,
+  getTimelineModelRevisionSource,
   getTimelineTransitions,
   type ExtensionTimelineCommand,
 } from "../../timeline/api";
@@ -72,13 +72,9 @@ const BITMAP_MASK_TYPES = new Set<ClipMaskType>([
   "brush",
 ]);
 
-// Commit-grained model signal: selection and interaction updates keep these
-// references stable, so only committed timeline changes (undo/redo included)
-// bump the revision.
-const timelineModelRelay = createRevisionRelay(
-  getTimelineStoreForTrustedHostAccess(),
-  (state) => [state.clips, state.tracks, state.transitions],
-);
+// Commit-grained model signal owned by the timeline feature. Selection and
+// interaction updates do not wake timeline or audio extension readers.
+const timelineModelRelay = getTimelineModelRevisionSource();
 
 // `getProject()` reads the project store, not the timeline store, so the model
 // relay alone would leave width/height/fps/fitMode changes silent: an extension

@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "example.audio-beats",
+  "name": "Audio Beat Analysis Conformance Fixture",
+  "version": "1.0.0",
+  "sdk": ">=1.12.0 <2.0.0",
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "capabilities": ["ui.custom"]
+}

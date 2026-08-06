@@ -36,6 +36,7 @@ import {
   resolveTransformationParameters,
 } from "../catalogue/filterHandler";
 import { createTrustedExtensionFilterRuntime } from "./TrustedExtensionFilterRuntime";
+import { createTrustedExtensionAudioEffectRuntime } from "./TrustedExtensionAudioEffectRuntime";
 import { normalizeTransformationRenderingPolicy } from "../catalogue/renderingPolicy";
 
 interface RuntimeTransformationContribution
@@ -424,7 +425,8 @@ function compileDefinition(
   if (
     definition.kind !== "host-filter" &&
     definition.kind !== "trusted-filter" &&
-    definition.kind !== "trusted-transformation"
+    definition.kind !== "trusted-transformation" &&
+    definition.kind !== "trusted-audio-effect"
   ) {
     throw new Error(
       `Transformation '${definitionId}' has an unsupported kind.`,
@@ -460,6 +462,34 @@ function compileDefinition(
   ) {
     throw new Error(
       `Trusted transformation '${definition.id}' must provide apply.`,
+    );
+  }
+  if (
+    definition.kind === "trusted-audio-effect" &&
+    typeof definition.createEffect !== "function"
+  ) {
+    throw new Error(
+      `Trusted audio effect '${definition.id}' must provide createEffect.`,
+    );
+  }
+  if (
+    definition.kind === "trusted-audio-effect" &&
+    definition.maxTailSeconds !== undefined &&
+    (!Number.isFinite(definition.maxTailSeconds) ||
+      definition.maxTailSeconds < 0 ||
+      definition.maxTailSeconds > 60)
+  ) {
+    throw new Error(
+      `Trusted audio effect '${definition.id}' maxTailSeconds must be from 0 through 60.`,
+    );
+  }
+  if (
+    definition.kind === "trusted-audio-effect" &&
+    (definition as unknown as { adjustmentCompatible?: unknown })
+      .adjustmentCompatible === true
+  ) {
+    throw new Error(
+      `Trusted audio effect '${definition.id}' cannot be adjustment compatible.`,
     );
   }
 
@@ -576,7 +606,8 @@ function compileDefinition(
 
   const customValidate =
     definition.kind === "trusted-filter" ||
-    definition.kind === "trusted-transformation"
+    definition.kind === "trusted-transformation" ||
+    definition.kind === "trusted-audio-effect"
       ? definition.validateParameters
       : undefined;
   const validateParameters = (
@@ -617,7 +648,8 @@ function compileDefinition(
   }
   if (
     (definition.kind === "trusted-filter" ||
-      definition.kind === "trusted-transformation") &&
+      definition.kind === "trusted-transformation" ||
+      definition.kind === "trusted-audio-effect") &&
     definition.defaultParameters
   ) {
     for (const [name, value] of Object.entries(definition.defaultParameters)) {
@@ -643,24 +675,36 @@ function compileDefinition(
           reportFailureOnce,
         )
       : undefined;
+  const audioEffectRuntime =
+    definition.kind === "trusted-audio-effect"
+      ? createTrustedExtensionAudioEffectRuntime(
+          contributionId,
+          definition,
+          reportFailureOnce,
+        )
+      : undefined;
   const rendering = normalizeTransformationRenderingPolicy(
     definition.kind === "trusted-filter" ? definition.rendering : undefined,
     definition.id,
   );
   const runtimeDefinition: TransformationDefinition = Object.freeze({
     type:
-      definition.kind === "trusted-transformation"
+      definition.kind === "trusted-transformation" ||
+      definition.kind === "trusted-audio-effect"
         ? contributionId
         : "filter",
     filterName:
-      definition.kind === "trusted-transformation"
+      definition.kind === "trusted-transformation" ||
+      definition.kind === "trusted-audio-effect"
         ? undefined
         : contributionId,
     FilterClass: hostFilter?.FilterClass,
     filterRuntime,
+    audioEffectRuntime,
     ...(definition.kind === "trusted-filter" ? { rendering } : {}),
     label: definition.label.trim(),
-    compatibleClips: "visual",
+    compatibleClips:
+      definition.kind === "trusted-audio-effect" ? "audio" : "visual",
     adjustmentCompatible: definition.adjustmentCompatible === true,
     isDefault: false,
     handler:
@@ -681,7 +725,9 @@ function compileDefinition(
               },
               render: context,
             })
-        : filterHandler,
+        : definition.kind === "trusted-audio-effect"
+          ? () => undefined
+          : filterHandler,
     uiConfig: Object.freeze({ groups: Object.freeze(groups) }),
     defaultParameters: Object.freeze(defaultParameters),
     hydrateMissingParameters: true,
@@ -699,7 +745,7 @@ function compileDefinition(
     execution:
       definition.kind === "host-filter" ? "restricted" : "trusted",
     runtimeDefinition,
-    disposeRuntime: filterRuntime?.dispose,
+    disposeRuntime: filterRuntime?.dispose ?? audioEffectRuntime?.dispose,
   };
 }
 

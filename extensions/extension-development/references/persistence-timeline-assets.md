@@ -43,8 +43,9 @@ write round trip is possible without re-deriving host state: `sourceOffsetTicks`
 against `durationTicks` reveals a retime, and `isMuted`, `compositeId`,
 `maskComposition`, and `rangeMasks` expose the rest of the clip. `maskComposition`
 is present only when the clip carries an explicit mask equation; its `expression`
-is `null` when the user disabled composed masking, which is distinct from the
-field being absent.
+is `"none"` when the user disabled composed masking and `"auto"` when the host
+unions masks without an authored equation, both distinct from the field being
+absent.
 
 Use canonical ticks for all timeline fields. Obtain the time base from
 `timeline.ticksPerSecond` and project FPS from `getProject()`.
@@ -68,6 +69,7 @@ fresh snapshot inside the listener — and are disposed with the extension.
   extension UI that mirrors host enablement. Prefer a declarative `when` on the
   command itself where that works.
 - `export` — fires when a render starts, reports progress, or settles.
+- `audio` — fires when timeline placements/tracks or asset metadata change.
 
 `playback` is the one exception: it publishes `subscribe` without a revision,
 because the playhead is continuous and a token would carry no information the

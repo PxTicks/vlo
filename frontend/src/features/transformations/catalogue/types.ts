@@ -194,6 +194,36 @@ export interface TransformationFilterRuntime {
   dispose(): void;
 }
 
+/** One scheduling window supplied by the shared preview/export audio engine. */
+export interface TransformationAudioEffectWindow {
+  readonly startContextTime: number;
+  readonly wallDurationSeconds: number;
+  readonly startTargetTicks: number;
+  readonly windowTicks: number;
+  readonly sampleCount: number;
+  readonly sourceTimeTicksAt: (presentationTick: number) => number;
+}
+
+export interface TransformationAudioEffectInstance {
+  readonly inputNode: AudioNode;
+  readonly outputNode: AudioNode;
+  schedule(
+    window: TransformationAudioEffectWindow,
+    transform: ClipTransform,
+  ): void;
+  dispose(): void;
+}
+
+/** Host runtime targeted by trusted Web Audio contribution adapters. */
+export interface TransformationAudioEffectRuntime {
+  readonly maxTailSeconds: number;
+  create(
+    context: BaseAudioContext,
+    transformId: string,
+  ): TransformationAudioEffectInstance | null;
+  dispose(): void;
+}
+
 /**
  * A complete, self-contained transformation definition.
  * Each transformation module exports one of these containing all its metadata,
@@ -273,6 +303,9 @@ export interface TransformationDefinition {
    * host contract; the capability itself is not extension-specific.
    */
   filterRuntime?: TransformationFilterRuntime;
+
+  /** Context-bound Web Audio runtime for audio-only effect contributions. */
+  audioEffectRuntime?: TransformationAudioEffectRuntime;
 
   /**
    * Normalized native time-dependency policy for this transformation. Omission

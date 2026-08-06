@@ -1378,6 +1378,154 @@ export interface ExtensionProjectApi {
 
 export type ExtensionProjectSaveHook = () => void | Promise<void>;
 
+// === Audio ===
+
+/** One placed clip whose source contains audio. */
+export interface ExtensionAudioClipSnapshot {
+  readonly id: string;
+  readonly assetId: string;
+  readonly type: "audio" | "video";
+  readonly trackId: string;
+  readonly startTicks: number;
+  readonly durationTicks: number;
+  /** Source-media in-point, before timeline retiming. */
+  readonly sourceOffsetTicks: number;
+  /** Cropped source-media span used by this placement, before retiming. */
+  readonly croppedSourceDurationTicks: number;
+  readonly isMuted: boolean;
+}
+
+/** One track that can currently produce audio. */
+export interface ExtensionAudioTrackSnapshot
+  extends ExtensionTimelineTrackSnapshot {
+  /** Audio-bearing clip IDs on this track, in timeline order. */
+  readonly clipIds: readonly string[];
+}
+
+/** Decoder metadata for one project asset's primary audio stream. */
+export interface ExtensionAudioSourceSnapshot {
+  readonly assetId: string;
+  readonly sampleRate: number;
+  readonly numberOfChannels: number;
+  /** Stream span from its first timestamp through its end timestamp. */
+  readonly durationSeconds: number;
+  /** Timestamp of the first decoded sample; this may be non-zero or negative. */
+  readonly firstTimestampSeconds: number;
+  /** Exclusive timestamp at the end of the decoded stream. */
+  readonly endTimestampSeconds: number;
+  /** Maximum source frames accepted by one `readPcm()` request. */
+  readonly maxPcmFramesPerRead: number;
+}
+
+export interface ExtensionAudioReadRequest {
+  /** Decoder timestamp. Defaults to the stream's first timestamp. */
+  readonly startSeconds?: number;
+  /** Decoder timestamp. Defaults to the stream's end timestamp. */
+  readonly endSeconds?: number;
+  readonly signal?: AbortSignal;
+}
+
+export interface ExtensionAudioWaveformRequest extends ExtensionAudioReadRequest {
+  /** Source frames summarized by each min/max pair. Defaults to 256. */
+  readonly samplesPerPeak?: number;
+}
+
+export type ExtensionAudioReadFailureCode =
+  | "asset_not_found"
+  | "no_audio"
+  | "invalid_range"
+  | "range_too_large"
+  | "decode_failed";
+
+export type ExtensionAudioSourceResult =
+  | { readonly ok: true; readonly source: ExtensionAudioSourceSnapshot }
+  | {
+      readonly ok: false;
+      readonly code: ExtensionAudioReadFailureCode;
+      readonly message: string;
+    };
+
+/**
+ * Freshly allocated planar PCM copies. Every channel array is independently
+ * owned by the caller and is never retained or reused by the host.
+ */
+export type ExtensionAudioPcmResult =
+  | {
+      readonly ok: true;
+      readonly source: ExtensionAudioSourceSnapshot;
+      readonly startSeconds: number;
+      readonly durationSeconds: number;
+      readonly channels: readonly Float32Array[];
+    }
+  | {
+      readonly ok: false;
+      readonly code: ExtensionAudioReadFailureCode;
+      readonly message: string;
+    };
+
+export interface ExtensionAudioWaveformChannel {
+  readonly min: Float32Array;
+  readonly max: Float32Array;
+}
+
+/** Peak envelope in source order; each index covers `samplesPerPeak` frames. */
+export type ExtensionAudioWaveformResult =
+  | {
+      readonly ok: true;
+      readonly source: ExtensionAudioSourceSnapshot;
+      readonly startSeconds: number;
+      readonly durationSeconds: number;
+      readonly samplesPerPeak: number;
+      readonly channels: readonly ExtensionAudioWaveformChannel[];
+    }
+  | {
+      readonly ok: false;
+      readonly code: ExtensionAudioReadFailureCode;
+      readonly message: string;
+    };
+
+/**
+ * Audio model discovery and raw-source analysis. Analysis addresses assets,
+ * not timeline clips: PCM is decoded before clip mute, effects, or retiming are
+ * applied. Use `listClips()` to map an asset analysis back to placements.
+ */
+export interface ExtensionAudioApi {
+  listClips(): readonly ExtensionAudioClipSnapshot[];
+  getClip(clipId: string): ExtensionAudioClipSnapshot | undefined;
+  listTracks(): readonly ExtensionAudioTrackSnapshot[];
+  /** Commit-grained; fires when the timeline or asset library changes. */
+  subscribe(listener: () => void): () => void;
+  getRevision(): number;
+  /**
+   * Reports a typed failure when valid input cannot be inspected. A malformed
+   * asset ID throws, and cancellation rejects with `AbortError`, including
+   * cancellation caused by extension deactivation.
+   */
+  inspect(
+    assetId: string,
+    request?: { readonly signal?: AbortSignal },
+  ): Promise<ExtensionAudioSourceResult>;
+  /**
+   * Decodes a bounded source range. One call is capped by the host; split long
+   * analyses at `source.maxPcmFramesPerRead`, or use `readWaveform` for an
+   * overview. Valid requests the host cannot satisfy return a typed failure;
+   * malformed IDs/ranges throw, and cancellation rejects with `AbortError`.
+   */
+  readPcm(
+    assetId: string,
+    request?: ExtensionAudioReadRequest,
+  ): Promise<ExtensionAudioPcmResult>;
+  /**
+   * Summarizes a bounded source range. Valid host refusals are typed results;
+   * malformed IDs/ranges/peak sizes throw, and cancellation rejects with
+   * `AbortError`, including cancellation caused by extension deactivation.
+   */
+  readWaveform(
+    assetId: string,
+    request?: ExtensionAudioWaveformRequest,
+  ): Promise<ExtensionAudioWaveformResult>;
+}
+
 // === Export and render ===
 
 export type ExtensionExportRunKind =
@@ -1827,9 +1975,65 @@ export interface ExtensionTrustedTransformationDefinition
   readonly apply: (context: ExtensionTrustedTransformationApplyContext) => void;
 }
 
+/** Timing and parameter-resolution seam for one scheduled audio chunk. */
+export interface ExtensionTrustedAudioEffectApplyContext {
+  readonly audioContext: BaseAudioContext;
+  readonly startContextTime: number;
+  readonly wallDurationSeconds: number;
+  readonly startPresentationTimeTicks: number;
+  readonly durationTicks: number;
+  readonly sampleCount: number;
+  /** Maps presentation time through clip crop/retiming into source time. */
+  sourceTimeTicksAt(presentationTimeTicks: number): number;
+  /**
+   * Resolves one authored parameter at a presentation tick. Numeric controls
+   * that support splines are sampled in source-media time; other JSON values
+   * are returned detached and unchanged.
+   */
+  resolveParameter(
+    name: string,
+    presentationTimeTicks: number,
+  ): JsonValue | undefined;
+}
+
+/** One context-bound Web Audio effect occurrence owned by the host chain. */
+export interface ExtensionTrustedAudioEffectInstance {
+  readonly inputNode: AudioNode;
+  readonly outputNode: AudioNode;
+  /**
+   * `parameters` is a detached snapshot of the raw authored values and must be
+   * narrowed by the extension. Prefer `context.resolveParameter()` for values
+   * described by controls, especially animated numeric parameters.
+   */
+  apply(
+    parameters: Readonly<Record<string, unknown>>,
+    context: ExtensionTrustedAudioEffectApplyContext,
+  ): void;
+  /** Releases internal resources; the host disconnects the two endpoints. */
+  destroy?(): void;
+}
+
+/** Trusted Web Audio contribution, authored and placed like any other effect. */
+export interface ExtensionTrustedAudioEffectTransformationDefinition
+  extends ExtensionTransformationBaseDefinition {
+  readonly kind: "trusted-audio-effect";
+  /** Audio effects do not apply to visual adjustment groups. */
+  readonly adjustmentCompatible?: false;
+  readonly defaultParameters?: Readonly<Record<string, JsonValue>>;
+  readonly validateParameters?: (
+    parameters: Readonly<Record<string, unknown>>,
+  ) => boolean;
+  /** Conservative lifecycle/export preroll bound, from 0 through 60 seconds. */
+  readonly maxTailSeconds?: number;
+  readonly createEffect: (
+    audioContext: BaseAudioContext,
+  ) => ExtensionTrustedAudioEffectInstance;
+}
+
 export type ExtensionTransformationDefinition =
   | ExtensionTrustedFilterTransformationDefinition
   | ExtensionTrustedTransformationDefinition
+  | ExtensionTrustedAudioEffectTransformationDefinition
   | ExtensionHostFilterTransformationDefinition;
 
 export interface ExtensionTransformationRegistration
@@ -2963,6 +3167,8 @@ export interface VloExtensionApi {
   readonly selection: ExtensionSelectionApi;
   /** Project identity and lifecycle; the scope `storage.project` follows. */
   readonly project: ExtensionProjectApi;
+  /** Audio-bearing model projection and raw-source analysis. */
+  readonly audio: ExtensionAudioApi;
   /** Renders: observing them, reading frames, and starting one. */
   readonly export: ExtensionExportApi;
   readonly transitions: ExtensionTransitionApi;

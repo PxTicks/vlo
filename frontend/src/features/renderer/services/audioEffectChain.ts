@@ -5,16 +5,16 @@ import {
 } from "../../transformations/constants";
 import { resolveScalar } from "../../transformations/utils/resolveScalar";
 import { isAudioEffectType } from "../../transformations/types";
+import { getEntryForTransform } from "../../transformations/catalogue/TransformationRegistry";
 import type {
   ScalarParameter,
-  AudioEffectTransform,
   PanTransform,
   EqTransform,
   CompressorTransform,
   ReverbTransform,
   DelayTransform,
 } from "../../transformations";
-import type { TimelineClip } from "../../../types/TimelineTypes";
+import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 
 /**
  * Audio effect chain
@@ -55,20 +55,31 @@ export interface AudioEffectChain {
   readonly signature: string;
   scheduleAutomation(
     window: AudioEffectAutomationWindow,
-    transforms: AudioEffectTransform[],
+    transforms: ClipTransform[],
   ): void;
   dispose(): void;
 }
 
-interface EffectSegment {
-  type: AudioEffectTransform["type"];
+interface BuiltEffectSegment {
+  key: string;
   input: AudioNode;
   output: AudioNode;
   nodes: AudioNode[];
   schedule(
     window: AudioEffectAutomationWindow,
-    transform: AudioEffectTransform,
+    transform: ClipTransform,
   ): void;
+  dispose?: () => void;
+}
+
+interface EffectSegment extends BuiltEffectSegment {
+  transformIndex: number;
+}
+
+function audioEffectKey(transform: ClipTransform): string {
+  return isAudioEffectType(transform.type)
+    ? transform.type
+    : `${transform.type}#${transform.id}`;
 }
 
 // -----------------------------------------------------------------------------
@@ -179,10 +190,10 @@ export function getReverbImpulseResponse(
 // Per-effect node builders
 // -----------------------------------------------------------------------------
 
-function buildPan(ctx: BaseAudioContext): EffectSegment {
+function buildPan(ctx: BaseAudioContext): BuiltEffectSegment {
   const node = ctx.createStereoPanner();
   return {
-    type: "pan",
+    key: "pan",
     input: node,
     output: node,
     nodes: [node],
@@ -193,7 +204,7 @@ function buildPan(ctx: BaseAudioContext): EffectSegment {
   };
 }
 
-function buildEq(ctx: BaseAudioContext): EffectSegment {
+function buildEq(ctx: BaseAudioContext): BuiltEffectSegment {
   const low = ctx.createBiquadFilter();
   low.type = "lowshelf";
   const mid = ctx.createBiquadFilter();
@@ -204,7 +215,7 @@ function buildEq(ctx: BaseAudioContext): EffectSegment {
   low.connect(mid);
   mid.connect(high);
   return {
-    type: "audioEq",
+    key: "audioEq",
     input: low,
     output: high,
     nodes: [low, mid, high],
@@ -229,12 +240,12 @@ function buildEq(ctx: BaseAudioContext): EffectSegment {
   };
 }
 
-function buildCompressor(ctx: BaseAudioContext): EffectSegment {
+function buildCompressor(ctx: BaseAudioContext): BuiltEffectSegment {
   const comp = ctx.createDynamicsCompressor();
   const makeup = ctx.createGain();
   comp.connect(makeup);
   return {
-    type: "compressor",
+    key: "compressor",
     input: comp,
     output: makeup,
     nodes: [comp, makeup],
@@ -270,7 +281,7 @@ function buildCompressor(ctx: BaseAudioContext): EffectSegment {
   };
 }
 
-function buildReverb(ctx: BaseAudioContext): EffectSegment {
+function buildReverb(ctx: BaseAudioContext): BuiltEffectSegment {
   const input = ctx.createGain();
   const dry = ctx.createGain();
   const wet = ctx.createGain();
@@ -284,7 +295,7 @@ function buildReverb(ctx: BaseAudioContext): EffectSegment {
 
   let lastIrKey = "";
   return {
-    type: "reverb",
+    key: "reverb",
     input,
     output,
     nodes: [input, dry, wet, conv, output],
@@ -311,7 +322,7 @@ function buildReverb(ctx: BaseAudioContext): EffectSegment {
   };
 }
 
-function buildDelay(ctx: BaseAudioContext): EffectSegment {
+function buildDelay(ctx: BaseAudioContext): BuiltEffectSegment {
   const input = ctx.createGain();
   const dry = ctx.createGain();
   const wet = ctx.createGain();
@@ -326,7 +337,7 @@ function buildDelay(ctx: BaseAudioContext): EffectSegment {
   delay.connect(feedback);
   feedback.connect(delay);
   return {
-    type: "delay",
+    key: "delay",
     input,
     output,
     nodes: [input, dry, wet, output, delay, feedback],
@@ -353,8 +364,8 @@ function buildDelay(ctx: BaseAudioContext): EffectSegment {
 
 function buildSegment(
   ctx: BaseAudioContext,
-  transform: AudioEffectTransform,
-): EffectSegment | null {
+  transform: ClipTransform,
+): BuiltEffectSegment | null {
   switch (transform.type) {
     case "pan":
       return buildPan(ctx);
@@ -367,8 +378,21 @@ function buildSegment(
     case "delay":
       return buildDelay(ctx);
     default:
-      return null;
+      break;
   }
+
+  const runtime = getEntryForTransform(transform)?.audioEffectRuntime;
+  const instance = runtime?.create(ctx, transform.id);
+  if (!instance) return null;
+  return {
+    key: audioEffectKey(transform),
+    input: instance.inputNode,
+    output: instance.outputNode,
+    nodes: [],
+    schedule: (window, currentTransform) =>
+      instance.schedule(window, currentTransform),
+    dispose: () => instance.dispose(),
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -378,17 +402,20 @@ function buildSegment(
 /** Ordered, enabled audio-effect transforms on a clip. */
 export function getAudioEffectTransforms(
   clip: TimelineClip,
-): AudioEffectTransform[] {
+): ClipTransform[] {
   return (clip.transformations || []).filter(
-    (t): t is AudioEffectTransform => t.isEnabled && isAudioEffectType(t.type),
+    (transform) =>
+      transform.isEnabled &&
+      (isAudioEffectType(transform.type) ||
+        getEntryForTransform(transform)?.audioEffectRuntime !== undefined),
   );
 }
 
 /** Topology signature: rebuild the chain when this changes. */
 export function computeAudioEffectSignature(
-  transforms: AudioEffectTransform[],
+  transforms: ClipTransform[],
 ): string {
-  return transforms.map((t) => t.type).join(">");
+  return transforms.map(audioEffectKey).join(">");
 }
 
 function scalarParameterMax(
@@ -414,11 +441,19 @@ function scalarParameterMax(
  * retaining a chain a little longer so realtime preview does not chop tails.
  */
 export function estimateAudioEffectTailSeconds(
-  transforms: AudioEffectTransform[],
+  transforms: ClipTransform[],
 ): number {
   let tailSeconds = 0;
 
   for (const transform of transforms) {
+    const extensionTail =
+      !isAudioEffectType(transform.type)
+        ? getEntryForTransform(transform)?.audioEffectRuntime?.maxTailSeconds
+        : undefined;
+    if (extensionTail !== undefined) {
+      tailSeconds = Math.max(tailSeconds, extensionTail);
+      continue;
+    }
     if (transform.type === "reverb") {
       const p = (transform as ReverbTransform).parameters;
       if (scalarParameterMax(p.mix, AUDIO_REVERB_DEFAULTS.mix) <= 0) continue;
@@ -484,14 +519,14 @@ export function estimateAudioEffectTailSeconds(
  */
 export function buildAudioEffectChain(
   ctx: BaseAudioContext,
-  transforms: AudioEffectTransform[],
+  transforms: ClipTransform[],
 ): AudioEffectChain | null {
   if (transforms.length === 0) return null;
 
   const segments: EffectSegment[] = [];
-  for (const transform of transforms) {
+  for (const [transformIndex, transform] of transforms.entries()) {
     const segment = buildSegment(ctx, transform);
-    if (segment) segments.push(segment);
+    if (segment) segments.push({ ...segment, transformIndex });
   }
   if (segments.length === 0) return null;
 
@@ -506,10 +541,9 @@ export function buildAudioEffectChain(
     signature: computeAudioEffectSignature(transforms),
     scheduleAutomation: (window, currentTransforms) => {
       if (disposed) return;
-      for (let i = 0; i < segments.length; i += 1) {
-        const segment = segments[i];
-        const transform = currentTransforms[i];
-        if (!transform || transform.type !== segment.type) continue;
+      for (const segment of segments) {
+        const transform = currentTransforms[segment.transformIndex];
+        if (!transform || audioEffectKey(transform) !== segment.key) continue;
         segment.schedule(window, transform);
       }
     },
@@ -517,6 +551,7 @@ export function buildAudioEffectChain(
       if (disposed) return;
       disposed = true;
       for (const segment of segments) {
+        segment.dispose?.();
         for (const node of segment.nodes) {
           try {
             node.disconnect();

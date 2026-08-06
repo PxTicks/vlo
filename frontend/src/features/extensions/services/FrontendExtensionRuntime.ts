@@ -14,6 +14,7 @@ import { createExtensionPlaybackApi } from "../playback/createExtensionPlaybackA
 import { createExtensionSelectionApi } from "../selection/createExtensionSelectionApi";
 import { createExtensionProjectApi } from "../project/createExtensionProjectApi";
 import { createExtensionExportApi } from "../export/createExtensionExportApi";
+import { createExtensionAudioApi } from "../audio/createExtensionAudioApi";
 import { extensionTransformationRegistry } from "../../transformations/extensionApi";
 import { extensionTransitionRegistry } from "../../transitions/extensions/ExtensionTransitionRegistry";
 import { createExtensionAnimationApi } from "../../transformations/animation";
@@ -411,6 +412,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
       playback: createExtensionPlaybackApi(scope),
       selection: createExtensionSelectionApi(scope),
       project: createExtensionProjectApi(scope),
+      audio: createExtensionAudioApi(scope),
       export: createExtensionExportApi(scope),
       transitions: extensionTransitionRegistry.bind(scope),
       // Presets live in their own generic registry but belong to the

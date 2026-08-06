@@ -43,6 +43,7 @@ import type {
 } from "@vlo/extension-sdk";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import { TICKS_PER_SECOND } from "../../core/time/constants";
+import { createRevisionRelay, type RevisionSource } from "../../core/shell/revisionRelay";
 import {
   selectMaskClipsForParent,
   selectPrimaryActiveClip,
@@ -101,6 +102,18 @@ export {
 /** Host composition-root seam; ordinary feature consumers should use selectors. */
 export function getTimelineStoreForTrustedHostAccess(): typeof useTimelineStore {
   return useTimelineStore;
+}
+
+// Commit-grained model signal shared by host adapters. Selection and in-flight
+// interactions keep these references stable, so neither wakes model readers.
+let timelineModelRevisionSource: RevisionSource | null = null;
+
+export function getTimelineModelRevisionSource(): RevisionSource {
+  timelineModelRevisionSource ??= createRevisionRelay(
+    useTimelineStore,
+    (state) => [state.clips, state.tracks, state.transitions],
+  );
+  return timelineModelRevisionSource;
 }
 
 export interface TimelineViewGeometry {

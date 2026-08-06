@@ -209,6 +209,28 @@ function createConformanceApi() {
       getRevision: () => 0,
       onBeforeSave: () => () => undefined,
     },
+    audio: {
+      listClips: () => [],
+      getClip: () => undefined,
+      listTracks: () => [],
+      subscribe: () => () => undefined,
+      getRevision: () => 0,
+      inspect: async () => ({
+        ok: false,
+        code: "asset_not_found",
+        message: "stub",
+      }),
+      readPcm: async () => ({
+        ok: false,
+        code: "asset_not_found",
+        message: "stub",
+      }),
+      readWaveform: async () => ({
+        ok: false,
+        code: "asset_not_found",
+        message: "stub",
+      }),
+    },
     export: {
       getRun: () => null,
       listRuns: () => [],

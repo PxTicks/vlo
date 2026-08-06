@@ -209,6 +209,19 @@ function createConformanceApi() {
       getRevision: () => 0,
       onBeforeSave: () => () => undefined,
     },
+    export: {
+      getRun: () => null,
+      listRuns: () => [],
+      subscribe: () => () => undefined,
+      getRevision: () => 0,
+      renderFrame: async () => ({
+        ok: false,
+        code: "no_renderer",
+        message: "stub",
+      }),
+      start: () => ({ ok: false, code: "no_renderer", message: "stub" }),
+      cancel: () => ({ ok: false, code: "no_renderer", message: "stub" }),
+    },
     timeline: {
       subscribe: () => () => undefined,
       getRevision: () => 0,

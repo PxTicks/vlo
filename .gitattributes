@@ -43,6 +43,9 @@
 /frontend/src/core/playback/PlaybackClock.ts extension-surface=adapter
 # Transport authority the player installs and api.playback dispatches through.
 /frontend/src/core/playback/transportController.ts extension-surface=adapter
+# Render authority and the run record api.export reads.
+/frontend/src/core/export/exportController.ts extension-surface=adapter
+/frontend/src/core/export/exportRunLog.ts extension-surface=adapter
 /frontend/src/core/project/projectLifecycleHooks.ts extension-surface=adapter
 /frontend/src/core/persistence/preSaveHooks.ts extension-surface=adapter
 /frontend/src/features/colorGrading/components/GradeManagementControl.tsx extension-surface=adapter

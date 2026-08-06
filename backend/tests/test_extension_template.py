@@ -47,6 +47,9 @@ TAGGING_FIXTURE_ROOT = REPOSITORY_ROOT / "extension-fixtures" / "tagging"
 NAVIGATION_FIXTURE_ROOT = (
     REPOSITORY_ROOT / "extension-fixtures" / "navigation"
 )
+EXPORT_REPORT_FIXTURE_ROOT = (
+    REPOSITORY_ROOT / "extension-fixtures" / "export-report"
+)
 SDK_ROOT = REPOSITORY_ROOT / "packages" / "extension-sdk"
 NODE_EXECUTABLE = shutil.which("node")
 TYPESCRIPT_CLI = (
@@ -140,6 +143,16 @@ def _copy_navigation_fixture_workspace(tmp_path: Path) -> Path:
     fixture = workspace / "extension-fixtures" / "navigation"
     fixture.parent.mkdir(parents=True)
     shutil.copytree(NAVIGATION_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
+
+
+def _copy_export_report_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "export-report"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(EXPORT_REPORT_FIXTURE_ROOT, fixture)
     shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
     shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
     return fixture
@@ -349,6 +362,20 @@ def test_navigation_fixture_builds_with_transport_and_project_contracts(
     assert b"next-edit" in contents
     assert b"select-asset-siblings" in contents
     assert b"last-playhead-tick" in contents
+
+
+def test_export_report_fixture_builds_with_render_contracts(
+    tmp_path: Path,
+):
+    fixture = _copy_export_report_fixture_workspace(tmp_path)
+    _build_template(fixture)
+
+    bundle = fixture / "frontend" / "dist" / "index.js"
+    assert bundle.is_file()
+    contents = bundle.read_bytes()
+    assert b"render-placed-range" in contents
+    assert b"capture-thumbnail" in contents
+    assert b"export-report" in contents
 
 
 def test_tagging_fixture_builds_with_storage_and_backend_job_contracts(

@@ -31,8 +31,10 @@ export { CompositeAudioTrackRenderer } from "./services/CompositeAudioTrackRende
 export type { CompositeAudioSourceData } from "./services/CompositeAudioResolver";
 export {
   buildProjectRenderInputs,
+  renderProjectFrameAtTick,
   renderProjectFrameFileAtTick,
 } from "./services/projectFrameCapture";
+export type { CapturedProjectFrame } from "./services/projectFrameCapture";
 export { renderSelectionToVideoFile } from "./services/renderSelectionToVideoFile";
 export type {
   SelectionRenderInputs,

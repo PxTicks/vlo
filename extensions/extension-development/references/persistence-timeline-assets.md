@@ -67,6 +67,7 @@ fresh snapshot inside the listener — and are disposed with the extension.
 - `ui.commands.subscribeContextKeys` — fires on host context-key changes, for
   extension UI that mirrors host enablement. Prefer a declarative `when` on the
   command itself where that works.
+- `export` — fires when a render starts, reports progress, or settles.
 
 `playback` is the one exception: it publishes `subscribe` without a revision,
 because the playhead is continuous and a token would carry no information the
@@ -137,6 +138,50 @@ project's storage is still open — the last moment unwritten state can be saved
 The host awaits the hook, so keep it short: one that throws is reported as a
 diagnostic and skipped, and one that overruns the host's budget is abandoned —
 a save never hangs on an extension.
+
+## Observe, read, and start renders
+
+`export` covers rendering. Renders are **exclusive** — one GPU context and one
+decoder pool — so the domain has no queue: a request made while the renderer is
+busy is refused with `export_busy` rather than deferred.
+
+`getRun()` is the run in flight or the last one to finish, and `listRuns()` is
+this session's runs, newest first and capped. A run reports `kind` (`project`
+for a whole-timeline export written to the user's file, `range` for one that
+lands in the asset library), `status`, `progress` (0 to 1), the rendered range,
+`startedByExtension`, and — once a `range` run completes — the `assetId` you can
+then read through `api.assets`. Runs the user started are visible too, which is
+what makes a post-export report possible; compare `startedByExtension` against
+your own ID rather than assuming a run is yours.
+
+`renderFrame(ticks)` composites one frame at the project's output dimensions and
+resolves with its bytes. It is a full render of that instant — every track,
+mask, and effect — so it costs about what one export frame costs: use it for
+thumbnails and spot checks, not for scrubbing. The tick is clamped at zero and
+frame-snapped, and the result reports which tick was actually composited. It is
+not clamped to the end of the timeline: past the last clip you get the empty
+frame that is really there, just as parking the playhead beyond the content
+does. Derive the end from `timeline.listClips()` if you need to stay inside it.
+
+`start(request)` renders a tick range into a new library asset. Name a format by
+its `export.formats` catalogue option ID (enumerate them through
+`ui.catalogues`); omitting the range renders the whole timeline. It answers
+immediately with the run that *began* — not with how it ended, since a render
+takes minutes — so watch `subscribe` for the outcome. The user sees the host's
+own progress dialog and can cancel it, because a background render that holds
+the editor for minutes with nothing on screen is indistinguishable from a hang.
+
+`cancel(runId)` only cancels runs you started; anything else is `run_not_owned`,
+because the host dialog is where a user's render gets cancelled. Cancellation is
+asynchronous — `changed: true` means a cancel was issued against a live run, and
+the run settles as `cancelled` a moment later.
+
+A malformed request (a non-finite tick, a non-array `trackIds`) throws; a
+request the editor cannot take right now returns a code — `no_renderer`,
+`export_busy`, `no_project`, `invalid_range`, `unknown_format`, `render_failed`.
+
+Contributing an *encoder* is deliberately not open: the `export.formats`
+catalogue validates against the host's own containers.
 
 ## Commit one synchronous transaction
 

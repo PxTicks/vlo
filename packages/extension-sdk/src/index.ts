@@ -1378,6 +1378,204 @@ export interface ExtensionProjectApi {
 
 export type ExtensionProjectSaveHook = () => void | Promise<void>;
 
+// === Export and render ===
+
+export type ExtensionExportRunKind =
+  /** The whole timeline, written to a file the user picked. */
+  | "project"
+  /** A tick range, landing in the asset library as a new asset. */
+  | "range";
+
+export type ExtensionExportRunStatus =
+  | "running"
+  | "completed"
+  /** The renderer aborted — the user pressed Cancel, or a caller cancelled. */
+  | "cancelled"
+  | "failed";
+
+/** One render the editor has performed or is performing, detached. */
+export interface ExtensionExportRunSnapshot {
+  readonly id: string;
+  readonly kind: ExtensionExportRunKind;
+  readonly status: ExtensionExportRunStatus;
+  /** The rendered range, in the canonical tick unit. */
+  readonly startTicks: number;
+  readonly endTicks: number;
+  /** Option ID from the `export.formats` catalogue, when the run named one. */
+  readonly formatId: string | null;
+  /** 0 to 1. Held at its last value once the run settles. */
+  readonly progress: number;
+  readonly startedAt: number;
+  /** When it settled, or null while it is still running. */
+  readonly endedAt: number | null;
+  /**
+   * The extension that started it, or null for a run the user started. Compare
+   * against your own ID rather than assuming a run is yours.
+   */
+  readonly startedByExtension: string | null;
+  /**
+   * The asset the render produced, readable through `api.assets`. Null for a
+   * project export, which writes to the user's file rather than the library,
+   * and for any run that did not complete.
+   */
+  readonly assetId: string | null;
+  /** Why it failed, for a failed run. */
+  readonly error: string | null;
+}
+
+export type ExtensionExportFailureCode =
+  /** No renderer is mounted — the projects page, or an editor still booting. */
+  | "no_renderer"
+  /** A render is already in flight. Renders are exclusive and nothing queues. */
+  | "export_busy"
+  | "no_project"
+  /** Non-positive range, or one that falls outside the timeline. */
+  | "invalid_range"
+  /** No such option in the `export.formats` catalogue. */
+  | "unknown_format"
+  /** The renderer produced no frame. `message` carries what it reported. */
+  | "render_failed";
+
+export interface ExtensionExportStartRequest {
+  /**
+   * Option ID from the `export.formats` catalogue — enumerate it through
+   * `api.ui.catalogues`. The host default is used when omitted.
+   */
+  readonly formatId?: string;
+  /** Defaults to the whole timeline. */
+  readonly startTicks?: number;
+  readonly endTicks?: number;
+  /** Render frame rate. The project's own rate when omitted. */
+  readonly fps?: number;
+  /** Renders every Nth frame; 1 renders them all. */
+  readonly frameStep?: number;
+  /** Restricts the render to these tracks. All tracks when omitted. */
+  readonly trackIds?: readonly string[];
+}
+
+/**
+ * The editor's answer to a start request — whether a run *began*, not how it
+ * ended. A render takes minutes; watch the run through `subscribe`.
+ */
+export type ExtensionExportStartResult =
+  | { readonly ok: true; readonly run: ExtensionExportRunSnapshot }
+  | {
+      readonly ok: false;
+      readonly code: ExtensionExportFailureCode;
+      readonly message: string;
+    };
+
+export interface ExtensionExportFrameRequest {
+  readonly mimeType?: "image/png" | "image/webp";
+  /** Encoder quality, 0 to 1, where the format honours it. */
+  readonly quality?: number;
+}
+
+export type ExtensionExportFrameResult =
+  | {
+      readonly ok: true;
+      readonly blob: Blob;
+      /** The project's output dimensions, rounded to even pixels. */
+      readonly width: number;
+      readonly height: number;
+      /** The tick that was rendered, after frame snapping. */
+      readonly timeTicks: number;
+    }
+  | {
+      readonly ok: false;
+      readonly code: ExtensionExportFailureCode;
+      readonly message: string;
+    };
+
+/**
+ * Rendering: observing the editor's renders, reading single composited frames,
+ * and asking for a render of your own.
+ *
+ * Renders are **exclusive** — one GPU context and one decoder pool — so this
+ * domain has no queue. A request made while the renderer is busy is refused
+ * with `export_busy` rather than deferred, and a run therefore never sits in a
+ * pending state you have to wait through.
+ *
+ * `renderFrame` is a request and answers with a promise; `start` begins a run
+ * and answers immediately with the run itself. That difference is deliberate:
+ * a frame is a value, while a render is a long-lived thing the user can cancel
+ * and other observers can watch, so its outcome arrives through the same
+ * `subscribe`/`getRevision` pair every other domain uses.
+ */
+export interface ExtensionExportApi {
+  /** The run in flight, or the most recent one to finish. Null before any. */
+  getRun(): ExtensionExportRunSnapshot | null;
+  /**
+   * This session's runs, newest first and capped — the log is for reporting on
+   * a session, not an audit trail. Persist anything you need to keep.
+   */
+  listRuns(): readonly ExtensionExportRunSnapshot[];
+  /**
+   * Fires when a run starts, reports progress, or settles, and again when the
+   * renderer becomes free — the editor can still be busy for a moment after a
+   * run settles, so a `start()` from inside a completion notification may be
+   * refused with `export_busy`. Wait for the next notification rather than
+   * treating the refusal as final. Progress-grained: during a render this
+   * fires repeatedly. Payload-free; pull with `getRun()`.
+   */
+  subscribe(listener: () => void): () => void;
+  /** Monotonic change token matching `subscribe` notifications. */
+  getRevision(): number;
+  /**
+   * Composites one frame at `timeTicks` and returns its pixels, at the
+   * project's output dimensions. This is a full render of that instant — every
+   * track, mask, and effect — so it costs roughly what one export frame costs;
+   * it is for thumbnails and spot checks, not for scrubbing.
+   *
+   * The tick is clamped at zero and snapped to the project's frame grid, as
+   * every host seek is, and the result reports which tick was composited. It
+   * is *not* clamped to the timeline's end: a tick past the last clip renders
+   * the empty frame that is genuinely there, exactly as parking the playhead
+   * beyond the content does. Derive the end from `timeline.listClips()` if you
+   * need to stay inside it.
+   *
+   * Refused with `export_busy` while a run — or another frame render — is in
+   * flight, because compositing owns the decoders. Throws for a non-finite
+   * tick, which is a bug in the caller rather than a state of the editor.
+   */
+  renderFrame(
+    timeTicks: number,
+    request?: ExtensionExportFrameRequest,
+  ): Promise<ExtensionExportFrameResult>;
+  /**
+   * Renders a range into a new library asset, reported on the run as
+   * `assetId`. The user sees the host's own progress dialog and can cancel it,
+   * because a background render that holds the editor for minutes with nothing
+   * on screen is indistinguishable from a hang.
+   *
+   * Throws for a malformed request; refuses with a code when the editor cannot
+   * take it.
+   */
+  start(request?: ExtensionExportStartRequest): ExtensionExportStartResult;
+  /**
+   * Cancels a run you started. The renderer aborts asynchronously, so
+   * `changed: true` means a cancel was issued against a live run, not that it
+   * has already settled — watch `subscribe` for that. `changed: false` means
+   * the run had settled before you asked. Runs started by the user or another
+   * extension are refused; the host's dialog is where those get cancelled.
+   */
+  cancel(runId: string): ExtensionExportCancelResult;
+}
+
+export type ExtensionExportCancelFailureCode =
+  | "run_not_found"
+  /** The run belongs to the user or another extension. */
+  | "run_not_owned"
+  | "no_renderer";
+
+export type ExtensionExportCancelResult =
+  | { readonly ok: true; readonly changed: boolean }
+  | {
+      readonly ok: false;
+      readonly code: ExtensionExportCancelFailureCode;
+      readonly message: string;
+    };
+
 /** Restricted-ready convenience filters executed entirely by the host. */
 export type ExtensionDeclarativeHostFilter =
   | "color-adjustment"
@@ -2765,6 +2963,8 @@ export interface VloExtensionApi {
   readonly selection: ExtensionSelectionApi;
   /** Project identity and lifecycle; the scope `storage.project` follows. */
   readonly project: ExtensionProjectApi;
+  /** Renders: observing them, reading frames, and starting one. */
+  readonly export: ExtensionExportApi;
   readonly transitions: ExtensionTransitionApi;
   readonly transformations: ExtensionTransformationApi;
   readonly ui: ExtensionUiApi;

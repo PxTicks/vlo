@@ -34,6 +34,14 @@ import { prepareBrushMasksForTimelineRender } from "../../../masks/api";
 import { renderSelectionToVideoFile } from "../../services/renderSelectionToVideoFile";
 import { deriveTrueDimensionsFromShortEdge } from "../../utils/dimensions";
 import { useExportJobController } from "../useExportJobController";
+import { useExtractStore } from "../../../../core/extract/useExtractStore";
+import { getHostExportController } from "../../../../core/export/exportController";
+import {
+  getLatestExportRun,
+  listExportRuns,
+  resetExportRunLogForTests,
+  subscribeExportRuns,
+} from "../../../../core/export/exportRunLog";
 
 function abortError(): Error {
   const error = new Error("aborted");
@@ -73,6 +81,13 @@ beforeEach(() => {
     height: 720,
   });
   vi.spyOn(console, "error").mockImplementation(() => {});
+  resetExportRunLogForTests();
+  useExtractStore.setState({
+    dialogOpen: false,
+    dialogView: "choose",
+    isProcessing: false,
+    progress: 0,
+  });
 });
 
 afterEach(() => {
@@ -108,6 +123,8 @@ describe("useExportJobController runSelectionExport", () => {
     expect(addLocalAsset).toHaveBeenCalledWith(
       file,
       expect.objectContaining({ source: "extracted" }),
+      undefined,
+      { reuseExistingHash: true },
     );
   });
 
@@ -188,6 +205,193 @@ describe("useExportJobController runSelectionExport", () => {
   });
 });
 
+describe("useExportJobController run log", () => {
+  it("records a completed selection extraction with the asset it produced", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockImplementation(
+      async (_selection, opts) => {
+        opts?.onProgress?.(50);
+        return new File(["v"], "selection.mp4");
+      },
+    );
+    vi.mocked(addLocalAsset).mockResolvedValue({ id: "asset-9" } as never);
+
+    const { result } = makeController();
+    await act(async () => {
+      await result.current.runSelectionExport(selectionOptions());
+    });
+
+    expect(getLatestExportRun()).toMatchObject({
+      kind: "range",
+      status: "completed",
+      startTicks: 0,
+      endTicks: 1000,
+      progress: 1,
+      assetId: "asset-9",
+      error: null,
+    });
+  });
+
+  it("reuses the existing asset when the render is byte-identical", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "selection.mp4"),
+    );
+    vi.mocked(addLocalAsset).mockResolvedValue({ id: "asset-existing" } as never);
+
+    const { result } = makeController();
+    await act(async () => {
+      await result.current.runSelectionExport(selectionOptions());
+    });
+
+    expect(addLocalAsset).toHaveBeenCalledWith(
+      expect.any(File),
+      expect.objectContaining({ source: "extracted" }),
+      undefined,
+      { reuseExistingHash: true },
+    );
+    expect(getLatestExportRun()).toMatchObject({
+      status: "completed",
+      assetId: "asset-existing",
+    });
+  });
+
+  it("fails rather than completing with nothing when ingest produces no asset", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "selection.mp4"),
+    );
+    vi.mocked(addLocalAsset).mockResolvedValue(null);
+
+    const { result } = makeController();
+    await act(async () => {
+      await result.current.runSelectionExport(selectionOptions());
+    });
+
+    expect(getLatestExportRun()).toMatchObject({
+      status: "failed",
+      assetId: null,
+      error: expect.stringContaining("library"),
+    });
+  });
+
+  it("distinguishes a cancelled render from a failed one", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockRejectedValue(abortError());
+    const { result } = makeController();
+    await act(async () => {
+      await result.current.runSelectionExport(selectionOptions());
+    });
+    expect(getLatestExportRun()).toMatchObject({
+      status: "cancelled",
+      error: null,
+    });
+
+    vi.mocked(renderSelectionToVideoFile).mockRejectedValue(new Error("boom"));
+    await act(async () => {
+      await result.current.runSelectionExport(selectionOptions());
+    });
+    expect(getLatestExportRun()).toMatchObject({
+      status: "failed",
+      error: "boom",
+    });
+  });
+});
+
+describe("useExportJobController export registry", () => {
+  it("renders a registry range request and shows it to the user", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "range.mp4"),
+    );
+    vi.mocked(addLocalAsset).mockResolvedValue({ id: "asset-ext" } as never);
+
+    makeController();
+    const controller = getHostExportController();
+    expect(controller?.canStart()).toBe(true);
+
+    let runId = "";
+    await act(async () => {
+      runId = controller!.startRange({
+        startTicks: 0,
+        endTicks: 500,
+        formatId: "webm",
+        format: "webm",
+        frameStep: 2,
+        trackIds: ["t1"],
+        startedByExtension: "example.export-report",
+      });
+      // The dialog opens synchronously with the run: a render that held the
+      // editor with nothing on screen would look like a hang.
+      expect(useExtractStore.getState()).toMatchObject({
+        dialogOpen: true,
+        dialogView: "extracting-selection",
+        isProcessing: true,
+      });
+      expect(controller!.canStart()).toBe(false);
+    });
+
+    const [, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
+    expect(opts!.format).toBe("webm");
+    expect(listExportRuns()[0]).toMatchObject({
+      id: runId,
+      kind: "range",
+      status: "completed",
+      formatId: "webm",
+      startedByExtension: "example.export-report",
+      assetId: "asset-ext",
+    });
+    expect(useExtractStore.getState().dialogOpen).toBe(false);
+  });
+
+  it("frees the renderer before announcing that the run settled", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "range.mp4"),
+    );
+    vi.mocked(addLocalAsset).mockResolvedValue({ id: "asset-ext" } as never);
+
+    makeController();
+    const controller = getHostExportController()!;
+
+    // What an extension does from its completion notification: start the next
+    // render. It must not be refused by state the host has not released.
+    const canStartWhenSettled: boolean[] = [];
+    const unsubscribe = subscribeExportRuns(() => {
+      const run = getLatestExportRun();
+      if (run && run.status !== "running") {
+        canStartWhenSettled.push(controller.canStart());
+      }
+    });
+
+    await act(async () => {
+      controller.startRange({
+        startTicks: 0,
+        endTicks: 500,
+        formatId: "mp4",
+        format: "mp4",
+        startedByExtension: "example.export-report",
+      });
+    });
+
+    expect(canStartWhenSettled).toEqual([true]);
+    unsubscribe();
+  });
+
+  it("fails the run rather than rendering an unsupported container", async () => {
+    makeController();
+    const controller = getHostExportController();
+
+    const runId = controller!.startRange({
+      startTicks: 0,
+      endTicks: 500,
+      formatId: "gif",
+      format: "gif",
+    });
+
+    expect(renderSelectionToVideoFile).not.toHaveBeenCalled();
+    expect(listExportRuns()[0]).toMatchObject({
+      id: runId,
+      status: "failed",
+      error: expect.stringContaining("gif"),
+    });
+  });
+});
+
 describe("useExportJobController session guard", () => {
   it("aborts a renderer registered against a stale session", async () => {
     const staleRenderer = { cancel: vi.fn() };
@@ -264,6 +468,31 @@ describe("useExportJobController runProjectExport", () => {
     });
 
     expect(console.error).toHaveBeenCalledWith("Export failed", expect.any(Error));
+  });
+
+  it("records the run so it outlives the dialog that showed it", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockImplementation(
+      async (_selection, opts) => {
+        opts?.onProgress?.(40);
+        return new File(["v"], "export.mp4");
+      },
+    );
+
+    const { result } = makeController();
+    await act(async () => {
+      await result.current.runProjectExport({ resolution: 1080 });
+    });
+
+    expect(getLatestExportRun()).toMatchObject({
+      kind: "project",
+      status: "completed",
+      startTicks: 0,
+      endTicks: 5000,
+      progress: 1,
+      // A project export writes to the user's file, so it has no asset.
+      assetId: null,
+      startedByExtension: null,
+    });
   });
 
   it("releases a late wake-lock grant when export setup fails", async () => {

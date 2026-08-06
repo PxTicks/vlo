@@ -67,12 +67,23 @@ export function buildProjectRenderInputs(): ProjectRenderInputs {
   return { exportConfig, projectData };
 }
 
-export async function renderProjectFrameFileAtTick(
+export interface CapturedProjectFrame {
+  blob: Blob;
+  /** Output pixel dimensions, which are the project's, rounded to even. */
+  width: number;
+  height: number;
+}
+
+/**
+ * Renders one composited project frame. Split out from
+ * {@link renderProjectFrameFileAtTick} so callers that want pixels rather than
+ * an ingestible file — `api.export.renderFrame` — get the dimensions with them
+ * instead of having to re-derive the project's.
+ */
+export async function renderProjectFrameAtTick(
   tick: number,
-  options: ProjectFrameCaptureOptions = {},
-): Promise<File> {
-  const mimeType = options.mimeType ?? "image/png";
-  const filenamePrefix = options.filenamePrefix ?? "frame";
+  options: RenderStillOptions = {},
+): Promise<CapturedProjectFrame> {
   const preparedSelection = await prepareBrushMasksForTimelineRender(
     options.timelineSelection,
   );
@@ -80,10 +91,23 @@ export async function renderProjectFrameFileAtTick(
   const renderer = await ExportRenderer.create(exportConfig);
   const blob = await renderer.renderStill(projectData, exportConfig, tick, {
     ...options,
-    ...(preparedSelection
-      ? { timelineSelection: preparedSelection }
-      : {}),
+    ...(preparedSelection ? { timelineSelection: preparedSelection } : {}),
   });
+
+  return {
+    blob,
+    width: exportConfig.outputWidth,
+    height: exportConfig.outputHeight,
+  };
+}
+
+export async function renderProjectFrameFileAtTick(
+  tick: number,
+  options: ProjectFrameCaptureOptions = {},
+): Promise<File> {
+  const mimeType = options.mimeType ?? "image/png";
+  const filenamePrefix = options.filenamePrefix ?? "frame";
+  const { blob } = await renderProjectFrameAtTick(tick, options);
   const now = Date.now();
 
   return new File([blob], `${filenamePrefix}-${now}.${resolveExtension(mimeType)}`, {

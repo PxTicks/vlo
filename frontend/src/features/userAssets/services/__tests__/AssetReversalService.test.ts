@@ -4,11 +4,13 @@ interface MockVideoTrack {
   codedWidth: number;
   codedHeight: number;
   computeDuration: ReturnType<typeof vi.fn>;
+  getFirstTimestamp: ReturnType<typeof vi.fn>;
 }
 
 interface MockAudioTrack {
   codec?: string | null;
   computeDuration: ReturnType<typeof vi.fn>;
+  getFirstTimestamp: ReturnType<typeof vi.fn>;
 }
 
 const mocks = vi.hoisted(() => ({
@@ -132,18 +134,25 @@ function videoTrack(
   codedWidth = 640,
   codedHeight = 360,
   duration = 2,
+  firstTimestamp = 0,
 ): MockVideoTrack {
   return {
     codedWidth,
     codedHeight,
     computeDuration: vi.fn(async () => duration),
+    getFirstTimestamp: vi.fn(async () => firstTimestamp),
   };
 }
 
-function audioTrack(codec: string | null = "aac", duration = 1): MockAudioTrack {
+function audioTrack(
+  codec: string | null = "aac",
+  duration = 1,
+  firstTimestamp = 0,
+): MockAudioTrack {
   return {
     codec,
     computeDuration: vi.fn(async () => duration),
+    getFirstTimestamp: vi.fn(async () => firstTimestamp),
   };
 }
 
@@ -305,19 +314,19 @@ describe("reverseAssetFile", () => {
   });
 
   it("uses MP3 for MP3-only audio and reverses channel samples", async () => {
-    mocks.audioTrack = audioTrack("mp3", 1);
+    mocks.audioTrack = audioTrack("mp3", 3, 2);
     mocks.audioBuffers = [
       {
         buffer: audioBuffer([
           [1, 2],
           [3, 4],
         ]),
-        timestamp: 0,
+        timestamp: 2,
         duration: 0.5,
       },
       {
         buffer: audioBuffer([[5, 6]]),
-        timestamp: 0.5,
+        timestamp: 2.5,
         duration: 0.5,
       },
     ];

@@ -12,7 +12,10 @@ import type {
 } from "../../../types/TimelineTypes";
 import { getAssetInput, useAsset } from "../../userAssets";
 import { calculateClipTime } from "../../transformations";
-import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
+import {
+  readMediaTimestampRange,
+  tickToMediaSeconds,
+} from "../../../core/time";
 import { ticksPerPixel as ticksPerPixelAt } from "../../../core/time/pixelGrid";
 import {
   waveformCacheService,
@@ -399,11 +402,12 @@ export function useWaveformRenderer({
         return null;
       }
 
+      const timestampRange = await readMediaTimestampRange(track);
+      if (!timestampRange || timestampRange.durationSeconds <= 0) return null;
       const metadata: WaveformAssetMetadata = {
         sampleRate: track.sampleRate,
         numberOfChannels: track.numberOfChannels,
-        durationSeconds: await track.computeDuration(),
-        firstTimestampSeconds: await track.getFirstTimestamp(),
+        ...timestampRange,
         baseSamplesPerPeak: WAVEFORM_BASE_SAMPLES_PER_PEAK,
         peaksPerBucket: WAVEFORM_PEAKS_PER_BUCKET,
       };

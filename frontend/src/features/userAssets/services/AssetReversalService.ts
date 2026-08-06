@@ -16,6 +16,10 @@ import {
   WavOutputFormat,
 } from "mediabunny";
 import { sanitizeFilename } from "../utils/filenameSanitization";
+import {
+  mediaTimestampRangeProgress,
+  readMediaTimestampRange,
+} from "../../../core/time";
 
 /**
  * AssetReversalService — produces a time-reversed copy of an existing media
@@ -127,7 +131,9 @@ async function decodeVideoFrames(
   const codedHeight = videoTrack.codedHeight;
   if (codedWidth === 0 || codedHeight === 0) return null;
 
-  const totalDuration = await videoTrack.computeDuration();
+  const timestampRange = await readMediaTimestampRange(videoTrack).catch(
+    () => null,
+  );
   const sink = new VideoSampleSink(videoTrack);
   const frames: DecodedVideo["frames"] = [];
 
@@ -144,8 +150,13 @@ async function decodeVideoFrames(
     cursor = sample.timestamp + sample.duration;
     sample.close();
 
-    if (totalDuration > 0 && onProgress) {
-      onProgress(Math.min(1, cursor / totalDuration));
+    if (timestampRange && onProgress) {
+      onProgress(
+        Math.max(
+          0,
+          Math.min(1, mediaTimestampRangeProgress(cursor, timestampRange)),
+        ),
+      );
     }
   }
 
@@ -160,7 +171,9 @@ async function decodeAudioChannels(
   const audioTrack = await input.getPrimaryAudioTrack();
   if (!audioTrack) return null;
 
-  const totalDuration = await audioTrack.computeDuration();
+  const timestampRange = await readMediaTimestampRange(audioTrack).catch(
+    () => null,
+  );
   const sink = new AudioBufferSink(audioTrack);
 
   const collected: AudioBuffer[] = [];
@@ -176,9 +189,18 @@ async function decodeAudioChannels(
     totalFrames += buffer.length;
     collected.push(buffer);
 
-    if (totalDuration > 0 && onProgress) {
+    if (timestampRange && onProgress) {
       onProgress(
-        Math.min(1, (wrapped.timestamp + wrapped.duration) / totalDuration),
+        Math.max(
+          0,
+          Math.min(
+            1,
+            mediaTimestampRangeProgress(
+              wrapped.timestamp + wrapped.duration,
+              timestampRange,
+            ),
+          ),
+        ),
       );
     }
   }

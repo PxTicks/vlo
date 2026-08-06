@@ -1,3 +1,5 @@
+import type { MediaTimestampRange } from "../../../core/time";
+
 const MAX_CACHE_SIZE_BYTES = 64 * 1024 * 1024;
 
 export const WAVEFORM_BASE_SAMPLES_PER_PEAK = 128;
@@ -11,11 +13,9 @@ interface LRUNode {
   next: LRUNode | null;
 }
 
-export interface WaveformAssetMetadata {
+export interface WaveformAssetMetadata extends MediaTimestampRange {
   sampleRate: number;
   numberOfChannels: number;
-  durationSeconds: number;
-  firstTimestampSeconds?: number;
   baseSamplesPerPeak: number;
   peaksPerBucket: number;
 }
@@ -139,7 +139,7 @@ class WaveformCacheServiceClass {
 
     const totalFrames = Math.max(
       0,
-      Math.ceil(metadata.durationSeconds * metadata.sampleRate),
+      Math.ceil(metadata.endTimestampSeconds * metadata.sampleRate),
     );
     if (totalFrames <= 0) {
       return null;

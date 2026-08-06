@@ -7,6 +7,10 @@ import {
 import type { RenderedFramePixelCapture } from "../../features/renderer/services/ExportRenderer";
 import { prepareBrushMasksForTimelineRender } from "../../features/masks/api";
 import { getClipsInSelection } from "../../features/timelineSelection";
+import {
+    readMediaTimestampRange,
+    type MediaTimestampRange,
+} from "../../core/time";
 
 /**
  * Purpose-built export probe for the Phase 4.2 offline A/V canary.
@@ -39,11 +43,7 @@ export interface SelectionExportProbeRequest {
     endTick: number;
 }
 
-export interface DecodedTrackSummary {
-    /** Container timestamp of the first packet, seconds. */
-    firstTimestamp: number;
-    /** Track duration as computed from the container, seconds. */
-    duration: number;
+export interface DecodedTrackSummary extends MediaTimestampRange {
     packetCount: number;
     /** For video this equals average frame rate; for audio, packets/second. */
     averagePacketRate: number;
@@ -92,15 +92,16 @@ async function summariseTrack(
     track: InputVideoTrack | InputAudioTrack | null,
 ): Promise<DecodedTrackSummary | null> {
     if (!track) return null;
-    const [firstTimestamp, duration, stats, canDecode] = await Promise.all([
-        track.getFirstTimestamp(),
-        track.computeDuration(),
+    const [timestampRange, stats, canDecode] = await Promise.all([
+        readMediaTimestampRange(track),
         track.computePacketStats(),
         track.canDecode(),
     ]);
+    if (!timestampRange) {
+        throw new Error("selection export probe: invalid track timestamp range");
+    }
     return {
-        firstTimestamp,
-        duration,
+        ...timestampRange,
         packetCount: stats.packetCount,
         averagePacketRate: stats.averagePacketRate,
         canDecode,

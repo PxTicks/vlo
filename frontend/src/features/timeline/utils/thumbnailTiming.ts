@@ -1,7 +1,7 @@
 import {
   mediaTimestampToFirstAvailableTick,
   tickToMediaSeconds,
-} from "../../renderer/utils/mediaTime";
+} from "../../../core/time";
 
 export function getFirstPresentedFrameTicks(
   firstTimestampSeconds?: number | null,

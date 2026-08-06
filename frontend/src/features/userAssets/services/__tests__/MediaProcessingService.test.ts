@@ -202,18 +202,23 @@ describe("MediaFileProcessor", () => {
 
   it("should compute media duration", async () => {
     const computeDuration = vi.fn().mockResolvedValue(12.5);
+    const getPrimaryVideoTrack = vi.fn().mockResolvedValue({
+      computeDuration: vi.fn().mockResolvedValue(5),
+      getFirstTimestamp: vi.fn().mockRejectedValue(new Error("probe failed")),
+    });
     vi.mocked(Input).mockImplementationOnce(function () {
       return {
         getMimeType: vi.fn(),
         computeDuration,
-        getPrimaryVideoTrack: vi.fn(),
+        getPrimaryVideoTrack,
         getPrimaryAudioTrack: vi.fn(),
         dispose: vi.fn(),
       };
     });
 
     await expect(processor.computeDuration()).resolves.toBe(12.5);
-    expect(computeDuration).toHaveBeenCalled();
+    expect(computeDuration).toHaveBeenCalledOnce();
+    expect(getPrimaryVideoTrack).not.toHaveBeenCalled();
   });
 
   it("falls back safely for MIME and duration probe failures", async () => {
@@ -437,6 +442,40 @@ describe("MediaFileProcessor", () => {
     expect(metadata.fps).toBe(24);
     expect(trackComputeDuration).toHaveBeenCalledTimes(1);
     expect(computeDuration).not.toHaveBeenCalled();
+  });
+
+  it("uses the true track span when choosing a thumbnail timestamp", async () => {
+    const canvases = vi.fn(() => ({
+      next: vi.fn().mockResolvedValue({ value: undefined }),
+      return: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.mocked(Input).mockImplementationOnce(function () {
+      return {
+        getMimeType: vi.fn(),
+        computeDuration: vi.fn(),
+        getPrimaryVideoTrack: vi.fn().mockResolvedValue({
+          computeDuration: vi.fn().mockResolvedValue(3),
+          getFirstTimestamp: vi.fn().mockResolvedValue(2),
+          computePacketStats: vi.fn().mockResolvedValue({
+            averagePacketRate: 30,
+          }),
+          displayWidth: 1920,
+          displayHeight: 1080,
+        }),
+        getPrimaryAudioTrack: vi.fn(),
+        dispose: vi.fn(),
+      };
+    });
+    vi.mocked(CanvasSink).mockImplementationOnce(function () {
+      return { canvases };
+    });
+
+    const metadata = await processor.generateVideoMetadata();
+
+    // Timeline source ticks remain zero-anchored, so the extent is the end
+    // timestamp; the representative frame is halfway through the true span.
+    expect(metadata.duration).toBe(3);
+    expect(canvases).toHaveBeenCalledWith(2.5);
   });
 
   it("falls back to container duration and tolerates track diagnostics failures", async () => {

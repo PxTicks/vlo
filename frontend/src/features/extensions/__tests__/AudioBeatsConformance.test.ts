@@ -180,7 +180,7 @@ describe("audio beats conformance fixture", () => {
     ).toEqual([9_600, 38_400, 57_600]);
   });
 
-  it("composes PCM analysis, retiming-aware mapping, and atomic timeline splits", async () => {
+  it("keeps source ticks zero-anchored for a negative decoder origin", async () => {
     const samples = Array.from({ length: 20 }, () => 0);
     samples[5] = 1;
     samples[15] = -1;
@@ -208,8 +208,8 @@ describe("audio beats conformance fixture", () => {
     ).toBe(true);
 
     expect(getAudioBeatStateForConformance()).toMatchObject({
-      sourceTicks: [48_000, 144_000],
-      splitTicks: [144_000, 48_000],
+      sourceTicks: [48_000],
+      splitTicks: [48_000],
       transaction: { ok: true },
     });
     expect(
@@ -218,7 +218,7 @@ describe("audio beats conformance fixture", () => {
         .clips.filter((clip) => clip.type !== "mask")
         .map((clip) => clip.start)
         .sort((left, right) => left - right),
-    ).toEqual([0, 48_000, 144_000]);
+    ).toEqual([0, 48_000]);
 
     for (const resource of disposers) {
       await (typeof resource === "function" ? resource() : resource.dispose());

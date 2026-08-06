@@ -234,6 +234,7 @@ describe("WaveformCanvas", () => {
       numberOfChannels: 1,
       durationSeconds: 3600,
       firstTimestampSeconds: 0,
+      endTimestampSeconds: 3600,
       baseSamplesPerPeak: 128,
       peaksPerBucket: 256,
     });
@@ -306,6 +307,7 @@ describe("WaveformCanvas", () => {
       numberOfChannels: 1,
       durationSeconds: 1,
       firstTimestampSeconds: 0,
+      endTimestampSeconds: 1,
       baseSamplesPerPeak: 128,
       peaksPerBucket: 256,
     });

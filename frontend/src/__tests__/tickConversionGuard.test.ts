@@ -10,9 +10,8 @@ import { describe, it, expect } from "vitest";
  *
  * The migration is complete: every tick conversion now goes through a boundary
  * module. The allowlist is down to its irreducible core — a single file,
- * `timeCalculation`, which sits BELOW mediaTime in the dependency graph
- * (mediaTime imports `calculateClipTime` from it) and so cannot route through
- * mediaTime without an import cycle.
+ * `timeCalculation`, whose hot-path primitive intentionally remains below the
+ * core conversion boundary.
  *
  * Do NOT add entries without cause — prefer migrating to a boundary module.
  * A new file appearing here means raw conversion crept back in.
@@ -27,15 +26,14 @@ const RAW_FILES = import.meta.glob("../**/*.{ts,tsx}", {
 // Central modules: the canonical home for the conversions (always allowed).
 const CENTRAL = [
   "core/time/frameGrid.ts",
+  "core/time/mediaTime.ts",
   "core/time/pixelGrid.ts",
   "core/time/constants.ts",
-  "features/renderer/utils/mediaTime.ts",
 ];
 
 // Legitimately-exempt non-boundary files:
-// - `timeCalculation` sits BELOW mediaTime in the dependency graph (mediaTime
-//   imports calculateClipTime from it), so it cannot route through mediaTime
-//   without an import cycle.
+// - `timeCalculation` keeps its hot-path primitive independent of the public
+//   conversion boundary.
 // - `timeline/constants` defines the single `ADJUSTMENT_DEFAULT_DURATION_TICKS`
 //   duration constant (3s in ticks), deliberately timeline-owned and derived
 //   from the core time base — a named compile-time constant, not scattered

@@ -2,7 +2,7 @@ import {
   mediaTimestampToFirstAvailableTick,
   mediaSecondsToTick,
   tickToMediaSeconds,
-} from "../../renderer/utils/mediaTime";
+} from "../../../core/time";
 
 export function getFirstPresentedSampleTicks(
   firstTimestampSeconds?: number | null,

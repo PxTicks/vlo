@@ -17,7 +17,10 @@ import {
   type ExportRenderHealth,
   type ProjectData,
 } from "../../renderer";
-import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
+import {
+  mediaSecondsToTick,
+  readMediaTimestampRange,
+} from "../../../core/time";
 import {
   getTicksPerFrame,
   normalizeTimelineSelection,
@@ -497,14 +500,26 @@ export async function renderAssetToMaskMp4(
     fps = SYNTHETIC_ASSET_RENDER_IMAGE_FPS;
     durationSeconds = 1 / fps;
   } else {
-    let probedDuration = await videoTrack.computeDuration().catch(() => 0);
-    if (!Number.isFinite(probedDuration) || probedDuration <= 0) {
-      probedDuration = await input.computeDuration().catch(() => 0);
+    const timestampRange = await readMediaTimestampRange(videoTrack).catch(
+      () => null,
+    );
+    let sourceEndTimestampSeconds =
+      timestampRange?.endTimestampSeconds ?? 0;
+    if (
+      !Number.isFinite(sourceEndTimestampSeconds) ||
+      sourceEndTimestampSeconds <= 0
+    ) {
+      sourceEndTimestampSeconds = await input.computeDuration().catch(() => 0);
     }
-    if (!Number.isFinite(probedDuration) || probedDuration <= 0) {
+    if (
+      !Number.isFinite(sourceEndTimestampSeconds) ||
+      sourceEndTimestampSeconds <= 0
+    ) {
       throw new Error(`Could not determine duration for asset '${assetId}'`);
     }
-    durationSeconds = probedDuration;
+    // Timeline source ticks are zero-anchored decoder timestamps, so the clip
+    // extent is the end timestamp rather than the track's packet span.
+    durationSeconds = sourceEndTimestampSeconds;
     const stats = await videoTrack.computePacketStats(240).catch(() => null);
     fps =
       stats?.averagePacketRate && stats.averagePacketRate > 0

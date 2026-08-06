@@ -43,8 +43,9 @@ const EXPECTED_FRAME_COUNT =
 const ALIGNMENT_TOLERANCE_SECONDS = TICKS_PER_FRAME / TICKS_PER_SECOND;
 
 interface TrackSummary {
-    firstTimestamp: number;
-    duration: number;
+    firstTimestampSeconds: number;
+    endTimestampSeconds: number;
+    durationSeconds: number;
     packetCount: number;
     averagePacketRate: number;
     canDecode: boolean;
@@ -189,7 +190,9 @@ test.describe('offline nested-retiming A/V alignment', () => {
 
         // --- alignment
         expect(
-            Math.abs(video!.firstTimestamp - audio!.firstTimestamp),
+            Math.abs(
+                video!.firstTimestampSeconds - audio!.firstTimestampSeconds,
+            ),
             'video and audio start timestamps diverge by more than one frame',
         ).toBeLessThanOrEqual(ALIGNMENT_TOLERANCE_SECONDS);
 
@@ -197,11 +200,11 @@ test.describe('offline nested-retiming A/V alignment', () => {
             (NESTED_WINDOW_END_TICK - NESTED_WINDOW_START_TICK) /
             TICKS_PER_SECOND;
         expect(
-            Math.abs(video!.duration - audio!.duration),
+            Math.abs(video!.durationSeconds - audio!.durationSeconds),
             'video and audio durations diverge by more than one frame',
         ).toBeLessThanOrEqual(ALIGNMENT_TOLERANCE_SECONDS);
         expect(
-            Math.abs(video!.duration - expectedDuration),
+            Math.abs(video!.durationSeconds - expectedDuration),
             'exported duration does not match the requested nested window',
         ).toBeLessThanOrEqual(ALIGNMENT_TOLERANCE_SECONDS);
     });

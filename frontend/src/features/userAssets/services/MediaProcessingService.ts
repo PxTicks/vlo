@@ -17,6 +17,10 @@ import {
 import { createXxhash64 } from "../../../shared/utils/xxhash";
 import { CLIP_HEIGHT } from "../../timeline";
 import { sanitizeFilename } from "../utils/filenameSanitization";
+import {
+  readMediaTimestampRange,
+  type MediaTimestampRange,
+} from "../../../core/time";
 
 interface ExtractedAudioOutputSpec {
   extension: string;
@@ -168,18 +172,14 @@ export class MediaFileProcessor {
     }
   }
 
-  /**
-   * Computes media duration in seconds for audio or video files.
-   */
+  /** Computes the zero-anchored media extent used by timeline source ticks. */
   async computeDuration(): Promise<number> {
     if (this.isDisposed) throw new Error("MediaFileProcessor is disposed");
     try {
-      const input = this.getInput();
-      const durationSec = await input.computeDuration();
-      if (!Number.isFinite(durationSec) || durationSec <= 0) {
-        return 0;
-      }
-      return durationSec;
+      const endTimestampSeconds = await this.getInput().computeDuration();
+      return Number.isFinite(endTimestampSeconds) && endTimestampSeconds > 0
+        ? endTimestampSeconds
+        : 0;
     } catch (error) {
       console.warn("Failed to compute media duration", error);
       return 0;
@@ -202,13 +202,17 @@ export class MediaFileProcessor {
       // 1. Get Duration / FPS
       const videoTrack = await input.getPrimaryVideoTrack();
       let duration = 0;
+      let videoTimestampRange: MediaTimestampRange | null = null;
       let fps: number | null = null;
 
       if (videoTrack) {
         try {
-          const videoDurationSec = await videoTrack.computeDuration();
-          if (Number.isFinite(videoDurationSec) && videoDurationSec > 0) {
-            duration = videoDurationSec;
+          videoTimestampRange = await readMediaTimestampRange(videoTrack);
+          if (
+            videoTimestampRange &&
+            videoTimestampRange.endTimestampSeconds > 0
+          ) {
+            duration = videoTimestampRange.endTimestampSeconds;
           }
         } catch (error) {
           console.warn("Failed to compute primary video track duration", error);
@@ -216,9 +220,12 @@ export class MediaFileProcessor {
       }
 
       if (duration <= 0) {
-        const durationSec = await input.computeDuration();
-        if (Number.isFinite(durationSec) && durationSec > 0) {
-          duration = durationSec;
+        const endTimestampSeconds = await input.computeDuration();
+        if (
+          Number.isFinite(endTimestampSeconds) &&
+          endTimestampSeconds > 0
+        ) {
+          duration = endTimestampSeconds;
         }
       }
 
@@ -256,13 +263,9 @@ export class MediaFileProcessor {
 
         const sink = new CanvasSink(videoTrack, sinkOptions);
 
-        let startTime = 0;
-        try {
-          startTime = await videoTrack.getFirstTimestamp();
-        } catch {
-          // ignore error
-        }
-        const targetTime = startTime + Math.min(1.0, duration / 2);
+        const startTime = videoTimestampRange?.firstTimestampSeconds ?? 0;
+        const spanSeconds = videoTimestampRange?.durationSeconds ?? duration;
+        const targetTime = startTime + Math.min(1.0, spanSeconds / 2);
         const iterator = sink.canvases(targetTime);
         const frame = (await iterator.next()).value;
 

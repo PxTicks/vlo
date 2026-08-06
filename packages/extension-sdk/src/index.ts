@@ -1407,11 +1407,17 @@ export interface ExtensionAudioSourceSnapshot {
   readonly assetId: string;
   readonly sampleRate: number;
   readonly numberOfChannels: number;
-  /** Stream span from its first timestamp through its end timestamp. */
+  /**
+   * True stream span (`endTimestampSeconds - firstTimestampSeconds`). This is
+   * not the zero-anchored source-tick extent when the first timestamp is nonzero.
+   */
   readonly durationSeconds: number;
   /** Timestamp of the first decoded sample; this may be non-zero or negative. */
   readonly firstTimestampSeconds: number;
-  /** Exclusive timestamp at the end of the decoded stream. */
+  /**
+   * Exclusive stream end and the asset's zero-anchored source-tick extent in
+   * seconds. Use this field when comparing against source ticks.
+   */
   readonly endTimestampSeconds: number;
   /** Maximum source frames accepted by one `readPcm()` request. */
   readonly maxPcmFramesPerRead: number;

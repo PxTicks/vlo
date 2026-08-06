@@ -18,6 +18,7 @@ import {
 } from "../../timeline/api";
 import { getAssetById, getAssetInput, useAssetStore } from "../../userAssets";
 import type { TimelineClip } from "../../../types/TimelineTypes";
+import { readMediaTimestampRange } from "../../../core/time";
 
 const DEFAULT_SAMPLES_PER_PEAK = 256;
 const MAX_PCM_FRAMES = 4_000_000;
@@ -160,18 +161,9 @@ async function openSource(
     return failure("no_audio", `Asset '${assetId}' has no decodable audio stream.`);
   }
 
-  // Mediabunny names this `computeDuration`, but the value is the stream's end
-  // timestamp. Subtract the first timestamp before publishing a true span.
-  const [endTimestampSeconds, firstTimestampSeconds] = await Promise.all([
-    track.computeDuration(),
-    track.getFirstTimestamp(),
-  ]);
+  const timestampRange = await readMediaTimestampRange(track);
   abortIfNeeded(scopeSignal, requestSignal);
-  if (
-    !Number.isFinite(endTimestampSeconds) ||
-    !Number.isFinite(firstTimestampSeconds) ||
-    endTimestampSeconds < firstTimestampSeconds
-  ) {
+  if (!timestampRange) {
     return failure(
       "decode_failed",
       `Asset '${assetId}' reported invalid audio stream timestamps.`,
@@ -183,9 +175,9 @@ async function openSource(
       assetId,
       sampleRate: track.sampleRate,
       numberOfChannels: track.numberOfChannels,
-      durationSeconds: endTimestampSeconds - firstTimestampSeconds,
-      firstTimestampSeconds,
-      endTimestampSeconds,
+      durationSeconds: timestampRange.durationSeconds,
+      firstTimestampSeconds: timestampRange.firstTimestampSeconds,
+      endTimestampSeconds: timestampRange.endTimestampSeconds,
       maxPcmFramesPerRead: MAX_PCM_FRAMES,
     }),
   };

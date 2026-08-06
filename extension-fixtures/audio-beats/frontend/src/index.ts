@@ -151,7 +151,6 @@ export const activate: ExtensionModule["activate"] = (context) => {
         return;
       }
       const sourceStartSeconds =
-        inspected.source.firstTimestampSeconds +
         clip.sourceOffsetTicks / timeline.ticksPerSecond;
       const sourceDurationSeconds =
         clip.croppedSourceDurationTicks / timeline.ticksPerSecond;
@@ -172,7 +171,7 @@ export const activate: ExtensionModule["activate"] = (context) => {
       state.sourceTicks = detectTransientSourceTicks(
         pcm.channels,
         pcm.source.sampleRate,
-        pcm.startSeconds - pcm.source.firstTimestampSeconds,
+        pcm.startSeconds,
         timeline.ticksPerSecond,
       );
       state.splitTicks = mapSourceTicksToSplitTicks(

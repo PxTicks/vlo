@@ -25,13 +25,18 @@ freshly allocated planar `Float32Array` copies for a source-time range; the host
 never retains or reuses them. `readWaveform` returns per-channel min/max arrays,
 where each pair summarizes `samplesPerPeak` source frames.
 
+`source.durationSeconds` is the true packet span (`endTimestampSeconds -
+firstTimestampSeconds`). It is not the full zero-anchored source-tick extent when
+the first timestamp is nonzero. Use `source.endTimestampSeconds` as that extent in
+seconds, or convert it with `timeline.ticksPerSecond` when comparing source ticks.
+
 These methods decode the asset, not a rendered timeline placement. Results do not
 include clip mute, volume, effects, or retiming. This keeps analysis deterministic
 and lets several placements reuse one source analysis. Map source detections back
 through `timeline.sourceTicksToClipProgress(clipId, sourceTicks)` before placing a
 marker or split, so crop and retiming stay host-owned. PCM ranges use decoder
-timestamps; when converting a detected timestamp to the timeline's zero-based
-source ticks, subtract `source.firstTimestampSeconds` first.
+timestamps, matching the timeline's zero-anchored source-tick domain. The first
+timestamp is a decode bound, not an origin to subtract from clip offsets.
 
 Reads are bounded to keep one extension from allocating an unbounded planar buffer.
 Use `source.maxPcmFramesPerRead` to issue deterministic adjacent PCM requests; handle

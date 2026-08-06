@@ -1,4 +1,4 @@
-import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
+import { mediaSecondsToTick } from "../../../core/time";
 
 export function durationSecondsToTicks(
   durationSeconds: number | null | undefined,

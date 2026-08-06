@@ -28,6 +28,7 @@ describe("WaveformCacheService", () => {
       numberOfChannels: 2,
       durationSeconds: 5,
       firstTimestampSeconds: 0.05,
+      endTimestampSeconds: 5.05,
       baseSamplesPerPeak: WAVEFORM_BASE_SAMPLES_PER_PEAK,
       peaksPerBucket: WAVEFORM_PEAKS_PER_BUCKET,
     });
@@ -52,6 +53,7 @@ describe("WaveformCacheService", () => {
       numberOfChannels: 1,
       durationSeconds: 30,
       firstTimestampSeconds: 0,
+      endTimestampSeconds: 30,
       baseSamplesPerPeak: WAVEFORM_BASE_SAMPLES_PER_PEAK,
       peaksPerBucket: WAVEFORM_PEAKS_PER_BUCKET,
     });
@@ -77,6 +79,7 @@ describe("WaveformCacheService", () => {
       numberOfChannels: 1,
       durationSeconds: 30,
       firstTimestampSeconds: 0,
+      endTimestampSeconds: 30,
       baseSamplesPerPeak: WAVEFORM_BASE_SAMPLES_PER_PEAK,
       peaksPerBucket: WAVEFORM_PEAKS_PER_BUCKET,
     });
@@ -122,6 +125,7 @@ describe("WaveformCacheService", () => {
       numberOfChannels: 2,
       durationSeconds: 60,
       firstTimestampSeconds: 0,
+      endTimestampSeconds: 60,
       baseSamplesPerPeak: WAVEFORM_BASE_SAMPLES_PER_PEAK,
       peaksPerBucket: WAVEFORM_PEAKS_PER_BUCKET,
     });
@@ -141,6 +145,7 @@ describe("WaveformCacheService", () => {
       numberOfChannels: 1,
       durationSeconds: 5,
       firstTimestampSeconds: 0,
+      endTimestampSeconds: 5,
       baseSamplesPerPeak: WAVEFORM_BASE_SAMPLES_PER_PEAK,
       peaksPerBucket: WAVEFORM_PEAKS_PER_BUCKET,
     });

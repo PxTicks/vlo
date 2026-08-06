@@ -3,7 +3,7 @@ import { TICKS_PER_SECOND } from "./constants";
 /**
  * Canonical, integer-first tick<->frame math. This is the single internal
  * source of truth for the frame grid; media-time seconds live behind the
- * separate `mediaTime` boundary (renderer feature). Project fps is integer and
+ * separate core `mediaTime` boundary. Project fps is integer and
  * `TICKS_PER_SECOND` (96000) is divisible by every supported fps, so for the
  * project grid every tick<->frame result is exact in integers. The functions
  * also accept arbitrary (possibly fractional) fps so the same primitives serve

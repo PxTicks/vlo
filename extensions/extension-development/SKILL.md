@@ -31,7 +31,9 @@ Locate the repository root, then prefer sources in this order:
 2. `backend/services/extensions/__init__.py` for the supported Python barrel.
 3. `extension-template/` for packaging and build conventions.
 4. `extension-fixtures/` and contract tests for exercised composition.
-5. `docs/extension-system-plan.md` for rationale and roadmap only.
+5. `docs/extension-dogfooding-plan.md` for host reuse classifications and
+   high-value shared refactors.
+6. `docs/extension-system-plan.md` for rationale and roadmap only.
 
 If a reference in this skill conflicts with source, follow source and update the
 reference in the same change. Do not promote an aspirational plan item into a V1 API.
@@ -95,10 +97,27 @@ and packaging/testing.
 
 ## Evolve host contracts carefully
 
-Use the common registry kernel for owner binding, duplicate rejection, rollback,
-diagnostics, and disposal. Promote repeated raw seams into narrow domain contracts
-without removing the trusted fallback. Generalise from the capability being enabled,
-not the first example. Add an out-of-tree conformance fixture for author-facing seams.
+Inspect `docs/extension-dogfooding-plan.md` before adding or widening a host facade.
+Classify the surface as an exact first-party API consumer, a shared host seam, or an
+explicit conformance-only concern.
+
+For shared seams, implement policy-free mechanics in the owning core or feature
+domain. Let native code and the extension adapter consume that service, registry,
+controller, transaction engine, or normalized runtime. Keep owner binding,
+activation cancellation/disposal, detached SDK shapes, finite-JSON checks,
+extension limits, public failure mapping, and diagnostics in the adapter. Never
+make core import an owner-bound adapter just to claim dogfooding.
+
+Use the common registry kernel for extension owner binding, duplicate rejection,
+rollback, diagnostics, and disposal. Let host and extension authoring definitions
+converge on one normalized runtime before rendering, scheduling, or presentation.
+Promote repeated raw seams into narrow domain contracts without removing the trusted
+fallback. Generalise from the capability being enabled, not the first example.
+
+When a native analogue exists, add paired behavioural coverage for the native and
+SDK entry points. Always retain an out-of-tree fixture for author-facing packaging,
+approval, ownership, rollback, and missing-provider behaviour. Document why a
+surface is conformance-only when no honest native consumer exists.
 
 Keep declarative descriptors and JSON envelopes compatible with future restricted
 execution where practical, but do not weaken trusted APIs around a speculative

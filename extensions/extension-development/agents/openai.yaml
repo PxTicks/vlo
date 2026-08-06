@@ -1,4 +1,4 @@
 interface:
   display_name: "Extension Development"
-  short_description: "Build trusted frontend and backend extensions"
-  default_prompt: "Use $extension-development to design and implement a trusted vlo extension."
+  short_description: "Build and evolve trusted Vlo extensions"
+  default_prompt: "Use $extension-development to design, implement, review, or evolve a trusted Vlo extension surface."

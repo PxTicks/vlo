@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 
 import pytest
@@ -367,6 +368,236 @@ def test_finished_jobs_and_unclaimed_uploads_expire(tmp_path: Path) -> None:
             manager.get("example.expiry", submitted.identity.job_id)
         with pytest.raises(ExtensionJobArtifactNotFoundError):
             store.get_for_delivery("example.expiry", unclaimed.artifact_id)
+        await manager.shutdown_all()
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_sync_worker_keeps_following_job_truthfully_queued(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        manager = BackendJobManager(
+            ExtensionJobArtifactStore(tmp_path / "artifacts"),
+            executor_max_workers=1,
+            max_concurrent_jobs_per_owner=1,
+        )
+        first_started = threading.Event()
+        release_first = threading.Event()
+        second_started = threading.Event()
+
+        def run(_context, value: object) -> object:
+            if value == "first":
+                first_started.set()
+                release_first.wait(timeout=2)
+            else:
+                second_started.set()
+            return {"value": value}
+
+        manager.register_extension(
+            "example.serial",
+            "1.0.0",
+            (BackendJobDefinition(id="work", label="Work", run=run),),
+        )
+        first = await manager.submit("example.serial", "work", "first")
+        for _ in range(100):
+            if first_started.is_set():
+                break
+            await asyncio.sleep(0.005)
+        assert first_started.is_set()
+
+        await manager.cancel("example.serial", first.identity.job_id)
+        second = await manager.submit("example.serial", "work", "second")
+        await asyncio.sleep(0.03)
+
+        assert manager.get("example.serial", second.identity.job_id).status == "queued"
+        assert not second_started.is_set()
+
+        release_first.set()
+        completed = await _wait_for_terminal(
+            manager,
+            "example.serial",
+            second.identity.job_id,
+        )
+        assert completed.status == "succeeded"
+        assert second_started.is_set()
+        await manager.shutdown_all()
+
+    asyncio.run(scenario())
+
+
+def test_timed_out_sync_worker_does_not_start_next_job_timeout_while_queued(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        manager = BackendJobManager(
+            ExtensionJobArtifactStore(tmp_path / "artifacts"),
+            executor_max_workers=1,
+            max_concurrent_jobs_per_owner=1,
+        )
+        slow_started = threading.Event()
+        release_slow = threading.Event()
+        fast_started = threading.Event()
+
+        def slow(_context, _value: object) -> object:
+            slow_started.set()
+            release_slow.wait(timeout=2)
+            return {}
+
+        def fast(_context, _value: object) -> object:
+            fast_started.set()
+            return {"ok": True}
+
+        manager.register_extension(
+            "example.timeout-queue",
+            "1.0.0",
+            (
+                BackendJobDefinition(
+                    id="slow",
+                    label="Slow",
+                    run=slow,
+                    timeout_seconds=0.03,
+                ),
+                BackendJobDefinition(
+                    id="fast",
+                    label="Fast",
+                    run=fast,
+                    timeout_seconds=0.03,
+                ),
+            ),
+        )
+        first = await manager.submit("example.timeout-queue", "slow", {})
+        timed_out = await _wait_for_terminal(
+            manager,
+            "example.timeout-queue",
+            first.identity.job_id,
+        )
+        assert timed_out.status == "failed"
+        assert slow_started.is_set()
+
+        second = await manager.submit("example.timeout-queue", "fast", {})
+        await asyncio.sleep(0.05)
+        assert manager.get(
+            "example.timeout-queue",
+            second.identity.job_id,
+        ).status == "queued"
+        assert not fast_started.is_set()
+
+        release_slow.set()
+        completed = await _wait_for_terminal(
+            manager,
+            "example.timeout-queue",
+            second.identity.job_id,
+        )
+        assert completed.status == "succeeded"
+        await manager.shutdown_all()
+
+    asyncio.run(scenario())
+
+
+def test_capacity_can_soft_evict_oldest_terminal_jobs(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        manager = BackendJobManager(
+            ExtensionJobArtifactStore(tmp_path / "artifacts"),
+            max_jobs_per_owner=3,
+            evict_finished_jobs_at_capacity=True,
+        )
+        manager.register_extension(
+            "example.soft-capacity",
+            "1.0.0",
+            (BackendJobDefinition(id="work", label="Work", run=lambda _c, _v: {}),),
+        )
+        terminal_ids: list[str] = []
+        for _ in range(3):
+            submitted = await manager.submit(
+                "example.soft-capacity",
+                "work",
+                {},
+            )
+            cancelled = await manager.cancel(
+                "example.soft-capacity",
+                submitted.identity.job_id,
+            )
+            terminal_ids.append(cancelled.identity.job_id)
+
+        replacement = await manager.submit(
+            "example.soft-capacity",
+            "work",
+            {},
+        )
+
+        assert replacement.status == "queued"
+        with pytest.raises(BackendJobNotFoundError):
+            manager.get("example.soft-capacity", terminal_ids[0])
+        await manager.cancel(
+            "example.soft-capacity",
+            replacement.identity.job_id,
+        )
+        await manager.shutdown_all()
+
+    asyncio.run(scenario())
+
+
+def test_runtime_metadata_survives_failure_and_delivery_refreshes_ttl(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        clock = [100.0]
+        manager = BackendJobManager(
+            ExtensionJobArtifactStore(
+                tmp_path / "artifacts",
+                now=lambda: clock[0],
+            ),
+            finished_ttl_seconds=10,
+            now=lambda: clock[0],
+        )
+
+        def fail(context, _value: object) -> object:
+            context.report_runtime_metadata({"timings": {"decodeSec": 0.25}})
+            raise RuntimeError("decode failed")
+
+        def succeed(context, _value: object) -> object:
+            artifact = context.artifacts.create(
+                b"result",
+                filename="result.bin",
+            )
+            return {"artifactId": artifact.artifact_id}
+
+        manager.register_extension(
+            "example.metadata",
+            "1.0.0",
+            (
+                BackendJobDefinition(id="fail", label="Fail", run=fail),
+                BackendJobDefinition(id="succeed", label="Succeed", run=succeed),
+            ),
+        )
+        failed = await manager.submit("example.metadata", "fail", {})
+        failed = await _wait_for_terminal(
+            manager,
+            "example.metadata",
+            failed.identity.job_id,
+        )
+        assert failed.runtime_metadata == {"timings": {"decodeSec": 0.25}}
+
+        succeeded = await manager.submit("example.metadata", "succeed", {})
+        succeeded = await _wait_for_terminal(
+            manager,
+            "example.metadata",
+            succeeded.identity.job_id,
+        )
+        clock[0] = 109.0
+        manager.get_artifact(
+            "example.metadata",
+            succeeded.artifacts[0].artifact_id,
+        )
+        clock[0] = 115.0
+        assert manager.get(
+            "example.metadata",
+            succeeded.identity.job_id,
+        ).status == "succeeded"
+        clock[0] = 120.0
+        with pytest.raises(BackendJobNotFoundError):
+            manager.get("example.metadata", succeeded.identity.job_id)
         await manager.shutdown_all()
 
     asyncio.run(scenario())

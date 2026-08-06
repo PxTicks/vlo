@@ -17,10 +17,10 @@ import { useAssetStore } from "../../userAssets/useAssetStore";
 import { createSplitAudioStemClip } from "../model/createSplitAudioClip";
 import {
   fetchStem,
-  pollJob,
   registerSourceAudio,
   submitSeparationJob,
   type SamAudioJobStatus,
+  waitForSeparationJob,
 } from "./samAudioApi";
 import {
   createSamAudioPromptPayload,
@@ -60,12 +60,6 @@ export interface RunSamAudioSeparationResult {
 
 export interface RunSamAudioSeparationDependencies {
   readonly analysis?: AudioAnalysisReader;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    globalThis.setTimeout(resolve, ms);
-  });
 }
 
 function createAbortError(): Error {
@@ -331,13 +325,11 @@ export async function runSamAudioSeparation(
     durationTicks,
   });
 
-  let status: SamAudioJobStatus;
-  do {
-    await sleep(POLL_INTERVAL_MS);
-    throwIfAborted(signal);
-    status = await pollJob(jobId);
-    onJobStatus?.(status);
-  } while (status.status === "queued" || status.status === "running");
+  const status = await waitForSeparationJob(jobId, {
+    signal,
+    pollIntervalMs: POLL_INTERVAL_MS,
+    onProgress: onJobStatus,
+  });
 
   if (status.status === "error") {
     throw new Error(status.error ?? "SAM-Audio separation failed.");

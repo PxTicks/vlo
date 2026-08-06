@@ -58,9 +58,12 @@ async def application_lifespan(application: FastAPI):
         yield
     finally:
         try:
-            await runtime.stop()
+            await sam_audio_service.shutdown_jobs()
         finally:
-            await close_http_client()
+            try:
+                await runtime.stop()
+            finally:
+                await close_http_client()
 
 
 app = FastAPI(lifespan=application_lifespan)

@@ -80,8 +80,16 @@ def test_backend_extension_runtime_follows_application_lifespan(monkeypatch):
     async def fake_close_http_client():
         events.append("http-close")
 
+    async def fake_shutdown_sam_audio_jobs():
+        events.append("sam-audio-stop")
+
     monkeypatch.setattr(main, "get_extension_services", lambda: Services())
     monkeypatch.setattr(main, "close_http_client", fake_close_http_client)
+    monkeypatch.setattr(
+        main.sam_audio_service,
+        "shutdown_jobs",
+        fake_shutdown_sam_audio_jobs,
+    )
 
     async def run_lifespan():
         async with main.application_lifespan(main.app):
@@ -92,6 +100,7 @@ def test_backend_extension_runtime_follows_application_lifespan(monkeypatch):
     assert events == [
         "extensions-start",
         "application-running",
+        "sam-audio-stop",
         "extensions-stop",
         "http-close",
     ]

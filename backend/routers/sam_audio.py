@@ -8,6 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from services.jobs import BackendJobCapacityError
 from services.sam_audio import sam_audio_service
 from services.sam_audio.sam_audio_discovery import discover_sam_audio_models
 from services.sam_audio.sam_audio_service import (
@@ -78,9 +79,12 @@ async def register_sam_audio_source(
 @router.post("/jobs")
 async def submit_sam_audio_job(request: SamAudioJobRequest) -> dict[str, str]:
     try:
-        job = await run_in_threadpool(
-            sam_audio_service.enqueue_separation_job,
+        source = await run_in_threadpool(
+            sam_audio_service.get_source_metadata,
             request.sourceId,
+        )
+        job = await sam_audio_service.submit_separation_job(
+            source,
             request.startTicks,
             request.durationTicks,
             request.prompt.model_dump(exclude_none=True),
@@ -89,6 +93,12 @@ async def submit_sam_audio_job(request: SamAudioJobRequest) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except SamAudioSourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BackendJobCapacityError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=str(exc),
+            headers={"Retry-After": "1"},
+        ) from exc
 
     return {"jobId": job.job_id}
 
@@ -104,7 +114,7 @@ async def get_sam_audio_job(job_id: str) -> dict[str, Any]:
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_sam_audio_job(job_id: str) -> dict[str, Any]:
     try:
-        return sam_audio_service.cancel_job(job_id).to_dict()
+        return (await sam_audio_service.cancel_job(job_id)).to_dict()
     except SamAudioJobNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

@@ -9,6 +9,10 @@ import type {
   JsonValue,
 } from "../types";
 import { jsonValueSchema } from "../persistence/extensionPayload";
+import {
+  combineAbortSignals,
+  pollBackendJob,
+} from "../../../core/backendJobs";
 
 const artifactSchema = z.object({
   artifactId: z.string().regex(/^[0-9a-f]{32}$/),
@@ -122,24 +126,6 @@ async function requestJson<T>(
   return parsed.data;
 }
 
-function combineSignals(
-  lifecycleSignal: AbortSignal,
-  requestSignal?: AbortSignal | null,
-): AbortSignal {
-  if (!requestSignal || requestSignal === lifecycleSignal) return lifecycleSignal;
-  if (typeof AbortSignal.any === "function") {
-    return AbortSignal.any([lifecycleSignal, requestSignal]);
-  }
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  if (lifecycleSignal.aborted || requestSignal.aborted) abort();
-  else {
-    lifecycleSignal.addEventListener("abort", abort, { once: true });
-    requestSignal.addEventListener("abort", abort, { once: true });
-  }
-  return controller.signal;
-}
-
 function assertRelativeRawPath(path: string): string {
   const normalized = path.trim();
   if (
@@ -157,27 +143,12 @@ function assertRelativeRawPath(path: string): string {
   return segments.map(encodeURIComponent).join("/");
 }
 
-function wait(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      signal.removeEventListener("abort", abort);
-      resolve();
-    }, ms);
-    const abort = () => {
-      clearTimeout(timeout);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    signal.addEventListener("abort", abort, { once: true });
-  });
-}
-
 export function createExtensionBackendApi(
   scope: ExtensionApiScope,
 ): ExtensionBackendApi {
   const root = `${API_BASE_URL}/app/extensions/${encodeURIComponent(scope.extension.id)}`;
   const signalFor = (signal?: AbortSignal) =>
-    combineSignals(scope.signal, signal);
+    combineAbortSignals(scope.signal, signal);
   const jobUrl = (jobId: string) =>
     `${root}/jobs/${encodeURIComponent(jobId)}`;
 
@@ -247,20 +218,21 @@ export function createExtensionBackendApi(
     },
     waitForJob: async (jobId, options = {}) => {
       const signal = signalFor(options.signal);
-      const interval = options.pollIntervalMs ?? 250;
-      if (!Number.isFinite(interval) || interval < 10 || interval > 60_000) {
-        throw new RangeError("pollIntervalMs must be between 10 and 60000.");
-      }
-      while (true) {
-        const response = await requestJson(jobUrl(jobId), jobResponseSchema, {
-          signal,
-        });
-        options.onProgress?.(response.job);
-        if (["succeeded", "failed", "cancelled"].includes(response.job.status)) {
+      return pollBackendJob({
+        signal,
+        pollIntervalMs: options.pollIntervalMs,
+        onProgress: options.onProgress,
+        load: async (requestSignal) => {
+          const response = await requestJson(jobUrl(jobId), jobResponseSchema, {
+            signal: requestSignal,
+          });
           return response.job;
-        }
-        await wait(interval, signal);
-      }
+        },
+        isTerminal: (job) =>
+          job.status === "succeeded" ||
+          job.status === "failed" ||
+          job.status === "cancelled",
+      });
     },
     getArtifact: async (artifactId, options = {}) => {
       const response = await fetch(

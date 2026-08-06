@@ -56,6 +56,14 @@ to fail cleanly when a model or dependency is unavailable at run time.
 
 ## Register long-running work as jobs
 
+The lifecycle beneath this public facade is also used by built-in host jobs
+such as SAM Audio. Its queueing, cancellation, timeout, progress, diagnostics,
+and ephemeral artifact mechanics are owner-neutral; the extension host adds
+package identity, owner isolation, public serialization, and route/error
+mapping. Keep extension code on the supported `services.extensions` imports,
+but expect native and extension job changes to require paired behavioural
+coverage because they exercise the same kernel.
+
 Create `BackendJobDefinition` with:
 
 - stable local `id` (owner-qualified by the host) and user-facing `label`;
@@ -78,8 +86,10 @@ In the runner:
 - return finite JSON describing the result and its artifacts.
 
 Cancellation and timeout are cooperative for synchronous Python work. A runner that
-ignores cancellation may retain its thread after the public job is terminal. Avoid
-uninterruptible loops and release extension-owned resources in all terminal paths.
+ignores cancellation may retain its thread after the public job is terminal. Jobs
+waiting behind that worker remain truthfully `queued`; their execution timeout begins
+only when a worker starts them. Avoid uninterruptible loops and release
+extension-owned resources in all terminal paths.
 
 ## Call jobs from the frontend
 

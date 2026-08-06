@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import sys
 import threading
 import time
-import uuid
-from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from importlib.machinery import ModuleSpec
 from types import ModuleType
 from pathlib import Path
-from typing import Any, Callable, Literal, TypedDict
+from typing import Any, Callable, Literal, TypedDict, cast
 
 import av
 import numpy as np
@@ -25,6 +24,15 @@ from config import (
     SAM_AUDIO_SEARCH_PATHS,
 )
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
+from services.jobs import (
+    BackendJobContext,
+    BackendJobDefinition,
+    BackendJobManager,
+    BackendJobNotFoundError,
+    BackendJobSnapshot,
+    BackendJobValidationError,
+    JobArtifactStore,
+)
 from services.sam_audio.sam_audio_discovery import (
     discover_sam_audio_models,
     get_local_sam_audio_model_path,
@@ -39,6 +47,9 @@ SAM_AUDIO_SAMPLE_RATE = 48_000
 TICKS_PER_SAMPLE = TICKS_PER_SECOND // SAM_AUDIO_SAMPLE_RATE
 FINISHED_JOB_TTL_SECONDS = 15 * 60
 MAX_JOBS = 64
+# CPU fallback and first-use model loading can legitimately exceed the shared
+# extension default; keep a finite operational guard without restoring 15 min.
+SAM_AUDIO_JOB_TIMEOUT_SECONDS = 6 * 60 * 60
 
 SOURCES_DIR = SAM_AUDIO_CACHE_DIR / "sources"
 METADATA_DIR = SAM_AUDIO_CACHE_DIR / "metadata"
@@ -78,10 +89,6 @@ class SamAudioJobNotFoundError(KeyError):
 
 class SamAudioJobNotReadyError(RuntimeError):
     """Raised when a stem is requested before a job has completed."""
-
-
-class _SamAudioJobCancelled(RuntimeError):
-    """Internal control-flow exception for cooperative job cancellation."""
 
 
 class SamAudioPrompt(TypedDict, total=False):
@@ -149,23 +156,31 @@ class SamAudioSeparationResult:
     predicted_spans: list[list[Anchor]] | None = None
 
 
-@dataclass
+@dataclass(frozen=True)
+class SamAudioJobResult:
+    target_artifact_id: str
+    residual_artifact_id: str
+    sample_rate: int
+    duration_ticks: int
+    predicted_spans: list[list[Anchor]] | None = None
+
+
+@dataclass(frozen=True)
 class SamAudioJob:
     job_id: str
     source_id: str
     start_ticks: int
     duration_ticks: int
     prompt: SamAudioPrompt
-    status: JobStatus = "queued"
-    progress: float = 0.0
-    message: str | None = "Waiting for SAM-Audio worker"
-    error: str | None = None
-    created_at: float = field(default_factory=time.time)
-    updated_at: float = field(default_factory=time.time)
-    result: SamAudioSeparationResult | None = None
-    fetched_stems: set[StemKind] = field(default_factory=set)
-    cancel_requested: bool = False
-    timings: dict[str, float] = field(default_factory=dict)
+    status: JobStatus
+    progress: float
+    message: str | None
+    error: str | None
+    created_at: float
+    updated_at: float
+    result: SamAudioJobResult | None
+    cancel_requested: bool
+    timings: dict[str, float]
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -579,11 +594,11 @@ class _SamAudioRuntime:
 
 _runtime = _SamAudioRuntime()
 
-_jobs: dict[str, SamAudioJob] = {}
-_queue: deque[str] = deque()
-_registry_lock = threading.RLock()
-_queue_condition = threading.Condition(_registry_lock)
-_worker_thread: threading.Thread | None = None
+SAM_AUDIO_JOB_OWNER = "vlo.sam-audio"
+SAM_AUDIO_JOB_OWNER_VERSION = "1"
+SAM_AUDIO_SEPARATION_JOB_TYPE = "separate"
+_job_manager: BackendJobManager | None = None
+_job_manager_lock = threading.RLock()
 
 
 def _sanitize_source_hash(source_hash: str) -> str:
@@ -1122,210 +1137,266 @@ def run_separation(
     )
 
 
-def _set_job_state(
-    job: SamAudioJob,
-    *,
-    status: JobStatus | None = None,
-    progress: float | None = None,
-    message: str | None = None,
-    error: str | None = None,
-    result: SamAudioSeparationResult | None = None,
-) -> None:
-    with _registry_lock:
-        if status is not None:
-            job.status = status
-        if progress is not None:
-            job.progress = max(0.0, min(1.0, float(progress)))
-        if message is not None:
-            job.message = message
-        if error is not None:
-            job.error = error
-        if result is not None:
-            job.result = result
-        job.updated_at = time.time()
+def _validate_separation_job_input(value: object) -> object:
+    if not isinstance(value, dict):
+        raise BackendJobValidationError("SAM-Audio job input must be an object")
+
+    source_id = value.get("sourceId")
+    start_ticks = value.get("startTicks")
+    duration_ticks = value.get("durationTicks")
+    prompt = value.get("prompt", {})
+    if not isinstance(source_id, str) or not source_id.strip():
+        raise BackendJobValidationError("sourceId must be non-empty")
+    if isinstance(start_ticks, bool) or not isinstance(start_ticks, int):
+        raise BackendJobValidationError("startTicks must be an integer")
+    if isinstance(duration_ticks, bool) or not isinstance(duration_ticks, int):
+        raise BackendJobValidationError("durationTicks must be an integer")
+    if start_ticks < 0:
+        raise BackendJobValidationError("startTicks must be >= 0")
+    if duration_ticks <= 0:
+        raise BackendJobValidationError("durationTicks must be > 0")
+    if not isinstance(prompt, dict):
+        raise BackendJobValidationError("prompt must be an object")
+
+    return {
+        "sourceId": source_id,
+        "startTicks": start_ticks,
+        "durationTicks": duration_ticks,
+        "prompt": prompt,
+    }
 
 
-def _raise_if_job_cancelled(job: SamAudioJob) -> None:
-    with _registry_lock:
-        cancelled = job.cancel_requested or job.status == "cancelled"
-    if cancelled:
-        raise _SamAudioJobCancelled("SAM-Audio job cancelled")
+class _LiveTimings(dict[str, float]):
+    def __init__(self, context: BackendJobContext) -> None:
+        super().__init__()
+        self._context = context
+
+    def __setitem__(self, key: str, value: float) -> None:
+        super().__setitem__(key, value)
+        self._context.report_runtime_metadata({"timings": dict(self)})
 
 
-def _execute_job(job: SamAudioJob) -> None:
+def _finite_predicted_spans(
+    spans: list[list[Anchor]] | None,
+) -> list[list[Anchor]] | None:
+    if spans is None:
+        return None
+    normalized: list[list[Anchor]] = []
     try:
-        logger.info("SAM-Audio job %s started", job.job_id)
-        _raise_if_job_cancelled(job)
-        _set_job_state(
-            job,
-            status="running",
-            progress=0.05,
-            message="Preparing source audio window",
+        for group in spans:
+            normalized_group: list[Anchor] = []
+            for token, start, end in group:
+                if (
+                    token not in ("+", "-")
+                    or isinstance(start, bool)
+                    or not isinstance(start, (int, float))
+                    or isinstance(end, bool)
+                    or not isinstance(end, (int, float))
+                    or not (math.isfinite(start) and math.isfinite(end))
+                ):
+                    return None
+                normalized_group.append((token, float(start), float(end)))
+            normalized.append(normalized_group)
+    except (TypeError, ValueError):
+        return None
+    return normalized
+
+
+def _run_separation_job(context: BackendJobContext, value: object) -> object:
+    payload = cast(dict[str, object], value)
+    source_id = cast(str, payload["sourceId"])
+    start_ticks = cast(int, payload["startTicks"])
+    duration_ticks = cast(int, payload["durationTicks"])
+    prompt = cast(SamAudioPrompt, payload["prompt"])
+    timings = _LiveTimings(context)
+
+    logger.info("SAM-Audio job %s started", context.identity.job_id)
+    context.report_progress(0.05, "Preparing source audio window")
+    window_audio = _extract_source_window(
+        source_id,
+        start_ticks,
+        duration_ticks,
+    )
+    context.report_progress(0.20, "Starting SAM-Audio separation")
+
+    def report_progress(progress: float, message: str) -> None:
+        context.report_progress(progress, message)
+
+    result = run_separation(
+        window_audio=window_audio,
+        prompt=prompt,
+        start_ticks=start_ticks,
+        duration_ticks=duration_ticks,
+        timings=timings,
+        on_progress=report_progress,
+    )
+    context.raise_if_cancelled()
+    target = context.artifacts.create(
+        result.target_wav_bytes,
+        filename="target.wav",
+        content_type="audio/wav",
+    )
+    residual = context.artifacts.create(
+        result.residual_wav_bytes,
+        filename="residual.wav",
+        content_type="audio/wav",
+    )
+    logger.info(
+        "SAM-Audio job %s completed; timings=%s",
+        context.identity.job_id,
+        timings,
+    )
+    return {
+        "targetArtifactId": target.artifact_id,
+        "residualArtifactId": residual.artifact_id,
+        "sampleRate": result.sample_rate,
+        "resultDurationTicks": result.duration_ticks,
+        "predictedSpans": _finite_predicted_spans(result.predicted_spans),
+    }
+
+
+def _get_job_manager() -> BackendJobManager:
+    global _job_manager
+    with _job_manager_lock:
+        if _job_manager is not None:
+            return _job_manager
+        manager = BackendJobManager(
+            JobArtifactStore(STEMS_DIR / "job-artifacts"),
+            finished_ttl_seconds=FINISHED_JOB_TTL_SECONDS,
+            max_jobs_per_owner=MAX_JOBS,
+            executor_max_workers=1,
+            max_concurrent_jobs_per_owner=1,
+            evict_finished_jobs_at_capacity=True,
+            thread_name_prefix="sam-audio-job",
         )
-        _raise_if_job_cancelled(job)
-        window_audio = _extract_source_window(
-            job.source_id,
-            job.start_ticks,
-            job.duration_ticks,
-        )
-        _raise_if_job_cancelled(job)
-        _set_job_state(
-            job,
-            progress=0.20,
-            message="Starting SAM-Audio separation",
-        )
-        result = run_separation(
-            window_audio=window_audio,
-            prompt=job.prompt,
-            start_ticks=job.start_ticks,
-            duration_ticks=job.duration_ticks,
-            timings=job.timings,
-            on_progress=lambda progress, message: _set_job_state(
-                job,
-                progress=progress,
-                message=message,
+        manager.register_owner(
+            SAM_AUDIO_JOB_OWNER,
+            SAM_AUDIO_JOB_OWNER_VERSION,
+            (
+                BackendJobDefinition(
+                    id=SAM_AUDIO_SEPARATION_JOB_TYPE,
+                    label="Separate audio",
+                    run=_run_separation_job,
+                    validate_input=_validate_separation_job_input,
+                    timeout_seconds=SAM_AUDIO_JOB_TIMEOUT_SECONDS,
+                ),
             ),
         )
-        _raise_if_job_cancelled(job)
-        _set_job_state(
-            job,
-            status="done",
-            progress=1.0,
-            message="Separation complete",
-            result=result,
-        )
-        logger.info("SAM-Audio job %s completed; timings=%s", job.job_id, job.timings)
-    except _SamAudioJobCancelled:
-        logger.info("SAM-Audio job %s cancelled", job.job_id)
-        _set_job_state(
-            job,
-            status="cancelled",
-            progress=1.0,
-            message="Cancelled",
-        )
-    except Exception as exc:  # noqa: BLE001 - worker must surface all errors
-        logger.exception("SAM-Audio job %s failed", job.job_id)
-        _set_job_state(
-            job,
-            status="error",
-            progress=1.0,
-            message="Separation failed",
-            error=str(exc),
-        )
+        _job_manager = manager
+        return manager
 
 
-def _evict_finished_jobs_locked() -> None:
-    now = time.time()
-    removable = [
-        job_id
-        for job_id, job in _jobs.items()
-        if job.status in ("done", "error", "cancelled")
-        and now - job.updated_at > FINISHED_JOB_TTL_SECONDS
-    ]
-    for job_id in removable:
-        _jobs.pop(job_id, None)
-
-    if len(_jobs) <= MAX_JOBS:
-        return
-
-    finished = sorted(
-        (
-            job
-            for job in _jobs.values()
-            if job.status in ("done", "error", "cancelled")
-        ),
-        key=lambda job: job.updated_at,
+def _job_result(value: object | None) -> SamAudioJobResult | None:
+    if not isinstance(value, dict):
+        return None
+    target_artifact_id = value.get("targetArtifactId")
+    residual_artifact_id = value.get("residualArtifactId")
+    sample_rate = value.get("sampleRate")
+    duration_ticks = value.get("resultDurationTicks")
+    predicted_spans = value.get("predictedSpans")
+    if (
+        not isinstance(target_artifact_id, str)
+        or not isinstance(residual_artifact_id, str)
+        or not isinstance(sample_rate, int)
+        or not isinstance(duration_ticks, int)
+    ):
+        return None
+    return SamAudioJobResult(
+        target_artifact_id=target_artifact_id,
+        residual_artifact_id=residual_artifact_id,
+        sample_rate=sample_rate,
+        duration_ticks=duration_ticks,
+        predicted_spans=cast(list[list[Anchor]] | None, predicted_spans),
     )
-    for job in finished[: max(0, len(_jobs) - MAX_JOBS)]:
-        _jobs.pop(job.job_id, None)
 
 
-def _worker_loop() -> None:
-    while True:
-        with _queue_condition:
-            while not _queue:
-                _queue_condition.wait()
-            job_id = _queue.popleft()
-            job = _jobs.get(job_id)
-        if job is None:
-            continue
-        _execute_job(job)
-        with _registry_lock:
-            _evict_finished_jobs_locked()
+def _to_sam_audio_job(snapshot: BackendJobSnapshot) -> SamAudioJob:
+    input_value = _get_job_manager().get_input(
+        SAM_AUDIO_JOB_OWNER,
+        snapshot.identity.job_id,
+    )
+    payload = cast(dict[str, object], input_value)
+    status_map: dict[str, JobStatus] = {
+        "queued": "queued",
+        "running": "running",
+        "succeeded": "done",
+        "failed": "error",
+        "cancelled": "cancelled",
+    }
+    status = status_map[snapshot.status]
+    message = snapshot.message
+    if status == "queued":
+        message = "Waiting for SAM-Audio worker"
+    elif status == "done":
+        message = "Separation complete"
+    elif status == "error":
+        message = "Separation failed"
+    result = _job_result(snapshot.result)
+    metadata = (
+        snapshot.runtime_metadata
+        if isinstance(snapshot.runtime_metadata, dict)
+        else {}
+    )
+    timings = metadata.get("timings", {})
+    return SamAudioJob(
+        job_id=snapshot.identity.job_id,
+        source_id=cast(str, payload["sourceId"]),
+        start_ticks=cast(int, payload["startTicks"]),
+        duration_ticks=cast(int, payload["durationTicks"]),
+        prompt=cast(SamAudioPrompt, payload["prompt"]),
+        status=status,
+        progress=snapshot.progress,
+        message=message,
+        error=snapshot.error,
+        created_at=snapshot.created_at,
+        updated_at=snapshot.updated_at,
+        result=result,
+        cancel_requested=snapshot.cancel_requested,
+        timings=cast(dict[str, float], timings),
+    )
 
 
-def _ensure_worker_started() -> None:
-    global _worker_thread
-    with _queue_condition:
-        if _worker_thread is not None and _worker_thread.is_alive():
-            return
-        _worker_thread = threading.Thread(
-            target=_worker_loop,
-            name="sam-audio-worker",
-            daemon=True,
-        )
-        _worker_thread.start()
-
-
-def enqueue_separation_job(
-    source_id: str,
+async def submit_separation_job(
+    source: SamAudioSourceMetadata,
     start_ticks: int,
     duration_ticks: int,
     prompt: SamAudioPrompt,
 ) -> SamAudioJob:
-    if duration_ticks <= 0:
-        raise ValueError("durationTicks must be > 0")
-    if start_ticks < 0:
-        raise ValueError("startTicks must be >= 0")
-
-    source = get_source_metadata(source_id)
-    job = SamAudioJob(
-        job_id=str(uuid.uuid4()),
-        source_id=source.source_id,
-        start_ticks=int(round(start_ticks)),
-        duration_ticks=int(round(duration_ticks)),
-        prompt=prompt,
-    )
-
-    _ensure_worker_started()
-    with _queue_condition:
-        _evict_finished_jobs_locked()
-        _jobs[job.job_id] = job
-        _queue.append(job.job_id)
-        _queue_condition.notify()
-    return job
+    try:
+        snapshot = await _get_job_manager().submit(
+            SAM_AUDIO_JOB_OWNER,
+            SAM_AUDIO_SEPARATION_JOB_TYPE,
+            {
+                "sourceId": source.source_id,
+                "startTicks": start_ticks,
+                "durationTicks": duration_ticks,
+                "prompt": prompt,
+            },
+        )
+    except BackendJobValidationError as exc:
+        raise ValueError(str(exc)) from exc
+    return _to_sam_audio_job(snapshot)
 
 
-def cancel_job(job_id: str) -> SamAudioJob:
-    with _queue_condition:
-        _evict_finished_jobs_locked()
-        job = _jobs.get(job_id)
-        if job is None:
-            raise SamAudioJobNotFoundError(f"SAM-Audio job '{job_id}' was not found")
-
-        if job.status in ("done", "error", "cancelled"):
-            return job
-
-        job.cancel_requested = True
-        if job.status == "queued":
-            try:
-                _queue.remove(job_id)
-            except ValueError:
-                pass
-            job.status = "cancelled"
-            job.progress = 1.0
-            job.message = "Cancelled"
-        else:
-            job.message = "Cancellation requested; finishing current step"
-        job.updated_at = time.time()
-        _queue_condition.notify_all()
-        return job
+async def cancel_job(job_id: str) -> SamAudioJob:
+    try:
+        snapshot = await _get_job_manager().cancel(
+            SAM_AUDIO_JOB_OWNER,
+            job_id,
+        )
+    except BackendJobNotFoundError as exc:
+        raise SamAudioJobNotFoundError(
+            f"SAM-Audio job '{job_id}' was not found"
+        ) from exc
+    return _to_sam_audio_job(snapshot)
 
 
 def get_job(job_id: str) -> SamAudioJob | None:
-    with _registry_lock:
-        _evict_finished_jobs_locked()
-        return _jobs.get(job_id)
+    try:
+        snapshot = _get_job_manager().get(SAM_AUDIO_JOB_OWNER, job_id)
+    except BackendJobNotFoundError:
+        return None
+    return _to_sam_audio_job(snapshot)
 
 
 def get_job_or_raise(job_id: str) -> SamAudioJob:
@@ -1335,28 +1406,29 @@ def get_job_or_raise(job_id: str) -> SamAudioJob:
     return job
 
 
-def get_job_stem(job_id: str, stem: StemKind) -> tuple[bytes, SamAudioSeparationResult]:
+def get_job_stem(job_id: str, stem: StemKind) -> tuple[bytes, SamAudioJobResult]:
     job = get_job_or_raise(job_id)
     if job.status != "done" or job.result is None:
         raise SamAudioJobNotReadyError(f"SAM-Audio job '{job_id}' is not done")
 
     if stem == "target":
-        data = job.result.target_wav_bytes
+        artifact_id = job.result.target_artifact_id
     elif stem == "residual":
-        data = job.result.residual_wav_bytes
+        artifact_id = job.result.residual_artifact_id
     else:
         raise ValueError(f"Unknown SAM-Audio stem: {stem}")
 
-    with _registry_lock:
-        job.fetched_stems.add(stem)
-        job.updated_at = time.time()
+    _, data = _get_job_manager().get_artifact(
+        SAM_AUDIO_JOB_OWNER,
+        artifact_id,
+    )
     return data, job.result
 
 
 def get_health() -> dict[str, Any]:
-    with _registry_lock:
-        queued = sum(1 for job in _jobs.values() if job.status == "queued")
-        running = sum(1 for job in _jobs.values() if job.status == "running")
+    jobs = _get_job_manager().list_jobs(SAM_AUDIO_JOB_OWNER)
+    queued = sum(1 for job in jobs if job.status == "queued")
+    running = sum(1 for job in jobs if job.status == "running")
     return {
         "status": "ok",
         "runtime": _runtime.health(),
@@ -1368,8 +1440,14 @@ def get_health() -> dict[str, Any]:
     }
 
 
-def _reset_jobs_for_tests() -> None:
-    with _queue_condition:
-        _jobs.clear()
-        _queue.clear()
-        _queue_condition.notify_all()
+async def shutdown_jobs() -> None:
+    global _job_manager
+    with _job_manager_lock:
+        manager = _job_manager
+        _job_manager = None
+    if manager is not None:
+        await manager.shutdown_all()
+
+
+async def _reset_jobs_for_tests() -> None:
+    await shutdown_jobs()

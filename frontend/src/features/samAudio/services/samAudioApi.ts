@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../../../config";
+import { pollBackendJob } from "../../../core/backendJobs";
 
 const SAM_AUDIO_API = `${API_BASE_URL}/sam-audio`;
 
@@ -134,12 +135,37 @@ export async function submitSeparationJob(
   return (await response.json()) as { jobId: string };
 }
 
-export async function pollJob(jobId: string): Promise<SamAudioJobStatus> {
-  const response = await fetch(`${SAM_AUDIO_API}/jobs/${jobId}`);
+export async function pollJob(
+  jobId: string,
+  options?: { signal?: AbortSignal },
+): Promise<SamAudioJobStatus> {
+  const response = await fetch(`${SAM_AUDIO_API}/jobs/${jobId}`, {
+    signal: options?.signal,
+  });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
   return (await response.json()) as SamAudioJobStatus;
+}
+
+export async function waitForSeparationJob(
+  jobId: string,
+  options?: {
+    signal?: AbortSignal;
+    pollIntervalMs?: number;
+    onProgress?: (status: SamAudioJobStatus) => void;
+  },
+): Promise<SamAudioJobStatus> {
+  return pollBackendJob({
+    signal: options?.signal,
+    pollIntervalMs: options?.pollIntervalMs,
+    onProgress: options?.onProgress,
+    load: (signal) => pollJob(jobId, { signal }),
+    isTerminal: (job) =>
+      job.status === "done" ||
+      job.status === "error" ||
+      job.status === "cancelled",
+  });
 }
 
 export async function cancelSeparationJob(

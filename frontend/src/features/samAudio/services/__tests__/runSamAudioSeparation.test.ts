@@ -13,16 +13,16 @@ import { runSamAudioSeparation } from "../runSamAudioSeparation";
 const operationMocks = vi.hoisted(() => ({
   mockEnsureAssetFileLoaded: vi.fn(),
   mockFetchStem: vi.fn(),
-  mockPollJob: vi.fn(),
+  mockWaitForSeparationJob: vi.fn(),
   mockRegisterSourceAudio: vi.fn(),
   mockSubmitSeparationJob: vi.fn(),
 }));
 
 vi.mock("../samAudioApi", () => ({
   fetchStem: operationMocks.mockFetchStem,
-  pollJob: operationMocks.mockPollJob,
   registerSourceAudio: operationMocks.mockRegisterSourceAudio,
   submitSeparationJob: operationMocks.mockSubmitSeparationJob,
+  waitForSeparationJob: operationMocks.mockWaitForSeparationJob,
 }));
 
 vi.mock("../../../userAssets/api", async (importOriginal) => {
@@ -126,7 +126,7 @@ describe("runSamAudioSeparation", () => {
       durationTicks: TICKS_PER_SECOND * 20,
     });
     operationMocks.mockSubmitSeparationJob.mockResolvedValue({ jobId: "job-1" });
-    operationMocks.mockPollJob.mockResolvedValue({
+    operationMocks.mockWaitForSeparationJob.mockResolvedValue({
       jobId: "job-1",
       status: "done",
       progress: 1,

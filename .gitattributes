@@ -5,6 +5,11 @@
 /frontend/src/features/extensions/** extension-surface=host
 /frontend/src/core/shell/** extension-surface=host
 /backend/services/extensions/** extension-surface=host
+/backend/services/jobs/** extension-surface=host
+# These modules translate the public extension names onto the shared host
+# kernel; the kernel above carries the behavioural-contract review signal.
+/backend/services/extensions/jobs.py extension-surface=adapter
+/backend/services/extensions/job_artifacts.py extension-surface=adapter
 /backend/routers/extensions.py extension-surface=host
 /backend/main.py extension-surface=adapter
 
@@ -28,6 +33,8 @@
 # gradeSchema owns the V1 grade parameter contract that `api.color.grade` mirrors;
 # the renderer and the SDK must not drift apart on defaults or bounds.
 /frontend/src/core/color/gradeSchema.ts extension-surface=adapter
+/frontend/src/core/backendJobs.ts extension-surface=host
+/frontend/src/features/extensions/backend/createExtensionBackendApi.ts extension-surface=adapter
 /frontend/src/app/App.tsx extension-surface=adapter
 /frontend/src/app/main.tsx extension-surface=adapter
 /frontend/src/app/installHostOptionCatalogues.ts extension-surface=adapter
@@ -89,6 +96,10 @@
 /frontend/src/features/project/constants.ts extension-surface=adapter
 /frontend/src/features/project/services/ProjectPersistenceService.ts extension-surface=adapter
 /frontend/src/features/project/useProjectStore.ts extension-surface=adapter
+/frontend/src/features/samAudio/services/samAudioApi.ts extension-surface=adapter
+/frontend/src/features/samAudio/services/runSamAudioSeparation.ts extension-surface=adapter
+/backend/services/sam_audio/sam_audio_service.py extension-surface=adapter
+/backend/routers/sam_audio.py extension-surface=adapter
 /frontend/src/features/project/utils/extensionRequirements.ts extension-surface=adapter
 /frontend/src/features/composite/services/CompositeBakeQueue.ts extension-surface=adapter
 /frontend/src/features/renderer/services/CompositeSceneRuntime.ts extension-surface=adapter

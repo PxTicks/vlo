@@ -7,6 +7,7 @@ import {
   pollJob,
   registerSourceAudio,
   submitSeparationJob,
+  waitForSeparationJob,
 } from "../samAudioApi";
 
 describe("samAudioApi", () => {
@@ -60,6 +61,25 @@ describe("samAudioApi", () => {
       "/sam-audio/jobs/job-1/cancel",
     ]);
     expect(fetchMock.mock.calls[2][1]).toEqual({ method: "POST" });
+  });
+
+  it("waits through the shared polling lifecycle", async () => {
+    vi.useFakeTimers();
+    stubFetch(
+      createMockResponse({ json: { jobId: "job-1", status: "running" } }),
+      createMockResponse({ json: { jobId: "job-1", status: "done" } }),
+    );
+    const onProgress = vi.fn();
+
+    const result = waitForSeparationJob("job-1", {
+      pollIntervalMs: 10,
+      onProgress,
+    });
+    await vi.advanceTimersByTimeAsync(10);
+
+    await expect(result).resolves.toMatchObject({ status: "done" });
+    expect(onProgress).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 
   it("parses stem metadata, defaults, and malformed span headers", async () => {

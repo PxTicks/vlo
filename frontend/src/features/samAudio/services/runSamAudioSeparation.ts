@@ -1,10 +1,17 @@
 import type { Asset } from "../../../types/Asset";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import {
+  audioAnalysisService,
+  isAudioAnalysisAbortError,
+  type AudioAnalysisReader,
+  type AudioAnalysisSource,
+} from "../../userAssets";
+import {
   addTimelineClipsOnNewTracksBelow,
   getTimelineClipById,
   getTimelinePresentationContext,
 } from "../../timeline/api";
+import { mediaSecondsToTick, ticksPerFrame } from "../../../core/time";
 import { ensureAssetFileLoaded } from "../../userAssets/api";
 import { useAssetStore } from "../../userAssets/useAssetStore";
 import { createSplitAudioStemClip } from "../model/createSplitAudioClip";
@@ -49,6 +56,10 @@ export interface RunSamAudioSeparationResult {
   jobId: string;
   targetClipId: string;
   residualClipId: string;
+}
+
+export interface RunSamAudioSeparationDependencies {
+  readonly analysis?: AudioAnalysisReader;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -116,6 +127,23 @@ async function getOrRegisterSamAudioSource(
     });
   samAudioSourceRegistrationCache.set(asset.hash, promise);
   return promise;
+}
+
+async function inspectSamAudioSource(
+  analysis: AudioAnalysisReader,
+  assetId: string,
+  signal?: AbortSignal,
+): Promise<AudioAnalysisSource | null> {
+  try {
+    return await analysis.inspect(assetId, {
+      signals: signal ? [signal] : [],
+    });
+  } catch (error) {
+    if (isAudioAnalysisAbortError(error)) throw error;
+    // The backend remains the final codec authority. Local inspection only
+    // contributes a safer source window when the browser decoder supports it.
+    return null;
+  }
 }
 
 function buildStemFile(
@@ -200,15 +228,19 @@ function insertSplitAudioClips(args: {
   );
 }
 
-export async function runSamAudioSeparation({
-  clipId,
-  textPrompt = "",
-  spanSelection,
-  signal,
-  onProgress,
-  onJobStatus,
-}: RunSamAudioSeparationArgs): Promise<RunSamAudioSeparationResult> {
+export async function runSamAudioSeparation(
+  {
+    clipId,
+    textPrompt = "",
+    spanSelection,
+    signal,
+    onProgress,
+    onJobStatus,
+  }: RunSamAudioSeparationArgs,
+  dependencies: RunSamAudioSeparationDependencies = {},
+): Promise<RunSamAudioSeparationResult> {
   const { clip, asset } = getClipAndAsset(clipId);
+  const analysis = dependencies.analysis ?? audioAnalysisService;
 
   throwIfAborted(signal);
   onProgress?.({
@@ -235,14 +267,37 @@ export async function runSamAudioSeparation({
     message: "Registering source audio with SAM-Audio",
     progress: 0.14,
   });
-  const sourceId = await getOrRegisterSamAudioSource(asset, { signal });
+  const [sourceId, inspectedSource] = await Promise.all([
+    getOrRegisterSamAudioSource(asset, { signal }),
+    inspectSamAudioSource(analysis, asset.id, signal),
+  ]);
   throwIfAborted(signal);
 
-  const durationTicks = Math.max(
+  let durationTicks = Math.max(
     1,
     Math.round(clip.croppedSourceDuration || clip.timelineDuration),
   );
   const startTicks = Math.max(0, Math.round(clip.offset || 0));
+  if (inspectedSource) {
+    const sourceExtentTicks = Math.max(
+      0,
+      mediaSecondsToTick(inspectedSource.endTimestampSeconds),
+    );
+    const availableTicks = sourceExtentTicks - startTicks;
+    const shortfallTicks = durationTicks - availableTicks;
+    const frameToleranceTicks = Math.ceil(
+      ticksPerFrame(presentationContext.fps),
+    );
+    if (availableTicks > 0 && shortfallTicks > frameToleranceTicks) {
+      console.warn("SAM-Audio source window shortened after local inspection", {
+        assetId: asset.id,
+        requestedDurationTicks: durationTicks,
+        availableDurationTicks: availableTicks,
+        sourceExtentTicks,
+      });
+      durationTicks = availableTicks;
+    }
+  }
   const prompt = createSamAudioPromptPayload({
     text: textPrompt,
     anchors,

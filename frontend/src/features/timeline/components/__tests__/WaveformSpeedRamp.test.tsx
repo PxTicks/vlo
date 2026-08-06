@@ -10,41 +10,20 @@ import { act, render } from "@testing-library/react";
 import { ThumbnailCanvas } from "../ThumbnailCanvas";
 import { useTimelineViewStore } from "../../hooks/useTimelineViewStore";
 import type { TimelineViewState } from "../../hooks/useTimelineViewStore";
-import { getAssetInput, useAsset } from "../../../userAssets";
+import { AudioAnalysisService, useAsset } from "../../../userAssets";
+import type { Input, InputAudioTrack } from "mediabunny";
 import { TICKS_PER_SECOND } from "../../constants";
 import * as TimeCalculation from "../../../transformations";
 import { waveformCacheService } from "../../services/WaveformCacheService";
-
-vi.mock("mediabunny", () => {
-  class MockAudioSampleSink {
-    async *samples() {
-      yield {
-        timestamp: 0,
-        numberOfChannels: 1,
-        numberOfFrames: 1024,
-        allocationSize: () => 1024 * 4,
-        copyTo: (destination: Float32Array) => {
-          destination.set(new Array(1024).fill(0.5));
-        },
-        close: () => {},
-      };
-    }
-  }
-
-  return {
-    AudioSampleSink: MockAudioSampleSink,
-  };
-});
 
 vi.mock("../../hooks/useTimelineViewStore", () => ({
   useTimelineViewStore: vi.fn(),
 }));
 
-vi.mock("../../../userAssets", () => ({
-  ensureAssetSourceLoaded: vi.fn(),
-  getAssetInput: vi.fn(),
-  useAsset: vi.fn(),
-}));
+vi.mock("../../../userAssets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../userAssets")>();
+  return { ...actual, useAsset: vi.fn() };
+});
 
 vi.mock("../../hooks/useInteractionStore", () => ({
   useInteractionStore: vi.fn(),
@@ -55,9 +34,38 @@ vi.mock("../../../transformations", () => ({
 }));
 
 describe("WaveformCanvas Speed Ramp", () => {
+  let audioAnalysis: AudioAnalysisService;
+
   beforeEach(async () => {
     vi.clearAllMocks();
     waveformCacheService.clearAll();
+    const track = {
+      sampleRate: 48_000,
+      numberOfChannels: 1,
+      canDecode: vi.fn(async () => true),
+      computeDuration: vi.fn(async () => 10),
+      getFirstTimestamp: vi.fn(async () => 0),
+    } as unknown as InputAudioTrack;
+    const input = {
+      getPrimaryAudioTrack: vi.fn(async () => track),
+    } as unknown as Input;
+    audioAnalysis = new AudioAnalysisService({
+      getInput: async () => input,
+      createSink: () => ({
+        buffers: async function* () {
+          yield {
+            timestamp: 0,
+            duration: 1024 / 48_000,
+            buffer: {
+              sampleRate: 48_000,
+              numberOfChannels: 1,
+              length: 1024,
+              getChannelData: () => new Float32Array(1024).fill(0.5),
+            } as unknown as AudioBuffer,
+          };
+        },
+      }),
+    });
 
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
       clearRect: vi.fn(),
@@ -89,17 +97,6 @@ describe("WaveformCanvas Speed Ramp", () => {
       id: "asset-1",
       type: "audio",
       src: "blob:test.wav",
-    } as never);
-
-    vi.mocked(getAssetInput).mockResolvedValue({
-      getPrimaryAudioTrack: () =>
-        Promise.resolve({
-          canDecode: () => Promise.resolve(true),
-          computeDuration: () => Promise.resolve(10),
-          getFirstTimestamp: () => Promise.resolve(0),
-          numberOfChannels: 1,
-          sampleRate: 48_000,
-        }),
     } as never);
 
     const { useInteractionStore } =
@@ -145,6 +142,7 @@ describe("WaveformCanvas Speed Ramp", () => {
 
     render(
       <ThumbnailCanvas
+        audioAnalysis={audioAnalysis}
         clip={clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip}
       />,
     );

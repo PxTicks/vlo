@@ -10,6 +10,7 @@ import { useThumbnailRenderer } from "../hooks/useThumbnailRenderer";
 import { useWaveformRenderer } from "../hooks/useWaveformRenderer";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import { useAsset } from "../../userAssets";
+import type { AudioAnalysisReader } from "../../userAssets";
 import { Box } from "@mui/material";
 
 const StyledCanvas = styled("canvas")({
@@ -37,6 +38,7 @@ const AudioIconOverlay = styled(Box)({
 });
 
 interface ThumbnailCanvasProps {
+  audioAnalysis?: AudioAnalysisReader;
   clip: AssetBackedBaseClip | AssetBackedTimelineClip;
   isDragging?: boolean;
   presentationStart?: number;
@@ -45,6 +47,7 @@ interface ThumbnailCanvasProps {
 }
 
 export function ThumbnailCanvasBase({
+  audioAnalysis,
   clip,
   isDragging,
   presentationStart,
@@ -74,6 +77,7 @@ export function ThumbnailCanvasBase({
   });
 
   const { showFallbackOverlay } = useWaveformRenderer({
+    audioAnalysis,
     canvasRef,
     clip,
     zoomScale,

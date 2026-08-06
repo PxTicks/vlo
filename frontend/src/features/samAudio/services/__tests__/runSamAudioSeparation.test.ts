@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 import type {
-  TimelineClip, TimelineTrack, } from "../../../../types/TimelineTypes";
+  TimelineClip,
+  TimelineTrack,
+} from "../../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../timeline";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
-import { useAssetStore } from "../../../userAssets";
+import { AudioAnalysisService, useAssetStore } from "../../../userAssets";
+import type { Input, InputAudioTrack } from "mediabunny";
 import { runSamAudioSeparation } from "../runSamAudioSeparation";
 
 const operationMocks = vi.hoisted(() => ({
@@ -85,9 +88,26 @@ function makeStemAsset(stem: "target" | "residual"): Asset {
 }
 
 describe("runSamAudioSeparation", () => {
+  let analysisEndSeconds = 20;
+  let audioAnalysis: AudioAnalysisService;
+
   beforeEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    analysisEndSeconds = 20;
+    const track = {
+      sampleRate: 48_000,
+      numberOfChannels: 2,
+      canDecode: vi.fn(async () => true),
+      computeDuration: vi.fn(async () => analysisEndSeconds),
+      getFirstTimestamp: vi.fn(async () => 0),
+    } as unknown as InputAudioTrack;
+    const input = {
+      getPrimaryAudioTrack: vi.fn(async () => track),
+    } as unknown as Input;
+    audioAnalysis = new AudioAnalysisService({
+      getInput: async () => input,
+    });
     useTimelineStore.getState().replaceTimelineSnapshot({
       clips: [sourceClip, selectedElsewhereClip],
       tracks: [sourceTrack],
@@ -135,10 +155,13 @@ describe("runSamAudioSeparation", () => {
 
   it("uses the explicit clipId instead of the selected timeline clip", async () => {
     vi.useFakeTimers();
-    const resultPromise = runSamAudioSeparation({
-      clipId: sourceClip.id,
-      textPrompt: "vocals",
-    });
+    const resultPromise = runSamAudioSeparation(
+      {
+        clipId: sourceClip.id,
+        textPrompt: "vocals",
+      },
+      { analysis: audioAnalysis },
+    );
 
     await vi.advanceTimersByTimeAsync(1000);
     const result = await resultPromise;
@@ -158,15 +181,75 @@ describe("runSamAudioSeparation", () => {
     );
   });
 
+  it("clamps the submitted window to the locally inspected source extent", async () => {
+    vi.useFakeTimers();
+    analysisEndSeconds = 6;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const resultPromise = runSamAudioSeparation(
+      {
+        clipId: sourceClip.id,
+        textPrompt: "vocals",
+      },
+      { analysis: audioAnalysis },
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await resultPromise;
+
+    expect(operationMocks.mockSubmitSeparationJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startTicks: TICKS_PER_SECOND * 2,
+        durationTicks: TICKS_PER_SECOND * 4,
+      }),
+      expect.anything(),
+    );
+    expect(warning).toHaveBeenCalledWith(
+      "SAM-Audio source window shortened after local inspection",
+      expect.objectContaining({
+        requestedDurationTicks: TICKS_PER_SECOND * 5,
+        availableDurationTicks: TICKS_PER_SECOND * 4,
+      }),
+    );
+    warning.mockRestore();
+  });
+
+  it("leaves a sub-frame decoder disagreement to the backend", async () => {
+    vi.useFakeTimers();
+    analysisEndSeconds = 7 - 1 / 120;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const resultPromise = runSamAudioSeparation(
+      {
+        clipId: sourceClip.id,
+        textPrompt: "vocals",
+      },
+      { analysis: audioAnalysis },
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await resultPromise;
+
+    expect(operationMocks.mockSubmitSeparationJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        durationTicks: TICKS_PER_SECOND * 5,
+      }),
+      expect.anything(),
+    );
+    expect(warning).not.toHaveBeenCalled();
+    warning.mockRestore();
+  });
+
   it("rejects span prompts that do not overlap the target clip before submitting a job", async () => {
     await expect(
-      runSamAudioSeparation({
-        clipId: sourceClip.id,
-        spanSelection: {
-          startTick: TICKS_PER_SECOND,
-          endTick: TICKS_PER_SECOND * 2,
+      runSamAudioSeparation(
+        {
+          clipId: sourceClip.id,
+          spanSelection: {
+            startTick: TICKS_PER_SECOND,
+            endTick: TICKS_PER_SECOND * 2,
+          },
         },
-      }),
+        { analysis: audioAnalysis },
+      ),
     ).rejects.toThrow("overlaps the selected clip");
 
     expect(operationMocks.mockSubmitSeparationJob).not.toHaveBeenCalled();
@@ -174,10 +257,13 @@ describe("runSamAudioSeparation", () => {
 
   it("inserts target and residual stems on new audio tracks below the source track", async () => {
     vi.useFakeTimers();
-    const resultPromise = runSamAudioSeparation({
-      clipId: sourceClip.id,
-      textPrompt: "piano",
-    });
+    const resultPromise = runSamAudioSeparation(
+      {
+        clipId: sourceClip.id,
+        textPrompt: "piano",
+      },
+      { analysis: audioAnalysis },
+    );
 
     await vi.advanceTimersByTimeAsync(1000);
     await resultPromise;

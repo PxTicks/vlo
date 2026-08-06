@@ -10,12 +10,16 @@ import type {
   AssetBackedTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
-import { getAssetInput, useAsset } from "../../userAssets";
-import { calculateClipTime } from "../../transformations";
 import {
-  readMediaTimestampRange,
-  tickToMediaSeconds,
-} from "../../../core/time";
+  AudioAnalysisError,
+  audioAnalysisService,
+  isAudioAnalysisAbortError,
+  useAsset,
+  type AudioAnalysisReader,
+  type AudioAnalysisWaveform,
+} from "../../userAssets";
+import { calculateClipTime } from "../../transformations";
+import { tickToMediaSeconds } from "../../../core/time";
 import { ticksPerPixel as ticksPerPixelAt } from "../../../core/time/pixelGrid";
 import {
   waveformCacheService,
@@ -28,9 +32,9 @@ import {
   resolveWaveformBucketRequestSeconds,
 } from "../utils/waveformTiming";
 import { useClipCanvasWindow } from "./useClipCanvasWindow";
-import { AudioSampleSink } from "mediabunny";
 
 interface UseWaveformRendererProps {
+  audioAnalysis?: AudioAnalysisReader;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   clip: AssetBackedBaseClip | AssetBackedTimelineClip;
   zoomScale: number;
@@ -175,6 +179,7 @@ function ticksToSampleFrame(assetTick: number, sampleRate: number): number {
 }
 
 export function useWaveformRenderer({
+  audioAnalysis,
   canvasRef,
   clip,
   zoomScale,
@@ -365,6 +370,7 @@ export function useWaveformRenderer({
     if (!enabled || asset?.type !== "audio" || !clip.assetId) {
       return;
     }
+    const analysis = audioAnalysis ?? audioAnalysisService;
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -392,22 +398,16 @@ export function useWaveformRenderer({
         return cachedMetadata;
       }
 
-      const input = await getAssetInput(clip.assetId!);
-      if (!input) {
-        return null;
-      }
-
-      const track = await input.getPrimaryAudioTrack();
-      if (!track || !(await track.canDecode())) {
-        return null;
-      }
-
-      const timestampRange = await readMediaTimestampRange(track);
-      if (!timestampRange || timestampRange.durationSeconds <= 0) return null;
+      const source = await analysis.inspect(clip.assetId!, {
+        signals: [signal],
+      });
+      if (source.durationSeconds <= 0) return null;
       const metadata: WaveformAssetMetadata = {
-        sampleRate: track.sampleRate,
-        numberOfChannels: track.numberOfChannels,
-        ...timestampRange,
+        sampleRate: source.sampleRate,
+        numberOfChannels: source.numberOfChannels,
+        durationSeconds: source.durationSeconds,
+        firstTimestampSeconds: source.firstTimestampSeconds,
+        endTimestampSeconds: source.endTimestampSeconds,
         baseSamplesPerPeak: WAVEFORM_BASE_SAMPLES_PER_PEAK,
         peaksPerBucket: WAVEFORM_PEAKS_PER_BUCKET,
       };
@@ -477,14 +477,12 @@ export function useWaveformRenderer({
     };
 
     const analyzeBucketRange = async (
-      sink: AudioSampleSink,
       metadata: WaveformAssetMetadata,
       level: number,
       range: BucketRange,
     ): Promise<boolean> => {
       const framesPerPeak = getFramesPerPeak(level, metadata);
       const framesPerBucket = framesPerPeak * metadata.peaksPerBucket;
-      const startFrame = range.start * framesPerBucket;
       const endFrameExclusive = (range.end + 1) * framesPerBucket;
       const mutableBuckets = new Map<number, MutableBucket>();
       const startSeconds = resolveWaveformBucketRequestSeconds(
@@ -503,79 +501,47 @@ export function useWaveformRenderer({
         mutableBuckets.set(bucketIndex, createMutableBucket());
       }
 
-      for await (const sample of sink.samples(startSeconds, endSeconds)) {
-        if (signal.aborted) {
-          sample.close();
-          return false;
-        }
-
-        const channelData: Float32Array[] = [];
-        for (
-          let channelIndex = 0;
-          channelIndex < sample.numberOfChannels;
-          channelIndex++
+      let waveform: AudioAnalysisWaveform | null = null;
+      try {
+        waveform = await analysis.readWaveform(clip.assetId!, {
+          startSeconds,
+          endSeconds,
+          samplesPerPeak: framesPerPeak,
+          peakOriginSeconds: 0,
+          signals: [signal],
+        });
+      } catch (error) {
+        if (isAudioAnalysisAbortError(error)) throw error;
+        if (
+          !(error instanceof AudioAnalysisError) ||
+          (error.code !== "invalid_range" && error.code !== "decode_failed")
         ) {
-          const options = {
-            planeIndex: channelIndex,
-            format: "f32-planar" as const,
-          };
-          const bytesNeeded = sample.allocationSize(options);
-          const channelBuffer = new Float32Array(bytesNeeded / 4);
-          sample.copyTo(channelBuffer, options);
-          channelData.push(channelBuffer);
+          throw error;
         }
+        // A terminal bucket may begin exactly at the source end. Preserve the
+        // old renderer behaviour: cache silence for it and continue the pass.
+      }
 
-        const sampleStartFrame = Math.max(
-          0,
-          Math.round(sample.timestamp * metadata.sampleRate),
+      const peakCount = waveform?.channels[0]?.min.length ?? 0;
+      for (let localPeakIndex = 0; localPeakIndex < peakCount; localPeakIndex++) {
+        const absolutePeakIndex = waveform!.firstPeakIndex + localPeakIndex;
+        if (absolutePeakIndex < 0) continue;
+        const bucketIndex = Math.floor(
+          absolutePeakIndex / metadata.peaksPerBucket,
         );
-        const sampleEndFrame = sampleStartFrame + sample.numberOfFrames;
-        const processStartFrame = Math.max(sampleStartFrame, startFrame);
-        const processEndFrame = Math.min(sampleEndFrame, endFrameExclusive);
+        const bucket = mutableBuckets.get(bucketIndex);
+        if (!bucket) continue;
 
-        if (processEndFrame > processStartFrame) {
-          for (
-            let absoluteFrame = processStartFrame;
-            absoluteFrame < processEndFrame;
-            absoluteFrame++
-          ) {
-            const localFrame = absoluteFrame - sampleStartFrame;
-            let frameMin = 1;
-            let frameMax = -1;
-
-            for (
-              let channelIndex = 0;
-              channelIndex < channelData.length;
-              channelIndex++
-            ) {
-              const sampleValue = channelData[channelIndex]?.[localFrame] ?? 0;
-              frameMin = Math.min(frameMin, sampleValue);
-              frameMax = Math.max(frameMax, sampleValue);
-            }
-
-            const bucketIndex = Math.floor(absoluteFrame / framesPerBucket);
-            const bucket = mutableBuckets.get(bucketIndex);
-            if (!bucket) {
-              continue;
-            }
-
-            const bucketStartFrame = bucketIndex * framesPerBucket;
-            const peakIndex = Math.floor(
-              (absoluteFrame - bucketStartFrame) / framesPerPeak,
-            );
-            bucket.initialized[peakIndex] = 1;
-            bucket.min[peakIndex] = Math.min(
-              bucket.min[peakIndex] ?? 1,
-              frameMin,
-            );
-            bucket.max[peakIndex] = Math.max(
-              bucket.max[peakIndex] ?? -1,
-              frameMax,
-            );
-          }
+        const peakIndex = absolutePeakIndex % metadata.peaksPerBucket;
+        let peakMin = 1;
+        let peakMax = -1;
+        for (const channel of waveform!.channels) {
+          peakMin = Math.min(peakMin, channel.min[localPeakIndex] ?? 0);
+          peakMax = Math.max(peakMax, channel.max[localPeakIndex] ?? 0);
         }
-
-        sample.close();
+        bucket.initialized[peakIndex] = 1;
+        bucket.min[peakIndex] = peakMin;
+        bucket.max[peakIndex] = peakMax;
       }
 
       let storedAnyBucket = false;
@@ -633,19 +599,6 @@ export function useWaveformRenderer({
           return;
         }
 
-        const input = await getAssetInput(clip.assetId!);
-        if (!input) {
-          setWaveformStatus("unavailable");
-          return;
-        }
-
-        const track = await input.getPrimaryAudioTrack();
-        if (!track || !(await track.canDecode())) {
-          setWaveformStatus("unavailable");
-          return;
-        }
-
-        const sink = new AudioSampleSink(track);
         const sortedLevels = Array.from(missingBuckets.keys()).sort(
           (a, b) => a - b,
         );
@@ -661,7 +614,6 @@ export function useWaveformRenderer({
 
           for (const range of groupContiguousIndices(bucketIndices)) {
             const stored = await analyzeBucketRange(
-              sink,
               metadata,
               level,
               range,
@@ -729,6 +681,7 @@ export function useWaveformRenderer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     asset,
+    audioAnalysis,
     clip.assetId,
     clip.transformations,
     clipOffset,

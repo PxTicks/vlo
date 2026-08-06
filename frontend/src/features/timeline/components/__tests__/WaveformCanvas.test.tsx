@@ -11,35 +11,26 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { ThumbnailCanvas } from "../ThumbnailCanvas";
 import { useTimelineViewStore } from "../../hooks/useTimelineViewStore";
 import type { TimelineViewState } from "../../hooks/useTimelineViewStore";
-import { getAssetInput, useAsset } from "../../../userAssets";
+import { AudioAnalysisService, useAsset } from "../../../userAssets";
+import type { Input, InputAudioTrack, WrappedAudioBuffer } from "mediabunny";
 import { TICKS_PER_SECOND } from "../../constants";
 import { waveformCacheService } from "../../services/WaveformCacheService";
 
-interface MockAudioSample {
-  allocationSize: (options: { format?: string; planeIndex: number }) => number;
-  close: Mock;
-  copyTo: (
-    destination: Float32Array,
-    options: { format?: string; planeIndex: number },
-  ) => void;
-  numberOfChannels: number;
-  numberOfFrames: number;
-  timestamp: number;
-}
-
-function createAudioSample(
+function createWrappedAudioBuffer(
   timestamp: number,
   channelData: readonly number[][],
-): MockAudioSample {
+): WrappedAudioBuffer {
+  const length = channelData[0]?.length ?? 0;
   return {
     timestamp,
-    numberOfChannels: channelData.length,
-    numberOfFrames: channelData[0]?.length ?? 0,
-    allocationSize: () => (channelData[0]?.length ?? 0) * 4,
-    copyTo: (destination, options) => {
-      destination.set(channelData[options.planeIndex] ?? []);
-    },
-    close: vi.fn(),
+    duration: length / mockAudioState.sampleRate,
+    buffer: {
+      sampleRate: mockAudioState.sampleRate,
+      numberOfChannels: channelData.length,
+      length,
+      getChannelData: (channel: number) =>
+        Float32Array.from(channelData[channel] ?? []),
+    } as unknown as AudioBuffer,
   };
 }
 
@@ -50,33 +41,43 @@ const mockAudioState = vi.hoisted(() => ({
   lastSamplesRequest: null as { end: number; start: number } | null,
   numberOfChannels: 1,
   sampleRate: 48_000,
-  samples: [] as MockAudioSample[],
+  buffers: [] as WrappedAudioBuffer[],
 }));
 
-vi.mock("mediabunny", () => {
-  class MockAudioSampleSink {
-    async *samples(start: number, end: number) {
-      mockAudioState.lastSamplesRequest = { start, end };
-      for (const sample of mockAudioState.samples) {
-        yield sample;
-      }
-    }
-  }
-
-  return {
-    AudioSampleSink: MockAudioSampleSink,
-  };
-});
+function createTestAudioAnalysisService(): AudioAnalysisService {
+  const track = {
+    get sampleRate() {
+      return mockAudioState.sampleRate;
+    },
+    get numberOfChannels() {
+      return mockAudioState.numberOfChannels;
+    },
+    canDecode: vi.fn(async () => mockAudioState.canDecode),
+    computeDuration: vi.fn(async () => mockAudioState.durationSeconds),
+    getFirstTimestamp: vi.fn(async () => mockAudioState.firstTimestampSeconds),
+  } as unknown as InputAudioTrack;
+  const input = {
+    getPrimaryAudioTrack: vi.fn(async () => track),
+  } as unknown as Input;
+  return new AudioAnalysisService({
+    getInput: async () => input,
+    createSink: () => ({
+      buffers: async function* (start: number, end: number) {
+        mockAudioState.lastSamplesRequest = { start, end };
+        for (const buffer of mockAudioState.buffers) yield buffer;
+      },
+    }),
+  });
+}
 
 vi.mock("../../hooks/useTimelineViewStore", () => ({
   useTimelineViewStore: vi.fn(),
 }));
 
-vi.mock("../../../userAssets", () => ({
-  ensureAssetSourceLoaded: vi.fn(),
-  getAssetInput: vi.fn(),
-  useAsset: vi.fn(),
-}));
+vi.mock("../../../userAssets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../userAssets")>();
+  return { ...actual, useAsset: vi.fn() };
+});
 
 vi.mock("../../hooks/useInteractionStore", () => ({
   useInteractionStore: vi.fn(),
@@ -94,6 +95,7 @@ describe("WaveformCanvas", () => {
     removeEventListener: Mock;
   };
   let scrollListener: EventListener | null = null;
+  let audioAnalysis: AudioAnalysisService;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -105,13 +107,14 @@ describe("WaveformCanvas", () => {
     mockAudioState.lastSamplesRequest = null;
     mockAudioState.numberOfChannels = 1;
     mockAudioState.sampleRate = 48_000;
-    mockAudioState.samples = [
-      createAudioSample(0, [
+    mockAudioState.buffers = [
+      createWrappedAudioBuffer(0, [
         Array.from({ length: 2048 }, (_, index) =>
           index % 2 === 0 ? 0.8 : -0.8,
         ),
       ]),
     ];
+    audioAnalysis = createTestAudioAnalysisService();
 
     mockContext = {
       fillStyle: "",
@@ -153,18 +156,6 @@ describe("WaveformCanvas", () => {
       id: "asset-1",
       type: "audio",
       src: "blob:test.wav",
-    } as never);
-
-    vi.mocked(getAssetInput).mockResolvedValue({
-      getPrimaryAudioTrack: () =>
-        Promise.resolve({
-          canDecode: () => Promise.resolve(mockAudioState.canDecode),
-          computeDuration: () => Promise.resolve(mockAudioState.durationSeconds),
-          getFirstTimestamp: () =>
-            Promise.resolve(mockAudioState.firstTimestampSeconds),
-          numberOfChannels: mockAudioState.numberOfChannels,
-          sampleRate: mockAudioState.sampleRate,
-        }),
     } as never);
 
     const { useInteractionStore } =
@@ -209,6 +200,7 @@ describe("WaveformCanvas", () => {
 
     render(
       <ThumbnailCanvas
+        audioAnalysis={audioAnalysis}
         clip={clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip}
       />,
     );
@@ -225,6 +217,74 @@ describe("WaveformCanvas", () => {
 
     expect(waveformCacheService.hasAnyBuckets("asset-1")).toBe(true);
     expect(mockAudioState.lastSamplesRequest).not.toBeNull();
+  });
+
+  it("caches silence and continues when a valid range decodes no samples", async () => {
+    mockAudioState.buffers = [];
+    audioAnalysis = createTestAudioAnalysisService();
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const clip = {
+      id: "audio-clip-empty-range",
+      assetId: "asset-1",
+      start: 0,
+      offset: 0,
+      timelineDuration: 5 * TICKS_PER_SECOND,
+      transformedOffset: 0,
+      transformedDuration: 5 * TICKS_PER_SECOND,
+      croppedSourceDuration: 5 * TICKS_PER_SECOND,
+      sourceDuration: 5 * TICKS_PER_SECOND,
+      type: "audio",
+      transformations: [],
+      name: "audio",
+    };
+
+    render(
+      <ThumbnailCanvas
+        audioAnalysis={audioAnalysis}
+        clip={clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("audio-waveform-fallback")).toBeNull();
+    });
+    expect(waveformCacheService.hasAnyBuckets("asset-1")).toBe(true);
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it("treats a bucket beginning exactly at the source end as silence", async () => {
+    const sourceEndSeconds = 32_768 / 48_000;
+    const sourceEndTicks = sourceEndSeconds * TICKS_PER_SECOND;
+    mockAudioState.durationSeconds = sourceEndSeconds;
+    audioAnalysis = createTestAudioAnalysisService();
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const clip = {
+      id: "audio-clip-terminal-bucket",
+      assetId: "asset-1",
+      start: 0,
+      offset: sourceEndTicks,
+      timelineDuration: TICKS_PER_SECOND,
+      transformedOffset: 0,
+      transformedDuration: TICKS_PER_SECOND,
+      croppedSourceDuration: TICKS_PER_SECOND,
+      sourceDuration: sourceEndTicks,
+      type: "audio",
+      transformations: [],
+      name: "audio",
+    };
+
+    render(
+      <ThumbnailCanvas
+        audioAnalysis={audioAnalysis}
+        clip={clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("audio-waveform-fallback")).toBeNull();
+    });
+    expect(waveformCacheService.hasAnyBuckets("asset-1")).toBe(true);
+    expect(warning).not.toHaveBeenCalled();
   });
 
   it("renders waveform bars only inside the visible viewport window and repositions on scroll", async () => {
@@ -264,6 +324,7 @@ describe("WaveformCanvas", () => {
 
     render(
       <ThumbnailCanvas
+        audioAnalysis={audioAnalysis}
         clip={clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip}
       />,
     );
@@ -350,6 +411,7 @@ describe("WaveformCanvas", () => {
 
     render(
       <ThumbnailCanvas
+        audioAnalysis={audioAnalysis}
         clip={clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip}
       />,
     );
@@ -387,6 +449,7 @@ describe("WaveformCanvas", () => {
 
     render(
       <ThumbnailCanvas
+        audioAnalysis={audioAnalysis}
         clip={clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip}
       />,
     );

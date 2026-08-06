@@ -1,24 +1,31 @@
-import { AudioBufferSink } from "mediabunny";
-import type { Input, InputAudioTrack, WrappedAudioBuffer } from "mediabunny";
 import type {
   ExtensionApiScope,
   ExtensionAudioApi,
   ExtensionAudioClipSnapshot,
   ExtensionAudioReadFailureCode,
-  ExtensionAudioReadRequest,
   ExtensionAudioSourceSnapshot,
   ExtensionAudioTrackSnapshot,
 } from "../types";
-import { combineRevisionSources, createRevisionRelay } from "../../../core/shell/revisionRelay";
+import {
+  combineRevisionSources,
+  createRevisionRelay,
+} from "../../../core/shell/revisionRelay";
 import { bindOwnerScopedSubscribe } from "../utils/ownerScopedSubscribe";
 import {
   getTimelineClipById,
   getTimelineModelRevisionSource,
   getTimelineModelState,
 } from "../../timeline/api";
-import { getAssetById, getAssetInput, useAssetStore } from "../../userAssets";
+import {
+  AudioAnalysisError,
+  audioAnalysisService,
+  getAssetById,
+  isAudioAnalysisAbortError,
+  useAssetStore,
+  type AudioAnalysisReader,
+  type AudioAnalysisSource,
+} from "../../userAssets";
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { readMediaTimestampRange } from "../../../core/time";
 
 const DEFAULT_SAMPLES_PER_PEAK = 256;
 const MAX_PCM_FRAMES = 4_000_000;
@@ -26,19 +33,7 @@ const MAX_WAVEFORM_SOURCE_FRAMES = 48_000_000;
 const MAX_WAVEFORM_PEAKS = 1_000_000;
 
 interface ExtensionAudioApiDependencies {
-  readonly getInput?: (assetId: string) => Promise<Input | null>;
-  readonly createSink?: (track: InputAudioTrack) => Pick<AudioBufferSink, "buffers">;
-}
-
-interface AudioSourceHandle {
-  readonly source: ExtensionAudioSourceSnapshot;
-  readonly track: InputAudioTrack;
-}
-
-interface NormalizedReadRange {
-  readonly startSeconds: number;
-  readonly endSeconds: number;
-  readonly frameCount: number;
+  readonly analysis?: AudioAnalysisReader;
 }
 
 const timelineRelay = getTimelineModelRevisionSource();
@@ -55,24 +50,70 @@ function assertAssetId(assetId: string): void {
   }
 }
 
-function assertReadRequest(request: ExtensionAudioReadRequest | undefined): void {
+function getSignals(
+  scopeSignal: AbortSignal,
+  requestSignal?: AbortSignal,
+): readonly AbortSignal[] {
+  return requestSignal ? [scopeSignal, requestSignal] : [scopeSignal];
+}
+
+function toSourceSnapshot(
+  source: AudioAnalysisSource,
+): ExtensionAudioSourceSnapshot {
+  return Object.freeze({
+    ...source,
+    maxPcmFramesPerRead: MAX_PCM_FRAMES,
+  });
+}
+
+function getAnalysisFailure(error: unknown) {
+  if (error instanceof AudioAnalysisError) {
+    return failure(error.code, error.message);
+  }
+  return failure(
+    "decode_failed",
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
+async function toAudioResult<TResult>(
+  operation: () => Promise<TResult>,
+): Promise<TResult | ReturnType<typeof failure>> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isAudioAnalysisAbortError(error)) throw error;
+    if (error instanceof RangeError || error instanceof TypeError) throw error;
+    return getAnalysisFailure(error);
+  }
+}
+
+function assertReadRequest(
+  startSeconds: number | undefined,
+  endSeconds: number | undefined,
+): void {
   if (
-    (request?.startSeconds !== undefined &&
-      !Number.isFinite(request.startSeconds)) ||
-    (request?.endSeconds !== undefined && !Number.isFinite(request.endSeconds))
+    (startSeconds !== undefined && !Number.isFinite(startSeconds)) ||
+    (endSeconds !== undefined && !Number.isFinite(endSeconds))
   ) {
     throw new RangeError("Audio analysis range values must be finite.");
   }
 }
 
-function abortIfNeeded(scopeSignal: AbortSignal, requestSignal?: AbortSignal): void {
+function assertRequestPreconditions(
+  assetId: string,
+  scopeSignal: AbortSignal,
+  requestSignal?: AbortSignal,
+  validateRequest?: () => void,
+): ReturnType<typeof failure> | null {
+  assertAssetId(assetId);
+  validateRequest?.();
   if (scopeSignal.aborted || requestSignal?.aborted) {
     throw new DOMException("Aborted", "AbortError");
   }
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
+  return getAssetById(assetId)
+    ? null
+    : failure("asset_not_found", `Asset '${assetId}' was not found.`);
 }
 
 function isAudioBearingClip(clip: TimelineClip): clip is TimelineClip & {
@@ -102,7 +143,9 @@ function toAudioClipSnapshot(
 
 function listAudioClips(): readonly ExtensionAudioClipSnapshot[] {
   return Object.freeze(
-    getTimelineModelState().clips.filter(isAudioBearingClip).map(toAudioClipSnapshot),
+    getTimelineModelState()
+      .clips.filter(isAudioBearingClip)
+      .map(toAudioClipSnapshot),
   );
 }
 
@@ -138,121 +181,11 @@ function listAudioTracks(): readonly ExtensionAudioTrackSnapshot[] {
   );
 }
 
-async function openSource(
-  assetId: string,
-  scopeSignal: AbortSignal,
-  requestSignal: AbortSignal | undefined,
-  loadInput: (assetId: string) => Promise<Input | null>,
-): Promise<AudioSourceHandle | ReturnType<typeof failure>> {
-  assertAssetId(assetId);
-  abortIfNeeded(scopeSignal, requestSignal);
-  if (!getAssetById(assetId)) {
-    return failure("asset_not_found", `Asset '${assetId}' was not found.`);
-  }
-
-  const input = await loadInput(assetId);
-  abortIfNeeded(scopeSignal, requestSignal);
-  if (!input) {
-    return failure("decode_failed", `Asset '${assetId}' could not be opened.`);
-  }
-  const track = await input.getPrimaryAudioTrack();
-  abortIfNeeded(scopeSignal, requestSignal);
-  if (!track || !(await track.canDecode())) {
-    return failure("no_audio", `Asset '${assetId}' has no decodable audio stream.`);
-  }
-
-  const timestampRange = await readMediaTimestampRange(track);
-  abortIfNeeded(scopeSignal, requestSignal);
-  if (!timestampRange) {
-    return failure(
-      "decode_failed",
-      `Asset '${assetId}' reported invalid audio stream timestamps.`,
-    );
-  }
-  return {
-    track,
-    source: Object.freeze({
-      assetId,
-      sampleRate: track.sampleRate,
-      numberOfChannels: track.numberOfChannels,
-      durationSeconds: timestampRange.durationSeconds,
-      firstTimestampSeconds: timestampRange.firstTimestampSeconds,
-      endTimestampSeconds: timestampRange.endTimestampSeconds,
-      maxPcmFramesPerRead: MAX_PCM_FRAMES,
-    }),
-  };
-}
-
-function normalizeRange(
-  source: ExtensionAudioSourceSnapshot,
-  request: ExtensionAudioReadRequest | undefined,
-): NormalizedReadRange | ReturnType<typeof failure> {
-  const requestedStart = request?.startSeconds ?? source.firstTimestampSeconds;
-  const requestedEnd = request?.endSeconds ?? source.endTimestampSeconds;
-  if (!Number.isFinite(requestedStart) || !Number.isFinite(requestedEnd)) {
-    throw new RangeError("Audio analysis range values must be finite.");
-  }
-  const startSeconds = Math.max(source.firstTimestampSeconds, requestedStart);
-  const endSeconds = Math.min(source.endTimestampSeconds, requestedEnd);
-  if (endSeconds <= startSeconds) {
-    return failure("invalid_range", "Audio analysis range is empty or outside the source.");
-  }
-  return {
-    startSeconds,
-    endSeconds,
-    frameCount: Math.ceil((endSeconds - startSeconds) * source.sampleRate),
-  };
-}
-
-function copyWrappedBuffer(
-  wrapped: WrappedAudioBuffer,
-  source: ExtensionAudioSourceSnapshot,
-  range: NormalizedReadRange,
-  write: (channel: number, sourceData: Float32Array, sourceStart: number, length: number, destinationStart: number) => void,
-): boolean {
-  const buffer = wrapped.buffer;
-  if (buffer.sampleRate !== source.sampleRate) {
-    throw new Error("The decoded audio stream changed sample rate.");
-  }
-  const overlapStart = Math.max(range.startSeconds, wrapped.timestamp);
-  const overlapEnd = Math.min(range.endSeconds, wrapped.timestamp + wrapped.duration);
-  if (overlapEnd <= overlapStart) return false;
-
-  const sourceStart = Math.max(
-    0,
-    Math.round((overlapStart - wrapped.timestamp) * source.sampleRate),
-  );
-  const destinationStart = Math.max(
-    0,
-    Math.round((overlapStart - range.startSeconds) * source.sampleRate),
-  );
-  const requestedLength = Math.max(
-    0,
-    Math.round((overlapEnd - overlapStart) * source.sampleRate),
-  );
-  const length = Math.min(
-    requestedLength,
-    buffer.length - sourceStart,
-    range.frameCount - destinationStart,
-  );
-  if (length <= 0) return false;
-
-  for (let channel = 0; channel < source.numberOfChannels; channel += 1) {
-    const sourceChannel =
-      channel < buffer.numberOfChannels
-        ? buffer.getChannelData(channel)
-        : new Float32Array(buffer.length);
-    write(channel, sourceChannel, sourceStart, length, destinationStart);
-  }
-  return true;
-}
-
 export function createExtensionAudioApi(
   scope: ExtensionApiScope,
   dependencies: ExtensionAudioApiDependencies = {},
 ): ExtensionAudioApi {
-  const loadInput = dependencies.getInput ?? getAssetInput;
-  const createSink = dependencies.createSink ?? ((track) => new AudioBufferSink(track));
+  const analysis = dependencies.analysis ?? audioAnalysisService;
 
   const api: ExtensionAudioApi = {
     listClips: listAudioClips,
@@ -266,169 +199,79 @@ export function createExtensionAudioApi(
     subscribe: bindOwnerScopedSubscribe(scope, audioRelay, "Audio"),
     getRevision: () => audioRelay.getRevision(),
     inspect: async (assetId, request) => {
-      assertAssetId(assetId);
-      try {
-        const opened = await openSource(
-          assetId,
-          scope.signal,
-          request?.signal,
-          loadInput,
-        );
-        if ("ok" in opened) return opened;
-        return Object.freeze({ ok: true as const, source: opened.source });
-      } catch (error) {
-        if (isAbortError(error)) throw error;
-        return failure(
-          "decode_failed",
-          error instanceof Error ? error.message : String(error),
-        );
-      }
+      const missing = assertRequestPreconditions(
+        assetId,
+        scope.signal,
+        request?.signal,
+      );
+      if (missing) return missing;
+      return toAudioResult(async () => {
+        const source = await analysis.inspect(assetId, {
+          signals: getSignals(scope.signal, request?.signal),
+        });
+        return Object.freeze({
+          ok: true as const,
+          source: toSourceSnapshot(source),
+        });
+      });
     },
     readPcm: async (assetId, request) => {
-      assertAssetId(assetId);
-      assertReadRequest(request);
-      try {
-        const opened = await openSource(
-          assetId,
-          scope.signal,
-          request?.signal,
-          loadInput,
-        );
-        if ("ok" in opened) return opened;
-        const range = normalizeRange(opened.source, request);
-        if ("ok" in range) return range;
-        if (range.frameCount > MAX_PCM_FRAMES) {
-          return failure(
-            "range_too_large",
-            `PCM reads are limited to ${MAX_PCM_FRAMES} source frames per request.`,
-          );
-        }
-
-        const channels = Array.from(
-          { length: opened.source.numberOfChannels },
-          () => new Float32Array(range.frameCount),
-        );
-        let decoded = false;
-        const sink = createSink(opened.track);
-        for await (const wrapped of sink.buffers(range.startSeconds, range.endSeconds)) {
-          abortIfNeeded(scope.signal, request?.signal);
-          decoded =
-            copyWrappedBuffer(
-              wrapped,
-              opened.source,
-              range,
-              (channel, sourceData, sourceStart, length, destinationStart) => {
-                channels[channel]!.set(
-                  sourceData.subarray(sourceStart, sourceStart + length),
-                  destinationStart,
-                );
-              },
-            ) || decoded;
-        }
-        if (!decoded) {
-          return failure("decode_failed", "The requested audio range produced no PCM.");
-        }
+      const missing = assertRequestPreconditions(
+        assetId,
+        scope.signal,
+        request?.signal,
+        () => assertReadRequest(request?.startSeconds, request?.endSeconds),
+      );
+      if (missing) return missing;
+      return toAudioResult(async () => {
+        const pcm = await analysis.readPcm(assetId, {
+          startSeconds: request?.startSeconds,
+          endSeconds: request?.endSeconds,
+          maxFrames: MAX_PCM_FRAMES,
+          signals: getSignals(scope.signal, request?.signal),
+        });
         return Object.freeze({
           ok: true as const,
-          source: opened.source,
-          startSeconds: range.startSeconds,
-          durationSeconds: range.frameCount / opened.source.sampleRate,
-          channels: Object.freeze(channels),
+          source: toSourceSnapshot(pcm.source),
+          startSeconds: pcm.startSeconds,
+          durationSeconds: pcm.durationSeconds,
+          channels: pcm.channels,
         });
-      } catch (error) {
-        if (isAbortError(error)) throw error;
-        return failure(
-          "decode_failed",
-          error instanceof Error ? error.message : String(error),
-        );
-      }
+      });
     },
     readWaveform: async (assetId, request) => {
-      assertAssetId(assetId);
-      assertReadRequest(request);
-      const samplesPerPeak = request?.samplesPerPeak ?? DEFAULT_SAMPLES_PER_PEAK;
-      if (!Number.isInteger(samplesPerPeak) || samplesPerPeak <= 0) {
-        throw new RangeError("samplesPerPeak must be a positive integer.");
-      }
-      try {
-        const opened = await openSource(
-          assetId,
-          scope.signal,
-          request?.signal,
-          loadInput,
-        );
-        if ("ok" in opened) return opened;
-        const range = normalizeRange(opened.source, request);
-        if ("ok" in range) return range;
-        const peakCount = Math.ceil(range.frameCount / samplesPerPeak);
-        if (
-          range.frameCount > MAX_WAVEFORM_SOURCE_FRAMES ||
-          peakCount > MAX_WAVEFORM_PEAKS
-        ) {
-          return failure(
-            "range_too_large",
-            "Waveform reads exceed the host's decoded-frame or peak limit.",
-          );
-        }
-
-        const channels = Array.from(
-          { length: opened.source.numberOfChannels },
-          () => ({
-            min: new Float32Array(peakCount).fill(1),
-            max: new Float32Array(peakCount).fill(-1),
-            seen: new Uint8Array(peakCount),
-          }),
-        );
-        let decoded = false;
-        const sink = createSink(opened.track);
-        for await (const wrapped of sink.buffers(range.startSeconds, range.endSeconds)) {
-          abortIfNeeded(scope.signal, request?.signal);
-          decoded =
-            copyWrappedBuffer(
-              wrapped,
-              opened.source,
-              range,
-              (channel, sourceData, sourceStart, length, destinationStart) => {
-                const output = channels[channel]!;
-                for (let offset = 0; offset < length; offset += 1) {
-                  const peakIndex = Math.floor(
-                    (destinationStart + offset) / samplesPerPeak,
-                  );
-                  const value = sourceData[sourceStart + offset] ?? 0;
-                  output.min[peakIndex] = Math.min(output.min[peakIndex] ?? 1, value);
-                  output.max[peakIndex] = Math.max(output.max[peakIndex] ?? -1, value);
-                  output.seen[peakIndex] = 1;
-                }
-              },
-            ) || decoded;
-        }
-        if (!decoded) {
-          return failure("decode_failed", "The requested audio range produced no waveform.");
-        }
+      const samplesPerPeak =
+        request?.samplesPerPeak ?? DEFAULT_SAMPLES_PER_PEAK;
+      const missing = assertRequestPreconditions(
+        assetId,
+        scope.signal,
+        request?.signal,
+        () => {
+          assertReadRequest(request?.startSeconds, request?.endSeconds);
+          if (!Number.isInteger(samplesPerPeak) || samplesPerPeak <= 0) {
+            throw new RangeError("samplesPerPeak must be a positive integer.");
+          }
+        },
+      );
+      if (missing) return missing;
+      return toAudioResult(async () => {
+        const waveform = await analysis.readWaveform(assetId, {
+          startSeconds: request?.startSeconds,
+          endSeconds: request?.endSeconds,
+          samplesPerPeak,
+          maxSourceFrames: MAX_WAVEFORM_SOURCE_FRAMES,
+          maxPeaks: MAX_WAVEFORM_PEAKS,
+          signals: getSignals(scope.signal, request?.signal),
+        });
         return Object.freeze({
           ok: true as const,
-          source: opened.source,
-          startSeconds: range.startSeconds,
-          durationSeconds: range.frameCount / opened.source.sampleRate,
-          samplesPerPeak,
-          channels: Object.freeze(
-            channels.map((channel) => {
-              for (let index = 0; index < channel.seen.length; index += 1) {
-                if (channel.seen[index]) continue;
-                channel.min[index] = 0;
-                channel.max[index] = 0;
-              }
-              return Object.freeze({ min: channel.min, max: channel.max });
-            }),
-          ),
+          source: toSourceSnapshot(waveform.source),
+          startSeconds: waveform.startSeconds,
+          durationSeconds: waveform.durationSeconds,
+          samplesPerPeak: waveform.samplesPerPeak,
+          channels: waveform.channels,
         });
-      } catch (error) {
-        if (isAbortError(error)) throw error;
-        return failure(
-          "decode_failed",
-          error instanceof Error ? error.message : String(error),
-        );
-      }
+      });
     },
   };
   return Object.freeze(api);

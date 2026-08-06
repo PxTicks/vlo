@@ -15,7 +15,7 @@ import { HostCommandTable } from "../../../core/shell/commandTable";
 import { HostContextKeyService } from "../../../core/shell/contextKeys";
 import { HostKeybindingRegistry } from "../../../core/shell/keybindingRegistry";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
-import { useAssetStore } from "../../userAssets";
+import { AudioAnalysisService, useAssetStore } from "../../userAssets";
 import type { Asset } from "../../../types/Asset";
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 import { createExtensionAudioApi } from "../audio/createExtensionAudioApi";
@@ -52,12 +52,16 @@ function createDecoder(
       getChannelData: () => Float32Array.from(values),
     } as unknown as AudioBuffer,
   };
+  const createSink = () => ({
+    buffers: async function* () {
+      yield wrapped;
+    },
+  });
   return {
     input,
-    createSink: () => ({
-      buffers: async function* () {
-        yield wrapped;
-      },
+    analysis: new AudioAnalysisService({
+      getInput: async () => input,
+      createSink,
     }),
   };
 }
@@ -85,8 +89,7 @@ function createHarness(
   const decoder = createDecoder(values, sampleRate, firstTimestampSeconds);
   const api = {
     audio: createExtensionAudioApi(scope, {
-      getInput: async () => decoder.input,
-      createSink: decoder.createSink,
+      analysis: decoder.analysis,
     }),
     timeline: createExtensionTimelineApi(scope),
     transformations: {

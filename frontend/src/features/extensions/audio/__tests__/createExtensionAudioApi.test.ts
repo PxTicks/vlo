@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Input, InputAudioTrack, WrappedAudioBuffer } from "mediabunny";
 import type { ExtensionApiScope, ExtensionResource } from "../../types";
-import { useAssetStore } from "../../../userAssets";
+import {
+  AudioAnalysisService,
+  useAssetStore,
+} from "../../../userAssets";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import type { Asset } from "../../../../types/Asset";
 import type { TimelineClip, TimelineTrack } from "../../../../types/TimelineTypes";
@@ -98,12 +101,16 @@ function createDecoder(
     timestamp: firstTimestampSeconds,
     duration: values.length / sampleRate,
   };
+  const createSink = () => ({
+    buffers: async function* () {
+      yield wrapped;
+    },
+  });
   return {
     input,
-    createSink: () => ({
-      buffers: async function* () {
-        yield wrapped;
-      },
+    analysis: new AudioAnalysisService({
+      getInput: async () => input,
+      createSink,
     }),
   };
 }
@@ -174,8 +181,7 @@ describe("createExtensionAudioApi", () => {
   it("decodes an exact bounded PCM range and derives a peak envelope", async () => {
     const decoder = createDecoder([-1, -0.5, 0, 0.5, 1, 0.5, 0, -0.5]);
     const api = createExtensionAudioApi(createScope(), {
-      getInput: async () => decoder.input,
-      createSink: decoder.createSink,
+      analysis: decoder.analysis,
     });
 
     const pcm = await api.readPcm("asset-audio", {
@@ -207,8 +213,7 @@ describe("createExtensionAudioApi", () => {
         firstTimestampSeconds,
       );
       const api = createExtensionAudioApi(createScope(), {
-        getInput: async () => decoder.input,
-        createSink: decoder.createSink,
+        analysis: decoder.analysis,
       });
 
       const inspected = await api.inspect("asset-audio");
@@ -242,8 +247,7 @@ describe("createExtensionAudioApi", () => {
   it("returns typed source/range failures and throws for malformed requests", async () => {
     const decoder = createDecoder([0, 0, 0, 0]);
     const api = createExtensionAudioApi(createScope(), {
-      getInput: async () => decoder.input,
-      createSink: decoder.createSink,
+      analysis: decoder.analysis,
     });
 
     await expect(api.inspect("missing")).resolves.toMatchObject({
@@ -259,6 +263,12 @@ describe("createExtensionAudioApi", () => {
     await expect(
       api.readPcm("asset-audio", { startSeconds: Number.NaN }),
     ).rejects.toThrow("finite");
+    await expect(
+      api.readPcm("missing", { startSeconds: Number.NaN }),
+    ).rejects.toThrow("finite");
+    await expect(
+      api.readWaveform("missing", { samplesPerPeak: 0 }),
+    ).rejects.toThrow("positive integer");
     await expect(api.inspect(" ")).rejects.toThrow("non-empty asset ID");
   });
 
@@ -266,13 +276,15 @@ describe("createExtensionAudioApi", () => {
     const controller = new AbortController();
     const decoder = createDecoder([0, 0, 0, 0]);
     const api = createExtensionAudioApi(createScope(controller.signal), {
-      getInput: async () => decoder.input,
-      createSink: decoder.createSink,
+      analysis: decoder.analysis,
     });
 
     controller.abort();
 
     await expect(api.inspect("asset-audio")).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    await expect(api.inspect("missing")).rejects.toMatchObject({
       name: "AbortError",
     });
   });

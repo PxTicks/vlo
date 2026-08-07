@@ -1,4 +1,5 @@
 import type { TimelineSelection } from "../../../types/TimelineTypes";
+import { captureVideoFrameFile } from "../../miniEditor";
 import { useProjectStore } from "../../project";
 import {
   MASK_CROP_VIDEO_BITRATE,
@@ -11,7 +12,6 @@ import {
   captureFramePngAtTick,
   renderTimelineSelectionToMp4WithMask,
 } from "../utils/inputSelection";
-import { captureVideoFrameFile } from "../utils/miniEditorEdit";
 import type {
   IframeTimelineSelectionSettings,
   ProcessedIframeTimelineSelection,

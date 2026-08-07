@@ -1,7 +1,7 @@
 export { AssetBrowser } from "./AssetBrowser";
 export { declareLibrarySortModes } from "./sortModesCatalogue";
 export { AssetCard } from "./components/AssetCard";
-export { AssetPreviewDialog } from "./components/AssetPreviewDialog";
+export { openAssetInMiniEditor } from "./openAssetInMiniEditor";
 export { useTimelineAssetRevealClipOverlay } from "./hooks/useTimelineAssetRevealClipOverlay";
 export { useAssetStore } from "./useAssetStore";
 export {

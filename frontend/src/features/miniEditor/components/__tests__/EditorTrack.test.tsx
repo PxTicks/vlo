@@ -46,6 +46,13 @@ function renderTrack() {
 }
 
 describe("EditorTrack", () => {
+  it("keeps crop handles above the wider playhead hit target", () => {
+    renderTrack();
+
+    expect(screen.getByLabelText("Crop start")).toHaveStyle({ zIndex: "4" });
+    expect(screen.getByLabelText("Playhead")).toHaveStyle({ zIndex: "3" });
+  });
+
   it("scrubs on the empty track and during pointer movement", () => {
     const { track, handlers } = renderTrack();
 
@@ -57,6 +64,19 @@ describe("EditorTrack", () => {
     expect(handlers.onSeek).toHaveBeenNthCalledWith(1, 250);
     expect(handlers.onSeek).toHaveBeenNthCalledWith(2, 500);
     expect(track.releasePointerCapture).toHaveBeenCalledWith(1);
+  });
+
+  it("drags the playhead directly", () => {
+    const { track, handlers } = renderTrack();
+
+    fireEvent.pointerDown(screen.getByLabelText("Playhead"), {
+      clientX: 300,
+      pointerId: 8,
+    });
+    fireEvent.pointerMove(track, { clientX: 650, pointerId: 8 });
+    fireEvent.pointerUp(track, { pointerId: 8 });
+
+    expect(handlers.onSeek).toHaveBeenCalledWith(650);
   });
 
   it("drags both crop handles", () => {

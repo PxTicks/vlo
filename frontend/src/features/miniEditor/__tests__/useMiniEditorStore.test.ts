@@ -5,12 +5,12 @@ import type { ResolvedEditorSource } from "../types";
 import { useMiniEditorStore } from "../useMiniEditorStore";
 
 function source(
-  videoUrl = "blob:source",
+  sourceUrl = "blob:source",
   durationTicks = mediaSecondsToTick(10),
 ): ResolvedEditorSource {
   return {
-    videoUrl,
-    videoFile: new File(["video"], "source.mp4", { type: "video/mp4" }),
+    sourceUrl,
+    sourceFile: new File(["video"], "source.mp4", { type: "video/mp4" }),
     durationTicks,
   };
 }
@@ -237,7 +237,7 @@ describe("useMiniEditorStore", () => {
       },
       prepared,
     );
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith(prepared.videoUrl);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(prepared.sourceUrl);
     expect(useMiniEditorStore.getState().isOpen).toBe(false);
   });
 
@@ -270,5 +270,125 @@ describe("useMiniEditorStore", () => {
     });
     await useMiniEditorStore.getState().save();
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("runs viewer extractions and keeps the prepared source open", async () => {
+    const prepared = source();
+    const onExtractRange = vi.fn(async () => undefined);
+    const onExtractFrame = vi.fn(async () => undefined);
+    await useMiniEditorStore.getState().open({
+      prepare: vi.fn(async () => prepared),
+      onExtractRange,
+      onExtractFrame,
+    });
+    useMiniEditorStore.getState().setPlayhead(mediaSecondsToTick(3));
+
+    useMiniEditorStore.getState().beginRangeExtraction();
+    await useMiniEditorStore.getState().extractRange();
+    useMiniEditorStore.getState().beginFrameExtraction();
+    await useMiniEditorStore.getState().extractFrame();
+
+    expect(onExtractRange).toHaveBeenCalledWith(
+      {
+        cropStartTicks: 0,
+        cropEndTicks: prepared.durationTicks,
+        ranges: [],
+      },
+      prepared,
+    );
+    expect(onExtractFrame).toHaveBeenCalledWith(
+      mediaSecondsToTick(3),
+      prepared,
+    );
+    expect(useMiniEditorStore.getState()).toMatchObject({
+      isOpen: true,
+      status: "ready",
+      source: prepared,
+      extractionMode: null,
+    });
+  });
+
+  it("restores the previous selection when extraction selection is cancelled", async () => {
+    const prepared = source();
+    await useMiniEditorStore.getState().open({
+      prepare: vi.fn(async () => prepared),
+      onExtractRange: vi.fn(),
+    });
+    useMiniEditorStore
+      .getState()
+      .setCrop(mediaSecondsToTick(1), mediaSecondsToTick(8));
+    useMiniEditorStore.getState().setPlayhead(mediaSecondsToTick(4));
+    useMiniEditorStore.getState().beginRangeExtraction();
+    useMiniEditorStore
+      .getState()
+      .setCrop(mediaSecondsToTick(2), mediaSecondsToTick(5));
+
+    useMiniEditorStore.getState().cancelExtractionSelection();
+
+    expect(useMiniEditorStore.getState()).toMatchObject({
+      extractionMode: null,
+      cropStartTicks: mediaSecondsToTick(1),
+      cropEndTicks: mediaSecondsToTick(8),
+      playheadTicks: mediaSecondsToTick(4),
+    });
+  });
+
+  it("notifies an opener when another owner replaces its editor session", async () => {
+    const onClose = vi.fn();
+    await useMiniEditorStore.getState().open({
+      openerId: "asset-browser",
+      prepare: vi.fn(async () => source("blob:asset")),
+      onClose,
+    });
+
+    await useMiniEditorStore.getState().open({
+      openerId: "generation-panel",
+      prepare: vi.fn(async () => source("blob:generation")),
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(useMiniEditorStore.getState().source?.sourceUrl).toBe(
+      "blob:generation",
+    );
+  });
+
+  it("updates navigation in place only for the active owner", async () => {
+    const previous = vi.fn();
+    await useMiniEditorStore.getState().open({
+      openerId: "asset-browser",
+      prepare: vi.fn(async () => source()),
+    });
+
+    useMiniEditorStore.getState().setNavigationState("generation-panel", {
+      onPrevious: previous,
+      hasPrevious: true,
+      hasNext: false,
+    });
+    expect(useMiniEditorStore.getState()._internal.hasPrevious).toBe(false);
+
+    useMiniEditorStore.getState().setNavigationState("asset-browser", {
+      onPrevious: previous,
+      hasPrevious: true,
+      hasNext: false,
+    });
+    expect(useMiniEditorStore.getState()._internal).toMatchObject({
+      onPrevious: previous,
+      hasPrevious: true,
+      hasNext: false,
+    });
+  });
+
+  it("shows the success notice supplied by the extraction owner", async () => {
+    await useMiniEditorStore.getState().open({
+      prepare: vi.fn(async () => source()),
+      onExtractFrame: vi.fn(async () => "Custom extraction complete."),
+    });
+
+    useMiniEditorStore.getState().beginFrameExtraction();
+    await useMiniEditorStore.getState().extractFrame();
+
+    expect(useMiniEditorStore.getState().notice).toBe(
+      "Custom extraction complete.",
+    );
   });
 });

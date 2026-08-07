@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import { Box } from "@mui/material";
 import type { EditorRangeMask } from "../types";
+import type { MiniEditorExtractionMode } from "../useMiniEditorStore";
 
 const TRACK_HEIGHT = 72;
 const HANDLE_WIDTH = 10;
@@ -16,6 +17,7 @@ interface EditorTrackProps {
   onUpdateRange: (id: string, startTicks: number, endTicks: number) => void;
   onSelectRange: (id: string | null) => void;
   onSeek: (ticks: number) => void;
+  extractionMode?: MiniEditorExtractionMode;
 }
 
 type DragKind =
@@ -37,6 +39,7 @@ export function EditorTrack({
   onUpdateRange,
   onSelectRange,
   onSeek,
+  extractionMode = null,
 }: EditorTrackProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragKind | null>(null);
@@ -131,6 +134,7 @@ export function EditorTrack({
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 4,
     "&::after": {
       content: '""',
       width: 2,
@@ -148,7 +152,10 @@ export function EditorTrack({
         height: TRACK_HEIGHT,
         borderRadius: 1,
         bgcolor: "#101013",
-        border: "1px solid #2a2a30",
+        border:
+          extractionMode !== null
+            ? "1px solid rgba(144,202,249,0.7)"
+            : "1px solid #2a2a30",
         overflow: "hidden",
         touchAction: "none",
         userSelect: "none",
@@ -202,12 +209,24 @@ export function EditorTrack({
       />
       <Box
         aria-label="Crop start"
-        sx={{ ...handleSx, left: `calc(${pct(cropStartTicks)} - ${HANDLE_WIDTH / 2}px)`, bgcolor: "rgba(144,202,249,0.9)" }}
+        sx={{
+          ...handleSx,
+          left: `calc(${pct(cropStartTicks)} - ${HANDLE_WIDTH / 2}px)`,
+          bgcolor: "rgba(144,202,249,0.9)",
+          opacity: extractionMode === "frame" ? 0.3 : 1,
+          pointerEvents: extractionMode === "frame" ? "none" : "auto",
+        }}
         onPointerDown={(event) => beginDrag(event, { kind: "crop-start" })}
       />
       <Box
         aria-label="Crop end"
-        sx={{ ...handleSx, left: `calc(${pct(cropEndTicks)} - ${HANDLE_WIDTH / 2}px)`, bgcolor: "rgba(144,202,249,0.9)" }}
+        sx={{
+          ...handleSx,
+          left: `calc(${pct(cropEndTicks)} - ${HANDLE_WIDTH / 2}px)`,
+          bgcolor: "rgba(144,202,249,0.9)",
+          opacity: extractionMode === "frame" ? 0.3 : 1,
+          pointerEvents: extractionMode === "frame" ? "none" : "auto",
+        }}
         onPointerDown={(event) => beginDrag(event, { kind: "crop-end" })}
       />
 
@@ -267,17 +286,47 @@ export function EditorTrack({
 
       {/* Playhead */}
       <Box
+        aria-label="Playhead"
         sx={{
           position: "absolute",
           top: 0,
           bottom: 0,
           left: pct(playheadTicks),
-          width: 2,
-          marginLeft: "-1px",
-          bgcolor: "#fff",
-          pointerEvents: "none",
+          width: 12,
+          marginLeft: "-6px",
+          cursor: "ew-resize",
+          zIndex: 3,
         }}
-      />
+        onPointerDown={(event) => beginDrag(event, { kind: "seek" })}
+      >
+        <Box
+          sx={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: 5,
+            width: 2,
+            bgcolor: "#fff",
+            boxShadow:
+              extractionMode === "frame"
+                ? "0 0 0 2px rgba(33,150,243,0.45)"
+                : "none",
+          }}
+        />
+        {extractionMode === "frame" ? (
+          <Box
+            sx={{
+              position: "absolute",
+              top: 0,
+              left: 2,
+              width: 8,
+              height: 8,
+              bgcolor: "#fff",
+              clipPath: "polygon(0 0, 100% 0, 50% 100%)",
+            }}
+          />
+        ) : null}
+      </Box>
     </Box>
   );
 }

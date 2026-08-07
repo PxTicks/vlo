@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Box, Tab, Tabs, Typography } from "@mui/material";
 import VideoLibraryIcon from "@mui/icons-material/VideoLibrary";
 import LayersIcon from "@mui/icons-material/Layers";
@@ -9,22 +9,12 @@ import { useCompositeLibraryStore } from "../../composite";
 import {
   AssetBrowser,
   AssetCard,
-  AssetPreviewDialog,
+  openAssetInMiniEditor,
   useAssetStore,
 } from "../../userAssets";
 import { useIframeTimelineSelectionStore } from "./useIframeTimelineSelectionStore";
 
 export type IframeAssetDockTab = "assets" | "composites" | "temporary";
-
-/**
- * Preview request from a dock card. Temporary selections are not in the asset
- * store, so they carry their ready blob URL directly; composite baked clips are
- * store assets and hydrate through the store instead.
- */
-interface DockPreviewTarget {
-  asset: Asset;
-  sourceUrlOverride?: string;
-}
 
 interface IframeAssetDockProps {
   activeTab: IframeAssetDockTab;
@@ -65,7 +55,7 @@ function DockPanelHeader({ children }: { children: string }) {
 function IframeCompositeLibrary({
   onPreview,
 }: {
-  onPreview: (target: DockPreviewTarget) => void;
+  onPreview: (asset: Asset) => void;
 }) {
   const composites = useCompositeLibraryStore((state) => state.composites);
   const assets = useAssetStore((state) => state.assets);
@@ -93,7 +83,7 @@ function IframeCompositeLibrary({
           <AssetCard
             asset={asset}
             hideActions
-            onRequestPreview={() => onPreview({ asset })}
+            onRequestPreview={() => onPreview(asset)}
           />
         )}
       />
@@ -104,7 +94,7 @@ function IframeCompositeLibrary({
 function IframeTemporaryLibrary({
   onPreview,
 }: {
-  onPreview: (target: DockPreviewTarget) => void;
+  onPreview: (asset: Asset) => void;
 }) {
   const entries = useIframeTimelineSelectionStore((state) => state.assets);
 
@@ -122,12 +112,7 @@ function IframeTemporaryLibrary({
           <AssetCard
             asset={entry.asset}
             hideActions
-            onRequestPreview={() =>
-              onPreview({
-                asset: entry.asset,
-                sourceUrlOverride: entry.asset.src,
-              })
-            }
+            onRequestPreview={() => onPreview(entry.asset)}
           />
         )}
       />
@@ -144,7 +129,11 @@ export function IframeAssetDock({
   );
   const visibleTab =
     activeTab === "composites" && !hasComposites ? "assets" : activeTab;
-  const [preview, setPreview] = useState<DockPreviewTarget | null>(null);
+  const handlePreview = (asset: Asset) => {
+    void openAssetInMiniEditor(asset, {
+      openerId: "iframe-asset-dock",
+    });
+  };
 
   return (
     <Box sx={{ display: "flex", minWidth: 0, minHeight: 0, flex: 1 }}>
@@ -205,19 +194,12 @@ export function IframeAssetDock({
       >
         {visibleTab === "assets" ? <AssetBrowser /> : null}
         {visibleTab === "composites" ? (
-          <IframeCompositeLibrary onPreview={setPreview} />
+          <IframeCompositeLibrary onPreview={handlePreview} />
         ) : null}
         {visibleTab === "temporary" ? (
-          <IframeTemporaryLibrary onPreview={setPreview} />
+          <IframeTemporaryLibrary onPreview={handlePreview} />
         ) : null}
       </Box>
-      {preview ? (
-        <AssetPreviewDialog
-          asset={preview.asset}
-          sourceUrlOverride={preview.sourceUrlOverride}
-          onClose={() => setPreview(null)}
-        />
-      ) : null}
     </Box>
   );
 }

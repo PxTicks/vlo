@@ -15,8 +15,8 @@ import { useMiniEditorStore } from "../useMiniEditorStore";
 
 function preparedSource(): ResolvedEditorSource {
   return {
-    videoUrl: "blob:preview",
-    videoFile: new File(["video"], "preview.mp4", { type: "video/mp4" }),
+    sourceUrl: "blob:preview",
+    sourceFile: new File(["video"], "preview.mp4", { type: "video/mp4" }),
     durationTicks: mediaSecondsToTick(5),
   };
 }
@@ -45,8 +45,8 @@ describe("MiniEditorModal", () => {
     });
     const view = render(<MiniEditorModal />);
 
-    expect(screen.getByText("Preparing video…")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByText("Preparing asset…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toBeEnabled();
 
     act(() => {
       useMiniEditorStore.setState({
@@ -63,6 +63,7 @@ describe("MiniEditorModal", () => {
     await act(async () => {
       await useMiniEditorStore.getState().open({
         title: "Edit generated video",
+        autoPlay: true,
         prepare: vi.fn(async () => source),
         onSave: vi.fn(),
       });
@@ -73,6 +74,7 @@ describe("MiniEditorModal", () => {
     expect(screen.getByText(/Crop:/)).toHaveTextContent("0:05.00");
     const video = document.querySelector("video");
     expect(video).not.toBeNull();
+    expect(video).toHaveAttribute("autoplay");
     Object.defineProperties(video, {
       videoWidth: { configurable: true, value: 1920 },
       videoHeight: { configurable: true, value: 1080 },
@@ -113,7 +115,7 @@ describe("MiniEditorModal", () => {
     expect(useMiniEditorStore.getState().ranges).toEqual([]);
   });
 
-  it("drives preview playback, loops at the crop end, and pauses", async () => {
+  it("synchronizes native playback, loops at the crop end, and pauses", async () => {
     const animation = installAnimationFrameMock();
     const source = preparedSource();
     await act(async () => {
@@ -129,7 +131,8 @@ describe("MiniEditorModal", () => {
     const video = document.querySelector("video") as HTMLVideoElement;
     video.currentTime = 4;
 
-    fireEvent.click(screen.getByRole("button", { name: "Play preview" }));
+    expect(video).toHaveAttribute("controls");
+    fireEvent.play(video);
     await waitFor(() => {
       expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
     });
@@ -142,10 +145,30 @@ describe("MiniEditorModal", () => {
       mediaSecondsToTick(1),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Pause preview" }));
+    fireEvent.pause(video);
     await waitFor(() => {
       expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
     });
+    expect(useMiniEditorStore.getState().isPlaying).toBe(false);
+  });
+
+  it("synchronizes native audio seeking with the editor playhead", async () => {
+    const source = { ...preparedSource(), mediaType: "audio" as const };
+    await act(async () => {
+      await useMiniEditorStore.getState().open({
+        prepare: vi.fn(async () => source),
+      });
+    });
+    render(<MiniEditorModal />);
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+
+    fireEvent.play(audio);
+    expect(useMiniEditorStore.getState().isPlaying).toBe(true);
+    audio.currentTime = 2.5;
+    fireEvent.seeked(audio);
+    expect(useMiniEditorStore.getState().playheadTicks).toBe(
+      mediaSecondsToTick(2.5),
+    );
   });
 
   it("saves successfully and disables closing while saving", async () => {
@@ -188,7 +211,78 @@ describe("MiniEditorModal", () => {
     render(<MiniEditorModal />);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith(source.videoUrl);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(source.sourceUrl);
     expect(useMiniEditorStore.getState().isOpen).toBe(false);
+  });
+
+  it("selects and confirms a viewer range and frame without closing", async () => {
+    const source = preparedSource();
+    const onExtractRange = vi.fn(async () => undefined);
+    const onExtractFrame = vi.fn(async () => undefined);
+    await act(async () => {
+      await useMiniEditorStore.getState().open({
+        title: "Library video",
+        prepare: vi.fn(async () => source),
+        onExtractRange,
+        onExtractFrame,
+      });
+    });
+    render(<MiniEditorModal />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Extract frame" }));
+    expect(onExtractFrame).not.toHaveBeenCalled();
+    expect(screen.getByText("Select the frame to extract")).toBeInTheDocument();
+    act(() => {
+      useMiniEditorStore.getState().setPlayhead(mediaSecondsToTick(2));
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm frame extraction" }),
+    );
+    await waitFor(() => expect(onExtractFrame).toHaveBeenCalledOnce());
+    expect(onExtractFrame).toHaveBeenCalledWith(
+      mediaSecondsToTick(2),
+      source,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Extract range" }));
+    expect(onExtractRange).not.toHaveBeenCalled();
+    expect(screen.getByText("Select the range to extract")).toBeInTheDocument();
+    act(() => {
+      useMiniEditorStore
+        .getState()
+        .setCrop(mediaSecondsToTick(1), mediaSecondsToTick(4));
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm range extraction" }),
+    );
+    await waitFor(() => expect(onExtractRange).toHaveBeenCalledOnce());
+    expect(useMiniEditorStore.getState().isOpen).toBe(true);
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+  });
+
+  it("cancels an extraction selection and restores its handles", async () => {
+    const source = preparedSource();
+    await act(async () => {
+      await useMiniEditorStore.getState().open({
+        prepare: vi.fn(async () => source),
+        onExtractRange: vi.fn(),
+      });
+    });
+    render(<MiniEditorModal />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Extract range" }));
+    act(() => {
+      useMiniEditorStore
+        .getState()
+        .setCrop(mediaSecondsToTick(1), mediaSecondsToTick(3));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel selection" }));
+
+    expect(useMiniEditorStore.getState()).toMatchObject({
+      extractionMode: null,
+      cropStartTicks: 0,
+      cropEndTicks: source.durationTicks,
+      isOpen: true,
+    });
   });
 });

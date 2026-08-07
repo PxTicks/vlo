@@ -195,10 +195,10 @@ function buildSyntheticRenderInputs(
   const asset: Asset = {
     id: `mini_editor_source_${crypto.randomUUID()}`,
     hash: "mini-editor-source",
-    name: source.videoFile.name || "edited-video",
+    name: source.sourceFile.name || "edited-video",
     type: "video",
-    src: source.videoUrl,
-    file: source.videoFile,
+    src: source.sourceUrl,
+    file: source.sourceFile,
     duration: tickToMediaSeconds(durationTicks),
     createdAt: Date.now(),
   };
@@ -325,48 +325,5 @@ export async function probeVideoDurationTicks(
     };
     video.onerror = () => reject(new Error("Could not read video metadata"));
     video.src = videoUrl;
-  });
-}
-
-/** Captures a single frame of a video URL as a PNG File (used for slot thumbnails). */
-export async function captureVideoFrameFile(
-  videoUrl: string,
-  atSeconds: number,
-  filename: string,
-): Promise<File> {
-  const video = document.createElement("video");
-  video.muted = true;
-  video.preload = "auto";
-  video.src = videoUrl;
-
-  await new Promise<void>((resolve, reject) => {
-    video.onloadeddata = () => resolve();
-    video.onerror = () =>
-      reject(new Error("Could not load video for thumbnail"));
-  });
-
-  await new Promise<void>((resolve) => {
-    video.onseeked = () => resolve();
-    const max = Number.isFinite(video.duration)
-      ? Math.max(0, video.duration - 0.05)
-      : 0;
-    video.currentTime = Math.min(Math.max(0, atSeconds), max);
-  });
-
-  const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth || 320;
-  canvas.height = video.videoHeight || 180;
-  const ctx = canvas.getContext("2d");
-  ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/png"),
-  );
-  if (!blob) {
-    throw new Error("Could not encode video thumbnail");
-  }
-  return new File([blob], filename, {
-    type: "image/png",
-    lastModified: Date.now(),
   });
 }

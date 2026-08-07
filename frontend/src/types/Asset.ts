@@ -125,6 +125,14 @@ export type CreationMetadata =
       extractedAudioClip?: ExtractedAudioClipMetadata;
     }
   | {
+      /** A range or frame extracted directly from a library asset. */
+      source: "asset_excerpt";
+      parentAssetId: string;
+      kind: "range" | "frame";
+      startTicks: number;
+      endTicks: number;
+    }
+  | {
       /** Baked video for a Composite clip; the selection is its content
        *  replayed at local zero. Distinct from "extracted" so the bake isn't
        *  treated as a user-extracted library clip. */

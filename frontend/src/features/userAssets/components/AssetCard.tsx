@@ -5,7 +5,6 @@ import { useDraggable } from "@dnd-kit/core";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import GradientIcon from "@mui/icons-material/Gradient";
 import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
-import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import DeleteIcon from "@mui/icons-material/Delete";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
@@ -83,9 +82,7 @@ const ThumbnailContainer = styled(Box, {
   position: "relative",
 }));
 
-const OverlayControls = styled(Box, {
-  shouldForwardProp: (prop) => prop !== "isPlaying",
-})<{ isPlaying: boolean }>(({ isPlaying }) => ({
+const OverlayControls = styled(Box)({
   position: "absolute",
   top: 0,
   left: 0,
@@ -94,11 +91,11 @@ const OverlayControls = styled(Box, {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  backgroundColor: isPlaying ? "transparent" : "rgba(0,0,0,0.3)",
-  opacity: isPlaying ? 0 : 1,
+  backgroundColor: "rgba(0,0,0,0.3)",
+  opacity: 1,
   transition: "opacity 0.2s",
   "&:hover": { opacity: 1 },
-}));
+});
 
 const DurationBadge = styled(Box)({
   position: "absolute",
@@ -201,7 +198,6 @@ function AssetCardContent({
   onRequestPreview,
   layout = "default",
 }: AssetCardProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
 
   const displayImage =
@@ -219,10 +215,6 @@ function AssetCardContent({
     () => ({ slot: "library.item.actions", asset: toExtensionAssetSnapshot(asset) }),
     [asset],
   );
-
-  const handleMouseLeave = useCallback(() => {
-    setIsPlaying(false);
-  }, []);
 
   const handleOpenMenu = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -299,17 +291,9 @@ function AssetCardContent({
   const handlePlayToggle = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
-
-      if (asset.type === "video" || asset.type === "image") {
-        onRequestPreview?.(asset.id);
-        return;
-      }
-
-      if (asset.type === "audio") {
-        setIsPlaying((prev) => !prev);
-      }
+      onRequestPreview?.(asset.id);
     },
-    [asset.id, asset.type, onRequestPreview],
+    [asset.id, onRequestPreview],
   );
 
   // Menu as data; all items remain inline actions because they are coupled to
@@ -363,7 +347,7 @@ function AssetCardContent({
 
   return (
     <>
-      <ContentRoot onMouseLeave={handleMouseLeave}>
+      <ContentRoot>
         {/* Thumbnail / Video Area */}
         <ThumbnailContainer layout={layout}>
           {displayImage ? (
@@ -386,16 +370,11 @@ function AssetCardContent({
             </Box>
           )}
 
-          {/* Audio Player */}
-          {isPlaying && asset.type === "audio" && (
-            <audio src={asset.src} autoPlay loop />
-          )}
-
           {/* Preview / Playback Overlay Controls */}
           {asset.type === "video" ||
           asset.type === "audio" ||
           (asset.type === "image" && displayImage) ? (
-            <OverlayControls isPlaying={asset.type === "audio" && isPlaying}>
+            <OverlayControls>
               <IconButton
                 onClick={handlePlayToggle}
                 onPointerDown={(e) => e.stopPropagation()}
@@ -404,16 +383,12 @@ function AssetCardContent({
                     ? "Preview video"
                     : asset.type === "image"
                       ? "Preview image"
-                      : isPlaying
-                        ? "Pause audio"
-                        : "Play audio"
+                      : "Preview audio"
                 }
                 sx={MEDIA_ACTION_STYLES}
               >
                 {asset.type === "image" ? (
                   <ZoomInIcon sx={{ fontSize: 32 }} />
-                ) : asset.type === "audio" && isPlaying ? (
-                  <PauseCircleOutlineIcon sx={{ fontSize: 32 }} />
                 ) : (
                   <PlayCircleOutlineIcon sx={{ fontSize: 32 }} />
                 )}
@@ -573,6 +548,10 @@ function AssetCardComponent({
       onClick={(event) => {
         event.stopPropagation();
         onSelect?.(event);
+      }}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        onRequestPreview?.(asset.id);
       }}
       data-asset-id={asset.id}
       data-drag-disabled={disableDrag ? "true" : "false"}

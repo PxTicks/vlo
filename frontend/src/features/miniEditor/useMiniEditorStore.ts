@@ -9,17 +9,47 @@ import type {
   MiniEditorOpenArgs,
 } from "./types";
 
-export type MiniEditorStatus = "preparing" | "ready" | "saving" | "error";
+export type MiniEditorStatus =
+  | "preparing"
+  | "ready"
+  | "saving"
+  | "extracting-range"
+  | "extracting-frame"
+  | "error";
+
+export type MiniEditorExtractionMode = "range" | "frame" | null;
+
+function isWorkingStatus(status: MiniEditorStatus): boolean {
+  return (
+    status === "saving" ||
+    status === "extracting-range" ||
+    status === "extracting-frame"
+  );
+}
 
 /** Minimum trim/range width so handles never collapse onto each other. */
 const MIN_SPAN_TICKS = mediaSecondsToTick(0.1);
 
 interface MiniEditorInternal {
+  openerId: string | null;
+  autoPlay: boolean;
   prepare: MiniEditorOpenArgs["prepare"] | null;
   onSave: MiniEditorOpenArgs["onSave"] | null;
+  onExtractRange: MiniEditorOpenArgs["onExtractRange"] | null;
+  onExtractFrame: MiniEditorOpenArgs["onExtractFrame"] | null;
+  onClose: MiniEditorOpenArgs["onClose"] | null;
+  onPrevious: MiniEditorOpenArgs["onPrevious"] | null;
+  onNext: MiniEditorOpenArgs["onNext"] | null;
+  hasPrevious: boolean;
+  hasNext: boolean;
   /** Crop frame quantization (null = unconstrained, free dragging). */
   ticksPerFrame: number | null;
   frameStep: number;
+  extractionSnapshot: {
+    cropStartTicks: number;
+    cropEndTicks: number;
+    playheadTicks: number;
+  } | null;
 }
 
 /**
@@ -76,6 +106,7 @@ export interface MiniEditorState {
   title: string;
   status: MiniEditorStatus;
   error: string | null;
+  notice: string | null;
 
   source: ResolvedEditorSource | null;
   durationTicks: number;
@@ -90,10 +121,20 @@ export interface MiniEditorState {
 
   playheadTicks: number;
   isPlaying: boolean;
+  extractionMode: MiniEditorExtractionMode;
 
   _internal: MiniEditorInternal;
 
   open: (args: MiniEditorOpenArgs) => Promise<void>;
+  setNavigationState: (
+    openerId: string,
+    navigation: {
+      onPrevious?: () => void;
+      onNext?: () => void;
+      hasPrevious: boolean;
+      hasNext: boolean;
+    },
+  ) => void;
   close: () => void;
   setSourceDimensions: (width: number, height: number) => void;
   setCrop: (startTicks: number, endTicks: number) => void;
@@ -105,6 +146,11 @@ export interface MiniEditorState {
   setPlayhead: (ticks: number) => void;
   setPlaying: (playing: boolean) => void;
   save: () => Promise<void>;
+  beginRangeExtraction: () => void;
+  beginFrameExtraction: () => void;
+  cancelExtractionSelection: () => void;
+  extractRange: () => Promise<void>;
+  extractFrame: () => Promise<void>;
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -112,7 +158,7 @@ const clamp = (value: number, min: number, max: number) =>
 
 function revokeSource(source: ResolvedEditorSource | null) {
   if (source) {
-    URL.revokeObjectURL(source.videoUrl);
+    URL.revokeObjectURL(source.sourceUrl);
   }
 }
 
@@ -120,6 +166,7 @@ const INITIAL: Omit<
   MiniEditorState,
   | "open"
   | "close"
+  | "setNavigationState"
   | "setSourceDimensions"
   | "setCrop"
   | "addRangeAtPlayhead"
@@ -130,11 +177,17 @@ const INITIAL: Omit<
   | "setPlayhead"
   | "setPlaying"
   | "save"
+  | "beginRangeExtraction"
+  | "beginFrameExtraction"
+  | "cancelExtractionSelection"
+  | "extractRange"
+  | "extractFrame"
 > = {
   isOpen: false,
   title: "Edit video",
   status: "preparing",
   error: null,
+  notice: null,
   source: null,
   durationTicks: 0,
   sourceWidth: 0,
@@ -145,14 +198,36 @@ const INITIAL: Omit<
   selectedRangeId: null,
   playheadTicks: 0,
   isPlaying: false,
-  _internal: { prepare: null, onSave: null, ticksPerFrame: null, frameStep: 1 },
+  extractionMode: null,
+  _internal: {
+    openerId: null,
+    autoPlay: false,
+    prepare: null,
+    onSave: null,
+    onExtractRange: null,
+    onExtractFrame: null,
+    onClose: null,
+    onPrevious: null,
+    onNext: null,
+    hasPrevious: false,
+    hasNext: false,
+    ticksPerFrame: null,
+    frameStep: 1,
+    extractionSnapshot: null,
+  },
 };
 
 export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
   ...INITIAL,
 
   open: async (args) => {
-    revokeSource(get().source);
+    const previous = get();
+    const openerId = args.openerId ?? null;
+    const displacedOnClose =
+      previous.isOpen && previous._internal.openerId !== openerId
+        ? previous._internal.onClose
+        : null;
+    revokeSource(previous.source);
     set({
       ...INITIAL,
       isOpen: true,
@@ -160,8 +235,17 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
       title: args.title ?? "Edit video",
       ranges: args.initial?.ranges ?? [],
       _internal: {
+        openerId,
+        autoPlay: args.autoPlay ?? false,
         prepare: args.prepare,
-        onSave: args.onSave,
+        onSave: args.onSave ?? null,
+        onExtractRange: args.onExtractRange ?? null,
+        onExtractFrame: args.onExtractFrame ?? null,
+        onClose: args.onClose ?? null,
+        onPrevious: args.onPrevious ?? null,
+        onNext: args.onNext ?? null,
+        hasPrevious: args.hasPrevious ?? false,
+        hasNext: args.hasNext ?? false,
         ticksPerFrame:
           args.frameConstraint && args.frameConstraint.fps > 0
             ? getTicksPerFrame(args.frameConstraint.fps)
@@ -170,8 +254,10 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
           1,
           Math.round(args.frameConstraint?.frameStep ?? 1),
         ),
+        extractionSnapshot: null,
       },
     });
+    displacedOnClose?.();
 
     try {
       const source = await args.prepare();
@@ -186,11 +272,14 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
         0,
         Math.max(0, duration - MIN_SPAN_TICKS),
       );
-      const cropEnd = clamp(
-        args.initial?.cropEndTicks ?? duration,
-        cropStart + MIN_SPAN_TICKS,
-        duration,
-      );
+      const cropEnd =
+        duration > 0
+          ? clamp(
+              args.initial?.cropEndTicks ?? duration,
+              cropStart + MIN_SPAN_TICKS,
+              duration,
+            )
+          : 0;
       set({
         status: "ready",
         source,
@@ -212,8 +301,27 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
   },
 
   close: () => {
+    const onClose = get()._internal.onClose;
     revokeSource(get().source);
     set({ ...INITIAL });
+    onClose?.();
+  },
+
+  setNavigationState: (openerId, navigation) => {
+    const state = get();
+    if (!state.isOpen || state._internal.openerId !== openerId) {
+      return;
+    }
+
+    set({
+      _internal: {
+        ...state._internal,
+        onPrevious: navigation.onPrevious ?? null,
+        onNext: navigation.onNext ?? null,
+        hasPrevious: navigation.hasPrevious,
+        hasNext: navigation.hasNext,
+      },
+    });
   },
 
   setSourceDimensions: (width, height) => {
@@ -319,8 +427,20 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
 
   selectRange: (id) => set({ selectedRangeId: id }),
 
-  setPlayhead: (ticks) =>
-    set({ playheadTicks: clamp(ticks, 0, get().durationTicks) }),
+  setPlayhead: (ticks) => {
+    const state = get();
+    const clamped = clamp(ticks, 0, state.durationTicks);
+    const ticksPerFrame = state._internal.ticksPerFrame;
+    set({
+      playheadTicks: ticksPerFrame
+        ? clamp(
+            Math.round(clamped / ticksPerFrame) * ticksPerFrame,
+            0,
+            state.durationTicks,
+          )
+        : clamped,
+    });
+  },
 
   setPlaying: (playing) => set({ isPlaying: playing }),
 
@@ -328,9 +448,9 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
     const state = get();
     const { source } = state;
     const onSave = state._internal.onSave;
-    if (!source || !onSave || state.status === "saving") return;
+    if (!source || !onSave || isWorkingStatus(state.status)) return;
 
-    set({ status: "saving", error: null, isPlaying: false });
+    set({ status: "saving", error: null, notice: null, isPlaying: false });
     const spec: MiniEditorEditSpec = {
       cropStartTicks: state.cropStartTicks,
       cropEndTicks: state.cropEndTicks,
@@ -345,6 +465,191 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
         status: "error",
         error:
           error instanceof Error ? error.message : "Failed to save the edit",
+      });
+    }
+  },
+
+  beginRangeExtraction: () => {
+    const state = get();
+    if (
+      !state.source ||
+      !state._internal.onExtractRange ||
+      isWorkingStatus(state.status) ||
+      state.extractionMode !== null
+    ) {
+      return;
+    }
+
+    set({
+      extractionMode: "range",
+      error: null,
+      notice: null,
+      isPlaying: false,
+      _internal: {
+        ...state._internal,
+        extractionSnapshot: {
+          cropStartTicks: state.cropStartTicks,
+          cropEndTicks: state.cropEndTicks,
+          playheadTicks: state.playheadTicks,
+        },
+      },
+    });
+  },
+
+  beginFrameExtraction: () => {
+    const state = get();
+    if (
+      !state.source ||
+      !state._internal.onExtractFrame ||
+      isWorkingStatus(state.status) ||
+      state.extractionMode !== null
+    ) {
+      return;
+    }
+
+    set({
+      extractionMode: "frame",
+      error: null,
+      notice: null,
+      isPlaying: false,
+      _internal: {
+        ...state._internal,
+        extractionSnapshot: {
+          cropStartTicks: state.cropStartTicks,
+          cropEndTicks: state.cropEndTicks,
+          playheadTicks: state.playheadTicks,
+        },
+      },
+    });
+  },
+
+  cancelExtractionSelection: () => {
+    const state = get();
+    if (state.extractionMode === null || isWorkingStatus(state.status)) {
+      return;
+    }
+
+    const snapshot = state._internal.extractionSnapshot;
+    set({
+      extractionMode: null,
+      ...(snapshot
+        ? {
+            cropStartTicks: snapshot.cropStartTicks,
+            cropEndTicks: snapshot.cropEndTicks,
+            playheadTicks: snapshot.playheadTicks,
+          }
+        : {}),
+      error: null,
+      _internal: {
+        ...state._internal,
+        extractionSnapshot: null,
+      },
+    });
+  },
+
+  extractRange: async () => {
+    const state = get();
+    const { source } = state;
+    const onExtractRange = state._internal.onExtractRange;
+    if (
+      !source ||
+      !onExtractRange ||
+      isWorkingStatus(state.status) ||
+      state.extractionMode !== "range"
+    ) {
+      return;
+    }
+
+    set({
+      status: "extracting-range",
+      error: null,
+      notice: null,
+      isPlaying: false,
+    });
+    try {
+      const successNotice = await onExtractRange(
+        {
+          cropStartTicks: state.cropStartTicks,
+          cropEndTicks: state.cropEndTicks,
+          ranges: state.ranges,
+        },
+        source,
+      );
+      if (
+        get().source === source &&
+        get()._internal.onExtractRange === onExtractRange
+      ) {
+        set((current) => ({
+          status: "ready",
+          notice: successNotice ?? null,
+          extractionMode: null,
+          _internal: {
+            ...current._internal,
+            extractionSnapshot: null,
+          },
+        }));
+      }
+    } catch (error) {
+      if (
+        get().source !== source ||
+        get()._internal.onExtractRange !== onExtractRange
+      ) {
+        return;
+      }
+      set({
+        status: "error",
+        error:
+          error instanceof Error ? error.message : "Failed to extract range",
+      });
+    }
+  },
+
+  extractFrame: async () => {
+    const state = get();
+    const { source } = state;
+    const onExtractFrame = state._internal.onExtractFrame;
+    if (
+      !source ||
+      !onExtractFrame ||
+      isWorkingStatus(state.status) ||
+      state.extractionMode !== "frame"
+    ) {
+      return;
+    }
+
+    set({
+      status: "extracting-frame",
+      error: null,
+      notice: null,
+      isPlaying: false,
+    });
+    try {
+      const successNotice = await onExtractFrame(state.playheadTicks, source);
+      if (
+        get().source === source &&
+        get()._internal.onExtractFrame === onExtractFrame
+      ) {
+        set((current) => ({
+          status: "ready",
+          notice: successNotice ?? null,
+          extractionMode: null,
+          _internal: {
+            ...current._internal,
+            extractionSnapshot: null,
+          },
+        }));
+      }
+    } catch (error) {
+      if (
+        get().source !== source ||
+        get()._internal.onExtractFrame !== onExtractFrame
+      ) {
+        return;
+      }
+      set({
+        status: "error",
+        error:
+          error instanceof Error ? error.message : "Failed to extract frame",
       });
     }
   },

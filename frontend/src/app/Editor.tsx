@@ -42,6 +42,7 @@ import { useEditorOrchestration } from "./orchestration/useEditorOrchestration";
 import { registerColorGradingCustomControls } from "../features/colorGrading";
 import { registerHostPanelControls } from "../features/extensions/ui/registerHostPanelControls";
 import { ScopesDock } from "../features/scopes";
+import { MiniEditorModal } from "../features/miniEditor";
 
 registerColorGradingCustomControls();
 registerHostPanelControls();
@@ -221,6 +222,7 @@ export function Editor() {
       <TransitionDragOverlay />
       <HighVramWorkflowPrompt />
       <ScopesDock />
+      <MiniEditorModal />
     </DndContext>
   );
 }

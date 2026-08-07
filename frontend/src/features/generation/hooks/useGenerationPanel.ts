@@ -29,7 +29,6 @@ import {
 import { buildDerivedMaskRenderSignature } from "../utils/derivedMaskRenderSignature";
 import {
   buildEditedTimelineSelection,
-  captureVideoFrameFile,
   probeVideoDurationTicks,
   renderSyntheticEditedOutputs,
 } from "../utils/miniEditorEdit";
@@ -37,7 +36,7 @@ import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
 } from "../utils/manualSlotMedia";
-import { useMiniEditorStore } from "../../miniEditor";
+import { captureVideoFrameFile, useMiniEditorStore } from "../../miniEditor";
 import type {
   ResolvedEditorSource,
   MiniEditorEditSpec,
@@ -1141,7 +1140,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             typeof asset.duration === "number" && asset.duration > 0
               ? mediaSecondsToTick(asset.duration)
               : await probeVideoDurationTicks(videoUrl);
-          return { videoUrl, videoFile: file, durationTicks };
+          return { sourceUrl: videoUrl, sourceFile: file, durationTicks };
         };
       } else if (
         value.kind === "timelineSelection" &&
@@ -1158,7 +1157,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             typeof selection.end === "number"
               ? Math.max(0, selection.end - selection.start)
               : await probeVideoDurationTicks(videoUrl);
-          return { videoUrl, videoFile: file, durationTicks };
+          return { sourceUrl: videoUrl, sourceFile: file, durationTicks };
         };
       } else {
         return;
@@ -1169,7 +1168,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         source: ResolvedEditorSource,
       ) => {
         const thumbnailFile = await captureVideoFrameFile(
-          source.videoUrl,
+          source.sourceUrl,
           tickToMediaSeconds(spec.cropStartTicks),
           `mini-editor-thumb-${Date.now()}.png`,
         );
@@ -1259,6 +1258,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
           : 1;
 
       void useMiniEditorStore.getState().open({
+        openerId: "generation-panel",
         title: input?.label ? `Edit: ${input.label}` : "Edit video",
         prepare,
         onSave,

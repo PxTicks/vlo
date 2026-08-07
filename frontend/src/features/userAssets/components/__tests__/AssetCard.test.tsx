@@ -340,6 +340,16 @@ describe("AssetCard actions", () => {
     expect(onRequestPreview).toHaveBeenCalledWith(mockAsset.id);
   });
 
+  it("uses the asset viewer when a card is double-clicked", () => {
+    mockStores(0);
+    const onRequestPreview = vi.fn();
+
+    render(<AssetCard asset={mockAsset} onRequestPreview={onRequestPreview} />);
+    fireEvent.doubleClick(screen.getByTestId("asset-card"));
+
+    expect(onRequestPreview).toHaveBeenCalledWith(mockAsset.id);
+  });
+
   it("toggles the favourite flag from the heart button", () => {
     mockStores(0);
 

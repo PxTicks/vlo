@@ -20,6 +20,18 @@ import {
   useAssetBrowserRevealStore,
 } from "../useAssetBrowserRevealStore";
 import { useAssetBrowserSelectionStore } from "../useAssetBrowserSelectionStore";
+import { MiniEditorModal, useMiniEditorStore } from "../../miniEditor";
+import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
+
+const extractionMocks = vi.hoisted(() => ({
+  extractRange: vi.fn(),
+  extractFrame: vi.fn(),
+}));
+
+vi.mock("../services/AssetExtractionService", () => ({
+  extractAssetRangeFile: extractionMocks.extractRange,
+  extractAssetFrameFile: extractionMocks.extractFrame,
+}));
 
 // Mock the Zustand store hook
 vi.mock("../useAssetStore");
@@ -139,9 +151,12 @@ describe("AssetBrowser Component", () => {
       skippedExistingFiles: 0,
     });
     mockDeleteAsset.mockReset();
+    extractionMocks.extractRange.mockReset();
+    extractionMocks.extractFrame.mockReset();
     useInteractionStore.getState().stopDrag();
     useAssetBrowserRevealStore.setState({ revealRequest: null });
     useAssetBrowserSelectionStore.setState({ selectedAssetIds: [] });
+    useMiniEditorStore.getState().close();
     useProjectStore.setState((state) => ({
       ...state,
       config: {
@@ -836,7 +851,12 @@ describe("AssetBrowser Component", () => {
       },
     }));
 
-    render(<AssetBrowser />);
+    render(
+      <>
+        <AssetBrowser />
+        <MiniEditorModal />
+      </>,
+    );
 
     // Video tab is default; sortedAssets (newest first):
     //   b-roll.mp4 (createdAt: 2), solo.mp4 (1), vacation.mp4 (0)
@@ -848,6 +868,8 @@ describe("AssetBrowser Component", () => {
     expect(
       screen.getByRole("dialog", { name: "b-roll.mp4" }),
     ).toBeInTheDocument();
+    expect(useMiniEditorStore.getState()._internal.onExtractRange).not.toBeNull();
+    expect(useMiniEditorStore.getState()._internal.onExtractFrame).not.toBeNull();
 
     // ArrowRight -> next visible asset (solo.mp4)
     fireEvent.keyDown(window, { key: "ArrowRight", code: "ArrowRight" });
@@ -872,10 +894,130 @@ describe("AssetBrowser Component", () => {
     ).toBeInTheDocument();
   });
 
+  it("refreshes navigation after the asset list changes without reloading the open media", async () => {
+    const sourceFile = new File(["video"], "source.mp4", {
+      type: "video/mp4",
+    });
+    const hydratedAssets = mockAssets.map((asset) => ({ ...asset, file: sourceFile }));
+    const ensureAssetSourceLoaded = vi.fn(async (assetId: string) =>
+      hydratedAssets.find((asset) => asset.id === assetId) ?? null,
+    );
+    mockStore({
+      assets: hydratedAssets,
+      families: mockFamilies,
+      ensureAssetSourceLoaded,
+    });
+    useProjectStore.setState((state) => ({
+      ...state,
+      config: { ...state.config, assetBrowserDisplay: "ungrouped" },
+    }));
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
+
+    render(
+      <>
+        <AssetBrowser />
+        <MiniEditorModal />
+      </>,
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Preview video" })[0],
+    );
+    await screen.findByRole("dialog", { name: "b-roll.mp4" });
+    expect(ensureAssetSourceLoaded).toHaveBeenCalledOnce();
+
+    const newest: Asset = {
+      ...hydratedAssets[0],
+      id: "new-excerpt",
+      hash: "new-excerpt",
+      name: "new-excerpt.mp4",
+      familyId: undefined,
+      createdAt: 3,
+    };
+    const updatedAssets = [newest, ...hydratedAssets];
+    mockStore({
+      assets: updatedAssets,
+      families: mockFamilies,
+      ensureAssetSourceLoaded,
+    });
+    const favouritesToggle = screen.getByRole("button", {
+      name: "Show favourite assets",
+      hidden: true,
+    });
+    fireEvent.click(favouritesToggle);
+    fireEvent.click(favouritesToggle);
+
+    expect(ensureAssetSourceLoaded).toHaveBeenCalledOnce();
+    expect(screen.getByText("new-excerpt.mp4")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        useMiniEditorStore.getState()._internal.hasPrevious,
+      ).toBe(true),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Previous asset" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Previous asset" }));
+    await screen.findByRole("dialog", { name: "new-excerpt.mp4" });
+  });
+
+  it("can reopen the same asset after another feature takes over the editor", async () => {
+    const sourceFile = new File(["video"], "source.mp4", {
+      type: "video/mp4",
+    });
+    const hydratedAssets = mockAssets.map((asset) => ({ ...asset, file: sourceFile }));
+    mockStore({
+      assets: hydratedAssets,
+      families: mockFamilies,
+      ensureAssetSourceLoaded: vi.fn(async (assetId: string) =>
+        hydratedAssets.find((asset) => asset.id === assetId) ?? null,
+      ),
+    });
+    useProjectStore.setState((state) => ({
+      ...state,
+      config: { ...state.config, assetBrowserDisplay: "ungrouped" },
+    }));
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
+    render(
+      <>
+        <AssetBrowser />
+        <MiniEditorModal />
+      </>,
+    );
+
+    const previewButton = screen.getAllByRole("button", {
+      name: "Preview video",
+    })[0];
+    fireEvent.click(previewButton);
+    await screen.findByRole("dialog", { name: "b-roll.mp4" });
+
+    await act(async () => {
+      await useMiniEditorStore.getState().open({
+        openerId: "generation-panel",
+        title: "Generation edit",
+        prepare: vi.fn(async () => ({
+          sourceUrl: "blob:generation",
+          sourceFile,
+          durationTicks: mediaSecondsToTick(5),
+        })),
+      });
+    });
+    expect(screen.getByRole("dialog", { name: "Generation edit" })).toBeInTheDocument();
+
+    fireEvent.click(previewButton);
+    await screen.findByRole("dialog", { name: "b-roll.mp4" });
+  });
+
   it("shows an image preview button that opens the preview dialog", () => {
     mockStore({ assets: mockAssets, families: mockFamilies });
 
-    render(<AssetBrowser />);
+    render(
+      <>
+        <AssetBrowser />
+        <MiniEditorModal />
+      </>,
+    );
     fireEvent.click(screen.getByLabelText("Images"));
 
     fireEvent.click(screen.getByRole("button", { name: "Preview image" }));
@@ -883,6 +1025,97 @@ describe("AssetBrowser Component", () => {
     expect(
       screen.getByRole("dialog", { name: "thumbnail.jpg" }),
     ).toBeInTheDocument();
+    expect(useMiniEditorStore.getState()._internal.onExtractRange).toBeNull();
+    expect(useMiniEditorStore.getState()._internal.onExtractFrame).toBeNull();
+  });
+
+  it("extracts frames and ranges from a video asset into the library", async () => {
+    useProjectStore.setState((state) => ({
+      ...state,
+      config: {
+        ...state.config,
+        assetBrowserDisplay: "ungrouped",
+      },
+    }));
+    const sourceFile = new File(["video"], "b-roll.mp4", {
+      type: "video/mp4",
+    });
+    const frameFile = new File(["frame"], "b-roll-frame.png", {
+      type: "image/png",
+    });
+    const rangeFile = new File(["range"], "b-roll-excerpt.mp4", {
+      type: "video/mp4",
+    });
+    const addLocalAsset = vi.fn(async () => null);
+    extractionMocks.extractFrame.mockResolvedValue(frameFile);
+    extractionMocks.extractRange.mockResolvedValue(rangeFile);
+    const sourceAsset = mockAssets.find((asset) => asset.id === "1b");
+    expect(sourceAsset).toBeDefined();
+    mockStore({
+      assets: mockAssets,
+      families: mockFamilies,
+      ensureAssetSourceLoaded: vi.fn(async () => ({
+        ...sourceAsset!,
+        file: sourceFile,
+      })),
+      addLocalAsset,
+    });
+    const createObjectUrl = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:asset-viewer");
+
+    render(
+      <>
+        <AssetBrowser />
+        <MiniEditorModal />
+      </>,
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Preview video" })[0],
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Extract frame" }),
+      ).toBeEnabled();
+    });
+
+    act(() => {
+      useMiniEditorStore.getState().setPlayhead(mediaSecondsToTick(2));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Extract frame" }));
+    expect(extractionMocks.extractFrame).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm frame extraction" }),
+    );
+    await waitFor(() => expect(extractionMocks.extractFrame).toHaveBeenCalled());
+    expect(addLocalAsset).toHaveBeenCalledWith(frameFile, {
+      source: "asset_excerpt",
+      parentAssetId: "1b",
+      kind: "frame",
+      startTicks: mediaSecondsToTick(2),
+      endTicks: mediaSecondsToTick(2),
+    });
+
+    act(() => {
+      useMiniEditorStore
+        .getState()
+        .setCrop(mediaSecondsToTick(1), mediaSecondsToTick(3));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Extract range" }));
+    expect(extractionMocks.extractRange).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm range extraction" }),
+    );
+    await waitFor(() => expect(extractionMocks.extractRange).toHaveBeenCalled());
+    expect(addLocalAsset).toHaveBeenCalledWith(rangeFile, {
+      source: "asset_excerpt",
+      parentAssetId: "1b",
+      kind: "range",
+      startTicks: mediaSecondsToTick(1),
+      endTicks: mediaSecondsToTick(3),
+    });
+
+    createObjectUrl.mockRestore();
   });
 
   it("does not reopen a previously revealed family when unrelated assets are ingested later", async () => {

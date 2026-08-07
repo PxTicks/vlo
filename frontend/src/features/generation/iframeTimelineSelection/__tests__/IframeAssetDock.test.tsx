@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   temporaryAssets: [] as Array<{
     asset: { id: string; name: string };
   }>,
+  openAssetInMiniEditor: vi.fn(),
 }));
 
 vi.mock("../../../composite", () => ({
@@ -25,10 +26,21 @@ vi.mock("../../../composite", () => ({
 
 vi.mock("../../../userAssets", () => ({
   AssetBrowser: () => <div data-testid="asset-browser">Assets</div>,
-  AssetCard: ({ asset }: { asset: { name: string } }) => (
-    <div data-testid="asset-card">{asset.name}</div>
+  AssetCard: ({
+    asset,
+    onRequestPreview,
+  }: {
+    asset: { id: string; name: string };
+    onRequestPreview?: (assetId: string) => void;
+  }) => (
+    <button
+      data-testid="asset-card"
+      onClick={() => onRequestPreview?.(asset.id)}
+    >
+      {asset.name}
+    </button>
   ),
-  AssetPreviewDialog: () => null,
+  openAssetInMiniEditor: mocks.openAssetInMiniEditor,
   useAssetStore: (selector: (state: unknown) => unknown) =>
     selector({ assets: mocks.assets }),
 }));
@@ -71,6 +83,7 @@ describe("IframeAssetDock", () => {
     mocks.composites = [];
     mocks.assets = [];
     mocks.temporaryAssets = [];
+    mocks.openAssetInMiniEditor.mockClear();
   });
 
   it("always exposes project and temporary assets but hides an empty composite tab", () => {
@@ -102,5 +115,11 @@ describe("IframeAssetDock", () => {
     expect(
       screen.queryByText(/from selection|add blank/i),
     ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("asset-card"));
+    expect(mocks.openAssetInMiniEditor).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "baked-1", name: "Opening" }),
+      { openerId: "iframe-asset-dock" },
+    );
   });
 });

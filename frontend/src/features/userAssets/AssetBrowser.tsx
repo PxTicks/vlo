@@ -56,7 +56,8 @@ import {
 } from "../editorFocus";
 import { useAssetStore } from "./useAssetStore";
 import { AssetCard } from "./components/AssetCard";
-import { AssetPreviewDialog } from "./components/AssetPreviewDialog";
+import { useMiniEditorStore } from "../miniEditor";
+import { openAssetInMiniEditor } from "./openAssetInMiniEditor";
 import { useAssetBrowserRevealStore } from "./useAssetBrowserRevealStore";
 import { useAssetBrowserSelectionStore } from "./useAssetBrowserSelectionStore";
 import {
@@ -72,6 +73,7 @@ import { getAssetsForFamilyId, getFamilyMembers } from "./utils/familyMembers";
 declareLibrarySortModes();
 
 const ASSET_TYPE_PRIORITY: AssetType[] = ["video", "image", "audio", "lut"];
+const ASSET_BROWSER_MINI_EDITOR_OPENER_ID = "asset-browser";
 
 interface FamilyScope {
   familyId: string;
@@ -827,8 +829,6 @@ function AssetBrowserComponent() {
         : -1,
     [previewAssetId, sortedAssets],
   );
-  const previewAsset = previewIndex >= 0 ? sortedAssets[previewIndex] : null;
-
   const handleRequestPreview = React.useCallback((assetId: string) => {
     setPreviewAssetId(assetId);
   }, []);
@@ -837,17 +837,85 @@ function AssetBrowserComponent() {
     setPreviewAssetId(null);
   }, []);
 
-  const handlePreviewPrev = React.useCallback(() => {
-    if (previewIndex > 0) {
-      setPreviewAssetId(sortedAssets[previewIndex - 1].id);
-    }
+  const previewNavigationRef = React.useRef({
+    assetIds: [] as string[],
+    previewIndex: -1,
+  });
+  React.useEffect(() => {
+    previewNavigationRef.current = {
+      assetIds: sortedAssets.map((asset) => asset.id),
+      previewIndex,
+    };
   }, [previewIndex, sortedAssets]);
 
-  const handlePreviewNext = React.useCallback(() => {
-    if (previewIndex >= 0 && previewIndex < sortedAssets.length - 1) {
-      setPreviewAssetId(sortedAssets[previewIndex + 1].id);
+  const handlePreviewPrev = React.useCallback(() => {
+    const navigation = previewNavigationRef.current;
+    if (navigation.previewIndex > 0) {
+      setPreviewAssetId(navigation.assetIds[navigation.previewIndex - 1]);
     }
-  }, [previewIndex, sortedAssets]);
+  }, []);
+
+  const handlePreviewNext = React.useCallback(() => {
+    const navigation = previewNavigationRef.current;
+    if (
+      navigation.previewIndex >= 0 &&
+      navigation.previewIndex < navigation.assetIds.length - 1
+    ) {
+      setPreviewAssetId(navigation.assetIds[navigation.previewIndex + 1]);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!previewAssetId) {
+      return;
+    }
+
+    const asset = useAssetStore
+      .getState()
+      .assets.find((candidate) => candidate.id === previewAssetId);
+    if (!asset) {
+      return;
+    }
+
+    const navigation = previewNavigationRef.current;
+    void openAssetInMiniEditor(asset, {
+      openerId: ASSET_BROWSER_MINI_EDITOR_OPENER_ID,
+      onClose: handleClosePreview,
+      navigation: {
+        onPrevious: handlePreviewPrev,
+        onNext: handlePreviewNext,
+        hasPrevious: navigation.previewIndex > 0,
+        hasNext:
+          navigation.previewIndex >= 0 &&
+          navigation.previewIndex < navigation.assetIds.length - 1,
+      },
+    });
+  }, [
+    handleClosePreview,
+    handlePreviewNext,
+    handlePreviewPrev,
+    previewAssetId,
+  ]);
+
+  React.useEffect(() => {
+    if (!previewAssetId) return;
+
+    useMiniEditorStore.getState().setNavigationState(
+      ASSET_BROWSER_MINI_EDITOR_OPENER_ID,
+      {
+        onPrevious: handlePreviewPrev,
+        onNext: handlePreviewNext,
+        hasPrevious: previewIndex > 0,
+        hasNext: previewIndex >= 0 && previewIndex < sortedAssets.length - 1,
+      },
+    );
+  }, [
+    handlePreviewNext,
+    handlePreviewPrev,
+    previewAssetId,
+    previewIndex,
+    sortedAssets,
+  ]);
 
   const handleBrowserBackgroundClick = React.useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -1190,16 +1258,6 @@ function AssetBrowserComponent() {
         </Box>
       )}
 
-      {previewAsset ? (
-        <AssetPreviewDialog
-          asset={previewAsset}
-          onClose={handleClosePreview}
-          onPrev={handlePreviewPrev}
-          onNext={handlePreviewNext}
-          hasPrev={previewIndex > 0}
-          hasNext={previewIndex < sortedAssets.length - 1}
-        />
-      ) : null}
     </Box>
   );
 }

@@ -40,7 +40,6 @@ import {
   Timeline,
 } from "@mui/icons-material";
 import { ComfyUIEditor } from "./components/ComfyUIEditor";
-import { MiniEditorModal } from "../miniEditor";
 import { GenerationInputs } from "./components/GenerationInputs";
 import {
   DEFAULT_GENERATION_RESOLUTION_OPTIONS,
@@ -2011,8 +2010,6 @@ export function GenerationPanel() {
       {/* ComfyUI Node Editor Dialog */}
       <ComfyUIEditor open={editorOpen} onClose={handleRequestCloseEditor} />
 
-      {/* Modal trim + range-mask editor for video inputs */}
-      <MiniEditorModal />
     </Box>
   );
 }

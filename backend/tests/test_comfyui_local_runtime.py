@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 import subprocess
@@ -456,6 +457,38 @@ def test_launch_uses_install_venv_and_requested_local_port(
     ]
     assert captured["kwargs"]["start_new_session"] is True
     assert captured["kwargs"]["stdout"].closed is True
+
+
+def test_launch_seeds_frontend_defaults_before_starting_comfyui(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checkout = tmp_path / "ComfyUI"
+    _write_comfyui_checkout(checkout)
+    (checkout / "custom_nodes" / "ComfyUI-VideoHelperSuite").mkdir(parents=True)
+    python = checkout / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    settings_path = checkout / "user" / "default" / "comfy.settings.json"
+
+    class FakeProcess:
+        pid = 4323
+
+        def poll(self):
+            return None
+
+    def fake_popen(command, **kwargs):
+        del command, kwargs
+        # The frontend only reads its settings once ComfyUI is serving them.
+        assert settings_path.is_file()
+        return FakeProcess()
+
+    monkeypatch.setattr(local_runtime.subprocess, "Popen", fake_popen)
+
+    ComfyuiLocalRuntime().launch(checkout, "http://127.0.0.1:8188")
+
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert settings["VHS.LatentPreview"] is True
 
 
 def _write_cli_args(checkout: Path, flags: tuple[str, ...]) -> None:

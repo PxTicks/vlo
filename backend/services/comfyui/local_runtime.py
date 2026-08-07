@@ -15,6 +15,7 @@ from typing import Any, Literal, TypedDict
 from urllib.parse import urlparse
 
 from config import RUNTIME_ROOT
+from services.comfyui.frontend_settings import seed_managed_frontend_settings
 from services.hardware import detect_local_vram
 
 logger = logging.getLogger(__name__)
@@ -649,6 +650,11 @@ class ComfyuiLocalRuntime:
         )
         if uses_portable_python:
             command.append("--windows-standalone-build")
+        # The frontend reads its settings from disk on connect, so defaults are
+        # seeded here rather than at install time: the checkout vlo launches is
+        # the one it manages, and installs made before this existed still pick
+        # the defaults up on their next launch.
+        seed_managed_frontend_settings(resolved)
         log_path = RUNTIME_ROOT / "comfyui.log"
         log_handle = log_path.open("ab")
         popen_kwargs: dict[str, Any] = {

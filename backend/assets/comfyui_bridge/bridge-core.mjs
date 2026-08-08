@@ -13,6 +13,10 @@ export const BRIDGE_CAPABILITIES = Object.freeze([
   "graph-changed",
   "workflow-revision",
   "drop-asset",
+  // Drops carry the asset file itself rather than a parent-staged filename, so
+  // the target node can run its own upload. A runtime without this capability
+  // would silently ignore the file and drop nothing.
+  "drop-asset-file",
 ]);
 
 const APP_READY_POLL_MS = 100;
@@ -21,6 +25,10 @@ const WORKFLOW_ACTIVE_TIMEOUT_MS = 3_000;
 const WARNING_CAPTURE_POLL_MS = 50;
 const WARNING_CAPTURE_TIMEOUT_MS = 1_000;
 const GRAPH_CHANGED_DEBOUNCE_MS = 300;
+// Matches ComfyUI's own per-file upload bound (useNodeImageUpload), so the
+// fallback path fails with a typed error rather than running until the parent's
+// request timeout gives up on it.
+const UPLOAD_TIMEOUT_MS = 120_000;
 
 class BridgeRuntimeError extends Error {
   constructor(code, message, details = undefined) {
@@ -623,20 +631,183 @@ export function startVloBridge({ app, api, windowObject = window }) {
     node.setDirtyCanvas?.(true, true);
   }
 
+  // Duck-typed rather than `instanceof File`: the file arrives by structured
+  // clone, and `slice` is the Blob method every environment implements.
+  function isFileLike(value) {
+    return (
+      isRecord(value) &&
+      typeof value.name === "string" &&
+      typeof value.size === "number" &&
+      typeof value.slice === "function"
+    );
+  }
+
+  /**
+   * Loaders already know how to take a dropped file: core nodes install
+   * `onDragDrop` through ComfyUI's `useNodeDragAndDrop`, and VHS installs its
+   * own. Both read `dataTransfer.files` and gate on `types.includes("Files")`,
+   * which `items.add(file)` sets.
+   */
+  function makeFileDropEvent(file, clientX, clientY) {
+    const DataTransferCtor = windowObject.DataTransfer;
+    if (typeof DataTransferCtor !== "function") return null;
+    let dataTransfer;
+    try {
+      dataTransfer = new DataTransferCtor();
+      dataTransfer.items.add(file);
+    } catch {
+      return null;
+    }
+    const DragEventCtor = windowObject.DragEvent;
+    if (typeof DragEventCtor === "function") {
+      try {
+        return new DragEventCtor("drop", {
+          dataTransfer,
+          clientX,
+          clientY,
+          bubbles: true,
+          cancelable: true,
+        });
+      } catch {
+        // Fall through to the plain event object below.
+      }
+    }
+    return {
+      type: "drop",
+      dataTransfer,
+      clientX,
+      clientY,
+      preventDefault() {},
+      stopPropagation() {},
+    };
+  }
+
+  function widgetValues(node) {
+    const values = new Map();
+    if (!Array.isArray(node?.widgets)) return values;
+    for (const widget of node.widgets) {
+      if (widget && typeof widget.name === "string") {
+        values.set(widget.name, widget.value);
+      }
+    }
+    return values;
+  }
+
+  /** Whether the drop left a usable value behind. ComfyUI's uploader reports
+   * completion by assigning the loader widget, so a changed non-empty widget is
+   * the observable proof that the node took the file. */
+  function tookFile(node, before) {
+    if (!Array.isArray(node?.widgets)) return false;
+    return node.widgets.some((widget) => {
+      if (!widget || typeof widget.name !== "string") return false;
+      const value = widget.value;
+      if (value === null || value === undefined || value === "") return false;
+      return value !== before.get(widget.name);
+    });
+  }
+
+  /** Offers the file to the node's own drop handler. Nodes self-police by
+   * media type and answer false when the file is not for them. */
+  async function offerFileToNode(node, file, clientX, clientY) {
+    if (typeof node?.onDragDrop !== "function") return false;
+    const event = makeFileDropEvent(file, clientX, clientY);
+    if (!event) return false;
+    // ComfyUI's uploader refuses re-entrant drops (it toasts and returns no
+    // paths, still answering true). Uploading around it would race whichever
+    // upload finishes last into the widget.
+    if (node.isUploading === true) {
+      throw new BridgeRuntimeError(
+        "upload-in-progress",
+        "This node is still uploading a file; wait for it to finish",
+      );
+    }
+    const before = widgetValues(node);
+    try {
+      // `true` only means the handler claimed the event: ComfyUI returns it
+      // after awaiting an upload whose backend failures it swallows into a
+      // toast. Only the widget changing proves the file actually landed.
+      if ((await node.onDragDrop(event)) !== true) return false;
+    } catch (error) {
+      console.warn("[vlo-bridge] node onDragDrop failed:", error);
+      return false;
+    }
+    return tookFile(node, before);
+  }
+
+  /** Fallback for loaders with no drop handler: stage the file the same way
+   * ComfyUI's own upload widgets do, then point the widget at it. */
+  async function uploadToComfyInput(file) {
+    const FormDataCtor = windowObject.FormData ?? globalThis.FormData;
+    if (typeof FormDataCtor !== "function" || typeof api?.fetchApi !== "function") {
+      throw new BridgeRuntimeError(
+        "upload-unavailable",
+        "ComfyUI did not expose an upload endpoint for this drop",
+      );
+    }
+    const body = new FormDataCtor();
+    body.append("image", file, file.name);
+    body.append("type", "input");
+    const AbortSignalCtor = windowObject.AbortSignal ?? globalThis.AbortSignal;
+    const signal =
+      typeof AbortSignalCtor?.timeout === "function"
+        ? AbortSignalCtor.timeout(UPLOAD_TIMEOUT_MS)
+        : null;
+    let response;
+    try {
+      response = await api.fetchApi("/upload/image", {
+        method: "POST",
+        body,
+        ...(signal ? { signal } : {}),
+      });
+    } catch (error) {
+      throw new BridgeRuntimeError(
+        "upload-failed",
+        `ComfyUI could not stage the dropped file: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    if (!response?.ok) {
+      throw new BridgeRuntimeError(
+        "upload-failed",
+        `ComfyUI rejected the dropped file (${response?.status ?? "no response"})`,
+      );
+    }
+    const uploaded = await response.json();
+    const name = typeof uploaded?.name === "string" ? uploaded.name : null;
+    if (!name) {
+      throw new BridgeRuntimeError(
+        "upload-failed",
+        "ComfyUI upload returned no filename",
+      );
+    }
+    const subfolder =
+      typeof uploaded?.subfolder === "string" ? uploaded.subfolder : "";
+    return subfolder ? `${subfolder}/${name}` : name;
+  }
+
+  /** Node handler first, bridge-side upload second. Returns whether the node
+   * took the file. */
+  async function deliverFileToNode(node, widgetName, file, clientX, clientY) {
+    if (await offerFileToNode(node, file, clientX, clientY)) return true;
+    const widget =
+      typeof widgetName === "string" ? findNodeWidget(node, widgetName) : null;
+    if (!widget) return false;
+    applyLoaderFilename(node, widget, await uploadToComfyInput(file));
+    return true;
+  }
+
   async function dropAsset(payload) {
     if (!(await waitForAppReady())) {
       throw new BridgeRuntimeError("app-not-ready", "ComfyUI is not ready");
     }
     const clientX = Number(payload?.clientX);
     const clientY = Number(payload?.clientY);
-    const filename =
-      typeof payload?.filename === "string" && payload.filename.trim()
-        ? payload.filename.trim()
-        : null;
-    if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || !filename) {
+    const file = payload?.file;
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || !isFileLike(file)) {
       throw new BridgeRuntimeError(
         "invalid-payload",
-        "drop-asset requires clientX, clientY and filename",
+        "drop-asset requires clientX, clientY and a file",
       );
     }
     const targets = Array.isArray(payload?.targets)
@@ -658,26 +829,27 @@ export function startVloBridge({ app, api, windowObject = window }) {
       const target = targets.find(
         (candidate) => candidate.classType === hitNode.type,
       );
-      if (target && typeof target.widget === "string") {
-        if (typeof target.requiresTruthyWidget === "string") {
-          const guard = findNodeWidget(hitNode, target.requiresTruthyWidget);
-          if (!isTruthyWidgetValue(guard?.value)) {
-            throw new BridgeRuntimeError(
-              "memory-loader-active",
-              "This loader reads media from memory; enable its disable_in_memory option to drop staged files onto it",
-            );
-          }
+      // The guard runs before the node sees the file: a memory loader's own
+      // drop handler would otherwise set the widget behind it.
+      if (typeof target?.requiresTruthyWidget === "string") {
+        const guard = findNodeWidget(hitNode, target.requiresTruthyWidget);
+        if (!isTruthyWidgetValue(guard?.value)) {
+          throw new BridgeRuntimeError(
+            "memory-loader-active",
+            "This loader reads media from memory; enable its disable_in_memory option to drop staged files onto it",
+          );
         }
-        const widget = findNodeWidget(hitNode, target.widget);
-        if (widget) {
-          applyLoaderFilename(hitNode, widget, filename);
-          handleGraphChanged();
-          return {
-            action: "updated",
-            nodeId: String(hitNode.id),
-            classType: String(hitNode.type ?? ""),
-          };
-        }
+      }
+      // Offered to every node under the pointer, not only mapped class types —
+      // any loader implementing the drop contract can take the file, and one
+      // that cannot answers false and leaves the drop to the create path.
+      if (await deliverFileToNode(hitNode, target?.widget, file, clientX, clientY)) {
+        handleGraphChanged();
+        return {
+          action: "updated",
+          nodeId: String(hitNode.id),
+          classType: String(hitNode.type ?? ""),
+        };
       }
     }
 
@@ -709,9 +881,18 @@ export function startVloBridge({ app, api, windowObject = window }) {
       Array.isArray(node.size) && Number.isFinite(node.size[0]) ? node.size[0] : 0;
     node.pos = [position[0] - width / 2, position[1]];
     graph.add(node);
-    const widget = findNodeWidget(node, create.widget);
-    if (widget) {
-      applyLoaderFilename(node, widget, filename);
+    try {
+      if (!(await deliverFileToNode(node, create.widget, file, clientX, clientY))) {
+        throw new BridgeRuntimeError(
+          "drop-unsupported",
+          `A ${create.classType} node did not accept the dropped file`,
+        );
+      }
+    } catch (error) {
+      // Leaving an empty loader behind would look like the drop half-worked.
+      graph.remove?.(node);
+      handleGraphChanged();
+      throw error;
     }
     handleGraphChanged();
     return {

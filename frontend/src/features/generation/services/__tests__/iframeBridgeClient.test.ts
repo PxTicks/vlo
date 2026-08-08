@@ -377,6 +377,36 @@ describe("IframeBridgeClient", () => {
     });
   });
 
+  it("gives an asset drop longer than a default request", async () => {
+    vi.useFakeTimers();
+    const { client, contentWindow, hello } = setupClient();
+    announceReady(contentWindow, hello);
+
+    const promise = client.dropAsset({
+      clientX: 10,
+      clientY: 10,
+      file: new File(["bytes"], "clip.mp4", { type: "video/mp4" }),
+      targets: [],
+      create: null,
+    });
+    let settled = false;
+    void promise.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+
+    // Far past the default RPC timeout: ComfyUI's own uploader allows 120s per
+    // file, and abandoning it here would leave it uploading into a graph vlo
+    // has already reported as failed.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(settled).toBe(false);
+    expect(client.currentStatus).toBe("ready");
+
+    const assertion = expect(promise).rejects.toMatchObject({ code: "timeout" });
+    await vi.advanceTimersByTimeAsync(90_001);
+    await assertion;
+  });
+
   it("times out unanswered requests with a typed error", async () => {
     vi.useFakeTimers();
     const { client, contentWindow, hello } = setupClient();

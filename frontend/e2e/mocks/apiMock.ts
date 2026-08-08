@@ -44,6 +44,7 @@ function buildMockComfyFrameHtml(): string {
           'graph-changed',
           'workflow-revision',
           'drop-asset',
+          'drop-asset-file',
         ];
         let workflowSequence = 0;
 

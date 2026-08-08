@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 import { mergeInputNodeMap } from "../../constants/inputNodeMap";
+import { iframeBridge } from "../iframeBridgeClient";
 import {
   buildComfyAssetDropPlan,
-  stageAssetInComfyInput,
+  dropAssetIntoComfyCanvas,
 } from "../comfyAssetDrop";
 
 describe("buildComfyAssetDropPlan", () => {
@@ -76,10 +77,8 @@ describe("buildComfyAssetDropPlan", () => {
   });
 });
 
-describe("stageAssetInComfyInput", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+describe("dropAssetIntoComfyCanvas", () => {
+  const file = new File(["bytes"], "clip.mp4", { type: "video/mp4" });
 
   function makeAsset(): Asset {
     return {
@@ -89,43 +88,57 @@ describe("stageAssetInComfyInput", () => {
       type: "video",
       src: "blob:http://vlo.test/asset-1",
       createdAt: 0,
-      file: new File(["bytes"], "clip.mp4", { type: "video/mp4" }),
+      file,
     };
   }
 
-  it("uploads the asset file and returns the subfolder-qualified name", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ name: "clip.mp4", subfolder: "staged", type: "input" }),
-        { status: 200 },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+  it("sends the asset file to the bridge with the loader plan", async () => {
+    const dropAsset = vi
+      .spyOn(iframeBridge, "dropAsset")
+      .mockResolvedValue({ action: "created", nodeId: "7", classType: "VHS_LoadVideo" });
 
-    await expect(stageAssetInComfyInput(makeAsset())).resolves.toBe(
-      "staged/clip.mp4",
-    );
+    await expect(
+      dropAssetIntoComfyCanvas({
+        asset: makeAsset(),
+        clientX: 120,
+        clientY: 40,
+        inputNodeMap: null,
+        rawObjectInfo: { VHS_LoadVideo: {}, LoadVideo: {} },
+      }),
+    ).resolves.toEqual({
+      action: "created",
+      nodeId: "7",
+      classType: "VHS_LoadVideo",
+    });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [
-      string,
-      RequestInit,
-    ];
-    expect(url).toBe("/upload/image");
-    expect(init.method).toBe("POST");
-    const form = init.body as FormData;
-    expect(form.get("type")).toBe("input");
-    expect((form.get("image") as File).name).toBe("clip.mp4");
+    // The bytes cross once, unstaged: no upload precedes the bridge call.
+    expect(dropAsset).toHaveBeenCalledWith({
+      clientX: 120,
+      clientY: 40,
+      file,
+      targets: expect.arrayContaining([
+        { classType: "VHS_LoadVideo", widget: "video" },
+      ]),
+      create: { classType: "VHS_LoadVideo", widget: "video" },
+    });
+
+    dropAsset.mockRestore();
   });
 
-  it("surfaces upload failures with the response status", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("nope", { status: 502 })),
-    );
+  it("refuses asset types no loader accepts before touching the bridge", async () => {
+    const dropAsset = vi.spyOn(iframeBridge, "dropAsset");
 
-    await expect(stageAssetInComfyInput(makeAsset())).rejects.toThrow(
-      /upload failed \(502\)/,
-    );
+    await expect(
+      dropAssetIntoComfyCanvas({
+        asset: { ...makeAsset(), type: "lut" },
+        clientX: 0,
+        clientY: 0,
+        inputNodeMap: null,
+        rawObjectInfo: null,
+      }),
+    ).rejects.toThrow(/No ComfyUI loader accepts lut/);
+
+    expect(dropAsset).not.toHaveBeenCalled();
+    dropAsset.mockRestore();
   });
 });

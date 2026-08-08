@@ -14,6 +14,9 @@ export const REQUIRED_BRIDGE_CAPABILITIES = [
   "graph-changed",
   "workflow-revision",
   "drop-asset",
+  // A runtime predating file-carrying drops would accept the request and drop
+  // nothing, so it must fail the handshake instead.
+  "drop-asset-file",
 ] as const;
 
 export type BridgeClientStatus =
@@ -105,8 +108,9 @@ export interface BridgeDropAssetRequest {
   /** Pointer position relative to the iframe viewport. */
   clientX: number;
   clientY: number;
-  /** Staged filename relative to ComfyUI's input directory. */
-  filename: string;
+  /** Asset bytes, structured-cloned into the iframe so the receiving loader
+   * node can run its own upload. */
+  file: File;
   /** Existing-node types whose widget may be retargeted by the drop. */
   targets: BridgeDropAssetTarget[];
   /** Node to create when the drop lands on empty canvas. */
@@ -123,6 +127,14 @@ const HELLO_RETRY_MS = 500;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const INJECT_REQUEST_TIMEOUT_MS = 20_000;
 const HEALTH_REQUEST_TIMEOUT_MS = 3_000;
+/**
+ * A drop hands the file to ComfyUI's own uploader, which aborts a single file
+ * at 120s, and the runtime waits for app-readiness before that. This has to
+ * outlast both: a bridge timeout here would abandon an upload ComfyUI is still
+ * running — it would go on to mutate the graph while vlo reported failure,
+ * dropped the response as unattributable, and reset the handshake.
+ */
+const DROP_ASSET_REQUEST_TIMEOUT_MS = 150_000;
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -409,7 +421,11 @@ export class IframeBridgeClient {
   }
 
   async dropAsset(request: BridgeDropAssetRequest): Promise<BridgeDropAssetResult> {
-    const result = await this.request("drop-asset", request);
+    const result = await this.request(
+      "drop-asset",
+      request,
+      DROP_ASSET_REQUEST_TIMEOUT_MS,
+    );
     if (
       !isRecord(result) ||
       (result.action !== "updated" && result.action !== "created") ||

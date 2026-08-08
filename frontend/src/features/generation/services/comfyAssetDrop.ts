@@ -1,4 +1,3 @@
-import { API_BASE_URL } from "../../../config";
 import type { Asset, AssetType } from "../../../types/Asset";
 import {
   INPUT_NODE_MAP,
@@ -71,46 +70,6 @@ export function buildComfyAssetDropPlan(
   return { targets, create };
 }
 
-interface ComfyUploadResponse {
-  name: string;
-  subfolder: string;
-}
-
-function parseUploadResponse(payload: unknown): ComfyUploadResponse | null {
-  if (typeof payload !== "object" || payload === null) return null;
-  const record = payload as Record<string, unknown>;
-  if (typeof record.name !== "string" || !record.name) return null;
-  return {
-    name: record.name,
-    subfolder: typeof record.subfolder === "string" ? record.subfolder : "",
-  };
-}
-
-/**
- * Stage asset bytes in ComfyUI's input directory through the same-origin
- * proxy and return the loader widget value (filename, subfolder-qualified).
- */
-export async function stageAssetInComfyInput(asset: Asset): Promise<string> {
-  const file = await resolveAssetFileForGeneration(asset);
-  const form = new FormData();
-  form.append("image", file, file.name);
-  form.append("type", "input");
-
-  const response = await fetch(`${API_BASE_URL}/upload/image`, {
-    method: "POST",
-    body: form,
-  });
-  if (!response.ok) {
-    throw new Error(`ComfyUI media upload failed (${response.status})`);
-  }
-
-  const uploaded = parseUploadResponse(await response.json().catch(() => null));
-  if (!uploaded) {
-    throw new Error("ComfyUI media upload returned no filename");
-  }
-  return uploaded.subfolder ? `${uploaded.subfolder}/${uploaded.name}` : uploaded.name;
-}
-
 export interface ComfyCanvasDropRequest {
   asset: Asset;
   /** Pointer position relative to the iframe viewport. */
@@ -121,9 +80,13 @@ export interface ComfyCanvasDropRequest {
 }
 
 /**
- * Deliver an asset-browser drop onto the ComfyUI canvas: stage the bytes as a
- * file in ComfyUI's input directory, then ask the in-iframe bridge to point
- * the loader under the pointer at it (or create a fresh loader node there).
+ * Deliver an asset-browser drop onto the ComfyUI canvas: send the asset file
+ * into the iframe and let the loader under the pointer take it through its own
+ * drop handler (or create a fresh loader node there and hand it over).
+ *
+ * The bytes cross once, by structured clone. Staging them in ComfyUI's input
+ * directory is the receiving node's job — core loaders and VHS each upload the
+ * way their widgets expect, which the bridge cannot infer from the class name.
  */
 export async function dropAssetIntoComfyCanvas(
   request: ComfyCanvasDropRequest,
@@ -137,11 +100,11 @@ export async function dropAssetIntoComfyCanvas(
     throw new Error(`No ComfyUI loader accepts ${request.asset.type} assets`);
   }
 
-  const filename = await stageAssetInComfyInput(request.asset);
+  const file = await resolveAssetFileForGeneration(request.asset);
   return iframeBridge.dropAsset({
     clientX: request.clientX,
     clientY: request.clientY,
-    filename,
+    file,
     targets: plan.targets,
     create: plan.create,
   });

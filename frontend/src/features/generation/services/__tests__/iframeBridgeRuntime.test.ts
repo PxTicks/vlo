@@ -119,6 +119,12 @@ function createHarness() {
   };
   const api = {
     socket: { readyState: 1, OPEN: 1 },
+    // ComfyUI's upload endpoint, used only when a loader has no drop handler.
+    fetchApi: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ name: "staged.png", subfolder: "" }),
+    })),
     addEventListener: vi.fn((name: string, handler: () => void) => {
       const handlers = apiListeners.get(name) ?? new Set();
       handlers.add(handler);
@@ -126,6 +132,18 @@ function createHarness() {
     }),
     removeEventListener: vi.fn(),
   };
+  // jsdom ships no DataTransfer; the bridge only needs `items.add` and the
+  // `types`/`files` a node drop handler reads back.
+  class FakeDataTransfer {
+    readonly files: File[] = [];
+    readonly types: string[] = [];
+    readonly items = {
+      add: (file: File) => {
+        this.files.push(file);
+        if (!this.types.includes("Files")) this.types.push("Files");
+      },
+    };
+  }
   const windowObject = {
     parent,
     location: { origin: "http://vlo.test" },
@@ -134,6 +152,8 @@ function createHarness() {
     LGraph: FakeLGraph,
     Blob,
     File,
+    FormData,
+    DataTransfer: FakeDataTransfer,
     setTimeout,
     clearTimeout,
     addEventListener: vi.fn(
@@ -179,6 +199,10 @@ function hello(harness: ReturnType<typeof createHarness>) {
     channelId: "channel-1",
     type: "hello",
   });
+}
+
+function dropFile(name = "clip.png", type = "image/png") {
+  return new File(["bytes"], name, { type });
 }
 
 function request(
@@ -638,12 +662,13 @@ describe("hosted iframe bridge runtime", () => {
     });
   });
 
-  it("creates a loader node at the drop position on empty canvas", async () => {
+  it("creates a loader node at the drop position and stages the file itself when the node has no drop handler", async () => {
     const harness = createHarness();
     const dropGraph = {
       add: vi.fn((node: { id: number }) => {
         node.id = 42;
       }),
+      remove: vi.fn(),
       getNodeOnPos: vi.fn(() => null),
     };
     harness.app.canvas = {
@@ -678,7 +703,7 @@ describe("hosted iframe bridge runtime", () => {
     request(harness, "drop-create", "drop-asset", {
       clientX: 100,
       clientY: 200,
-      filename: "staged.png",
+      file: dropFile(),
       targets: [{ classType: "LoadImage", widget: "image" }],
       create: { classType: "LoadImage", widget: "image" },
     });
@@ -699,6 +724,10 @@ describe("hosted iframe bridge runtime", () => {
     expect(dropGraph.getNodeOnPos).toHaveBeenCalledWith(40, 80);
     expect(createdNode.pos).toEqual([-60, 80]);
     expect(dropGraph.add).toHaveBeenCalledWith(createdNode);
+    expect(harness.api.fetchApi).toHaveBeenCalledWith(
+      "/upload/image",
+      expect.objectContaining({ method: "POST" }),
+    );
     expect(createdNode.widgets[0].value).toBe("staged.png");
     expect(createdNode.widgets[0].options.values).toContain("staged.png");
     expect(createdNode.widgets[0].callback).toHaveBeenCalledWith(
@@ -708,11 +737,19 @@ describe("hosted iframe bridge runtime", () => {
     );
   });
 
-  it("retargets a matching loader node under the pointer instead of creating", async () => {
+  it("hands the file to the drop handler of the loader under the pointer", async () => {
     const harness = createHarness();
+    const dropped: Array<{ files: File[]; types: string[] }> = [];
     const existingNode = {
       id: 7,
       type: "VHS_LoadVideo",
+      // Mirrors VHS.core.js: reads dataTransfer, uploads itself, assigns the
+      // widget on success, reports true.
+      onDragDrop: vi.fn(async (event: { dataTransfer: { files: File[]; types: string[] } }) => {
+        dropped.push(event.dataTransfer);
+        existingNode.widgets[0].value = "staged.mp4";
+        return true;
+      }),
       widgets: [
         { name: "video", value: "old.mp4", options: { values: [] }, callback: vi.fn() },
       ],
@@ -720,6 +757,7 @@ describe("hosted iframe bridge runtime", () => {
     };
     const dropGraph = {
       add: vi.fn(),
+      remove: vi.fn(),
       getNodeOnPos: vi.fn(() => existingNode),
     };
     harness.app.canvas = {
@@ -733,10 +771,11 @@ describe("hosted iframe bridge runtime", () => {
       windowObject: harness.windowObject,
     });
     hello(harness);
+    const file = dropFile("staged.mp4", "video/mp4");
     request(harness, "drop-update", "drop-asset", {
       clientX: 300,
       clientY: 120,
-      filename: "clips/staged.mp4",
+      file,
       targets: [{ classType: "VHS_LoadVideo", widget: "video" }],
       create: { classType: "VHS_LoadVideo", widget: "video" },
     });
@@ -752,8 +791,287 @@ describe("hosted iframe bridge runtime", () => {
       ok: true,
       result: { action: "updated", nodeId: "7", classType: "VHS_LoadVideo" },
     });
-    expect(existingNode.widgets[0].value).toBe("clips/staged.mp4");
+    expect(dropped).toEqual([
+      expect.objectContaining({ files: [file], types: ["Files"] }),
+    ]);
+    // The node owns the upload and the widget; the bridge touches neither.
+    expect(harness.api.fetchApi).not.toHaveBeenCalled();
+    expect(existingNode.widgets[0].value).toBe("staged.mp4");
     expect(dropGraph.add).not.toHaveBeenCalled();
+  });
+
+  it("offers the file to an unmapped node that implements the drop contract", async () => {
+    const harness = createHarness();
+    const unmappedNode = {
+      id: 11,
+      type: "SomeThirdPartyLoader",
+      onDragDrop: vi.fn(async () => {
+        unmappedNode.widgets[0].value = "staged.png";
+        return true;
+      }),
+      widgets: [{ name: "media", value: "", options: { values: [] }, callback: vi.fn() }],
+      setDirtyCanvas: vi.fn(),
+    };
+    const dropGraph = {
+      add: vi.fn(),
+      remove: vi.fn(),
+      getNodeOnPos: vi.fn(() => unmappedNode),
+    };
+    harness.app.canvas = {
+      graph: dropGraph,
+      ds: { scale: 1, offset: [0, 0] },
+      canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    } as never;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "drop-unmapped", "drop-asset", {
+      clientX: 10,
+      clientY: 10,
+      file: dropFile(),
+      targets: [{ classType: "LoadImage", widget: "image" }],
+      create: { classType: "LoadImage", widget: "image" },
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "drop-unmapped"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "drop-unmapped"),
+    ).toMatchObject({
+      ok: true,
+      result: { action: "updated", nodeId: "11", classType: "SomeThirdPartyLoader" },
+    });
+    expect(dropGraph.add).not.toHaveBeenCalled();
+  });
+
+  it("creates a loader when the node under the pointer declines the file", async () => {
+    const harness = createHarness();
+    const decliningNode = {
+      id: 12,
+      type: "LoadAudio",
+      // Core loaders answer false for media they do not accept.
+      onDragDrop: vi.fn(async () => false),
+      widgets: [],
+      setDirtyCanvas: vi.fn(),
+    };
+    const createdNode = {
+      id: 0,
+      type: "LoadImage",
+      size: [200, 60],
+      pos: [0, 0] as number[],
+      widgets: [{ name: "image", value: "", options: { values: [] } }],
+      setDirtyCanvas: vi.fn(),
+    };
+    const dropGraph = {
+      add: vi.fn((node: { id: number }) => {
+        node.id = 13;
+      }),
+      remove: vi.fn(),
+      getNodeOnPos: vi.fn(() => decliningNode),
+    };
+    harness.app.canvas = {
+      graph: dropGraph,
+      ds: { scale: 1, offset: [0, 0] },
+      canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    } as never;
+    (harness.windowObject as unknown as { LiteGraph?: unknown }).LiteGraph = {
+      createNode: vi.fn(() => createdNode),
+    };
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "drop-declined", "drop-asset", {
+      clientX: 10,
+      clientY: 10,
+      file: dropFile(),
+      targets: [{ classType: "LoadAudio", widget: "audio" }],
+      create: { classType: "LoadImage", widget: "image" },
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "drop-declined"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "drop-declined"),
+    ).toMatchObject({
+      ok: true,
+      result: { action: "created", nodeId: "13", classType: "LoadImage" },
+    });
+    expect(createdNode.widgets[0].value).toBe("staged.png");
+  });
+
+  it("stages the file itself when a node claims the drop but changes nothing", async () => {
+    const harness = createHarness();
+    const silentNode = {
+      id: 21,
+      type: "VHS_LoadVideo",
+      // ComfyUI's uploader swallows backend failures into a toast and still
+      // answers true, leaving the widget untouched.
+      onDragDrop: vi.fn(async () => true),
+      widgets: [
+        { name: "video", value: "old.mp4", options: { values: [] }, callback: vi.fn() },
+      ],
+      setDirtyCanvas: vi.fn(),
+    };
+    const dropGraph = {
+      add: vi.fn(),
+      remove: vi.fn(),
+      getNodeOnPos: vi.fn(() => silentNode),
+    };
+    harness.app.canvas = {
+      graph: dropGraph,
+      ds: { scale: 1, offset: [0, 0] },
+      canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    } as never;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "drop-silent", "drop-asset", {
+      clientX: 10,
+      clientY: 10,
+      file: dropFile("staged.mp4", "video/mp4"),
+      targets: [{ classType: "VHS_LoadVideo", widget: "video" }],
+      create: { classType: "VHS_LoadVideo", widget: "video" },
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "drop-silent"),
+      ).toBe(true),
+    );
+    // Success is only reported because the bridge then staged the file itself.
+    expect(harness.api.fetchApi).toHaveBeenCalledWith(
+      "/upload/image",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(silentNode.widgets[0].value).toBe("staged.png");
+    expect(
+      harness.posted.find((message) => message.requestId === "drop-silent"),
+    ).toMatchObject({
+      ok: true,
+      result: { action: "updated", nodeId: "21" },
+    });
+  });
+
+  it("refuses to race a node that is already uploading", async () => {
+    const harness = createHarness();
+    const busyNode = {
+      id: 22,
+      type: "VHS_LoadVideo",
+      isUploading: true,
+      onDragDrop: vi.fn(async () => true),
+      widgets: [
+        { name: "video", value: "old.mp4", options: { values: [] }, callback: vi.fn() },
+      ],
+      setDirtyCanvas: vi.fn(),
+    };
+    const dropGraph = {
+      add: vi.fn(),
+      remove: vi.fn(),
+      getNodeOnPos: vi.fn(() => busyNode),
+    };
+    harness.app.canvas = {
+      graph: dropGraph,
+      ds: { scale: 1, offset: [0, 0] },
+      canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    } as never;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "drop-busy", "drop-asset", {
+      clientX: 10,
+      clientY: 10,
+      file: dropFile("staged.mp4", "video/mp4"),
+      targets: [{ classType: "VHS_LoadVideo", widget: "video" }],
+      create: null,
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "drop-busy"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "drop-busy"),
+    ).toMatchObject({
+      ok: false,
+      error: { code: "upload-in-progress" },
+    });
+    expect(busyNode.onDragDrop).not.toHaveBeenCalled();
+    expect(harness.api.fetchApi).not.toHaveBeenCalled();
+    expect(busyNode.widgets[0].value).toBe("old.mp4");
+  });
+
+  it("removes the node it created when the file cannot be delivered", async () => {
+    const harness = createHarness();
+    const createdNode = {
+      id: 0,
+      type: "LoadImage",
+      size: [200, 60],
+      pos: [0, 0] as number[],
+      // No drop handler and no matching widget: nothing can take the file.
+      widgets: [],
+      setDirtyCanvas: vi.fn(),
+    };
+    const dropGraph = {
+      add: vi.fn((node: { id: number }) => {
+        node.id = 21;
+      }),
+      remove: vi.fn(),
+      getNodeOnPos: vi.fn(() => null),
+    };
+    harness.app.canvas = {
+      graph: dropGraph,
+      ds: { scale: 1, offset: [0, 0] },
+      canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    } as never;
+    (harness.windowObject as unknown as { LiteGraph?: unknown }).LiteGraph = {
+      createNode: vi.fn(() => createdNode),
+    };
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "drop-undeliverable", "drop-asset", {
+      clientX: 10,
+      clientY: 10,
+      file: dropFile(),
+      targets: [],
+      create: { classType: "LoadImage", widget: "image" },
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some(
+          (message) => message.requestId === "drop-undeliverable",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find(
+        (message) => message.requestId === "drop-undeliverable",
+      ),
+    ).toMatchObject({ ok: false, error: { code: "drop-unsupported" } });
+    expect(dropGraph.remove).toHaveBeenCalledWith(createdNode);
   });
 
   it("rejects drops onto memory loaders unless in-memory loading is disabled", async () => {
@@ -769,6 +1087,7 @@ describe("hosted iframe bridge runtime", () => {
     };
     const dropGraph = {
       add: vi.fn(),
+      remove: vi.fn(),
       getNodeOnPos: vi.fn(() => memoryNode),
     };
     harness.app.canvas = {
@@ -785,7 +1104,7 @@ describe("hosted iframe bridge runtime", () => {
     const payload = {
       clientX: 50,
       clientY: 60,
-      filename: "staged.png",
+      file: dropFile(),
       targets: [
         {
           classType: "vloMemoryLoadImage",

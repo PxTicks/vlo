@@ -8,7 +8,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installAnimationFrameMock } from "../../../testUtils/animation";
 import { resetZustandStore } from "../../../testUtils/zustand";
-import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
+import { mediaSecondsToTick } from "../../../core/time";
 import { MiniEditorModal } from "../MiniEditorModal";
 import type { ResolvedEditorSource } from "../types";
 import { useMiniEditorStore } from "../useMiniEditorStore";

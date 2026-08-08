@@ -1,5 +1,5 @@
 import type { TimelineSelection } from "../../../types/TimelineTypes";
-import { captureVideoFrameFile } from "../../miniEditor";
+import { captureVideoFrameFile } from "../../../core/media";
 import { useProjectStore } from "../../project";
 import {
   MASK_CROP_VIDEO_BITRATE,

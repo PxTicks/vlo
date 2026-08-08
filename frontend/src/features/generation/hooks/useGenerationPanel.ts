@@ -5,10 +5,7 @@ import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { usePlayerStore } from "../../player/usePlayerStore";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { insertAssetAtTime, frameToTick } from "../../timeline";
-import {
-  tickToMediaSeconds,
-  mediaSecondsToTick,
-} from "../../renderer/utils/mediaTime";
+import { mediaSecondsToTick, tickToMediaSeconds } from "../../../core/time";
 import {
   createPointTimelineSelection,
   createTimelineSelection,
@@ -29,14 +26,17 @@ import {
 import { buildDerivedMaskRenderSignature } from "../utils/derivedMaskRenderSignature";
 import {
   buildEditedTimelineSelection,
-  probeVideoDurationTicks,
   renderSyntheticEditedOutputs,
 } from "../utils/miniEditorEdit";
 import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
 } from "../utils/manualSlotMedia";
-import { captureVideoFrameFile, useMiniEditorStore } from "../../miniEditor";
+import {
+  captureVideoFrameFile,
+  probeVideoDurationTicks,
+} from "../../../core/media";
+import { useMiniEditorStore } from "../../miniEditor";
 import type {
   ResolvedEditorSource,
   MiniEditorEditSpec,
@@ -1129,13 +1129,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       if (value.kind === "asset" && value.asset.type === "video") {
         const asset = value.asset;
         prepare = async () => {
-          const blob = asset.file ?? (await (await fetch(asset.src)).blob());
-          const file =
-            asset.file ??
-            new File([blob], asset.name || "video.mp4", {
-              type: blob.type || "video/mp4",
-            });
-          const videoUrl = URL.createObjectURL(blob);
+          const file = await resolveAssetFileForGeneration(asset);
+          const videoUrl = URL.createObjectURL(file);
           const durationTicks =
             typeof asset.duration === "number" && asset.duration > 0
               ? mediaSecondsToTick(asset.duration)

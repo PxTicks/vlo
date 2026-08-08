@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mediaSecondsToTick } from "../../../renderer/utils/mediaTime";
-import type { ResolvedEditorSource } from "../../../miniEditor";
+import { mediaSecondsToTick } from "../../../../core/time";
 import {
   extractAssetFrameFile,
   extractAssetRangeFile,
@@ -15,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock("../../../miniEditor", () => ({
+vi.mock("../../../../core/media", () => ({
   captureVideoFrameFile: mocks.captureFrame,
 }));
 
@@ -58,11 +57,12 @@ vi.mock("mediabunny", () => {
   };
 });
 
-function source(mediaType: "video" | "audio"): ResolvedEditorSource {
+function source(mediaType: "video" | "audio") {
   return {
-    sourceUrl: "blob:source",
-    sourceFile: new File(["media"], `source.${mediaType === "video" ? "mov" : "mp3"}`),
-    durationTicks: mediaSecondsToTick(10),
+    sourceFile: new File(
+      ["media"],
+      `source.${mediaType === "video" ? "mov" : "mp3"}`,
+    ),
     mediaType,
   };
 }
@@ -115,7 +115,10 @@ describe("AssetExtractionService", () => {
   });
 
   it("captures a video frame through the shared robust frame service", async () => {
-    const resolvedSource = source("video");
+    const resolvedSource = {
+      sourceUrl: "blob:source",
+      sourceFilename: "source.mov",
+    };
 
     const file = await extractAssetFrameFile(
       resolvedSource,

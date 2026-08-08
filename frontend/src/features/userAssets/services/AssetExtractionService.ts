@@ -7,11 +7,8 @@ import {
   Mp4OutputFormat,
   Output,
 } from "mediabunny";
-import {
-  captureVideoFrameFile,
-  type ResolvedEditorSource,
-} from "../../miniEditor";
-import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
+import { captureVideoFrameFile } from "../../../core/media";
+import { tickToMediaSeconds } from "../../../core/time";
 import { sanitizeFilename } from "../utils/filenameSanitization";
 import { resolveAudioExtractionPlan } from "./audioExtractionPlan";
 
@@ -19,16 +16,21 @@ function filenameStem(filename: string): string {
   return filename.replace(/\.[a-z0-9]+$/i, "").trim() || "asset";
 }
 
+export interface AssetRangeExtractionSource {
+  sourceFile: File;
+  mediaType: "video" | "audio";
+}
+
+export interface AssetFrameExtractionSource {
+  sourceUrl: string;
+  sourceFilename: string;
+}
+
 export async function extractAssetRangeFile(
-  source: ResolvedEditorSource,
+  source: AssetRangeExtractionSource,
   startTicks: number,
   endTicks: number,
 ): Promise<File> {
-  const mediaType = source.mediaType ?? "video";
-  if (mediaType !== "video" && mediaType !== "audio") {
-    throw new Error("Only video and audio assets have extractable ranges.");
-  }
-
   const start = tickToMediaSeconds(startTicks);
   const end = tickToMediaSeconds(endTicks);
   if (end <= start) {
@@ -41,7 +43,7 @@ export async function extractAssetRangeFile(
   });
 
   try {
-    const isVideo = mediaType === "video";
+    const isVideo = source.mediaType === "video";
     const audioTrack = isVideo ? null : await input.getPrimaryAudioTrack();
     if (!isVideo && !audioTrack) {
       throw new Error("The asset does not contain an audio track.");
@@ -95,16 +97,12 @@ export async function extractAssetRangeFile(
 }
 
 export async function extractAssetFrameFile(
-  source: ResolvedEditorSource,
+  source: AssetFrameExtractionSource,
   playheadTicks: number,
 ): Promise<File> {
-  if ((source.mediaType ?? "video") !== "video") {
-    throw new Error("Frames can only be extracted from video assets.");
-  }
-
   return captureVideoFrameFile(
     source.sourceUrl,
     tickToMediaSeconds(playheadTicks),
-    sanitizeFilename(`${filenameStem(source.sourceFile.name)}-frame.png`),
+    sanitizeFilename(`${filenameStem(source.sourceFilename)}-frame.png`),
   );
 }

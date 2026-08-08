@@ -65,6 +65,67 @@ export function snapFrameCountToStep(
   return Math.max(1, snappedUnits * safeFrameStep + 1);
 }
 
+export interface SnapSteppedRangeEdgeOptions {
+  edge: "start" | "end";
+  proposedTick: number;
+  fixedTick: number;
+  ticksPerFrame: number;
+  frameStep: number;
+  mode?: FrameSnapMode;
+  minTick?: number;
+  maxTick?: number;
+  maxFrameCount?: number | null;
+}
+
+/**
+ * Resolves one moving range edge onto the shared `frameStep * n + 1` grid
+ * while preserving the opposite edge and respecting optional range limits.
+ */
+export function snapSteppedRangeEdge({
+  edge,
+  proposedTick,
+  fixedTick,
+  ticksPerFrame,
+  frameStep,
+  mode = "nearest",
+  minTick = 0,
+  maxTick = Number.POSITIVE_INFINITY,
+  maxFrameCount = null,
+}: SnapSteppedRangeEdgeOptions): number {
+  const safeTicksPerFrame =
+    Number.isFinite(ticksPerFrame) && ticksPerFrame > 0 ? ticksPerFrame : 1;
+  const lowerEdge = edge === "start" ? minTick : fixedTick + safeTicksPerFrame;
+  const upperEdge =
+    edge === "start" ? fixedTick - safeTicksPerFrame : maxTick;
+  const boundedTick = Math.max(lowerEdge, Math.min(upperEdge, proposedTick));
+  const rawFrameCount =
+    edge === "start"
+      ? (fixedTick - boundedTick) / safeTicksPerFrame
+      : (boundedTick - fixedTick) / safeTicksPerFrame;
+  let frameCount = snapFrameCountToStep(rawFrameCount, frameStep, mode);
+
+  if (maxFrameCount !== null && Number.isFinite(maxFrameCount)) {
+    frameCount = Math.min(frameCount, Math.max(1, maxFrameCount));
+  }
+
+  const availableFrameCount =
+    edge === "start"
+      ? (fixedTick - minTick) / safeTicksPerFrame
+      : (maxTick - fixedTick) / safeTicksPerFrame;
+  if (Number.isFinite(availableFrameCount)) {
+    frameCount = Math.min(
+      frameCount,
+      snapFrameCountToStep(availableFrameCount, frameStep, "floor"),
+    );
+  }
+
+  const resolvedTick =
+    edge === "start"
+      ? fixedTick - frameCount * safeTicksPerFrame
+      : fixedTick + frameCount * safeTicksPerFrame;
+  return Math.max(minTick, Math.min(maxTick, resolvedTick));
+}
+
 type SubordinateClipReferenceRole = "mask";
 
 interface SubordinateClipReference {

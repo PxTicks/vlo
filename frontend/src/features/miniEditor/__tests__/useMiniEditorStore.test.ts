@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
+import { mediaSecondsToTick } from "../../../core/time";
 import { resetZustandStore } from "../../../testUtils/zustand";
 import type { ResolvedEditorSource } from "../types";
 import { useMiniEditorStore } from "../useMiniEditorStore";

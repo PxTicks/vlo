@@ -4,12 +4,11 @@
  * feature independent from the asset library and generation workflows.
  */
 
-/** A masked time window, expressed in source-video ticks. Mirrors RangeMaskComponentParameters. */
-export interface EditorRangeMask {
+import type { RangeMaskComponentParameters } from "../../types/Components";
+
+/** A source-video range-mask payload with its editable identity. */
+export interface EditorRangeMask extends RangeMaskComponentParameters {
   id: string;
-  startSourceTicks: number;
-  endSourceTicks: number;
-  isActive: boolean;
 }
 
 export type MiniEditorMediaType = "video" | "audio" | "image" | "lut";

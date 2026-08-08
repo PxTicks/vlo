@@ -1,6 +1,6 @@
 import type { Asset } from "../../types/Asset";
 import { useMiniEditorStore } from "../miniEditor";
-import { mediaSecondsToTick } from "../renderer/utils/mediaTime";
+import { mediaSecondsToTick } from "../../core/time";
 import {
   extractAssetFrameFile,
   extractAssetRangeFile,
@@ -57,7 +57,10 @@ export async function openAssetInMiniEditor(
     onExtractRange: isTemporal
       ? async (spec, source) => {
           const file = await extractAssetRangeFile(
-            source,
+            {
+              sourceFile: source.sourceFile,
+              mediaType: source.mediaType === "audio" ? "audio" : "video",
+            },
             spec.cropStartTicks,
             spec.cropEndTicks,
           );
@@ -74,7 +77,13 @@ export async function openAssetInMiniEditor(
     onExtractFrame:
       asset.type === "video"
         ? async (playheadTicks, source) => {
-            const file = await extractAssetFrameFile(source, playheadTicks);
+            const file = await extractAssetFrameFile(
+              {
+                sourceUrl: source.sourceUrl,
+                sourceFilename: source.sourceFile.name,
+              },
+              playheadTicks,
+            );
             await useAssetStore.getState().addLocalAsset(file, {
               source: "asset_excerpt",
               parentAssetId: asset.id,

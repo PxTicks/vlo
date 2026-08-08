@@ -8,10 +8,7 @@ import type {
 } from "../../../types/TimelineTypes";
 import type { ExportConfig, ProjectData } from "../../renderer";
 import { createClipFromAsset } from "../../timeline";
-import {
-  tickToMediaSeconds,
-  mediaSecondsToTick,
-} from "../../renderer/utils/mediaTime";
+import { tickToMediaSeconds } from "../../../core/time";
 import { calculateClipTime } from "../../transformations";
 import { getTicksPerFrame, snapTickToFrame } from "../../timelineSelection";
 import { useProjectStore } from "../../project";
@@ -309,21 +306,4 @@ export async function renderSyntheticEditedOutputs(
     { signal: options.signal, renderInputs },
   );
   return { video, mask };
-}
-
-/** Loads enough of a video URL to read its duration, in timeline ticks. */
-export async function probeVideoDurationTicks(
-  videoUrl: string,
-): Promise<number> {
-  return new Promise<number>((resolve, reject) => {
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    video.muted = true;
-    video.onloadedmetadata = () => {
-      const seconds = Number.isFinite(video.duration) ? video.duration : 0;
-      resolve(Math.max(0, mediaSecondsToTick(seconds)));
-    };
-    video.onerror = () => reject(new Error("Could not read video metadata"));
-    video.src = videoUrl;
-  });
 }

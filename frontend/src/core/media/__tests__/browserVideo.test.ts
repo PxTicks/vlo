@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { captureVideoFrameFile } from "../captureVideoFrameFile";
+import {
+  captureVideoFrameFile,
+  probeVideoDurationTicks,
+} from "../browserVideo";
 
 function installMediaElements(options: {
   currentTime: number;
   duration?: number;
   emitSeeked?: boolean;
+  loadEvent?: "loadeddata" | "loadedmetadata";
 }) {
   const video = document.createElement("video");
   let currentTime = options.currentTime;
@@ -24,8 +28,9 @@ function installMediaElements(options: {
       },
     },
   });
+  const loadEvent = options.loadEvent ?? "loadeddata";
   const load = vi.fn(() => {
-    queueMicrotask(() => video.dispatchEvent(new Event("loadeddata")));
+    queueMicrotask(() => video.dispatchEvent(new Event(loadEvent)));
   });
   const pause = vi.fn();
   Object.defineProperties(video, {
@@ -58,10 +63,10 @@ function installMediaElements(options: {
     }) as typeof document.createElement,
   );
 
-  return { drawImage, load, pause, removeAttribute, video };
+  return { drawImage, load, pause, removeAttribute };
 }
 
-describe("captureVideoFrameFile", () => {
+describe("browser video utilities", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
@@ -97,5 +102,18 @@ describe("captureVideoFrameFile", () => {
     await rejection;
     expect(media.pause).toHaveBeenCalledOnce();
     expect(media.removeAttribute).toHaveBeenCalledWith("src");
+  });
+
+  it("probes duration and releases the metadata element", async () => {
+    const media = installMediaElements({
+      currentTime: 0,
+      duration: 2.5,
+      loadEvent: "loadedmetadata",
+    });
+
+    await expect(probeVideoDurationTicks("blob:video")).resolves.toBe(240_000);
+    expect(media.pause).toHaveBeenCalledOnce();
+    expect(media.removeAttribute).toHaveBeenCalledWith("src");
+    expect(media.load).toHaveBeenCalledTimes(2);
   });
 });

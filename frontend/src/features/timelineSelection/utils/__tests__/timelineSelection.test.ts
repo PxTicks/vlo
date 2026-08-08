@@ -8,6 +8,7 @@ import {
   resolveSelectionFrameStep,
   selectionHasMaskClip,
   snapFrameCountToStep,
+  snapSteppedRangeEdge,
 } from "../timelineSelection";
 import { createTimelineSelectionFromClipIds } from "../createTimelineSelection";
 import { TICKS_PER_SECOND } from "../../../timeline";
@@ -32,6 +33,29 @@ describe("timelineSelection helpers", () => {
     expect(snapFrameCountToStep(30, 4, "floor")).toBe(29);
     expect(snapFrameCountToStep(31, 4, "floor")).toBe(29);
     expect(snapFrameCountToStep(1, 8, "floor")).toBe(1);
+  });
+
+  it("snaps a bounded moving range edge while preserving its anchor", () => {
+    expect(
+      snapSteppedRangeEdge({
+        edge: "end",
+        proposedTick: 630,
+        fixedTick: 0,
+        ticksPerFrame: 100,
+        frameStep: 4,
+        maxTick: 2_000,
+      }),
+    ).toBe(500);
+    expect(
+      snapSteppedRangeEdge({
+        edge: "start",
+        proposedTick: 1_370,
+        fixedTick: 2_000,
+        ticksPerFrame: 100,
+        frameStep: 4,
+        minTick: 0,
+      }),
+    ).toBe(1_500);
   });
 
   it("computes ticks per frame from fps", () => {

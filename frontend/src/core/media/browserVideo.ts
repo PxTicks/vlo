@@ -1,15 +1,20 @@
+import { mediaSecondsToTick } from "../time";
+
 const DEFAULT_VIDEO_OPERATION_TIMEOUT_MS = 5_000;
 const SEEK_EPSILON_SECONDS = 0.001;
 
-interface CaptureVideoFrameOptions {
+export interface BrowserVideoOperationOptions {
   timeoutMs?: number;
+}
+
+export interface CaptureVideoFrameOptions extends BrowserVideoOperationOptions {
   fallbackWidth?: number;
   fallbackHeight?: number;
 }
 
 function waitForVideoEvent(
   video: HTMLVideoElement,
-  event: "loadeddata" | "seeked",
+  event: "loadeddata" | "loadedmetadata" | "seeked",
   errorMessage: string,
   timeoutMs: number,
 ): Promise<void> {
@@ -38,6 +43,12 @@ function waitForVideoEvent(
     video.addEventListener(event, handleSuccess, { once: true });
     video.addEventListener("error", handleError, { once: true });
   });
+}
+
+function releaseVideo(video: HTMLVideoElement): void {
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
 }
 
 /**
@@ -104,8 +115,36 @@ export async function captureVideoFrameFile(
       lastModified: Date.now(),
     });
   } finally {
-    video.pause();
-    video.removeAttribute("src");
+    releaseVideo(video);
+  }
+}
+
+/** Reads a browser-decodable video's duration without retaining its element. */
+export async function probeVideoDurationTicks(
+  videoUrl: string,
+  options: BrowserVideoOperationOptions = {},
+): Promise<number> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_VIDEO_OPERATION_TIMEOUT_MS;
+  const video = document.createElement("video");
+  video.muted = true;
+  video.preload = "metadata";
+
+  try {
+    const loaded = waitForVideoEvent(
+      video,
+      "loadedmetadata",
+      "Could not read video metadata.",
+      timeoutMs,
+    );
+    video.src = videoUrl;
     video.load();
+    await loaded;
+
+    const durationSeconds = Number.isFinite(video.duration)
+      ? Math.max(0, video.duration)
+      : 0;
+    return mediaSecondsToTick(durationSeconds);
+  } finally {
+    releaseVideo(video);
   }
 }

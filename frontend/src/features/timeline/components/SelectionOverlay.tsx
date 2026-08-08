@@ -26,6 +26,7 @@ import {
   resolveSelectionFps,
   resolveSelectionFrameStep,
   snapFrameCountToStep,
+  snapSteppedRangeEdge,
   snapTickToFrame,
 } from "../../timelineSelection";
 import { stopOverlayEventPropagation } from "../utils/stopOverlayEventPropagation";
@@ -320,14 +321,16 @@ export function SelectionOverlay({
           selectionEndTick - ticksPerFrame,
         );
         const resolveStartTick = (edgeTick: number) => {
-          const boundedTick = Math.max(minStartTick, edgeTick);
-          const rawFrameCount =
-            (selectionEndTick - boundedTick) / Math.max(1e-6, ticksPerFrame);
-          const frameCount = clampFrameCount(rawFrameCount, "floor");
-          return Math.max(
-            minStartTick,
-            selectionEndTick - frameCount * ticksPerFrame,
-          );
+          return snapSteppedRangeEdge({
+            edge: "start",
+            proposedTick: edgeTick,
+            fixedTick: selectionEndTick,
+            ticksPerFrame,
+            frameStep: effectiveFrameStep,
+            mode: "floor",
+            minTick: minStartTick,
+            maxFrameCount: getMaxFrameCount(),
+          });
         };
         const finalTick = maybeResolveSnappedEdgeTick(
           rawStartTick,
@@ -349,10 +352,16 @@ export function SelectionOverlay({
             ? Number.POSITIVE_INFINITY
             : selectionStartTick + maxFrameCount * ticksPerFrame;
         const resolveEndTick = (edgeTick: number) => {
-          const rawFrameCount =
-            (edgeTick - selectionStartTick) / Math.max(1e-6, ticksPerFrame);
-          const frameCount = clampFrameCount(rawFrameCount, "floor");
-          return selectionStartTick + frameCount * ticksPerFrame;
+          return snapSteppedRangeEdge({
+            edge: "end",
+            proposedTick: edgeTick,
+            fixedTick: selectionStartTick,
+            ticksPerFrame,
+            frameStep: effectiveFrameStep,
+            mode: "floor",
+            maxTick: maxEndTick,
+            maxFrameCount,
+          });
         };
         const finalTick = maybeResolveSnappedEdgeTick(
           rawEndTick,
@@ -388,6 +397,7 @@ export function SelectionOverlay({
     },
     [
       clampFrameCount,
+      effectiveFrameStep,
       getMaxFrameCount,
       maybeResolveSnappedEdgeTick,
       pxToTicks,

@@ -1,6 +1,5 @@
 export { MiniEditorModal } from "./MiniEditorModal";
 export { useMiniEditorStore } from "./useMiniEditorStore";
-export { captureVideoFrameFile } from "./services/captureVideoFrameFile";
 export type {
   MiniEditorExtractionMode,
   MiniEditorStatus,

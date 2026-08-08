@@ -20,10 +20,7 @@ import CameraAltIcon from "@mui/icons-material/CameraAlt";
 import ContentCutIcon from "@mui/icons-material/ContentCut";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import {
-  tickToMediaSeconds,
-  mediaSecondsToTick,
-} from "../renderer/utils/mediaTime";
+import { mediaSecondsToTick, tickToMediaSeconds } from "../../core/time";
 import { useMiniEditorStore } from "./useMiniEditorStore";
 import { EditorTrack } from "./components/EditorTrack";
 

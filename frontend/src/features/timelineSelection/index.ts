@@ -13,8 +13,10 @@ export {
   resolveSelectionFrameStep,
   selectionHasMaskClip,
   snapFrameCountToStep,
+  snapSteppedRangeEdge,
   snapTickToFrame,
 } from "./utils/timelineSelection";
+export type { SnapSteppedRangeEdgeOptions } from "./utils/timelineSelection";
 export {
   createTimelineSelection,
   createTimelineSelectionFromClipIds,

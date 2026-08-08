@@ -1,0 +1,211 @@
+/**
+ * Vocabulary for the configurable dock layout
+ * (docs/configurable-docking-and-dedicated-workspaces-plan.md §3.1, §4.1–§4.3).
+ *
+ * This module is deliberately data-only: it declares the places a panel can
+ * live, the constraints each place imposes, the shape a panel advertises to the
+ * layout kernel, the persisted document, and the resolved output. Nothing here
+ * reads storage, touches React, or knows about the view registry, so the
+ * resolver and the migrations can be exercised without rendering anything.
+ */
+
+/**
+ * Places that hold tools and supporting information. Deliberately a closed set:
+ * the first release is a constrained dock, not an arbitrary window manager.
+ *
+ * This is a subset of the shell's view regions. `projects-page.main` is a
+ * full-page surface rather than a dock, so it stays outside the docking model.
+ */
+export const DOCK_REGIONS = [
+  "left-sidebar",
+  "right-sidebar",
+  "player-aside",
+  "bottom-dock",
+] as const;
+
+export type DockRegion = (typeof DOCK_REGIONS)[number];
+
+/**
+ * Places that hold the editor's primary working surfaces. Declared here so the
+ * layout vocabulary is complete; stage resolution arrives with Phase D, when
+ * the player and timeline become registered editor surfaces.
+ */
+export const EDITOR_STAGES = ["main-stage", "lower-stage"] as const;
+
+export type EditorStage = (typeof EDITOR_STAGES)[number];
+
+export function isDockRegion(value: unknown): value is DockRegion {
+  return DOCK_REGIONS.includes(value as DockRegion);
+}
+
+/** Which viewport dimension a region's `sizePx` measures. */
+export type DockRegionAxis = "width" | "height";
+
+export interface DockRegionConstraints {
+  readonly axis: DockRegionAxis;
+  readonly defaultSizePx: number;
+  readonly minimumSizePx: number;
+  readonly maximumSizePx: number;
+  /**
+   * Whether an unselected region falls back to its first available view.
+   * Sidebars always show something, so they do; the bottom dock must not, or it
+   * would open itself the moment anything registered into it.
+   */
+  readonly autoSelect: boolean;
+  readonly collapsible: boolean;
+  /**
+   * Largest share of the viewport the region may occupy. Applied to the
+   * *effective* size only, so a narrow window never overwrites the desktop
+   * preference (plan §5.1).
+   */
+  readonly maximumViewportFraction: number;
+}
+
+/**
+ * Defaults match the geometry EditorLayout, PlayerAsidePanel, and
+ * EditorBottomDock hard-code today, so adopting the kernel is visually neutral.
+ */
+export const DOCK_REGION_CONSTRAINTS: Readonly<
+  Record<DockRegion, DockRegionConstraints>
+> = Object.freeze({
+  "left-sidebar": Object.freeze({
+    axis: "width",
+    defaultSizePx: 356,
+    minimumSizePx: 220,
+    maximumSizePx: 640,
+    autoSelect: true,
+    collapsible: true,
+    maximumViewportFraction: 0.4,
+  }),
+  "right-sidebar": Object.freeze({
+    axis: "width",
+    defaultSizePx: 340,
+    minimumSizePx: 220,
+    maximumSizePx: 640,
+    autoSelect: true,
+    collapsible: true,
+    maximumViewportFraction: 0.4,
+  }),
+  "player-aside": Object.freeze({
+    axis: "width",
+    defaultSizePx: 280,
+    minimumSizePx: 180,
+    maximumSizePx: 520,
+    autoSelect: true,
+    collapsible: true,
+    maximumViewportFraction: 0.3,
+  }),
+  "bottom-dock": Object.freeze({
+    axis: "height",
+    defaultSizePx: 240,
+    minimumSizePx: 120,
+    maximumSizePx: 720,
+    autoSelect: false,
+    collapsible: true,
+    // Mirrors the dock's current `maxHeight: 60%`.
+    maximumViewportFraction: 0.6,
+  }),
+} satisfies Record<DockRegion, DockRegionConstraints>);
+
+export interface ShellViewport {
+  readonly widthPx: number;
+  readonly heightPx: number;
+}
+
+/**
+ * What a registered panel tells the layout kernel about itself. Owner-neutral:
+ * host views and extension views produce the same shape, and `available`
+ * carries the already-evaluated `when` condition so the resolver stays pure.
+ */
+export interface ShellPanelDescriptor {
+  readonly id: string;
+  readonly defaultRegion: DockRegion;
+  /**
+   * Regions the panel may be moved to. Until Phase C teaches registration
+   * about portability this is just `[defaultRegion]`, which is why a persisted
+   * placement outside this list falls back rather than throwing.
+   */
+  readonly allowedRegions: readonly DockRegion[];
+  /** Registration-time ordering hint, used when the user has no preference. */
+  readonly defaultOrder: number;
+  /** Result of evaluating the panel's declarative availability condition. */
+  readonly available: boolean;
+  readonly source: "host" | "extension";
+  readonly preferredSizePx?: number;
+  readonly minimumSizePx?: number;
+  readonly maximumSizePx?: number;
+}
+
+/**
+ * One region's resolved state. Placement, visibility, selection, collapse, and
+ * size are separate concerns (plan §4.2): collapse and size belong to the
+ * region, not to whichever view happens to be selected.
+ */
+export interface ResolvedDockRegion {
+  readonly id: DockRegion;
+  /** Visible and available panels, in user order. Drives the tab strip. */
+  readonly orderedViewIds: readonly string[];
+  /**
+   * Every panel placed here, including user-hidden and currently unavailable
+   * ones, in the same order. Drives the manage-panels control.
+   */
+  readonly placedViewIds: readonly string[];
+  readonly selectedViewId: string | null;
+  readonly collapsed: boolean;
+  /** Effective size after viewport clamping. What the shell should render. */
+  readonly sizePx: number;
+  /** The user's preference before viewport clamping. What gets persisted. */
+  readonly userSizePx: number;
+  /** Effective bounds for this region right now, for separator semantics. */
+  readonly minimumSizePx: number;
+  readonly maximumSizePx: number;
+}
+
+export interface ResolvedShellLayout {
+  readonly regions: Readonly<Record<DockRegion, ResolvedDockRegion>>;
+  /** Effective region of every known panel, keyed by view ID. */
+  readonly panelRegions: Readonly<Record<string, DockRegion>>;
+}
+
+/**
+ * A panel's persisted intent.
+ *
+ * `region` is optional on purpose, despite the plan sketch typing it as
+ * required: absent means "wherever the panel's registration says". Recording a
+ * placement the user never chose would pin a panel to a region forever, and
+ * would force the version 1 migration — which had no placement concept at all —
+ * to invent one.
+ */
+export interface PersistedPanelPlacement {
+  readonly region?: DockRegion;
+  /** Absent means visible. */
+  readonly visible?: boolean;
+  /** Absent means "use the registration order". */
+  readonly order?: number;
+}
+
+export interface PersistedRegionState {
+  readonly selectedViewId?: string | null;
+  readonly collapsed?: boolean;
+  readonly sizePx?: number;
+}
+
+/** A dedicated workspace's saved layout override. Consumed from Phase E. */
+export interface WorkspaceLayoutOverride {
+  readonly panels: Readonly<Record<string, PersistedPanelPlacement>>;
+  readonly regions: Readonly<Partial<Record<DockRegion, PersistedRegionState>>>;
+}
+
+export interface ShellLayoutDocumentV2 {
+  readonly version: 2;
+  readonly panels: Readonly<Record<string, PersistedPanelPlacement>>;
+  readonly regions: Readonly<Partial<Record<DockRegion, PersistedRegionState>>>;
+  readonly workspaceLayouts: Readonly<Record<string, WorkspaceLayoutOverride>>;
+}
+
+export const EMPTY_SHELL_LAYOUT_DOCUMENT: ShellLayoutDocumentV2 = Object.freeze({
+  version: 2,
+  panels: Object.freeze({}),
+  regions: Object.freeze({}),
+  workspaceLayouts: Object.freeze({}),
+});

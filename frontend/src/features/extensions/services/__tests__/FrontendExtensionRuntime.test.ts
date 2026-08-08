@@ -3,10 +3,12 @@ import { ExtensionHost } from "../../ExtensionHost";
 import { ExtensionContributionRegistry } from "../../registry/ExtensionContributionRegistry";
 import type { ExtensionContributionDefinition } from "../../registry/ExtensionContributionRegistry";
 import type { ExtensionInventoryItem } from "../extensionManagementApi";
+import { ExtensionPeerRegistry } from "../../peers/ExtensionPeerRegistry";
 import {
   createVloExtensionApi,
   FrontendExtensionInventoryTimeoutError,
   FrontendExtensionRuntime,
+  type FrontendExtensionStartResult,
 } from "../FrontendExtensionRuntime";
 import type { VloExtensionApi } from "../../types";
 import { extensionTransformationRegistry } from "../../../transformations/extensionApi";
@@ -43,6 +45,9 @@ function inventoryItem(
     declarative?: boolean;
     backend?: boolean;
     backendStatus?: ExtensionInventoryItem["backendRuntime"]["status"];
+    version?: string;
+    activationEvents?: readonly string[];
+    dependencies?: Readonly<Record<string, string>>;
   } = {},
 ): ExtensionInventoryItem {
   const status = options.status ?? "approved";
@@ -58,8 +63,12 @@ function inventoryItem(
       manifestVersion: 1,
       id,
       name: id,
-      version: "1.0.0",
+      version: options.version ?? "1.0.0",
       sdk: options.sdk ?? ">=1.0.0 <2.0.0",
+      ...(options.activationEvents
+        ? { activationEvents: [...options.activationEvents] }
+        : {}),
+      ...(options.dependencies ? { dependencies: { ...options.dependencies } } : {}),
       ...(options.vlo ? { vlo: options.vlo } : {}),
       ...(frontend ? { frontend: { entry: "frontend/dist/index.js" } } : {}),
       ...((!frontend && !options.declarative) || options.backend
@@ -79,7 +88,7 @@ function inventoryItem(
       status === "approved"
         ? {
             digest,
-            version: "1.0.0",
+            version: options.version ?? "1.0.0",
             approvedAt: 1,
             enabled: true,
           }
@@ -113,30 +122,50 @@ function inventoryItem(
   };
 }
 
+interface HarnessOptions {
+  peers?: ExtensionPeerRegistry;
+  isProjectOpen?: () => boolean;
+  subscribeProjectOpen?: (listener: () => void) => () => void;
+  onResult?: (result: FrontendExtensionStartResult) => void;
+}
+
 function createHarness(
   inventory: ExtensionInventoryItem[],
   importModule: (url: string) => Promise<unknown>,
+  options: HarnessOptions = {},
 ) {
   const registry = new ExtensionContributionRegistry<TestContribution>(
     "runtime.test",
   );
+  const peers = options.peers ?? new ExtensionPeerRegistry();
   const host = new ExtensionHost<TestApi>({
     sdkVersion: "1.0.0",
+    onExport: (identity, api) => {
+      if (api === undefined) peers.retract(identity.id);
+      else peers.publishApi(identity.id, api);
+    },
     createApi: (scope) => {
       const registrations = registry.bind(scope);
       return {
-        register: (definition) => {
+        register: (definition: TestContribution) => {
           registrations.register(definition);
         },
-      };
+        peers: peers.bind(scope),
+      } as unknown as TestApi;
     },
   });
   const runtime = new FrontendExtensionRuntime({
     host,
     loadInventory: async () => inventory,
     importModule,
+    peers,
+    ...(options.onResult ? { onResult: options.onResult } : {}),
+    isProjectOpen: options.isProjectOpen ?? (() => false),
+    ...(options.subscribeProjectOpen
+      ? { subscribeProjectOpen: options.subscribeProjectOpen }
+      : { subscribeProjectOpen: () => () => undefined }),
   });
-  return { host, registry, runtime };
+  return { host, registry, runtime, peers };
 }
 
 describe("FrontendExtensionRuntime", () => {
@@ -746,5 +775,384 @@ describe("FrontendExtensionRuntime", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("FrontendExtensionRuntime activation events and dependencies", () => {
+  /** Results keyed by extension, so ordering differences do not mask content. */
+  function byId(
+    results: readonly FrontendExtensionStartResult[],
+  ): Record<string, FrontendExtensionStartResult> {
+    return Object.fromEntries(
+      results.map((result) => [result.extensionId, result]),
+    );
+  }
+
+  /** Maps `/app/extensions/<id>/...` back to a per-extension module. */
+  function importerFor(
+    modules: Readonly<Record<string, { activate: (context: never) => unknown }>>,
+    order: string[] = [],
+  ) {
+    return async (url: string) => {
+      const id = url.split("/")[3];
+      const module = modules[id];
+      if (!module) throw new Error(`No test module for '${id}'.`);
+      return {
+        activate: (context: never) => {
+          order.push(id);
+          return module.activate(context);
+        },
+      };
+    };
+  }
+
+  it("activates a package with no declared events at startup", async () => {
+    const order: string[] = [];
+    const { runtime, host } = createHarness(
+      [inventoryItem("example.legacy")],
+      importerFor({ "example.legacy": { activate: () => undefined } }, order),
+    );
+
+    const summary = await runtime.start();
+    expect(order).toEqual(["example.legacy"]);
+    expect(summary.results).toEqual([
+      expect.objectContaining({ extensionId: "example.legacy", status: "active" }),
+    ]);
+    expect(host.getState("example.legacy")?.status).toBe("active");
+  });
+
+  it("defers onProjectOpen until a project actually opens", async () => {
+    const order: string[] = [];
+    let fire: (() => void) | undefined;
+    const { runtime, host } = createHarness(
+      [
+        inventoryItem("example.eager"),
+        inventoryItem("example.deferred", {
+          activationEvents: ["onProjectOpen"],
+        }),
+      ],
+      importerFor(
+        {
+          "example.eager": { activate: () => undefined },
+          "example.deferred": { activate: () => undefined },
+        },
+        order,
+      ),
+      {
+        isProjectOpen: () => false,
+        subscribeProjectOpen: (listener) => {
+          fire = listener;
+          return () => undefined;
+        },
+      },
+    );
+
+    const summary = await runtime.start();
+    expect(order).toEqual(["example.eager"]);
+    expect(summary.results).toContainEqual(
+      expect.objectContaining({
+        extensionId: "example.deferred",
+        status: "deferred",
+        message: expect.stringContaining("onProjectOpen"),
+      }),
+    );
+    expect(host.getState("example.deferred")).toBeUndefined();
+
+    fire?.();
+    await vi.waitFor(() => {
+      expect(host.getState("example.deferred")?.status).toBe("active");
+    });
+    expect(order).toEqual(["example.eager", "example.deferred"]);
+  });
+
+  it("activates onProjectOpen immediately when a project is already open", async () => {
+    const order: string[] = [];
+    const { runtime } = createHarness(
+      [inventoryItem("example.deferred", { activationEvents: ["onProjectOpen"] })],
+      importerFor({ "example.deferred": { activate: () => undefined } }, order),
+      { isProjectOpen: () => true },
+    );
+
+    const summary = await runtime.start();
+    expect(order).toEqual(["example.deferred"]);
+    expect(summary.results).toEqual([
+      expect.objectContaining({ status: "active" }),
+    ]);
+  });
+
+  it("pulls a deferred dependency forward and activates it first", async () => {
+    const order: string[] = [];
+    const seenPeerApi: unknown[] = [];
+    const { runtime, peers } = createHarness(
+      [
+        // Inventory order puts the dependent first on purpose: the dependency
+        // edge, not the listing, decides who runs first.
+        inventoryItem("example.consumer", {
+          dependencies: { "example.provider": ">=1.2.0 <2.0.0" },
+        }),
+        inventoryItem("example.provider", {
+          version: "1.2.0",
+          activationEvents: ["onProjectOpen"],
+        }),
+      ],
+      importerFor(
+        {
+          "example.provider": {
+            activate: (context: never) =>
+              (context as { exportApi(api: object): void }).exportApi({
+                zones: 5,
+              }),
+          },
+          "example.consumer": {
+            activate: (context: never) => {
+              seenPeerApi.push(
+                (
+                  context as {
+                    api: { peers: { requireApi(id: string): unknown } };
+                  }
+                ).api.peers.requireApi("example.provider"),
+              );
+            },
+          },
+        },
+        order,
+      ),
+    );
+
+    const summary = await runtime.start();
+    expect(order).toEqual(["example.provider", "example.consumer"]);
+    // The API is already published when the dependent runs, so `requireApi`
+    // cannot race.
+    expect(seenPeerApi).toEqual([{ zones: 5 }]);
+    expect(peers.getApi("example.provider")).toEqual({ zones: 5 });
+    expect(summary.results.map((result) => result.status)).toEqual([
+      "active",
+      "active",
+    ]);
+  });
+
+  it("refuses a dependent whose dependency is missing or mismatched", async () => {
+    const { runtime, host } = createHarness(
+      [
+        inventoryItem("example.missing-dep", {
+          dependencies: { "example.absent": ">=1.0.0" },
+        }),
+        inventoryItem("example.bad-version", {
+          dependencies: { "example.provider": ">=2.0.0" },
+        }),
+        inventoryItem("example.provider", { version: "1.2.0" }),
+      ],
+      importerFor({
+        "example.missing-dep": { activate: () => undefined },
+        "example.bad-version": { activate: () => undefined },
+        "example.provider": { activate: () => undefined },
+      }),
+    );
+
+    const summary = await runtime.start();
+    expect(summary.results).toContainEqual(
+      expect.objectContaining({
+        extensionId: "example.missing-dep",
+        status: "failed",
+        stage: "dependencies",
+        message: expect.stringContaining("not installed"),
+      }),
+    );
+    expect(summary.results).toContainEqual(
+      expect.objectContaining({
+        extensionId: "example.bad-version",
+        status: "failed",
+        stage: "dependencies",
+        message: expect.stringContaining(">=2.0.0"),
+      }),
+    );
+    expect(host.getState("example.missing-dep")).toBeUndefined();
+    expect(host.getState("example.provider")?.status).toBe("active");
+  });
+
+  it("fails a dependent when its dependency fails to activate", async () => {
+    const { runtime, host, peers } = createHarness(
+      [
+        inventoryItem("example.consumer", {
+          dependencies: { "example.provider": ">=1.0.0" },
+        }),
+        inventoryItem("example.provider"),
+      ],
+      importerFor({
+        "example.provider": {
+          activate: () => {
+            throw new Error("provider exploded");
+          },
+        },
+        "example.consumer": { activate: () => undefined },
+      }),
+    );
+
+    const summary = await runtime.start();
+    expect(summary.results).toContainEqual(
+      expect.objectContaining({
+        extensionId: "example.consumer",
+        status: "failed",
+        stage: "dependencies",
+        message: expect.stringContaining("did not activate"),
+      }),
+    );
+    expect(host.getState("example.consumer")).toBeUndefined();
+    expect(peers.isActive("example.provider")).toBe(false);
+  });
+
+  it("refuses a dependency cycle instead of recursing", async () => {
+    const order: string[] = [];
+    const observed: FrontendExtensionStartResult[] = [];
+    const importModule = vi.fn(
+      importerFor(
+        {
+          "example.a": { activate: () => undefined },
+          "example.b": { activate: () => undefined },
+        },
+        order,
+      ),
+    );
+    const { runtime, host } = createHarness(
+      [
+        inventoryItem("example.a", { dependencies: { "example.b": ">=1.0.0" } }),
+        inventoryItem("example.b", { dependencies: { "example.a": ">=1.0.0" } }),
+      ],
+      importModule,
+      {
+        onResult: (result) => {
+          observed.push(result);
+        },
+      },
+    );
+
+    const summary = await runtime.start();
+
+    // Neither package is imported, let alone activated: the cycle is refused
+    // before anything is fetched.
+    expect(importModule).not.toHaveBeenCalled();
+    expect(order).toEqual([]);
+    expect(host.getState("example.a")).toBeUndefined();
+    expect(host.getState("example.b")).toBeUndefined();
+
+    // Exactly one result per package, each reported to the observer once. The
+    // frame that detected the cycle owns the diagnostic; the outer frame's
+    // derived "did not activate" message must not overwrite it.
+    expect(observed).toHaveLength(2);
+    expect(observed.map((result) => result.extensionId)).toEqual([
+      "example.a",
+      "example.b",
+    ]);
+    // The summary lists packages in inventory order and observers see them in
+    // settle order, so compare by ID rather than position.
+    expect(byId(summary.results)).toEqual(byId(observed));
+
+    const [resultA, resultB] = observed;
+    expect(resultA).toMatchObject({
+      extensionId: "example.a",
+      status: "failed",
+      stage: "dependencies",
+      message: "Dependency cycle: example.a -> example.b -> example.a. " +
+        "Extensions cannot depend on each other in a loop.",
+    });
+    expect(resultB).toMatchObject({
+      extensionId: "example.b",
+      status: "failed",
+      stage: "dependencies",
+      // The dependent still says which package it was waiting on, and carries
+      // the cycle through so the log is readable from either entry.
+      message: expect.stringContaining("Dependency cycle"),
+    });
+    expect(resultB.message).toContain("example.a");
+  });
+
+  it("keeps the direct cycle diagnostic when a package sits on its own loop", async () => {
+    const observed: FrontendExtensionStartResult[] = [];
+    // A -> B -> C -> B: the loop does not include the package that started it,
+    // so B is settled by the frame that closed the loop while A fails behind it.
+    const { runtime } = createHarness(
+      [
+        inventoryItem("example.a", { dependencies: { "example.b": ">=1.0.0" } }),
+        inventoryItem("example.b", { dependencies: { "example.c": ">=1.0.0" } }),
+        inventoryItem("example.c", { dependencies: { "example.b": ">=1.0.0" } }),
+      ],
+      importerFor({
+        "example.a": { activate: () => undefined },
+        "example.b": { activate: () => undefined },
+        "example.c": { activate: () => undefined },
+      }),
+      {
+        onResult: (result) => {
+          observed.push(result);
+        },
+      },
+    );
+
+    const summary = await runtime.start();
+
+    expect(observed).toHaveLength(3);
+    expect(new Set(observed.map((result) => result.extensionId))).toEqual(
+      new Set(["example.a", "example.b", "example.c"]),
+    );
+    expect(byId(summary.results)).toEqual(byId(observed));
+    expect(observed.every((result) => result.status === "failed")).toBe(true);
+    expect(
+      observed.find((result) => result.extensionId === "example.b")?.message,
+    ).toContain("example.a -> example.b -> example.c -> example.b");
+  });
+
+  it("activates an onExtension listener after the package it names", async () => {
+    const order: string[] = [];
+    const { runtime, host } = createHarness(
+      [
+        inventoryItem("example.companion", {
+          activationEvents: ["onExtension:example.host-package"],
+        }),
+        inventoryItem("example.host-package"),
+      ],
+      importerFor(
+        {
+          "example.companion": { activate: () => undefined },
+          "example.host-package": { activate: () => undefined },
+        },
+        order,
+      ),
+    );
+
+    await runtime.start();
+    expect(order).toEqual(["example.host-package", "example.companion"]);
+    expect(host.getState("example.companion")?.status).toBe("active");
+  });
+
+  it("leaves an onExtension listener deferred when its trigger never activates", async () => {
+    const { runtime, host } = createHarness(
+      [
+        inventoryItem("example.companion", {
+          activationEvents: ["onExtension:example.never"],
+        }),
+      ],
+      importerFor({ "example.companion": { activate: () => undefined } }),
+    );
+
+    const summary = await runtime.start();
+    expect(summary.results).toEqual([
+      expect.objectContaining({ status: "deferred" }),
+    ]);
+    expect(host.getState("example.companion")).toBeUndefined();
+  });
+
+  it("treats an unrecognised activation event as startup rather than a dead package", async () => {
+    const order: string[] = [];
+    const { runtime } = createHarness(
+      [
+        inventoryItem("example.future", {
+          activationEvents: ["onSomethingThisHostRetired"],
+        }),
+      ],
+      importerFor({ "example.future": { activate: () => undefined } }, order),
+    );
+
+    await runtime.start();
+    expect(order).toEqual(["example.future"]);
   });
 });

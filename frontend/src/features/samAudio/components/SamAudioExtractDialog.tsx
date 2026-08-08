@@ -10,7 +10,6 @@ import {
   DialogTitle,
   Divider,
   LinearProgress,
-  Snackbar,
   Stack,
   TextField,
   Typography,
@@ -27,6 +26,7 @@ import type {
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { TICKS_PER_SECOND } from "../../../core/time/constants";
+import { postHostToast } from "../../../core/shell/notificationCenter";
 import {
   useTimelineClip,
   useTimelineTracks,
@@ -48,6 +48,8 @@ import { useSamAudioExtractDialogStore } from "../store/useSamAudioExtractDialog
 import { SamAudioModelDownloadOverlay } from "./SamAudioModelDownloadOverlay";
 
 type AvailabilityState = "idle" | "checking" | "available" | "unavailable";
+
+const SUCCESS_TOAST_DURATION_MS = 2_500;
 
 function getOrderedRange(startTick: number, endTick: number): {
   startTick: number;
@@ -138,7 +140,6 @@ export function SamAudioExtractDialog() {
   const [availability, setAvailability] = useState<AvailabilityState>("idle");
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [isExtractingAll, setIsExtractingAll] = useState(false);
-  const [snackbarOpen, setSnackbarOpen] = useState(false);
   const operationAbortRef = useRef<AbortController | null>(null);
   const activeJobIdRef = useRef<string | null>(null);
 
@@ -239,7 +240,14 @@ export function SamAudioExtractDialog() {
       }
       muteSourceClipAudio(clip.id);
       revealAssetInBrowser(extractedAsset.id);
-      setSnackbarOpen(true);
+      // The shell notification centre, not a snackbar local to this dialog:
+      // the dialog closes on the next line, and the confirmation should
+      // outlive it wherever the user looks next.
+      postHostToast(
+        "Audio Extracted to Timeline and Asset Browser",
+        "success",
+        SUCCESS_TOAST_DURATION_MS,
+      );
       close();
     } catch (extractError) {
       window.alert(
@@ -542,22 +550,6 @@ export function SamAudioExtractDialog() {
           ) : null}
         </DialogActions>
       </Dialog>
-      <Snackbar
-        open={snackbarOpen}
-        autoHideDuration={2500}
-        onClose={() => setSnackbarOpen(false)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        sx={{ zIndex: (theme) => theme.zIndex.tooltip + 1 }}
-      >
-        <Alert
-          onClose={() => setSnackbarOpen(false)}
-          severity="success"
-          variant="filled"
-          sx={{ width: "100%" }}
-        >
-          Audio Extracted to Timeline and Asset Browser
-        </Alert>
-      </Snackbar>
     </>
   );
 }

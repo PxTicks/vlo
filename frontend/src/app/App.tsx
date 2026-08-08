@@ -22,6 +22,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ExtensionApprovalGate } from "../features/extensions";
 import { ExtensionModalHost } from "../features/extensions/ui/publicApi";
 import { MenuHostMount } from "../core/shell/MenuHostMount";
+import { NotificationHostMount } from "../core/shell/NotificationHostMount";
 import { ComfyUiSetupPrompt } from "./layout/ComfyUiSetupPrompt";
 import { AppSettingsMenu } from "./layout/AppSettingsMenu";
 
@@ -96,6 +97,9 @@ export function App() {
       </ErrorBoundary>
       <ExtensionModalHost />
       <MenuHostMount />
+      {/* App-wide, not editor-wide: activation diagnostics and background work
+          both start before a project is open. */}
+      <NotificationHostMount />
       <ComfyUiSetupPrompt />
     </ThemeProvider>
   );

@@ -201,6 +201,7 @@ describe("audio beats conformance fixture", () => {
         error: vi.fn(),
       },
       onDispose: (resource) => disposers.push(resource),
+      exportApi: vi.fn(),
     });
 
     expect(getAudioBeatStateForConformance().effectId).toBe(

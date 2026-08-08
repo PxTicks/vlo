@@ -42,14 +42,65 @@ Use `openModal(localId, input?)` to open only the caller's modal. Keep input and
 result finite JSON. Handle an `undefined` result as cancellation or disposal.
 Omitted modal size defaults to `medium`.
 
-Register `kind: "trusted-view"` at `defaultRegion: "right-sidebar"`
-(clip/generation editors), `defaultRegion: "left-sidebar"` (an input-source tab
-alongside Assets, Text, Composite, Effects, and Transitions), or
-`defaultRegion: "projects-page.main"` (a tool available before a project opens).
+Register `kind: "trusted-view"` at one of five `defaultRegion` values:
+
+- `"right-sidebar"` — clip and generation editors;
+- `"left-sidebar"` — an input-source tab alongside Assets, Text, Composite,
+  Effects, and Transitions;
+- `"projects-page.main"` — a tool available before a project opens;
+- `"player-aside"` — a column beside the player canvas, for tools that have to
+  sit next to the picture. It takes no space until something registers there;
+- `"bottom-dock"` — the dock between the player and the timeline, where the
+  video scopes live.
+
 Use `openView(localId)` to select it. Views mount lazily on first selection, then
 remain mounted to preserve state. Observe the `active` prop and pause animation
 loops, camera capture, polling, or expensive previews while hidden. User layout
 choices win: `openView` returns `false` when the user has hidden the view.
+
+The bottom dock is the one region that starts **closed** — an empty selection is
+its closed state, unlike the sidebars, which always show something. A view you
+register there is not visible until `openView` or the user opens the dock, so do
+not treat registration as "on screen".
+
+## Contribute a video scope
+
+`ui.scopes.register({ id, apiVersion: 1, kind: "trusted-scope", label, width,
+height, order?, render })` adds a tab to the bottom dock beside the host's
+waveform, parade, vectorscope, and histogram — they go through the same registry,
+so ordering is one comparison over one table rather than host-first.
+
+`render({ context, width, height, frame })` receives a host-owned 2D context,
+already sized and cleared, and `frame.pixels`: **premultiplied** RGBA bytes of
+the composited picture. Undo alpha before measuring luma. The buffer belongs to
+the host and is valid only for that call — copy anything you need to keep. State
+the resolution you draw at through `width`/`height` (16 to 2048 each); the dock
+scales the result to the available width.
+
+`render` runs on a sampling loop several times a second while the dock is open.
+Keep it synchronous and allocation-light. A throw is caught and reported once,
+then suppressed until the scope draws again, so check your diagnostics if a
+scope goes blank rather than expecting a crash.
+
+## Report long-running work
+
+`ui.notifications` is where work that takes longer than a click reports to.
+
+- `toast({ message, tone?, durationMs? })` for something that happened.
+  `durationMs: 0` keeps it until dismissed; the default auto-dismisses.
+- `task({ title, message?, progress?, onCancel? })` for something that *is*
+  happening. `update({ message?, progress?, tone? })` leaves omitted fields
+  alone, and `progress: null` goes back to indeterminate. Finish with
+  `settle({ message?, tone? })`, which replaces the entry with a toast, or
+  `settle()` to end it silently.
+
+Supplying `onCancel` shows a cancel affordance. The host calls it and **leaves
+the task in place**: cancelling asks your work to stop, and only your work knows
+when it has — settle the task once it actually does.
+
+Everything you post is removed when you deactivate, so a package that dies
+mid-task cannot leave a spinner behind. One extension may hold at most 16 live
+entries at a time; exceeding that throws rather than burying the editor.
 
 Frontend activation happens before a project opens. Views, commands, menus,
 catalogues, backend jobs, and local storage are available there, while
@@ -87,10 +138,19 @@ invoking surface.
 
 Gate enablement declaratively with `when` over host context keys rather than
 checking inside `run`, so every surface renders the command consistently. Current
-keys: `project.open`, `editor.open`, `focus.region`, `playback.playing`,
+host keys: `project.open`, `editor.open`, `focus.region`, `playback.playing`,
 `selection.clipCount`, `selection.clipType`, `selection.transitionSelected`,
 `timeline.canUndo`, `timeline.canRedo`, `timeline.canPaste`. Read one directly
 with `ui.commands.getContextKey(key)`; an unknown key returns `undefined`.
+
+Publish state of your own with `ui.commands.setContextKey(key, value)`. The host
+qualifies it as `extension.<yourId>.<key>` and returns that name, which is what
+any `when` clause must use — yours or another package's. Host keys stay
+host-owned: you can add to the editor's vocabulary, not redefine `project.open`.
+Values are finite JSON, `undefined` clears a key, and every key you wrote is
+cleared when you deactivate, so a stale state cannot outlive the package that
+meant it. This is the smallest way two packages compose: one publishes a state,
+the other gates a command on it, and neither touches the timeline model.
 
 Request a chord with
 `ui.commands.registerKeybinding({ id, apiVersion: 1, chord, command, regions? })`.

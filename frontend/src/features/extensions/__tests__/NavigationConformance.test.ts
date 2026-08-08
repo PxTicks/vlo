@@ -171,6 +171,7 @@ function activateFixture(harness: Harness) {
       error: vi.fn(),
     },
     onDispose: (resource) => disposers.push(resource),
+    exportApi: vi.fn(),
   });
   return disposers;
 }

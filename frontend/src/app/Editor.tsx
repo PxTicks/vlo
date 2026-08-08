@@ -41,7 +41,8 @@ import { useEditorSelectionLock } from "./hooks/useEditorSelectionLock";
 import { useEditorOrchestration } from "./orchestration/useEditorOrchestration";
 import { registerColorGradingCustomControls } from "../features/colorGrading";
 import { registerHostPanelControls } from "../features/extensions/ui/registerHostPanelControls";
-import { ScopesDock } from "../features/scopes";
+import { EditorBottomDock } from "./layout/EditorBottomDock";
+import { PlayerAsidePanel } from "./layout/PlayerAsidePanel";
 import { MiniEditorModal } from "../features/miniEditor";
 
 registerColorGradingCustomControls();
@@ -202,6 +203,16 @@ export function Editor() {
             <Player />
           </ErrorBoundary>
         }
+        playerAside={
+          <ErrorBoundary boundaryName="Player aside" variant="region">
+            <PlayerAsidePanel />
+          </ErrorBoundary>
+        }
+        bottomDock={
+          <ErrorBoundary boundaryName="Bottom dock" variant="region">
+            <EditorBottomDock />
+          </ErrorBoundary>
+        }
         rightSidebar={
           <ErrorBoundary boundaryName="Right sidebar" variant="region">
             <RightSidebarPanel />
@@ -221,7 +232,6 @@ export function Editor() {
       <TransformationDragOverlay />
       <TransitionDragOverlay />
       <HighVramWorkflowPrompt />
-      <ScopesDock />
       <MiniEditorModal />
     </DndContext>
   );

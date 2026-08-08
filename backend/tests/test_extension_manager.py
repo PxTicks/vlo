@@ -585,3 +585,97 @@ def test_manager_rejects_approval_state_inside_extension_tree(tmp_path: Path):
             extensions_root,
             ExtensionApprovalStore(extensions_root / ".state" / "approvals.json"),
         )
+
+
+def test_manifest_accepts_declared_activation_events_and_dependencies(
+    tmp_path: Path,
+):
+    package_dir = tmp_path / "example.consumer"
+    manifest = _frontend_manifest("example.consumer")
+    manifest["activationEvents"] = [
+        "onProjectOpen",
+        " onExtension:example.provider ",
+    ]
+    manifest["dependencies"] = {"example.provider": ">= 1.2.0 < 2.0.0"}
+    _write_manifest(package_dir, manifest)
+
+    loaded = load_extension_manifest(package_dir / "manifest.json")
+
+    assert loaded.activation_events == [
+        "onProjectOpen",
+        "onExtension:example.provider",
+    ]
+    assert loaded.dependencies == {"example.provider": ">= 1.2.0 < 2.0.0"}
+
+
+def test_manifest_defaults_to_startup_with_no_dependencies(tmp_path: Path):
+    package_dir = tmp_path / "example.legacy"
+    _write_manifest(package_dir, _frontend_manifest("example.legacy"))
+
+    loaded = load_extension_manifest(package_dir / "manifest.json")
+
+    # An absent list means startup, which is what every package did before
+    # activation events existed.
+    assert loaded.activation_events == []
+    assert loaded.dependencies == {}
+
+
+@pytest.mark.parametrize(
+    "activation_events",
+    [
+        ["onAnythingElse"],
+        ["onExtension:"],
+        ["onExtension:Not Valid"],
+        ["onStartup", "onStartup"],
+    ],
+)
+def test_manifest_rejects_unsupported_activation_events(
+    tmp_path: Path,
+    activation_events: list[str],
+):
+    package_dir = tmp_path / "example.bad-events"
+    manifest = _frontend_manifest("example.bad-events")
+    manifest["activationEvents"] = activation_events
+    _write_manifest(package_dir, manifest)
+
+    with pytest.raises(ValueError, match="manifest validation failed"):
+        load_extension_manifest(package_dir / "manifest.json")
+
+
+@pytest.mark.parametrize(
+    "dependencies",
+    [
+        {"Bad Id": ">=1.0.0"},
+        {"example.provider": "^1.0.0"},
+        {"example.provider": "   "},
+        {"example.provider": 1},
+    ],
+)
+def test_manifest_rejects_invalid_dependency_declarations(
+    tmp_path: Path,
+    dependencies: dict[str, object],
+):
+    package_dir = tmp_path / "example.bad-deps"
+    manifest = _frontend_manifest("example.bad-deps")
+    manifest["dependencies"] = dependencies
+    _write_manifest(package_dir, manifest)
+
+    with pytest.raises(ValueError, match="manifest validation failed"):
+        load_extension_manifest(package_dir / "manifest.json")
+
+
+def test_manifest_rejects_self_reference(tmp_path: Path):
+    package_dir = tmp_path / "example.self"
+    manifest = _frontend_manifest("example.self")
+    manifest["dependencies"] = {"example.self": ">=1.0.0"}
+    _write_manifest(package_dir, manifest)
+
+    with pytest.raises(ValueError, match="cannot depend on itself"):
+        load_extension_manifest(package_dir / "manifest.json")
+
+    manifest["dependencies"] = {}
+    manifest["activationEvents"] = ["onExtension:example.self"]
+    _write_manifest(package_dir, manifest)
+
+    with pytest.raises(ValueError, match="cannot activate on its own activation"):
+        load_extension_manifest(package_dir / "manifest.json")

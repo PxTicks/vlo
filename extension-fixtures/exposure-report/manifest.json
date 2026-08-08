@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "example.exposure-report",
+  "name": "Exposure Report Composition Conformance Fixture",
+  "version": "1.0.0",
+  "sdk": ">=1.13.0 <2.0.0",
+  "activationEvents": ["onProjectOpen"],
+  "dependencies": {
+    "example.false-color": ">=1.2.0 <2.0.0"
+  },
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "capabilities": ["ui.custom"]
+}

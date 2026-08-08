@@ -5,6 +5,7 @@ import {
   ExtensionActivationTimeoutError,
   ExtensionContributionRegistry,
   ExtensionDeactivationError,
+  ExtensionExportClosedError,
   ExtensionHost,
   ExtensionLifecycleStateError,
   InvalidExtensionResourceError,
@@ -27,6 +28,7 @@ interface HarnessOptions {
   activationTimeoutMs?: number | null;
   maxDiagnostics?: number;
   onDiagnostic?: (diagnostic: ExtensionDiagnostic) => void;
+  onExport?: (identity: { id: string }, api: object | undefined) => void;
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -51,6 +53,17 @@ function createHarness(options: HarnessOptions = {}) {
   });
 
   return { host, registry, scopes };
+}
+
+/** Records the export channel as `[extensionId, api]` pairs, in order. */
+function createExportRecorder() {
+  const calls: [string, object | undefined][] = [];
+  return {
+    calls,
+    onExport: (identity: { id: string }, api: object | undefined) => {
+      calls.push([identity.id, api]);
+    },
+  };
 }
 
 describe("ExtensionHost", () => {
@@ -390,5 +403,170 @@ describe("ExtensionHost", () => {
       "Activation completed.",
     ]);
     expect(published).toHaveLength(6);
+  });
+});
+
+describe("ExtensionHost exported APIs", () => {
+  it("publishes an export only after activation succeeds", async () => {
+    const recorder = createExportRecorder();
+    const { host } = createHarness({ onExport: recorder.onExport });
+    const exported = { greet: () => "hello" };
+    const publishedDuringActivation: unknown[] = [];
+
+    await host.activate(
+      { id: "example.provider", version: "1.0.0" },
+      {
+        activate: (context) => {
+          context.exportApi(exported);
+          // Nothing is visible yet: the activation could still throw.
+          publishedDuringActivation.push(...recorder.calls);
+        },
+      },
+    );
+
+    expect(publishedDuringActivation).toEqual([]);
+    expect(recorder.calls).toEqual([["example.provider", exported]]);
+  });
+
+  it("discards an export when activation fails", async () => {
+    const recorder = createExportRecorder();
+    const { host } = createHarness({ onExport: recorder.onExport });
+
+    await expect(
+      host.activate(
+        { id: "example.provider", version: "1.0.0" },
+        {
+          activate: (context) => {
+            context.exportApi({ greet: () => "hello" });
+            throw new Error("half built");
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(ExtensionActivationError);
+
+    // A retraction, never the half-built API.
+    expect(recorder.calls).toEqual([["example.provider", undefined]]);
+  });
+
+  it("retracts the export before deactivation tears anything down", async () => {
+    const recorder = createExportRecorder();
+    const { host } = createHarness({ onExport: recorder.onExport });
+    const order: string[] = [];
+
+    await host.activate(
+      { id: "example.provider", version: "1.0.0" },
+      {
+        activate: (context) => {
+          context.exportApi({ greet: () => "hello" });
+          context.onDispose(() => {
+            order.push("disposed");
+          });
+        },
+      },
+    );
+    recorder.calls.length = 0;
+
+    await host.deactivate("example.provider");
+    expect(recorder.calls).toEqual([["example.provider", undefined]]);
+    // Retraction lands first, so a peer cannot pick up an API whose objects
+    // are already being disposed.
+    expect(order).toEqual(["disposed"]);
+  });
+
+  it("refuses an export from a context retained past activation", async () => {
+    const recorder = createExportRecorder();
+    const { host } = createHarness({ onExport: recorder.onExport });
+    const first = { version: 1 };
+    let retained: ExtensionContext<TestApi> | undefined;
+
+    await host.activate(
+      { id: "example.provider", version: "1.0.0" },
+      {
+        activate: (context) => {
+          retained = context;
+          context.exportApi(first);
+        },
+      },
+    );
+
+    // The host read the staged value once, at activation. A later call could
+    // only replace something nobody will ever publish, so it is refused rather
+    // than silently accepted.
+    expect(() => retained?.exportApi({ version: 2 })).toThrow(
+      ExtensionExportClosedError,
+    );
+    expect(recorder.calls).toEqual([["example.provider", first]]);
+    // Resources, unlike exports, stay open for a running extension.
+    expect(() => retained?.onDispose(() => undefined)).not.toThrow();
+    expect(host.getState("example.provider")?.status).toBe("active");
+  });
+
+  it("replaces an earlier export and rejects a non-object", async () => {
+    const recorder = createExportRecorder();
+    const { host } = createHarness({ onExport: recorder.onExport });
+    const second = { version: 2 };
+
+    await host.activate(
+      { id: "example.provider", version: "1.0.0" },
+      {
+        activate: (context) => {
+          context.exportApi({ version: 1 });
+          context.exportApi(second);
+          expect(() =>
+            context.exportApi("not an object" as unknown as object),
+          ).toThrow(TypeError);
+        },
+      },
+    );
+
+    expect(recorder.calls).toEqual([["example.provider", second]]);
+  });
+
+  it("refuses an export from an activation the host has already closed", async () => {
+    const recorder = createExportRecorder();
+    const { host } = createHarness({
+      activationTimeoutMs: 5,
+      onExport: recorder.onExport,
+    });
+    let lateExport: (() => void) | undefined;
+
+    await expect(
+      host.activate(
+        { id: "example.slow", version: "1.0.0" },
+        {
+          activate: (context) => {
+            lateExport = () => context.exportApi({ late: true });
+            return new Promise<void>((resolve) => setTimeout(resolve, 50));
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(ExtensionActivationError);
+
+    expect(lateExport).toBeDefined();
+    expect(() => lateExport?.()).toThrow(ExtensionExportClosedError);
+    expect(recorder.calls).toEqual([["example.slow", undefined]]);
+  });
+
+  it("keeps a failing export sink out of the extension's lifecycle", async () => {
+    const { host } = createHarness({
+      onExport: () => {
+        throw new Error("sink exploded");
+      },
+    });
+
+    await expect(
+      host.activate(
+        { id: "example.provider", version: "1.0.0" },
+        { activate: (context) => context.exportApi({ ok: true }) },
+      ),
+    ).resolves.toBeUndefined();
+    expect(host.getState("example.provider")?.status).toBe("active");
+    expect(
+      host
+        .getDiagnostics("example.provider")
+        .some((diagnostic) =>
+          diagnostic.message.includes("exported API failed"),
+        ),
+    ).toBe(true);
   });
 });

@@ -14,6 +14,10 @@ interface EditorLayoutProps {
   readonly leftSidebar: ReactNode;
   readonly topBar: ReactNode;
   readonly player: ReactNode;
+  /** Shell region beside the player; renders nothing when it holds no views. */
+  readonly playerAside?: ReactNode;
+  /** Shell region under the player; renders nothing while it is closed. */
+  readonly bottomDock?: ReactNode;
   readonly rightSidebar: ReactNode;
   readonly timeline: ReactNode;
 }
@@ -24,6 +28,8 @@ export function EditorLayout({
   leftSidebar,
   topBar,
   player,
+  playerAside,
+  bottomDock,
   rightSidebar,
   timeline,
 }: EditorLayoutProps) {
@@ -104,7 +110,23 @@ export function EditorLayout({
           backdropFilter: "none",
         }}
       >
-        {player}
+        {/* The player keeps `height: 100%` inside these wrappers, and both
+            shell regions collapse to nothing when empty, so an editor with no
+            aside or dock lays out exactly as it did without them. */}
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
+            minHeight: 0,
+          }}
+        >
+          <Box sx={{ display: "flex", flexGrow: 1, minHeight: 0 }}>
+            <Box sx={{ display: "flex", flexGrow: 1, minWidth: 0 }}>{player}</Box>
+            {playerAside}
+          </Box>
+          {bottomDock}
+        </Box>
       </EditorRegion>
 
       <EditorRegion

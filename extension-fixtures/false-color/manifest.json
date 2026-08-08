@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "example.false-color",
+  "name": "False Colour Scope Conformance Fixture",
+  "version": "1.2.0",
+  "sdk": ">=1.13.0 <2.0.0",
+  "activationEvents": ["onProjectOpen"],
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "capabilities": ["ui.custom"]
+}

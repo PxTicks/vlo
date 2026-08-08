@@ -3,6 +3,7 @@ import {
   HostContextKeyService,
   assertContextKeyExpression,
   evaluateContextKeyExpression,
+  qualifyContributedKey,
 } from "../contextKeys";
 
 describe("assertContextKeyExpression", () => {
@@ -114,5 +115,64 @@ describe("HostContextKeyService", () => {
     const service = new HostContextKeyService();
     expect(() => service.set("Bad Key", 1)).toThrow(/Invalid host context key/);
     expect(() => service.set("bad.value", Number.NaN)).toThrow(/finite JSON/);
+  });
+});
+
+describe("contributed context keys", () => {
+  it("namespaces a contributor's writes and keeps them readable by anyone", () => {
+    const service = new HostContextKeyService();
+    const listener = vi.fn();
+    service.subscribe(listener);
+
+    const qualified = service.setContributed("example.a", "scanned", 3);
+    expect(qualified).toBe("extension.example.a.scanned");
+    expect(service.get(qualified)).toBe(3);
+    expect(service.evaluate({ key: qualified, equals: 3 })).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the reserved prefix out of reach of host publishers", () => {
+    const service = new HostContextKeyService();
+    expect(() => service.set("extension.example.a.scanned", 1)).toThrow(
+      /reserved contributed prefix/,
+    );
+  });
+
+  it("refuses a contributed key that repeats the prefix or is malformed", () => {
+    const service = new HostContextKeyService();
+    expect(() => service.setContributed("example.a", "extension.x", 1)).toThrow(
+      /reserved prefix/,
+    );
+    expect(() => service.setContributed("example.a", "bad key", 1)).toThrow(
+      /Invalid/,
+    );
+    expect(() => service.setContributed("", "scanned", 1)).toThrow(/namespace/);
+    expect(() => qualifyContributedKey("example.a", "x".repeat(65))).toThrow(
+      /Invalid contributed context key/,
+    );
+  });
+
+  it("accepts an owner ID containing an underscore", () => {
+    const service = new HostContextKeyService();
+    expect(service.setContributed("example.a_b", "ready", true)).toBe(
+      "extension.example.a_b.ready",
+    );
+    expect(service.get("extension.example.a_b.ready")).toBe(true);
+  });
+
+  it("clears one namespace without touching its neighbours", () => {
+    const service = new HostContextKeyService();
+    service.set("project.open", true);
+    service.setContributed("example.a", "one", 1);
+    service.setContributed("example.a", "two", 2);
+    // A namespace prefix match must not catch a sibling whose ID starts the
+    // same way, which is why the boundary dot is part of the prefix.
+    service.setContributed("example.ab", "kept", true);
+
+    service.clearNamespace("example.a");
+    expect(service.get("extension.example.a.one")).toBeUndefined();
+    expect(service.get("extension.example.a.two")).toBeUndefined();
+    expect(service.get("extension.example.ab.kept")).toBe(true);
+    expect(service.get("project.open")).toBe(true);
   });
 });

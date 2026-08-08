@@ -23,6 +23,10 @@ from pydantic import (
 
 _EXTENSION_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$")
 _CAPABILITY_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$")
+# Activation events are a closed host vocabulary, validated before approval so a
+# typo is a manifest error rather than a package that silently never activates.
+_STATIC_ACTIVATION_EVENTS = frozenset({"onStartup", "onProjectOpen"})
+_EXTENSION_EVENT_PREFIX = "onExtension:"
 # A dependency's probe name must be a single top-level Python identifier. This
 # keeps the preflight importability check inert: locating a top-level module spec
 # never executes package code, whereas a dotted probe would import parent packages.
@@ -48,7 +52,7 @@ _MAX_LUT_CATALOG_BYTES = 1024 * 1024
 MAX_EXTENSION_LUT_BYTES = 16 * 1024 * 1024
 # Runtime deployments do not need the TypeScript authoring package. Its package
 # version is the release authority, with a contract test keeping this copy aligned.
-EXTENSION_SDK_VERSION = "1.12.0"
+EXTENSION_SDK_VERSION = "1.13.0"
 
 
 class ExtensionManifestError(ValueError):
@@ -280,11 +284,62 @@ class ExtensionManifest(_ManifestModel):
     backend: BackendExtensionEntry | None = None
     contributions: ExtensionContributions | None = None
     capabilities: list[str] = Field(default_factory=list, max_length=100)
+    activation_events: list[str] = Field(
+        default_factory=list,
+        alias="activationEvents",
+        max_length=50,
+    )
+    dependencies: dict[str, str] = Field(default_factory=dict, max_length=50)
     python_dependencies: list[PythonDependency] = Field(
         default_factory=list,
         alias="pythonDependencies",
         max_length=100,
     )
+
+    @field_validator("activation_events")
+    @classmethod
+    def validate_activation_events(cls, values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        normalized_values: list[str] = []
+        for value in values:
+            normalized = value.strip()
+            if normalized in _STATIC_ACTIVATION_EVENTS:
+                pass
+            elif normalized.startswith(_EXTENSION_EVENT_PREFIX):
+                target = normalized[len(_EXTENSION_EVENT_PREFIX) :]
+                if not _EXTENSION_ID_PATTERN.fullmatch(target):
+                    raise ValueError(
+                        f"activation event '{value}' names an invalid extension ID"
+                    )
+            else:
+                raise ValueError(f"unsupported activation event '{value}'")
+            if normalized in seen:
+                raise ValueError(f"duplicate activation event '{normalized}'")
+            seen.add(normalized)
+            normalized_values.append(normalized)
+        return normalized_values
+
+    @field_validator("dependencies")
+    @classmethod
+    def validate_dependencies(cls, values: dict[str, str]) -> dict[str, str]:
+        normalized_values: dict[str, str] = {}
+        for extension_id, declared_range in values.items():
+            if not _EXTENSION_ID_PATTERN.fullmatch(extension_id):
+                raise ValueError(f"invalid dependency extension ID '{extension_id}'")
+            if not isinstance(declared_range, str):
+                raise ValueError(
+                    f"dependency '{extension_id}' must declare a version range"
+                )
+            normalized_range = declared_range.strip()
+            if not normalized_range:
+                raise ValueError(
+                    f"dependency '{extension_id}' version range cannot be blank"
+                )
+            # Same comparator grammar as the SDK and VLO ranges, so an author
+            # learns one syntax for every version declaration in the manifest.
+            _parse_stable_semver_range(normalized_range)
+            normalized_values[extension_id] = normalized_range
+        return normalized_values
 
     @field_validator("python_dependencies")
     @classmethod
@@ -355,6 +410,14 @@ class ExtensionManifest(_ManifestModel):
             seen.add(normalized)
             normalized_values.append(normalized)
         return normalized_values
+
+    @model_validator(mode="after")
+    def reject_self_dependency(self) -> "ExtensionManifest":
+        if self.id in self.dependencies:
+            raise ValueError("an extension cannot depend on itself")
+        if f"{_EXTENSION_EVENT_PREFIX}{self.id}" in self.activation_events:
+            raise ValueError("an extension cannot activate on its own activation")
+        return self
 
     @model_validator(mode="after")
     def require_entry_point(self) -> "ExtensionManifest":

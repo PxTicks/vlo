@@ -46,6 +46,7 @@ export {
   ExtensionActivationCancelledError,
   ExtensionActivationTimeoutError,
   ExtensionDeactivationError,
+  ExtensionExportClosedError,
   ExtensionHost,
   ExtensionLifecycleStateError,
   ExtensionRegistrationClosedError,

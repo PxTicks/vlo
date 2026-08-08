@@ -97,6 +97,13 @@ function createConformanceApi() {
   const readBlob = vi.fn(async () => new Blob(["source"], { type: "video/mp4" }));
 
   const api: VloExtensionApi = {
+    extensions: {
+      listDependencies: () => [],
+      getApi: () => undefined,
+      requireApi: () => {
+        throw new Error("no peer API");
+      },
+    },
     trusted: {
       host: {
         hostVersion: "0.2.0",
@@ -296,6 +303,21 @@ function createConformanceApi() {
       register: (definition) => ({ id: definition.id, dispose: () => undefined }),
     },
     ui: {
+      notifications: {
+        toast: () => ({ id: "toast", dispose: () => undefined }),
+        task: () => ({
+          id: "task",
+          update: () => undefined,
+          settle: () => undefined,
+          dispose: () => undefined,
+        }),
+      },
+      scopes: {
+        register: (definition) => ({
+          id: definition.id,
+          dispose: () => undefined,
+        }),
+      },
       registerPanelControl: (definition) => ({
         id: definition.id,
         dispose: () => undefined,
@@ -350,6 +372,7 @@ function createConformanceApi() {
         }),
         execute: async () => true,
         getContextKey: () => undefined,
+        setContextKey: (key: string) => `extension.example.tracking.${key}`,
         subscribeContextKeys: () => () => undefined,
       },
     },
@@ -378,6 +401,7 @@ describe("tracking extension conformance fixture", () => {
       api: fixture.api,
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       onDispose: () => undefined,
+      exportApi: vi.fn(),
     };
     await activate(context);
 

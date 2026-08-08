@@ -2,7 +2,17 @@ import type { ExtensionContextKeyExpression, JsonValue } from "@vlo/extension-sd
 import { jsonValueSchema } from "./jsonValue";
 
 // Dotted, camelCase-friendly key names ("project.open", "selection.clipCount").
-const CONTEXT_KEY_PATTERN = /^[a-z0-9]+(?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
+// Underscores are accepted because a contributed key carries its owner's ID,
+// and extension IDs may contain them.
+const CONTEXT_KEY_PATTERN = /^[a-z0-9]+(?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?$/;
+
+/**
+ * Reserved prefix for keys a contributor owns. Host publishers cannot write
+ * under it and contributors cannot write outside it, so a package can never
+ * shadow `project.open` — which is the whole reason writes are namespaced
+ * rather than opened up.
+ */
+export const CONTRIBUTED_CONTEXT_KEY_PREFIX = "extension.";
 
 /**
  * Validates an extension-supplied `when` expression at registration time so a
@@ -58,6 +68,29 @@ export function assertContextKeyExpression(
   }
 }
 
+/**
+ * Builds the qualified name for a contributed key, validating both halves so a
+ * malformed namespace cannot silently produce a key nobody can read.
+ */
+export function qualifyContributedKey(namespace: string, key: string): string {
+  if (typeof namespace !== "string" || namespace.length === 0) {
+    throw new Error("A contributed context key needs a namespace.");
+  }
+  if (typeof key !== "string" || key.length === 0 || key.length > 64) {
+    throw new Error(`Invalid contributed context key '${String(key)}'.`);
+  }
+  if (key.startsWith(CONTRIBUTED_CONTEXT_KEY_PREFIX)) {
+    throw new Error(
+      `Contributed context key '${key}' must not repeat the reserved prefix.`,
+    );
+  }
+  const qualified = `${CONTRIBUTED_CONTEXT_KEY_PREFIX}${namespace}.${key}`;
+  if (!CONTEXT_KEY_PATTERN.test(qualified)) {
+    throw new Error(`Invalid contributed context key '${qualified}'.`);
+  }
+  return qualified;
+}
+
 function jsonEquals(left: JsonValue | undefined, right: JsonValue): boolean {
   if (left === undefined) return false;
   if (Object.is(left, right)) return true;
@@ -101,9 +134,15 @@ export function evaluateContextKeyExpression(
 }
 
 /**
- * Host-published context keys consumed by declarative `when` clauses on
- * commands and keybindings. Keys are host-curated exactly like UI slots:
- * extensions read them, only host publishers write them.
+ * Context keys consumed by declarative `when` clauses on commands, keybindings,
+ * menus, and views.
+ *
+ * The unprefixed namespace is host-curated exactly like UI slots: contributors
+ * read those keys, only host publishers write them. Contributors write into
+ * their own `extension.<owner>.` namespace instead, which is the smallest
+ * useful form of cross-package composition — one package can gate a command on
+ * a state another package publishes without either reaching into the timeline
+ * model or a trusted global.
  */
 export class HostContextKeyService {
   private readonly values = new Map<string, JsonValue>();
@@ -112,6 +151,38 @@ export class HostContextKeyService {
 
   /** Host-only. `undefined` clears the key; unchanged primitives are no-ops. */
   set(key: string, value: JsonValue | undefined): void {
+    if (key.startsWith(CONTRIBUTED_CONTEXT_KEY_PREFIX)) {
+      throw new Error(
+        `Host context key '${key}' may not use the reserved contributed prefix.`,
+      );
+    }
+    this.write(key, value);
+  }
+
+  /**
+   * Writes one contributed key under `extension.<namespace>.<key>` and returns
+   * the qualified name. The namespace mechanic lives here because it is
+   * owner-neutral; who owns which namespace is the adapter's business.
+   */
+  setContributed(
+    namespace: string,
+    key: string,
+    value: JsonValue | undefined,
+  ): string {
+    const qualified = qualifyContributedKey(namespace, key);
+    this.write(qualified, value);
+    return qualified;
+  }
+
+  /** Clears every key one namespace wrote. Used when its owner goes away. */
+  clearNamespace(namespace: string): void {
+    const prefix = `${CONTRIBUTED_CONTEXT_KEY_PREFIX}${namespace}.`;
+    for (const key of [...this.values.keys()]) {
+      if (key.startsWith(prefix)) this.write(key, undefined);
+    }
+  }
+
+  private write(key: string, value: JsonValue | undefined): void {
     if (!CONTEXT_KEY_PATTERN.test(key)) {
       throw new Error(`Invalid host context key '${key}'.`);
     }

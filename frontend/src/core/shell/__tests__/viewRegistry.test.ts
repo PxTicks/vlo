@@ -78,3 +78,60 @@ describe("HostViewRegistry", () => {
     expect(registry.getSelected("left-sidebar")).toBeNull();
   });
 });
+
+describe("player-aside and bottom-dock regions", () => {
+  it("accepts host and contributed views in the new regions", () => {
+    const registry = new HostViewRegistry(new HostContextKeyService(), null);
+    registry.registerHostView({
+      ...view("host.scopes", 10),
+      defaultRegion: "bottom-dock",
+    });
+    registry.registerEntry({
+      ...view("example.a/report", 20),
+      defaultRegion: "bottom-dock",
+      source: "extension",
+    });
+    registry.registerEntry({
+      ...view("example.a/meters", 10),
+      defaultRegion: "player-aside",
+      source: "extension",
+    });
+
+    expect(registry.list("bottom-dock").map((entry) => entry.id)).toEqual([
+      "host.scopes",
+      "example.a/report",
+    ]);
+    expect(registry.list("player-aside").map((entry) => entry.id)).toEqual([
+      "example.a/meters",
+    ]);
+    // Regions stay disjoint: a dock view is not a sidebar view.
+    expect(registry.list("left-sidebar")).toEqual([]);
+  });
+
+  it("rejects a region the host does not declare", () => {
+    const registry = new HostViewRegistry(new HostContextKeyService(), null);
+    expect(() =>
+      registry.registerEntry({
+        ...view("example.a/tool", 10),
+        defaultRegion: "player-bottom" as never,
+        source: "extension",
+      }),
+    ).toThrow(/unsupported region/);
+  });
+
+  it("opens and closes the dock through selection alone", () => {
+    const registry = new HostViewRegistry(new HostContextKeyService(), null);
+    registry.registerHostView({
+      ...view("host.scopes", 10),
+      defaultRegion: "bottom-dock",
+    });
+
+    // The dock's closed state *is* an empty selection, which is why the dock
+    // reads its selection without the sidebars' fall-back-to-first behaviour.
+    expect(registry.getSelected("bottom-dock")).toBeNull();
+    expect(registry.select("bottom-dock", "host.scopes")).toBe(true);
+    expect(registry.getSelected("bottom-dock")).toBe("host.scopes");
+    registry.clearSelection("bottom-dock");
+    expect(registry.getSelected("bottom-dock")).toBeNull();
+  });
+});

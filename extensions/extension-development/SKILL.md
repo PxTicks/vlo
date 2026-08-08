@@ -42,14 +42,14 @@ reference in the same change. Do not promote an aspirational plan item into a V1
 
 | Task | Read |
 |---|---|
-| Package identity, activation, ownership, disposal, host runtimes | [trusted-lifecycle.md](references/trusted-lifecycle.md) |
+| Package identity, activation events, dependencies, exported APIs, ownership, disposal, host runtimes | [trusted-lifecycle.md](references/trusted-lifecycle.md) |
 | Host internals, live stores/renderer, raw DOM/panel UI, monkeypatching, deep Python imports | [trusted-host-access.md](references/trusted-host-access.md) |
 | Payloads, migrations, timeline reads/writes, tracks, selection, transport (seek/play/pause), project identity and pre-save, change subscriptions, assets, coordinate/time mapping | [persistence-timeline-assets.md](references/persistence-timeline-assets.md) |
 | Audio-bearing clips/tracks, raw PCM/waveform analysis, trusted Web Audio effect contributions | [audio.md](references/audio.md) |
 | Pixi filters, transformations, rendered entities, live/export parity | [rendering-entities-transformations.md](references/rendering-entities-transformations.md) |
 | Custom GLSL/WGSL filter extensions, shader controls, alpha, coordinates, time/history, black output, or inert sliders | [shader-filter-extensions.md](references/shader-filter-extensions.md) |
 | Procedural scalars, keyframe interpolation, paths, overlays | [animation-and-paths.md](references/animation-and-paths.md) |
-| React slots, modals, sidebar workspaces, canvases, commands, keybindings, menus, option catalogues, generation inputs | [ui-and-generation.md](references/ui-and-generation.md) |
+| React slots, modals, shell regions and docks, video scopes, toasts and task progress, canvases, commands, keybindings, context keys, menus, option catalogues, generation inputs | [ui-and-generation.md](references/ui-and-generation.md) |
 | Python routers, jobs, readiness, progress, cancellation, artifacts | [backend-and-jobs.md](references/backend-and-jobs.md) |
 | Manifest/build work, approval-path fixtures, and verification | [packaging-and-testing.md](references/packaging-and-testing.md) |
 

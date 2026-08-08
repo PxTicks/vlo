@@ -12,12 +12,27 @@ export interface ViewRegionState {
   readonly selectedViewId: string | null;
   isViewVisible(viewId: string): boolean;
   selectView(viewId: string): boolean;
+  /** Drops the region's selection. Only meaningful without `autoSelect`. */
+  closeRegion(): void;
   setViewVisible(viewId: string, visible: boolean): void;
   moveView(viewId: string, delta: -1 | 1): void;
   resetLayout(): void;
 }
 
-export function useViewRegion(region: HostViewRegion): ViewRegionState {
+export interface ViewRegionOptions {
+  /**
+   * Whether an unselected region falls back to its first view. Sidebars always
+   * show something, so they do; a collapsible dock must not, or it would open
+   * itself the moment anything registers into it.
+   */
+  readonly autoSelect?: boolean;
+}
+
+export function useViewRegion(
+  region: HostViewRegion,
+  options: ViewRegionOptions = {},
+): ViewRegionState {
+  const autoSelect = options.autoSelect ?? true;
   useSyncExternalStore(
     (listener) => {
       const unsubscribeViews = hostViewRegistry.subscribe(listener);
@@ -33,11 +48,15 @@ export function useViewRegion(region: HostViewRegion): ViewRegionState {
   const views = hostViewRegistry.list(region);
   const selectedViewId =
     hostViewRegistry.getSelected(region) ??
-    views.find((view) => view.source === "host")?.id ??
-    views[0]?.id ??
-    null;
+    (autoSelect
+      ? views.find((view) => view.source === "host")?.id ?? views[0]?.id ?? null
+      : null);
   const selectView = useCallback(
     (viewId: string) => hostViewRegistry.select(region, viewId),
+    [region],
+  );
+  const closeRegion = useCallback(
+    () => hostViewRegistry.clearSelection(region),
     [region],
   );
   const resetLayout = useCallback(
@@ -54,6 +73,7 @@ export function useViewRegion(region: HostViewRegion): ViewRegionState {
     selectedViewId,
     isViewVisible: (viewId) => hostViewRegistry.isUserVisible(viewId),
     selectView,
+    closeRegion,
     setViewVisible: (viewId, visible) =>
       hostViewRegistry.setUserVisible(viewId, visible),
     moveView: (viewId, delta) => hostViewRegistry.move(viewId, delta),

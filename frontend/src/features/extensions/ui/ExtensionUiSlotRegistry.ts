@@ -22,6 +22,8 @@ type ExtensionUiSlotApi = Omit<
   | "menus"
   | "catalogues"
   | "canvasTools"
+  | "notifications"
+  | "scopes"
   | "registerView"
   | "openView"
 >;

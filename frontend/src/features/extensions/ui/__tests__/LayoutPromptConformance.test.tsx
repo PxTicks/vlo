@@ -41,6 +41,7 @@ describe("layout prompt UI conformance fixture", () => {
       api,
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       onDispose: (resource) => resources.push(resource),
+      exportApi: vi.fn(),
     });
     render(
       <>

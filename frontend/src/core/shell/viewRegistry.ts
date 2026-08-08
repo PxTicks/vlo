@@ -11,6 +11,17 @@ export const HOST_VIEW_REGIONS = [
   "left-sidebar",
   "right-sidebar",
   "projects-page.main",
+  /**
+   * A narrow column beside the player canvas. Its host mount occupies no space
+   * until a visible view is registered, so an editor with none is unchanged.
+   */
+  "player-aside",
+  /**
+   * The dock between the player and the timeline, where the video scopes live.
+   * It is user-toggled: unlike the sidebars, an empty selection means closed
+   * rather than "fall back to the first tab".
+   */
+  "bottom-dock",
 ] as const;
 
 export type HostViewRegion = (typeof HOST_VIEW_REGIONS)[number];

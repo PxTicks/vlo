@@ -26,6 +26,14 @@ interface ActiveExtensionSession {
   resources: ExtensionResource[];
   resourceSet: Set<ExtensionResource>;
   acceptingResources: boolean;
+  /**
+   * Closed as soon as activation settles, unlike `acceptingResources`, which
+   * stays open for the running extension. An export published after the host
+   * has already read the staged value would never reach a dependent.
+   */
+  acceptingExports: boolean;
+  /** Staged until activation succeeds; see {@link ExtensionHostOptions.onExport}. */
+  exportedApi?: object;
   cancellationReason?: ExtensionCancellationReason;
   activationPromise?: Promise<void>;
   cleanupPromise?: Promise<unknown[]>;
@@ -37,6 +45,15 @@ export interface ExtensionHostOptions<TApi extends object> {
   /** Application/build version, distinct from the extension SDK version. */
   hostVersion?: string | null;
   createApi: ExtensionApiFactory<TApi>;
+  /**
+   * Receives an extension's exported API once its activation has *succeeded*,
+   * and `undefined` when it is retracted. Nothing is published for a failed or
+   * cancelled activation, so a half-built API can never be observed.
+   */
+  onExport?: (
+    identity: Readonly<ExtensionIdentity>,
+    api: object | undefined,
+  ) => void;
   onDiagnostic?: (diagnostic: ExtensionDiagnostic) => void;
   now?: () => number;
   /** Use `null` to disable the activation timeout. */
@@ -65,6 +82,23 @@ export class ExtensionRegistrationClosedError extends Error {
   constructor(extensionId: string) {
     super(`Extension '${extensionId}' can no longer register resources.`);
     this.name = "ExtensionRegistrationClosedError";
+    this.extensionId = extensionId;
+  }
+}
+
+/**
+ * Distinct from {@link ExtensionRegistrationClosedError} because the two windows
+ * are genuinely different: a running extension may keep registering resources,
+ * but its exported API is fixed once activation settles.
+ */
+export class ExtensionExportClosedError extends Error {
+  readonly extensionId: string;
+
+  constructor(extensionId: string) {
+    super(
+      `Extension '${extensionId}' can only call exportApi() during activate().`,
+    );
+    this.name = "ExtensionExportClosedError";
     this.extensionId = extensionId;
   }
 }
@@ -190,6 +224,10 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
   private readonly sdkVersion: string;
   private readonly hostVersion: string | null | undefined;
   private readonly createApi: ExtensionApiFactory<TApi>;
+  private readonly onExport?: (
+    identity: Readonly<ExtensionIdentity>,
+    api: object | undefined,
+  ) => void;
   private readonly onDiagnostic?: (diagnostic: ExtensionDiagnostic) => void;
   private readonly now: () => number;
   private readonly activationTimeoutMs: number | null;
@@ -212,6 +250,7 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
     this.sdkVersion = options.sdkVersion;
     this.hostVersion = options.hostVersion;
     this.createApi = options.createApi;
+    this.onExport = options.onExport;
     this.onDiagnostic = options.onDiagnostic;
     this.now = options.now ?? Date.now;
     this.activationTimeoutMs = activationTimeoutMs;
@@ -240,6 +279,7 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
       resources: [],
       resourceSet: new Set(),
       acceptingResources: true,
+      acceptingExports: true,
     };
 
     this.sessions.set(identity.id, session);
@@ -349,6 +389,23 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
 
     const logger = this.createLogger(identity.id);
 
+    // Staged rather than published: an activation that throws after exporting
+    // would otherwise leave a dependent holding an API built by a package the
+    // host has already rolled back.
+    //
+    // The window closes when activation settles, not when the extension stops
+    // running. The host reads the staged value once, so a later call would
+    // silently replace something nobody will ever publish — better to say so.
+    const exportApi = (api: object): void => {
+      if (typeof api !== "object" || api === null) {
+        throw new TypeError("An exported extension API must be an object.");
+      }
+      if (!session.acceptingExports) {
+        throw new ExtensionExportClosedError(identity.id);
+      }
+      session.exportedApi = api;
+    };
+
     try {
       const api = Object.freeze(this.createApi(scope));
       const context: ExtensionContext<TApi> = Object.freeze({
@@ -358,6 +415,7 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
         api,
         logger,
         onDispose: own,
+        exportApi,
       });
 
       const moduleActivation = Promise.resolve()
@@ -369,6 +427,9 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
         });
 
       await this.waitForActivation(session, moduleActivation);
+      // Closed before the staged value is read, so a context retained past
+      // activation cannot replace an API the host has already published.
+      session.acceptingExports = false;
 
       if (session.abortController.signal.aborted) {
         throw new ExtensionActivationCancelledError(identity.id);
@@ -376,10 +437,16 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
 
       this.activationOrder.push(identity.id);
       this.setState(identity, "active");
+      if (session.exportedApi !== undefined) {
+        this.publishExport(identity, session.exportedApi);
+      }
       this.report(identity.id, "info", "activation", "Activation completed.");
     } catch (error) {
       session.acceptingResources = false;
+      session.acceptingExports = false;
+      session.exportedApi = undefined;
       session.abortController.abort();
+      this.publishExport(identity, undefined);
       await this.cleanupSession(session, "activation");
       this.deleteSession(session);
 
@@ -420,8 +487,13 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
     this.setState(identity, "deactivating");
     this.report(identity.id, "info", "deactivation", "Deactivation started.");
     session.acceptingResources = false;
+    session.acceptingExports = false;
     session.cancellationReason = "deactivation";
     session.abortController.abort();
+    // Retracted before teardown runs, so a peer cannot pick up the API of a
+    // package that is already disposing the objects behind it.
+    session.exportedApi = undefined;
+    this.publishExport(identity, undefined);
 
     if (wasActivating && session.activationPromise) {
       try {
@@ -533,6 +605,23 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
       status,
       ...(error === undefined ? {} : { error }),
     });
+  }
+
+  private publishExport(
+    identity: Readonly<ExtensionIdentity>,
+    api: object | undefined,
+  ): void {
+    try {
+      this.onExport?.(identity, api);
+    } catch (error) {
+      this.report(
+        identity.id,
+        "error",
+        api === undefined ? "deactivation" : "activation",
+        "Publishing the extension's exported API failed.",
+        error,
+      );
+    }
   }
 
   private createLogger(extensionId: string): ExtensionLogger {

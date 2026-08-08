@@ -1628,6 +1628,12 @@ export interface ExtensionExportFrameRequest {
 export type ExtensionExportFrameResult =
   | {
       readonly ok: true;
+      /**
+       * The frame as an **encoded** image, in the requested `mimeType` — not
+       * raw pixels. To measure the picture, decode it first, e.g. with
+       * `createImageBitmap` onto a 2D canvas; note that `getImageData` returns
+       * straight alpha, while the renderer composites premultiplied.
+       */
       readonly blob: Blob;
       /** The project's output dimensions, rounded to even pixels. */
       readonly width: number;
@@ -1676,10 +1682,10 @@ export interface ExtensionExportApi {
   /** Monotonic change token matching `subscribe` notifications. */
   getRevision(): number;
   /**
-   * Composites one frame at `timeTicks` and returns its pixels, at the
-   * project's output dimensions. This is a full render of that instant — every
-   * track, mask, and effect — so it costs roughly what one export frame costs;
-   * it is for thumbnails and spot checks, not for scrubbing.
+   * Composites one frame at `timeTicks` and returns it as an encoded image at
+   * the project's output dimensions. This is a full render of that instant —
+   * every track, mask, and effect — so it costs roughly what one export frame
+   * costs; it is for thumbnails and spot checks, not for scrubbing.
    *
    * The tick is clamped at zero and snapped to the project's frame grid, as
    * every host seek is, and the result reports which tick was composited. It
@@ -2342,7 +2348,19 @@ export type ExtensionUiModalSize = "small" | "medium" | "large";
 export type ExtensionUiViewRegion =
   | "right-sidebar"
   | "left-sidebar"
-  | "projects-page.main";
+  | "projects-page.main"
+  /**
+   * A narrow column beside the player canvas, for tools that have to sit next
+   * to the picture. It takes no space until something is registered in it.
+   */
+  | "player-aside"
+  /**
+   * The dock between the player and the timeline, where the video scopes live.
+   * Unlike the sidebars this region is user-toggled and starts closed, so a
+   * view registered here is not visible until `openView` — or the user — opens
+   * the dock.
+   */
+  | "bottom-dock";
 
 export interface ExtensionUiComponentProps {
   readonly slot: ExtensionUiSlotId;
@@ -2519,8 +2537,21 @@ export interface ExtensionCommandApi {
    * today; each grant is reviewed individually at its definition site.
    */
   execute(commandId: string, subject?: JsonValue): Promise<boolean>;
-  /** Reads one host context key, detached. Unknown keys return `undefined`. */
+  /** Reads one context key, detached. Unknown keys return `undefined`. */
   getContextKey(key: string): JsonValue | undefined;
+  /**
+   * Publishes one context key of your own. The host qualifies it as
+   * `extension.<yourId>.<key>`, which is the name any `when` clause — yours or
+   * another package's — must use to read it. Host keys stay host-owned: a
+   * package can add state to the editor's vocabulary, not redefine it.
+   *
+   * `undefined` clears the key, and every key you wrote is cleared when you
+   * deactivate, so a stale state cannot outlive the package that meant it.
+   *
+   * Returns the qualified name. Values must be finite JSON; anything else, or
+   * a malformed key, throws.
+   */
+  setContextKey(key: string, value: JsonValue | undefined): string;
   /**
    * Fires when any host context key changes. Payload-free: re-read the keys
    * you care about with `getContextKey`. Prefer a declarative `when` on the
@@ -2635,6 +2666,133 @@ export interface ExtensionCanvasToolApi {
   ): ExtensionCanvasToolRegistration;
 }
 
+// === Notifications ===
+
+export type ExtensionNotificationTone = "info" | "success" | "warning" | "error";
+
+export interface ExtensionToastRequest {
+  readonly message: string;
+  readonly tone?: ExtensionNotificationTone;
+  /** Auto-dismiss delay. `0` keeps the toast until it is dismissed. */
+  readonly durationMs?: number;
+}
+
+export interface ExtensionNotificationHandle extends ExtensionDisposable {
+  readonly id: string;
+}
+
+export interface ExtensionTaskRequest {
+  readonly title: string;
+  readonly message?: string;
+  /** 0 to 1. Omit for an indeterminate task. */
+  readonly progress?: number;
+  readonly tone?: ExtensionNotificationTone;
+  /**
+   * Supplying this shows a cancel affordance. The host calls it and leaves the
+   * entry in place: cancelling *asks* the work to stop, and only the work knows
+   * when it actually has — settle the task once it does.
+   */
+  readonly onCancel?: () => void;
+}
+
+export interface ExtensionTaskUpdate {
+  readonly message?: string;
+  /** 0 to 1, or `null` for indeterminate. Omit to leave it unchanged. */
+  readonly progress?: number | null;
+  readonly tone?: ExtensionNotificationTone;
+}
+
+export interface ExtensionTaskSettleRequest {
+  /** Leaves a final toast. Omit the whole request to settle silently. */
+  readonly message?: string;
+  readonly tone?: ExtensionNotificationTone;
+  readonly durationMs?: number;
+}
+
+/** One running task the user can see, and cancel when you allow it. */
+export interface ExtensionTaskHandle extends ExtensionDisposable {
+  readonly id: string;
+  /** Omitted fields keep their current value. Ignored once settled. */
+  update(update: ExtensionTaskUpdate): void;
+  /** Ends the task, optionally leaving a toast behind. Idempotent. */
+  settle(result?: ExtensionTaskSettleRequest): void;
+}
+
+/**
+ * Where long-running extension work reports to. A toast says something
+ * happened; a task says something *is happening* and stays until it settles.
+ *
+ * Both are owned by the extension: everything it posts is removed when it
+ * deactivates, so a package that dies mid-task cannot leave a spinner behind.
+ * Neither is a dialog — use `ui.openModal` when you need an answer.
+ */
+export interface ExtensionNotificationApi {
+  toast(request: ExtensionToastRequest): ExtensionNotificationHandle;
+  task(request: ExtensionTaskRequest): ExtensionTaskHandle;
+}
+
+// === Scopes ===
+
+/** One sampled composited frame, as the scope dock reads it back. */
+export interface ExtensionScopeFrame {
+  /**
+   * Premultiplied RGBA bytes, row-major, `width * height * 4` long.
+   *
+   * This is the host's own buffer and it is only valid for the duration of the
+   * `render` call. Copy anything you need to keep; retaining it hands you a
+   * buffer the next sample has already overwritten.
+   */
+  readonly pixels: Uint8ClampedArray;
+  readonly width: number;
+  readonly height: number;
+  /** Host clock reading when the frame was sampled, in milliseconds. */
+  readonly sampledAt: number;
+}
+
+export interface ExtensionScopeRenderContext {
+  /**
+   * The host's 2D context, already sized to `width`/`height` and filled with
+   * the dock's background. Draw into it; do not resize or detach it.
+   */
+  readonly context: CanvasRenderingContext2D;
+  readonly width: number;
+  readonly height: number;
+  readonly frame: ExtensionScopeFrame;
+}
+
+/**
+ * A video scope: a label in the dock and a function that draws one sampled
+ * frame. Contributed scopes sit in the same tab strip as the host's waveform,
+ * parade, vectorscope, and histogram because they go through the same registry.
+ *
+ * `render` is on a sampling loop that runs while the dock is open. Keep it
+ * synchronous and allocation-light; a throw is isolated and reported, but a
+ * scope that throws every frame is a scope nobody can read.
+ */
+export interface ExtensionScopeDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly kind: "trusted-scope";
+  readonly label: string;
+  /**
+   * Backing pixel size of the drawing surface, 16 to 2048 on each axis. The
+   * dock scales the result to the available width, so this is the resolution
+   * you draw at, not the size you appear at.
+   */
+  readonly width: number;
+  readonly height: number;
+  readonly order?: number;
+  render(context: ExtensionScopeRenderContext): void;
+}
+
+export interface ExtensionScopeRegistration extends ExtensionDisposable {
+  readonly id: string;
+}
+
+export interface ExtensionScopeApi {
+  register(definition: ExtensionScopeDefinition): ExtensionScopeRegistration;
+}
+
 export interface ExtensionUiApi {
   /** The host command table and chord requests (see `ExtensionCommandApi`). */
   readonly commands: ExtensionCommandApi;
@@ -2644,6 +2802,10 @@ export interface ExtensionUiApi {
   readonly catalogues: ExtensionCatalogueApi;
   /** Exclusive trusted interaction modes over the player canvas. */
   readonly canvasTools: ExtensionCanvasToolApi;
+  /** Toasts and progress entries for long-running work. */
+  readonly notifications: ExtensionNotificationApi;
+  /** Video scopes in the host's bottom dock. */
+  readonly scopes: ExtensionScopeApi;
   /**
    * Registers a rich React control. Use it in an extension transformation's own
    * groups via a `custom` control, or place it in a host panel zone, or both.
@@ -3147,6 +3309,47 @@ export interface ExtensionColorApi {
   applyMatrix3(matrix: ColorMatrix3, value: ColorRgb): ColorRgb;
 }
 
+// === Extension-to-extension composition ===
+
+/** One package this extension declared a dependency on, as resolved. */
+export interface ExtensionPeerSnapshot {
+  readonly id: string;
+  /** The peer's installed version. */
+  readonly version: string;
+  /** The range this extension declared for it in its manifest. */
+  readonly versionRange: string;
+  /** Whether the peer is activated right now. */
+  readonly isActive: boolean;
+  /** Whether the peer published an API through `context.exportApi()`. */
+  readonly hasApi: boolean;
+}
+
+/**
+ * Composition with other packages, through their declared APIs rather than
+ * through the timeline model or a trusted global.
+ *
+ * The relationship is one-directional and declared: you can only reach a
+ * package you named in your manifest's `dependencies`, and the host activates
+ * those before you, so a dependency's API is already published by the time your
+ * `activate` runs. Reaching an undeclared package throws — that is a missing
+ * manifest entry, not a state of the editor.
+ *
+ * Do not cache a peer API across deactivation. The value is whatever the peer's
+ * current activation exported; if it is deactivated and reactivated, the object
+ * you were holding belongs to a session that is over.
+ */
+export interface ExtensionPeerApi {
+  /** The dependencies this package declared, resolved against what is installed. */
+  listDependencies(): readonly ExtensionPeerSnapshot[];
+  /**
+   * A declared dependency's exported API, or `undefined` when it is inactive or
+   * exported nothing. Throws for a package you did not declare.
+   */
+  getApi(extensionId: string): unknown;
+  /** As `getApi`, but throws when no API is available — for a hard dependency. */
+  requireApi(extensionId: string): unknown;
+}
+
 export interface VloExtensionApi {
   /**
    * Canonical trusted fallback when scoped contributions cannot express the
@@ -3180,6 +3383,8 @@ export interface VloExtensionApi {
   readonly transitions: ExtensionTransitionApi;
   readonly transformations: ExtensionTransformationApi;
   readonly ui: ExtensionUiApi;
+  /** Declared peer packages and the APIs they export. */
+  readonly extensions: ExtensionPeerApi;
 }
 
 export interface ExtensionIdentity {
@@ -3223,7 +3428,39 @@ export interface ExtensionContext<TApi extends object = VloExtensionApi> {
   readonly api: TApi;
   readonly logger: ExtensionLogger;
   onDispose(resource: ExtensionResource): void;
+  /**
+   * Publishes this package's own API for packages that declare it as a
+   * dependency, readable through their `api.extensions.getApi(yourId)`.
+   *
+   * Callable during `activate` only, and published only if activation
+   * succeeds — a package that fails halfway must not leave half an API behind.
+   * Calling it twice replaces the value; it is retracted on deactivation.
+   *
+   * The value crosses no serialisation boundary, so it may hold functions and
+   * live objects. It is also a contract you now own: version it, and treat a
+   * breaking change to it as a major version of your package.
+   */
+  exportApi(api: object): void;
 }
+
+/**
+ * When the host activates a package, declared in its manifest as
+ * `activationEvents`. A package that declares none activates at startup, which
+ * is what every package did before this existed.
+ *
+ * - `onStartup` — as soon as the inventory is read.
+ * - `onProjectOpen` — when a project opens, or immediately if one already is.
+ * - `onExtension:<id>` — after the named package activates. For an optional
+ *   companion: use `dependencies` when you cannot work without it, since that
+ *   also fixes the ordering and checks the version.
+ *
+ * A package another one depends on activates when that dependent does,
+ * whatever its own events say.
+ */
+export type ExtensionActivationEvent =
+  | "onStartup"
+  | "onProjectOpen"
+  | `onExtension:${string}`;
 
 export interface ExtensionModule<TApi extends object = VloExtensionApi> {
   activate(

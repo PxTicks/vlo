@@ -8,6 +8,8 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
+import { NotificationHostMount } from "../../../../core/shell/NotificationHostMount";
+import { hostNotificationCenter } from "../../../../core/shell/notificationCenter";
 import { SamAudioExtractDialog } from "../SamAudioExtractDialog";
 import { useSamAudioExtractDialogStore } from "../../store/useSamAudioExtractDialogStore";
 
@@ -80,7 +82,15 @@ function seedTimeline() {
 
 function openDialog() {
   useSamAudioExtractDialogStore.getState().openForClip(clip.id);
-  render(<SamAudioExtractDialog />);
+  // The success confirmation goes to the shell notification centre now, so the
+  // host mount is rendered beside the dialog rather than asserted through a
+  // store: the assertion should still be "the user can read it".
+  render(
+    <>
+      <SamAudioExtractDialog />
+      <NotificationHostMount />
+    </>,
+  );
 }
 
 async function openConfigureWithAvailableModel() {
@@ -98,6 +108,9 @@ describe("SamAudioExtractDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     seedTimeline();
+    for (const entry of hostNotificationCenter.list()) {
+      hostNotificationCenter.dismiss(entry.id);
+    }
     useSamAudioExtractDialogStore.getState().close();
     useTimelineSelectionStore.getState().exitSelectionMode();
     useExtractStore.getState().setOnConfirmSelection(null);
@@ -140,7 +153,7 @@ describe("SamAudioExtractDialog", () => {
       "extracted-audio-1",
     );
     expect(
-      screen.getByText("Audio Extracted to Timeline and Asset Browser"),
+      await screen.findByText("Audio Extracted to Timeline and Asset Browser"),
     ).toBeInTheDocument();
     const timeline = useTimelineStore.getState();
     const sourceTrackIndex = timeline.tracks.findIndex(

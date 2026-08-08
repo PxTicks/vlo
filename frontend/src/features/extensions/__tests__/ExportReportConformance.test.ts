@@ -203,6 +203,7 @@ function activateFixture(harness: Harness) {
     api: harness.api,
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     onDispose: (resource) => disposers.push(resource),
+    exportApi: vi.fn(),
   });
   return disposers;
 }

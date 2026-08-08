@@ -286,3 +286,148 @@ describe("createExtensionCommandApi", () => {
     expect(table.isEnabled("example.cmd/gated")).toBe(true);
   });
 });
+
+describe("contributed context keys", () => {
+  function createOwnedScope(extensionId: string) {
+    const controller = new AbortController();
+    const resources: ExtensionResource[] = [];
+    const scope: ExtensionApiScope = {
+      extension: { id: extensionId, version: "1.0.0" },
+      signal: controller.signal,
+      own: <TResource extends ExtensionResource>(resource: TResource) => {
+        resources.push(resource);
+        return resource;
+      },
+      report: vi.fn(),
+    };
+    return {
+      scope,
+      controller,
+      resourceCount: () => resources.length,
+      dispose: async () => {
+        for (const resource of [...resources].reverse()) {
+          await (typeof resource === "function"
+            ? resource()
+            : resource.dispose());
+        }
+      },
+    };
+  }
+
+  it("namespaces a write and returns the qualified key", () => {
+    const harness = createOwnedScope("example.writer");
+    const { api, contextKeys } = createHarness(harness.scope);
+
+    expect(api.setContextKey("scanned", 3)).toBe(
+      "extension.example.writer.scanned",
+    );
+    expect(contextKeys.get("extension.example.writer.scanned")).toBe(3);
+    // Readable by anyone, including through a `when` clause.
+    expect(api.getContextKey("extension.example.writer.scanned")).toBe(3);
+  });
+
+  it("gates a command's own `when` on a contributed key", async () => {
+    const harness = createOwnedScope("example.writer");
+    const { api, table } = createHarness(harness.scope);
+    const run = vi.fn();
+    api.register({
+      id: "report",
+      apiVersion: 1,
+      title: "Report",
+      when: { key: "extension.example.writer.scanned" },
+      run,
+    });
+
+    expect(await api.execute("report")).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+
+    api.setContextKey("scanned", 3);
+    expect(table.isEnabled("example.writer/report")).toBe(true);
+    expect(await api.execute("report")).toBe(true);
+  });
+
+  it("lets one package read another's key", () => {
+    const contextKeys = new HostContextKeyService();
+    const keybindings = new HostKeybindingRegistry(() => false);
+    const table = new HostCommandTable(contextKeys);
+    const writer = createExtensionCommandApi(
+      createScope("example.writer"),
+      table,
+      keybindings,
+      contextKeys,
+    );
+    const reader = createExtensionCommandApi(
+      createScope("example.reader"),
+      table,
+      keybindings,
+      contextKeys,
+    );
+
+    writer.setContextKey("ready", true);
+    expect(reader.getContextKey("extension.example.writer.ready")).toBe(true);
+    // But cannot write it: `setContextKey` only ever addresses its own namespace.
+    expect(reader.setContextKey("ready", false)).toBe(
+      "extension.example.reader.ready",
+    );
+    expect(contextKeys.get("extension.example.writer.ready")).toBe(true);
+  });
+
+  it("clears every key it wrote on deactivation, and only once", async () => {
+    const harness = createOwnedScope("example.writer");
+    const { api, contextKeys } = createHarness(harness.scope);
+    contextKeys.set("project.open", true);
+
+    api.setContextKey("one", 1);
+    api.setContextKey("two", 2);
+    // One cleanup however many keys are written.
+    expect(harness.resourceCount()).toBe(1);
+
+    await harness.dispose();
+    expect(contextKeys.get("extension.example.writer.one")).toBeUndefined();
+    expect(contextKeys.get("extension.example.writer.two")).toBeUndefined();
+    expect(contextKeys.get("project.open")).toBe(true);
+  });
+
+  it("refuses a malformed key without registering a cleanup", () => {
+    const harness = createOwnedScope("example.writer");
+    const { api } = createHarness(harness.scope);
+
+    expect(() => api.setContextKey("bad key", 1)).toThrow(/Invalid/);
+    expect(() => api.setContextKey("extension.other", 1)).toThrow(
+      /reserved prefix/,
+    );
+    expect(() => api.setContextKey("value", Number.NaN as never)).toThrow(
+      /finite JSON/,
+    );
+    expect(harness.resourceCount()).toBe(0);
+  });
+
+  it("takes the key back when ownership is refused", () => {
+    const contextKeys = new HostContextKeyService();
+    const keybindings = new HostKeybindingRegistry(() => false);
+    const table = new HostCommandTable(contextKeys);
+    const api = createExtensionCommandApi(
+      {
+        extension: { id: "example.writer", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: () => {
+          throw new Error("registration closed");
+        },
+        report: vi.fn(),
+      },
+      table,
+      keybindings,
+      contextKeys,
+    );
+
+    expect(() => api.setContextKey("scanned", 1)).toThrow(/registration closed/);
+    expect(contextKeys.get("extension.example.writer.scanned")).toBeUndefined();
+  });
+
+  it("refuses a write after deactivation", () => {
+    const harness = createOwnedScope("example.writer");
+    const { api } = createHarness(harness.scope);
+    harness.controller.abort();
+    expect(() => api.setContextKey("late", 1)).toThrow(/no longer write/);
+  });
+});

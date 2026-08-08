@@ -157,9 +157,13 @@ what makes a post-export report possible; compare `startedByExtension` against
 your own ID rather than assuming a run is yours.
 
 `renderFrame(ticks)` composites one frame at the project's output dimensions and
-resolves with its bytes. It is a full render of that instant — every track,
-mask, and effect — so it costs about what one export frame costs: use it for
-thumbnails and spot checks, not for scrubbing. The tick is clamped at zero and
+resolves with an **encoded** image blob — a PNG or WebP, not raw pixels. Decode
+it before measuring anything, e.g. `createImageBitmap` onto a 2D canvas and
+`getImageData`; that gives straight alpha, whereas the renderer composites
+premultiplied, so do not un-premultiply decoded bytes a second time. It is a
+full render of that instant — every track, mask, and effect — so it costs about
+what one export frame costs: use it for thumbnails and spot checks, not for
+scrubbing. The tick is clamped at zero and
 frame-snapped, and the result reports which tick was actually composited. It is
 not clamped to the end of the timeline: past the last clip you get the empty
 frame that is really there, just as parking the playhead beyond the content

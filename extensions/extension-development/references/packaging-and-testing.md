@@ -47,6 +47,12 @@ Add a narrow optional `vlo` range when using raw host entries or deep backend
 imports. Feature-detect each entry even within that range. Unknown host build
 metadata warns and fails open; a known mismatch blocks approval/activation.
 
+Add `activationEvents` when the package has nothing to do at startup, and
+`dependencies` when it cannot work without another package. Both are validated
+before approval — an unsupported event, an invalid peer ID, a range outside the
+shared comparator grammar, or a self-reference is a manifest error. Omitting
+`activationEvents` means startup, so an existing manifest keeps its behaviour.
+
 ## Build immutable frontend ESM
 
 Produce a prebuilt ESM entry under `frontend/dist/`. Keep relative chunks/assets

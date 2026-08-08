@@ -89,6 +89,19 @@ export function createExtensionCommandApi(
   keybindings: HostKeybindingRegistry = hostKeybindingRegistry,
   contextKeys: HostContextKeyService = hostContextKeys,
 ): ExtensionCommandApi {
+  // Registered on the first write so a package that publishes no keys adds no
+  // disposal work, and re-registered afterwards so a later write is still owned.
+  let ownedKeyCleanup: ExtensionDisposable | null = null;
+  const ensureKeysOwned = (): void => {
+    if (ownedKeyCleanup !== null) return;
+    ownedKeyCleanup = scope.own({
+      dispose: () => {
+        ownedKeyCleanup = null;
+        contextKeys.clearNamespace(scope.extension.id);
+      },
+    });
+  };
+
   return Object.freeze({
     register: (
       definition: ExtensionCommandDefinition,
@@ -174,6 +187,30 @@ export function createExtensionCommandApi(
       throw new Error(`Command '${commandId}' is not registered.`);
     },
     getContextKey: (key: string): JsonValue | undefined => contextKeys.get(key),
+    // Writes are namespaced rather than free: an extension may add state to the
+    // editor's vocabulary but must not be able to redefine `project.open`.
+    // Ownership is claimed only after a write lands, so a rejected key or value
+    // leaves no cleanup behind for keys that were never published — and a
+    // refused claim takes the key back with it.
+    setContextKey: (key: string, value: JsonValue | undefined): string => {
+      if (scope.signal.aborted) {
+        throw new Error(
+          `Extension '${scope.extension.id}' can no longer write context keys.`,
+        );
+      }
+      const qualified = contextKeys.setContributed(
+        scope.extension.id,
+        key,
+        value,
+      );
+      try {
+        ensureKeysOwned();
+      } catch (error) {
+        contextKeys.setContributed(scope.extension.id, key, undefined);
+        throw error;
+      }
+      return qualified;
+    },
     subscribeContextKeys: bindOwnerScopedSubscribe(
       scope,
       // The key service notifies without a revision of its own; keys are a

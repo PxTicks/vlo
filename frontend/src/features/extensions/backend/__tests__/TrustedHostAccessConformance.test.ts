@@ -105,6 +105,7 @@ describe("trusted host access conformance fixture", () => {
         error: vi.fn(),
       },
       onDispose: scope.own,
+      exportApi: vi.fn(),
     } satisfies ExtensionContext;
 
     await activate(context);
@@ -168,6 +169,7 @@ describe("trusted host access conformance fixture", () => {
           error: vi.fn(),
         },
         onDispose: vi.fn(),
+        exportApi: vi.fn(),
       } as unknown as ExtensionContext),
     ).toThrow(
       "This extension requires trusted host entry 'timeline.store' from its supported VLO range.",

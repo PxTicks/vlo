@@ -38,8 +38,22 @@ import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { extensionColorApi } from "./extensionColorApi";
 import {
   evaluateExtensionSdkCompatibility,
+  evaluateExtensionVersionCompatibility,
   evaluateExtensionVloCompatibility,
 } from "../utils/sdkCompatibility";
+import {
+  extensionPeerRegistry,
+  type ExtensionPeerRegistry,
+} from "../peers/ExtensionPeerRegistry";
+import {
+  isProjectOpen,
+  parseActivationEvent,
+  subscribeProjectOpen,
+  type ParsedActivationEvent,
+} from "./activationEvents";
+import { createExtensionNotificationApi } from "../ui/createExtensionNotificationApi";
+import { createExtensionScopeApi } from "../scopes/createExtensionScopeApi";
+import { postHostToast } from "../../../core/shell/notificationCenter";
 import { VLO_APP_VERSION } from "../../project/constants";
 import { trustedHostAccessDirectory } from "../runtime/TrustedHostAccessDirectory";
 import { registerTrustedHostEntries } from "../runtime/registerTrustedHostEntries";
@@ -55,12 +69,15 @@ export type FrontendExtensionStartStatus =
   | "active"
   | "failed"
   | "incompatible"
-  | "waiting_backend";
+  | "waiting_backend"
+  /** Approved and valid, but its activation events have not fired yet. */
+  | "deferred";
 
 export type FrontendExtensionStartStage =
   | "validation"
   | "compatibility"
   | "backend"
+  | "dependencies"
   | "import"
   | "activation";
 
@@ -92,6 +109,18 @@ export interface FrontendExtensionRuntimeOptions<TApi extends object> {
   evaluateVloCompatibility?: typeof evaluateExtensionVloCompatibility;
   onCompatibilityWarning?: (extensionId: string, message: string) => void;
   onResult?: (result: FrontendExtensionStartResult) => void;
+  peers?: ExtensionPeerRegistry;
+  /** Seam for the `onProjectOpen` activation event; see `activationEvents.ts`. */
+  isProjectOpen?: () => boolean;
+  subscribeProjectOpen?: (listener: () => void) => () => void;
+}
+
+interface PendingPackage {
+  readonly item: ExtensionInventoryItem;
+  readonly events: readonly ParsedActivationEvent[];
+  readonly dependencies: Readonly<Record<string, string>>;
+  state: "pending" | "activating" | "settled";
+  result?: FrontendExtensionStartResult;
 }
 
 export class FrontendExtensionInventoryTimeoutError extends Error {
@@ -117,6 +146,36 @@ function isExtensionModule<TApi extends object>(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * A package that declares no activation events activates at startup, which is
+ * what every package did before events existed. Unrecognised entries are
+ * dropped rather than failing the package: the backend validator already
+ * rejects them, so reaching here means a host that no longer publishes an event
+ * an older package declared.
+ */
+function readActivationEvents(
+  declared: readonly string[] | undefined,
+): readonly ParsedActivationEvent[] {
+  if (declared === undefined || declared.length === 0) {
+    return [{ kind: "startup" }];
+  }
+  const events = declared
+    .map(parseActivationEvent)
+    .filter((event): event is ParsedActivationEvent => event !== null);
+  return events.length === 0 ? [{ kind: "startup" }] : events;
+}
+
+function deferredResult(entry: PendingPackage): FrontendExtensionStartResult {
+  const events = entry.item.manifest?.activationEvents ?? [];
+  return {
+    extensionId: entry.item.id,
+    status: "deferred",
+    stage: "activation",
+    message: `Waiting for activation events: ${events.join(", ")}.`,
+    ...(entry.item.digest === null ? {} : { digest: entry.item.digest }),
+  };
 }
 
 function approvedPackageValidationError(
@@ -160,7 +219,12 @@ export class FrontendExtensionRuntime<TApi extends object> {
     message: string,
   ) => void;
   private readonly onResult?: (result: FrontendExtensionStartResult) => void;
+  private readonly peers: ExtensionPeerRegistry;
+  private readonly isProjectOpen: () => boolean;
+  private readonly subscribeProjectOpen: (listener: () => void) => () => void;
+  private readonly pending = new Map<string, PendingPackage>();
   private startPromise?: Promise<FrontendExtensionStartSummary>;
+  private unsubscribeProjectOpen?: () => void;
 
   constructor(options: FrontendExtensionRuntimeOptions<TApi>) {
     this.host = options.host;
@@ -185,11 +249,20 @@ export class FrontendExtensionRuntime<TApi extends object> {
       hostVersion === undefined ? VLO_APP_VERSION : hostVersion;
     this.onCompatibilityWarning = options.onCompatibilityWarning;
     this.onResult = options.onResult;
+    this.peers = options.peers ?? extensionPeerRegistry;
+    this.isProjectOpen = options.isProjectOpen ?? isProjectOpen;
+    this.subscribeProjectOpen = options.subscribeProjectOpen ?? subscribeProjectOpen;
   }
 
   start(): Promise<FrontendExtensionStartSummary> {
     this.startPromise ??= this.runStartup();
     return this.startPromise;
+  }
+
+  /** Stops watching for deferred activation events. */
+  dispose(): void {
+    this.unsubscribeProjectOpen?.();
+    this.unsubscribeProjectOpen = undefined;
   }
 
   private async runStartup(): Promise<FrontendExtensionStartSummary> {
@@ -204,27 +277,207 @@ export class FrontendExtensionRuntime<TApi extends object> {
       };
     }
 
-    const results: FrontendExtensionStartResult[] = [];
-    // Preserve deterministic activation/rollback order. Imports can be split
-    // into a parallel preparation stage later once dependency ordering exists.
+    // Declarations first, for every approved package: a dependent may activate
+    // before its dependency's own event fires, and `api.extensions` has to be
+    // able to answer for a peer the host has not reached yet.
     for (const item of inventory) {
-      if (
-        item.status !== "approved" ||
-        item.manifest?.frontend === undefined
-      ) {
+      if (item.status !== "approved" || item.manifest?.frontend === undefined) {
         continue;
       }
-
-      const result = await this.activateInventoryItem(item);
-      results.push(result);
-      try {
-        this.onResult?.(result);
-      } catch {
-        // Observers must not affect activation or failure isolation.
-      }
+      const manifest = item.manifest;
+      const dependencies = manifest.dependencies ?? {};
+      this.peers.declarePackage({
+        id: item.id,
+        version: manifest.version,
+        dependencies,
+      });
+      this.pending.set(item.id, {
+        item,
+        events: readActivationEvents(manifest.activationEvents),
+        dependencies,
+        state: "pending",
+      });
     }
 
+    // Inventory order is the activation order within one event, so rollback and
+    // diagnostics stay deterministic; dependencies pull their providers forward.
+    for (const id of [...this.pending.keys()]) {
+      const entry = this.pending.get(id);
+      if (!entry || !entry.events.some((event) => event.kind === "startup")) {
+        continue;
+      }
+      await this.activatePackage(id, []);
+    }
+
+    await this.runProjectOpenEvent();
+
+    const results = [...this.pending.values()].map(
+      (entry) => entry.result ?? deferredResult(entry),
+    );
     return { inventoryLoaded: true, results };
+  }
+
+  /**
+   * Runs the `onProjectOpen` wave, or arms it for the first project to open.
+   * Only the leading edge matters: a package activated for one project stays
+   * active across later switches, exactly as a startup package does.
+   */
+  private async runProjectOpenEvent(): Promise<void> {
+    const waiting = [...this.pending.values()].some(
+      (entry) =>
+        entry.state === "pending" &&
+        entry.events.some((event) => event.kind === "project-open"),
+    );
+    if (!waiting) return;
+    if (!this.isProjectOpen()) {
+      this.unsubscribeProjectOpen ??= this.subscribeProjectOpen(() => {
+        void this.activateForEvent((event) => event.kind === "project-open");
+      });
+      return;
+    }
+    await this.activateForEvent((event) => event.kind === "project-open");
+  }
+
+  private async activateForEvent(
+    matches: (event: ParsedActivationEvent) => boolean,
+  ): Promise<void> {
+    for (const [id, entry] of [...this.pending.entries()]) {
+      if (entry.state !== "pending" || !entry.events.some(matches)) continue;
+      await this.activatePackage(id, []);
+    }
+  }
+
+  /**
+   * Activates one package and everything it declares a dependency on, in
+   * provider-before-dependent order. `chain` carries the in-flight dependents so
+   * a cycle is refused rather than recursing forever.
+   */
+  private async activatePackage(
+    extensionId: string,
+    chain: readonly string[],
+  ): Promise<FrontendExtensionStartResult> {
+    const entry = this.pending.get(extensionId);
+    if (!entry) {
+      return {
+        extensionId,
+        status: "failed",
+        stage: "dependencies",
+        message: `No approved frontend package '${extensionId}' is installed.`,
+      };
+    }
+    if (entry.state === "settled" && entry.result) return entry.result;
+    if (entry.state === "activating" || chain.includes(extensionId)) {
+      return this.settle(entry, {
+        extensionId,
+        status: "failed",
+        stage: "dependencies",
+        message:
+          `Dependency cycle: ${[...chain, extensionId].join(" -> ")}. ` +
+          "Extensions cannot depend on each other in a loop.",
+        ...(entry.item.digest === null ? {} : { digest: entry.item.digest }),
+      });
+    }
+
+    entry.state = "activating";
+    const dependencyFailure = await this.activateDependencies(entry, [
+      ...chain,
+      extensionId,
+    ]);
+    if (dependencyFailure) return this.settle(entry, dependencyFailure);
+
+    const result = this.settle(
+      entry,
+      await this.activateInventoryItem(entry.item),
+    );
+    if (result.status === "active") {
+      this.peers.markActive(extensionId);
+      await this.activateForEvent(
+        (event) => event.kind === "extension" && event.extensionId === extensionId,
+      );
+    } else {
+      this.peers.retract(extensionId);
+    }
+    return result;
+  }
+
+  /** Returns a failure result when a declared dependency cannot be satisfied. */
+  private async activateDependencies(
+    entry: PendingPackage,
+    chain: readonly string[],
+  ): Promise<FrontendExtensionStartResult | null> {
+    const extensionId = entry.item.id;
+    const digest = entry.item.digest;
+    const fail = (message: string): FrontendExtensionStartResult => ({
+      extensionId,
+      status: "failed",
+      stage: "dependencies",
+      message,
+      ...(digest === null ? {} : { digest }),
+    });
+
+    for (const [dependencyId, range] of Object.entries(entry.dependencies)) {
+      if (dependencyId === extensionId) {
+        return fail("An extension cannot declare itself as a dependency.");
+      }
+      const dependency = this.pending.get(dependencyId);
+      if (!dependency) {
+        return fail(
+          `Required extension '${dependencyId}' is not installed, approved, or ` +
+            "does not provide a frontend module.",
+        );
+      }
+      const version = dependency.item.manifest?.version ?? null;
+      const compatibility = evaluateExtensionVersionCompatibility(
+        range,
+        version,
+        `extension '${dependencyId}'`,
+      );
+      if (!compatibility.compatible) {
+        return fail(
+          compatibility.reason ??
+            `Required extension '${dependencyId}' does not satisfy '${range}'.`,
+        );
+      }
+      if (compatibility.warning) {
+        this.onCompatibilityWarning?.(extensionId, compatibility.warning);
+      }
+      const dependencyResult = await this.activatePackage(dependencyId, chain);
+      // A cycle settles *this* package from inside that recursion, with the
+      // diagnostic that names the whole loop. Stop here rather than pulling in
+      // the remaining dependencies of a package that can no longer activate.
+      if (entry.state === "settled" && entry.result) return entry.result;
+      if (dependencyResult.status !== "active") {
+        return fail(
+          `Required extension '${dependencyId}' did not activate: ` +
+            dependencyResult.message,
+        );
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Records one package's outcome exactly once.
+   *
+   * Idempotent on purpose: a package caught in a cycle is settled by the frame
+   * that *detected* the cycle, and its own outer frame then arrives with the
+   * derived "required extension did not activate" message. The first result is
+   * the specific one, so it wins — and an observer sees one notification per
+   * package rather than one per frame that noticed.
+   */
+  private settle(
+    entry: PendingPackage,
+    result: FrontendExtensionStartResult,
+  ): FrontendExtensionStartResult {
+    if (entry.state === "settled" && entry.result) return entry.result;
+    entry.state = "settled";
+    entry.result = result;
+    try {
+      this.onResult?.(result);
+    } catch {
+      // Observers must not affect activation or failure isolation.
+    }
+    return result;
   }
 
   private loadInventoryWithTimeout(): Promise<ExtensionInventoryItem[]> {
@@ -432,13 +685,23 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
         menus: extensionMenuPlacementRegistry.bind(scope),
         catalogues: createExtensionCatalogueApi(scope),
         canvasTools: createExtensionCanvasToolApi(scope),
+        notifications: createExtensionNotificationApi(scope),
+        scopes: createExtensionScopeApi(scope),
       }),
+      extensions: extensionPeerRegistry.bind(scope),
     });
 
 const frontendExtensionHost = new ExtensionHost<VloExtensionApi>({
   sdkVersion: VLO_EXTENSION_SDK_VERSION,
   hostVersion: VLO_APP_VERSION,
   createApi: createVloExtensionApi,
+  // The host owns *when* an export becomes visible — only after activation
+  // succeeds, and never after deactivation starts. The registry owns who may
+  // read it.
+  onExport: (identity, api) => {
+    if (api === undefined) extensionPeerRegistry.retract(identity.id);
+    else extensionPeerRegistry.publishApi(identity.id, api);
+  },
   onDiagnostic: reportHostDiagnostic,
 });
 
@@ -487,9 +750,16 @@ export const frontendExtensionRuntime = new FrontendExtensionRuntime({
     console.warn(`[Extension ${extensionId}] ${message}`);
   },
   onResult: (result) => {
-    if (result.status === "active") return;
+    if (result.status === "active" || result.status === "deferred") return;
     const output =
       result.status === "waiting_backend" ? console.warn : console.error;
     output(`[Extension ${result.extensionId}] ${result.message}`, result.error);
+    // An extension that silently fails to start looks to the user like one that
+    // was never installed. The console is not where they will look.
+    postHostToast(
+      `Extension '${result.extensionId}' did not start: ${result.message}`,
+      result.status === "waiting_backend" ? "warning" : "error",
+      0,
+    );
   },
 });

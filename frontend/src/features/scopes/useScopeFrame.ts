@@ -3,13 +3,18 @@ import {
   getActivePixiApplication,
   getActivePixiContentTarget,
 } from "../../core/pixi/activeApplication";
-import { analyzeScopePixels, type ScopeSnapshot } from "./scopeAnalysis";
+import type { ScopeFrameSample } from "./scopeRegistry";
 
 const SAMPLE_MAX_WIDTH = 512;
 const SAMPLE_INTERVAL_MS = 110;
 
-export function useScopeSnapshot(enabled: boolean): ScopeSnapshot | null {
-  const [snapshot, setSnapshot] = useState<ScopeSnapshot | null>(null);
+/**
+ * Samples the composited frame while the dock is open. Analysis is deliberately
+ * not done here: the dock hands the raw sample to whichever scope is showing,
+ * so a contributed scope sees the same pixels the built-in ones do.
+ */
+export function useScopeFrame(enabled: boolean): ScopeFrameSample | null {
+  const [frame, setFrame] = useState<ScopeFrameSample | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
@@ -33,14 +38,12 @@ export function useScopeSnapshot(enabled: boolean): ScopeSnapshot | null {
               resolution,
             });
             if (!disposed) {
-              setSnapshot(
-                analyzeScopePixels(
-                  extracted.pixels,
-                  extracted.width,
-                  extracted.height,
-                  performance.now(),
-                ),
-              );
+              setFrame({
+                pixels: extracted.pixels,
+                width: extracted.width,
+                height: extracted.height,
+                sampledAt: performance.now(),
+              });
             }
           } catch {
             // A renderer can be replaced while the dock is open; retry next tick.
@@ -60,5 +63,5 @@ export function useScopeSnapshot(enabled: boolean): ScopeSnapshot | null {
     };
   }, [enabled]);
 
-  return snapshot;
+  return frame;
 }

@@ -34,6 +34,10 @@ const extensionManifestSchema = z.object({
   contributions: extensionContributionsSchema.optional(),
   capabilities: z.array(z.string()),
   pythonDependencies: z.array(pythonDependencySchema).optional(),
+  /** Host activation events; an absent or empty list means startup. */
+  activationEvents: z.array(z.string()).optional(),
+  /** Peer extension ID to declared version range. */
+  dependencies: z.record(z.string(), z.string()).optional(),
 });
 
 const extensionApprovalSchema = z.object({

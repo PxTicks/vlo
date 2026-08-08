@@ -22,6 +22,7 @@ const bridgeMocks = vi.hoisted(() => ({
     (_handler: (generation: unknown) => void): (() => void) => () => {},
   ),
   notifyIframeReloaded: vi.fn(),
+  isPeerBooting: vi.fn(() => false),
   waitForReady: vi.fn(),
 }));
 
@@ -39,6 +40,7 @@ vi.mock("../../services/iframeBridgeClient", () => ({
     onHealthChanged: bridgeMocks.onHealthChanged,
     onIframeGeneration: bridgeMocks.onIframeGeneration,
     notifyIframeReloaded: bridgeMocks.notifyIframeReloaded,
+    isPeerBooting: bridgeMocks.isPeerBooting,
     waitForReady: bridgeMocks.waitForReady,
   },
 }));
@@ -83,6 +85,7 @@ beforeEach(() => {
   useExtractStore.getState().setOnConfirmSelection(null);
   useExtractStore.getState().setOnCancelSelection(null);
   bridgeMocks.state.isReady = false;
+  bridgeMocks.isPeerBooting.mockReturnValue(false);
   bridgeMocks.readActive.mockResolvedValue(null);
   bridgeMocks.health.mockResolvedValue(null);
   vi.mocked(waitForAppReady).mockImplementation(
@@ -175,7 +178,7 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
     expect(screen.queryByText(/Reconnecting to ComfyUI/i)).toBeNull();
   });
 
-  it("shows the reconnecting message after app init fails", async () => {
+  it("does not claim to reconnect when app init fails without a reload", async () => {
     // The init effect flips editorNeedsReconnect to false on mount, so seeding
     // it isn't enough; drive the real path where waitForAppReady reports the
     // app never came up (backend stays disconnected, so no forced reload).
@@ -183,10 +186,34 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
 
     render(<ComfyUIEditor open onClose={() => {}} />);
 
+    expect(await screen.findByText(/Connecting to ComfyUI/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Restarting ComfyUI editor/i)).toBeNull();
+  });
+
+  it("reports that ComfyUI is still starting when the bridge is booting", async () => {
+    bridgeMocks.isPeerBooting.mockReturnValue(true);
+    vi.mocked(waitForAppReady).mockResolvedValueOnce(false);
+
+    render(<ComfyUIEditor open onClose={() => {}} />);
+
     expect(
-      await screen.findByText(/Reconnecting to ComfyUI/i),
+      await screen.findByText(/ComfyUI is still starting/i),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/^Connecting to ComfyUI/i)).toBeNull();
+    expect(useGenerationStore.getState().editorNeedsReconnect).toBe(false);
+  });
+
+  it("reports an actual iframe restart", async () => {
+    resetStore({
+      comfyuiDirectUrl: "http://comfy.local",
+      editorReconnectSignal: 1,
+    });
+
+    render(<ComfyUIEditor open onClose={() => {}} />);
+
+    expect(
+      await screen.findByText(/Restarting ComfyUI editor/i),
+    ).toBeInTheDocument();
+    expect(bridgeMocks.notifyIframeReloaded).toHaveBeenCalledOnce();
   });
 
   it("initializes an already-synced selected workflow through iframe injection", async () => {
@@ -309,7 +336,7 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
     );
   });
 
-  it("marks reconnect when workflow restoration cannot be read", async () => {
+  it("marks reconnect without claiming an iframe restart when workflow restoration fails", async () => {
     resetStore({
       comfyuiDirectUrl: "http://comfy.local",
       selectedWorkflowId: "selected.json",
@@ -325,9 +352,11 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
       warnings: null,
     });
     render(<ComfyUIEditor open onClose={() => undefined} />);
-    expect(
-      await screen.findByText(/Reconnecting to ComfyUI/i),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(useGenerationStore.getState().editorNeedsReconnect).toBe(true),
+    );
+    expect(screen.getByText(/Connecting to ComfyUI/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Restarting ComfyUI editor/i)).toBeNull();
   });
 
   it("captures the latest active workflow when the editor closes", async () => {

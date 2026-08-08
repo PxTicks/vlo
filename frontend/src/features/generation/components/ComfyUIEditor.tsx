@@ -70,7 +70,8 @@ const MAX_CONSECUTIVE_BACKEND_DISCONNECTS = 3;
 const RECOVERY_RELOAD_COOLDOWN_MS = 2000;
 const VISIBILITY_RESUME_GRACE_MS = 5000;
 const CONNECTING_HELPER_TEXT = "Connecting to ComfyUI...";
-const RECONNECTING_HELPER_TEXT = "Reconnecting to ComfyUI...";
+const STILL_STARTING_HELPER_TEXT = "ComfyUI is still starting...";
+const RESTARTING_HELPER_TEXT = "Restarting ComfyUI editor...";
 const ASSET_DOCK_WIDTH = 396;
 const DROP_FEEDBACK_TTL_MS = 4000;
 
@@ -207,9 +208,6 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   );
   const inputNodeMap = useGenerationStore((s) => s.inputNodeMap);
   const rawObjectInfo = useGenerationStore((s) => s.rawObjectInfo);
-  const editorNeedsReconnect = useGenerationStore(
-    (s) => s.editorNeedsReconnect,
-  );
   const editorReconnectSignal = useGenerationStore(
     (s) => s.editorReconnectSignal,
   );
@@ -223,6 +221,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   );
   const [loading, setLoading] = useState(true);
   const [appReady, setAppReady] = useState(false);
+  const [startupDelayed, setStartupDelayed] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [assetDockOpen, setAssetDockOpen] = useState(false);
   const [assetDockTab, setAssetDockTab] =
     useState<IframeAssetDockTab>("assets");
@@ -484,6 +484,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       lastWorkflowSignatureRef.current = null;
       setAppReady(false);
       setLoading(true);
+      setStartupDelayed(false);
+      setRestarting(true);
       setEditorNeedsReconnect(false);
       useGenerationStore.getState().setWorkflowLoading(true);
       useGenerationStore.setState({
@@ -540,15 +542,22 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       );
       if (!ready) {
         if (!shouldAbort()) {
-          setEditorNeedsReconnect(true);
           // If the backend reports ComfyUI as reachable but the bridge never
           // announced, the iframe likely loaded a dead/stale page (e.g.
           // ComfyUI was down on first load). Trigger recovery — unless the
           // bridge answered "still booting", in which case reloading would
           // only restart the load it is already most of the way through.
+          const peerBooting = iframeBridge.isPeerBooting();
+          if (peerBooting) {
+            setStartupDelayed(true);
+            setRestarting(false);
+            setEditorNeedsReconnect(false);
+          } else {
+            setEditorNeedsReconnect(true);
+          }
           if (
             useGenerationStore.getState().connectionStatus === "connected" &&
-            !iframeBridge.isPeerBooting()
+            !peerBooting
           ) {
             recoverIframe("app initialization failed while backend connected");
           }
@@ -663,6 +672,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       consecutiveBackendDisconnectsRef.current = 0;
       setAppReady(true);
       setLoading(false);
+      setStartupDelayed(false);
+      setRestarting(false);
       setEditorNeedsReconnect(false);
       return true;
     })();
@@ -1076,18 +1087,14 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
               gap: 1.5,
             }}
           >
-            {editorNeedsReconnect ? (
-              <Typography variant="caption" sx={{ color: "#c9c9c9" }}>
-                {RECONNECTING_HELPER_TEXT}
-              </Typography>
-            ) : (
-              <>
-                <CircularProgress />
-                <Typography variant="caption" sx={{ color: "#c9c9c9" }}>
-                  {CONNECTING_HELPER_TEXT}
-                </Typography>
-              </>
-            )}
+            <CircularProgress />
+            <Typography variant="caption" sx={{ color: "#c9c9c9" }}>
+              {restarting
+                ? RESTARTING_HELPER_TEXT
+                : startupDelayed
+                  ? STILL_STARTING_HELPER_TEXT
+                  : CONNECTING_HELPER_TEXT}
+            </Typography>
           </Box>
         )}
         <iframe

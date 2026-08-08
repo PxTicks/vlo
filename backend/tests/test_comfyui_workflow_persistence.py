@@ -344,6 +344,51 @@ def test_resolve_workflow_rules_uses_graph_data_for_randomized_control_after_gen
     assert widget["value_type"] == "int"
 
 
+def test_resolve_workflow_rules_supports_inline_workflow_without_id():
+    payload = {
+        "workflow": {
+            "701": {
+                "class_type": "SeedVR2VideoUpscaler",
+                "inputs": {},
+            }
+        },
+    }
+    object_info = {
+        "SeedVR2VideoUpscaler": {
+            "input": {
+                "required": {
+                    "seed": [
+                        "INT",
+                        {
+                            "default": 42,
+                            "min": 0,
+                            "max": 4294967295,
+                        },
+                    ],
+                }
+            },
+            "input_order": {
+                "required": ["seed"],
+            },
+        }
+    }
+
+    set_object_info_cache(object_info)
+    try:
+        result = asyncio.run(
+            comfyui.resolve_workflow_rules(
+                DummyRequest(payload)
+            )
+        )
+    finally:
+        set_object_info_cache(None)
+
+    assert result["workflow_id"] == ""
+    assert result["has_sidecar"] is False
+    assert result["warnings"] == []
+    assert result["rules"]["nodes"]["701"]["widgets"]["seed"]["default"] == 42
+
+
 def test_resolve_workflow_rules_always_surfaces_seed_without_node_policy():
     payload = {
         "workflow_id": "wf.json",

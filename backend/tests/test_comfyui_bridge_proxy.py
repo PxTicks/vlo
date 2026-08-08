@@ -26,7 +26,7 @@ def _request(path: str, method: str = "GET") -> Request:
 
 
 @pytest.mark.parametrize("path", ["api/extensions", "extensions"])
-def test_iframe_extension_list_hosts_bridge_and_filters_installed_copy(
+def test_iframe_extension_list_hosts_bridge_first_and_filters_installed_copy(
     monkeypatch: pytest.MonkeyPatch,
     path: str,
 ) -> None:
@@ -51,8 +51,8 @@ def test_iframe_extension_list_hosts_bridge_and_filters_installed_copy(
 
     payload = json.loads(bytes(response.body))
     assert payload == [
-        "/extensions/example/example.js",
         "/extensions/vlo-host/vlo-bridge.js",
+        "/extensions/example/example.js",
     ]
     assert response.headers["cache-control"] == "no-store"
 
@@ -83,6 +83,39 @@ def test_iframe_extension_list_preserves_upstream_errors_and_malformed_json(
     assert error.status_code == 503
     assert bytes(error.body) == b"unavailable"
     assert bytes(malformed.body) == b"not-json"
+
+
+def test_iframe_html_bootstraps_bridge_before_comfy_finishes_loading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_proxy(_request: Request, _upstream_path: str) -> Response:
+        return Response(
+            content=(
+                '<!doctype html><html><head><script type="module" '
+                'src="./assets/index.js"></script></head><body></body></html>'
+            ),
+            media_type="text/html",
+        )
+
+    monkeypatch.setattr(comfyui_compat, "proxy_http_request", fake_proxy)
+    response = asyncio.run(
+        comfyui_compat.proxy_comfyui_frame(_request("/comfyui-frame/"), "")
+    )
+
+    body = bytes(response.body).decode("utf-8")
+    bridge_tag = (
+        '<script type="module" '
+        'src="/comfyui-frame/extensions/vlo-host/vlo-bridge.js"></script>'
+    )
+    assert body.count(bridge_tag) == 1
+    assert body.index(bridge_tag) < body.index("./assets/index.js")
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_iframe_html_decoration_leaves_non_html_responses_untouched() -> None:
+    response = Response(content="unavailable", status_code=502)
+
+    assert comfyui_compat._decorate_iframe_html(response) is response
 
 
 @pytest.mark.parametrize(

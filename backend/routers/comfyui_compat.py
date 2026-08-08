@@ -23,6 +23,10 @@ _BRIDGE_ASSETS = {
     "extensions/vlo-host/vlo-bridge.js": _BRIDGE_ASSET_ROOT / "vlo-bridge.js",
     "extensions/vlo-host/bridge-core.mjs": _BRIDGE_ASSET_ROOT / "bridge-core.mjs",
 }
+_BRIDGE_BOOTSTRAP_TAG = (
+    b'<script type="module" '
+    b'src="/comfyui-frame/extensions/vlo-host/vlo-bridge.js"></script>'
+)
 _IFRAME_EXTENSION_LIST_PATHS = {"api/extensions", "extensions"}
 
 
@@ -48,12 +52,49 @@ def _decorate_extension_list(response: Response) -> Response:
         for item in payload
         if item != _BRIDGE_EXTENSION_URL and not _is_installed_vlo_bridge(item)
     ]
-    extensions.append(_BRIDGE_EXTENSION_URL)
+    # Start the hosted bridge before third-party extensions. On a cold browser
+    # load ComfyUI can spend longer than the parent's readiness deadline
+    # scheduling a large extension list; loading the bridge first lets it emit
+    # `booting` immediately and prevents recovery from reloading ComfyUI before
+    # initialization can finish.
+    extensions.insert(0, _BRIDGE_EXTENSION_URL)
     return Response(
         content=json.dumps(extensions),
         status_code=response.status_code,
         media_type="application/json",
         headers={"Cache-Control": "no-store"},
+    )
+
+
+def _decorate_iframe_html(response: Response) -> Response:
+    if response.status_code < 200 or response.status_code >= 300:
+        return response
+    if "text/html" not in response.headers.get("content-type", "").lower():
+        return response
+
+    try:
+        body = bytes(response.body)
+    except (AttributeError, TypeError):
+        return response
+    if _BRIDGE_BOOTSTRAP_TAG in body:
+        return response
+
+    lower_body = body.lower()
+    head_start = lower_body.find(b"<head")
+    head_open_end = lower_body.find(b">", head_start) if head_start >= 0 else -1
+    if head_open_end < 0:
+        return response
+
+    insert_at = head_open_end + 1
+    decorated = body[:insert_at] + _BRIDGE_BOOTSTRAP_TAG + body[insert_at:]
+    headers = dict(response.headers)
+    headers.pop("content-length", None)
+    headers["cache-control"] = "no-store"
+    return Response(
+        content=decorated,
+        status_code=response.status_code,
+        headers=headers,
+        media_type=response.media_type,
     )
 
 
@@ -78,6 +119,8 @@ async def proxy_comfyui_frame(request: Request, path: str = ""):
     # Preserve raw encoded file paths when proxying iframe-scoped requests.
     upstream_path = upstream_path_from_raw_request(request, "/comfyui-frame")
     response = await proxy_http_request(request, upstream_path)
+    if request.method == "GET" and normalized_path == "":
+        return _decorate_iframe_html(response)
     if request.method == "GET" and normalized_path in _IFRAME_EXTENSION_LIST_PATHS:
         return _decorate_extension_list(response)
     return response

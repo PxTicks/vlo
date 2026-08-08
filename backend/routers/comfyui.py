@@ -36,6 +36,7 @@ from services.comfyui.comfyui_proxy import (
 )
 from services.workflow_rules import (
     WorkflowValidationError,
+    default_rules_model,
     enrich_rules_with_object_info,
     load_rules_model_for_workflow,
     matches_input_presence_condition,
@@ -641,11 +642,15 @@ def _resolve_workflow_rules_response(
     *,
     workflow_id: str | None = None,
 ) -> dict[str, Any]:
-    rules_model, warnings = load_rules_model_for_workflow(
-        WORKFLOWS_DIR,
-        workflow_id,
-        fallback_dirs=[get_packaged_workflows_dir()],
-    )
+    if workflow_id is None:
+        rules_model = default_rules_model()
+        warnings = []
+    else:
+        rules_model, warnings = load_rules_model_for_workflow(
+            WORKFLOWS_DIR,
+            workflow_id,
+            fallback_dirs=[get_packaged_workflows_dir()],
+        )
     rules_model = enrich_rules_with_object_info(rules_model, workflow)
     rules = dump_resolved_rules(rules_model)
     nodes_with_widgets = {

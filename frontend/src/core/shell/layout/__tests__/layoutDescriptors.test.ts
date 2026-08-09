@@ -59,6 +59,29 @@ describe("describeShellPanels", () => {
     ]);
   });
 
+  it("carries a panel's declared portability through to the resolver", () => {
+    const registry = new HostViewRegistry(new HostContextKeyService(), null);
+    registry.registerHostView({
+      ...view("host.scopes", 10),
+      defaultRegion: "bottom-dock",
+      allowedRegions: ["bottom-dock", "right-sidebar"],
+    });
+
+    expect(describeShellPanels(registry)[0].allowedRegions).toEqual([
+      "right-sidebar",
+      "bottom-dock",
+    ]);
+    expect(
+      resolveShellLayout({
+        panels: describeShellPanels(registry),
+        document: {
+          ...EMPTY_SHELL_LAYOUT_DOCUMENT,
+          panels: { "host.scopes": { region: "right-sidebar" } },
+        },
+      }).panelRegions["host.scopes"],
+    ).toBe("right-sidebar");
+  });
+
   it("collapses a declarative condition into live availability", () => {
     const keys = new HostContextKeyService();
     const registry = new HostViewRegistry(keys, null);

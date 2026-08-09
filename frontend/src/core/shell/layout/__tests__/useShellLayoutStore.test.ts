@@ -146,6 +146,87 @@ describe("placement actions", () => {
     });
   });
 
+  it("reveals a moved panel and hands the source region back over", () => {
+    const { store, persistence } = createStore();
+    store.getState().selectView("left-sidebar", "example.a/tool");
+    store.getState().setRegionCollapsed("right-sidebar", true);
+
+    expect(store.getState().movePanel("example.a/tool", "right-sidebar")).toBe(
+      true,
+    );
+
+    const { resolved, document } = store.getState();
+    // A move the user cannot see is a move that looks broken.
+    expect(resolved.regions["right-sidebar"].selectedViewId).toBe(
+      "example.a/tool",
+    );
+    expect(resolved.regions["right-sidebar"].collapsed).toBe(false);
+    // The source region falls back deterministically, and stops naming a panel
+    // that is no longer there — otherwise moving the panel home would silently
+    // resurrect the old selection.
+    expect(resolved.regions["left-sidebar"].selectedViewId).toBe("host.a");
+    expect(document.regions["left-sidebar"]?.selectedViewId).toBeNull();
+    // Placement, both selections, and the expansion are one write.
+    expect(persistence.writeCount).toBe(3);
+  });
+
+  it("closes a dock the moved panel was the only reason to open", () => {
+    const { store } = createStore();
+    const scopes = panel("host.scopes", {
+      defaultRegion: "bottom-dock",
+      defaultOrder: 10,
+      allowedRegions: ["bottom-dock", "right-sidebar"],
+    });
+    store
+      .getState()
+      .setPanelDescriptors([...PANELS.slice(0, 3), scopes]);
+    store.getState().selectView("bottom-dock", "host.scopes");
+
+    store.getState().movePanel("host.scopes", "right-sidebar");
+
+    const { resolved } = store.getState();
+    expect(resolved.regions["bottom-dock"].selectedViewId).toBeNull();
+    expect(resolved.regions["bottom-dock"].orderedViewIds).toEqual([]);
+    expect(resolved.regions["right-sidebar"].selectedViewId).toBe(
+      "host.scopes",
+    );
+  });
+
+  it("reveals a hidden panel it moves", () => {
+    const { store } = createStore();
+    store.getState().setPanelVisible("example.a/tool", false);
+
+    store.getState().movePanel("example.a/tool", "right-sidebar");
+
+    // Choosing where to put a panel by name is a request to see it there.
+    expect(store.getState().document.panels["example.a/tool"]).toEqual({
+      region: "right-sidebar",
+    });
+    expect(
+      store.getState().resolved.regions["right-sidebar"].orderedViewIds,
+    ).toEqual(["example.a/tool"]);
+    expect(
+      store.getState().resolved.regions["right-sidebar"].selectedViewId,
+    ).toBe("example.a/tool");
+  });
+
+  it("opens the destination overlay when a move lands in a narrow sidebar", () => {
+    const { store } = createStore();
+    store.getState().setViewport({ widthPx: 720, heightPx: 800 });
+
+    store.getState().movePanel("example.a/tool", "right-sidebar");
+
+    // Below the breakpoint the persisted collapse flag is not what hides a
+    // sidebar, so clearing it alone would reveal nothing.
+    expect(store.getState().responsiveExpandedRegion).toBe("right-sidebar");
+    expect(
+      store.getState().resolved.regions["right-sidebar"].collapsed,
+    ).toBe(false);
+    expect(store.getState().resolved.regions["left-sidebar"].collapsed).toBe(
+      true,
+    );
+  });
+
   it("clears the stored placement when a panel returns to its registered region", () => {
     const { store } = createStore();
     store.getState().movePanel("example.a/tool", "right-sidebar");
@@ -200,6 +281,26 @@ describe("visibility and selection actions", () => {
 
     store.getState().setPanelVisible("host.a", true);
     expect(store.getState().document.panels["host.a"]).toBeUndefined();
+  });
+
+  it("gives up the selection when the selected panel is hidden", () => {
+    const { store } = createStore();
+    store.getState().selectView("left-sidebar", "host.b");
+
+    store.getState().setPanelVisible("host.b", false);
+    expect(store.getState().document.regions["left-sidebar"]).toEqual({
+      selectedViewId: null,
+    });
+    expect(
+      store.getState().resolved.regions["left-sidebar"].selectedViewId,
+    ).toBe("host.a");
+
+    // Showing it again must not snap the region back: the fallback the user
+    // has been looking at since is the current selection.
+    store.getState().setPanelVisible("host.b", true);
+    expect(
+      store.getState().resolved.regions["left-sidebar"].selectedViewId,
+    ).toBe("host.a");
   });
 
   it("refuses to select a panel that is not selectable in that region", () => {
@@ -447,6 +548,8 @@ describe("reset actions", () => {
       workspaceLayouts: {
         "host.color": { panels: { "host.a": { order: 4 } }, regions: {} },
       },
+      // A reset must not let the version 1 preferences back in on reload.
+      legacyPanelsMerged: true,
     });
   });
 });

@@ -1,31 +1,14 @@
-import { useLayoutEffect, useSyncExternalStore } from "react";
-import { hostContextKeys } from "../contextKeys";
-import { hostViewRegistry } from "../viewRegistry";
-import { describeShellPanels } from "./layoutDescriptors";
+import { useLayoutEffect } from "react";
 import { useShellLayoutStore } from "./useShellLayoutStore";
 
 /**
- * Connects the pure layout kernel to the live shell registries and viewport.
+ * Connects the pure layout kernel to the viewport and the page lifecycle.
  * EditorLayout calls this once; layout components only consume resolved state.
+ *
+ * The panel table is not wired here: the store follows the registry on its own
+ * so that placement is answerable before, and independently of, any render.
  */
 export function useShellLayoutRuntime(): void {
-  const registryRevision = useSyncExternalStore(
-    (listener) => {
-      const unsubscribeViews = hostViewRegistry.subscribe(listener);
-      const unsubscribeContext = hostContextKeys.subscribe(listener);
-      return () => {
-        unsubscribeViews();
-        unsubscribeContext();
-      };
-    },
-    () => `${hostViewRegistry.getRevision()}:${hostContextKeys.getRevision()}`,
-    () => `${hostViewRegistry.getRevision()}:${hostContextKeys.getRevision()}`,
-  );
-
-  useLayoutEffect(() => {
-    useShellLayoutStore.getState().setPanelDescriptors(describeShellPanels());
-  }, [registryRevision]);
-
   useLayoutEffect(() => {
     const updateViewport = (): void => {
       useShellLayoutStore.getState().setViewport({

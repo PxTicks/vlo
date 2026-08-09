@@ -79,6 +79,15 @@ export interface HostMenuSubjectMap {
       readonly selectedViewId: string | null;
     };
   };
+  /** Placement targets for one panel (docking plan §4.7). */
+  readonly "app.view.move": {
+    readonly slot: "app.view.move";
+    readonly view: {
+      readonly id: string;
+      /** The region the panel is in now. */
+      readonly region: string;
+    };
+  };
   readonly "library.item.actions": {
     readonly slot: "library.item.actions";
     readonly asset: ExtensionEntityAssetSnapshot;
@@ -253,6 +262,13 @@ function validateViewSelectSubject(subject: unknown): boolean {
   );
 }
 
+/** Subject: `{ slot, view: { id, region } }`. */
+function validateViewMoveSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "app.view.move") return false;
+  const view = subject.view;
+  return isRecord(view) && hasStringFields(view, ["id", "region"]);
+}
+
 /** Subject: `{ slot, track: { id, label, type, flags } }`. */
 function validateTrackContextSubject(subject: unknown): boolean {
   if (!isRecord(subject) || subject.slot !== "timeline.track.context") {
@@ -382,6 +398,7 @@ const HOST_MENU_SUBJECT_VALIDATORS = {
   "transformations.path.add": validatePathAddSubject,
   "generation.generate.options": validateGenerateOptionsSubject,
   "app.view.select": validateViewSelectSubject,
+  "app.view.move": validateViewMoveSubject,
   "library.item.actions": validateLibraryItemSubject,
   "library.composite.actions": validateLibraryCompositeSubject,
   "library.sort.options": validateLibrarySortSubject,
@@ -445,6 +462,10 @@ const HOST_MENU_SUBJECT_SCHEMAS = {
   "app.view.select": {
     slot: "'app.view.select'",
     region: { id: "string", selectedViewId: "string | null" },
+  },
+  "app.view.move": {
+    slot: "'app.view.move'",
+    view: { id: "string", region: "string" },
   },
   "library.item.actions": {
     slot: "'library.item.actions'",

@@ -5,6 +5,11 @@ import {
   hostContextKeys,
   type HostContextKeyService,
 } from "./contextKeys";
+import {
+  DOCK_REGIONS,
+  isDockRegion,
+  type DockRegion,
+} from "./layout/layoutTypes";
 import type { ShellDisposable } from "./hostMenuCatalog";
 
 export const HOST_VIEW_REGIONS = [
@@ -37,6 +42,13 @@ export interface HostViewDefinition {
   readonly title: string;
   readonly icon?: () => ReactNode;
   readonly defaultRegion: HostViewRegion;
+  /**
+   * Dock regions the user may move this panel to. Must contain
+   * `defaultRegion`, which must itself be a dock region. Omitted means the
+   * panel stays where it registered, which is what every non-portable view and
+   * every extension view does today (plan §6).
+   */
+  readonly allowedRegions?: readonly DockRegion[];
   readonly order?: number;
   readonly when?: ExtensionContextKeyExpression;
   readonly keepMounted?: boolean;
@@ -49,6 +61,13 @@ export interface ShellViewEntry extends HostViewDefinition {
   readonly order: number;
   readonly keepMounted: boolean;
   readonly eager: boolean;
+  /**
+   * Normalized, deduplicated, and ordered by `DOCK_REGIONS`. Empty for a view
+   * outside the docking model, such as one in `projects-page.main`. More than
+   * one entry marks the panel as portable, which is what earns it a stable
+   * mount host and a move control.
+   */
+  readonly allowedRegions: readonly DockRegion[];
   readonly source: "host" | "extension";
 }
 
@@ -111,6 +130,44 @@ function readLayout(storage: ViewLayoutStorage | null): PersistedViewLayout {
   }
 }
 
+/**
+ * Portability is opt-in and validated once, here, so the layout kernel can
+ * treat `allowedRegions` as trustworthy and the resolver never has to reason
+ * about a default the panel does not permit.
+ */
+function normalizeAllowedRegions(
+  definition: HostViewDefinition,
+  id: string,
+): readonly DockRegion[] {
+  const { allowedRegions, defaultRegion } = definition;
+  if (allowedRegions === undefined) {
+    return isDockRegion(defaultRegion) ? Object.freeze([defaultRegion]) : [];
+  }
+  if (!Array.isArray(allowedRegions) || allowedRegions.length === 0) {
+    throw new Error(`View '${id}' allowedRegions must be a non-empty array.`);
+  }
+  for (const region of allowedRegions) {
+    if (!isDockRegion(region)) {
+      throw new Error(`View '${id}' cannot be moved to region '${region}'.`);
+    }
+  }
+  if (!isDockRegion(defaultRegion)) {
+    throw new Error(
+      `View '${id}' cannot declare allowedRegions outside the dock regions.`,
+    );
+  }
+  if (!allowedRegions.includes(defaultRegion)) {
+    throw new Error(
+      `View '${id}' allowedRegions must include its default region '${defaultRegion}'.`,
+    );
+  }
+  // Canonical order keeps move menus and descriptor comparisons stable no
+  // matter how the registration happened to spell the list.
+  return Object.freeze(
+    DOCK_REGIONS.filter((region) => allowedRegions.includes(region)),
+  );
+}
+
 function assertTitle(title: string, id: string): string {
   if (typeof title !== "string" || title.trim().length === 0) {
     throw new Error(`View '${id}' title must be a non-empty string.`);
@@ -120,6 +177,22 @@ function assertTitle(title: string, id: string): string {
     throw new Error(`View '${id}' title must be at most 80 characters.`);
   }
   return normalized;
+}
+
+/**
+ * Selection for the dock regions, once the layout kernel owns placement.
+ *
+ * A dock panel's region is resolved state from Phase C onwards, so its
+ * selection has to live with the resolution rather than in this table — but
+ * callers still address a view as "this ID, in this region". Attaching an
+ * authority keeps that spelling working while leaving exactly one owner. The
+ * dependency points this way, from registry to injected implementation, so the
+ * layout kernel can keep reading the registry without a module cycle.
+ */
+export interface DockRegionSelectionAuthority {
+  select(region: DockRegion, viewId: string): boolean;
+  getSelected(region: DockRegion): string | null;
+  clearSelection(region: DockRegion): void;
 }
 
 /**
@@ -135,6 +208,7 @@ export class HostViewRegistry {
   private readonly contextKeys: HostContextKeyService;
   private layout: PersistedViewLayout;
   private revision = 0;
+  private dockSelection: DockRegionSelectionAuthority | null = null;
 
   constructor(
     contextKeys: HostContextKeyService = hostContextKeys,
@@ -189,6 +263,7 @@ export class HostViewRegistry {
       order,
       keepMounted: definition.keepMounted ?? source === "extension",
       eager: definition.eager ?? false,
+      allowedRegions: normalizeAllowedRegions(definition, id),
     });
     this.entries.set(id, entry);
     this.emitChange();
@@ -298,7 +373,19 @@ export class HostViewRegistry {
     this.persistAndEmit();
   }
 
+  /**
+   * Hands dock-region selection to the layout kernel. Called once for the
+   * application registry; a registry constructed for a test keeps the built-in
+   * behaviour so it stays self-contained.
+   */
+  attachDockSelectionAuthority(authority: DockRegionSelectionAuthority): void {
+    this.dockSelection = authority;
+  }
+
   select(region: HostViewRegion, viewId: string): boolean {
+    if (this.dockSelection && isDockRegion(region)) {
+      return this.dockSelection.select(region, viewId);
+    }
     const entry = this.entries.get(viewId);
     if (
       !entry ||
@@ -315,6 +402,9 @@ export class HostViewRegistry {
   }
 
   getSelected(region: HostViewRegion): string | null {
+    if (this.dockSelection && isDockRegion(region)) {
+      return this.dockSelection.getSelected(region);
+    }
     const id = this.selected.get(region);
     if (!id) return null;
     return this.list(region).some((entry) => entry.id === id) ? id : null;
@@ -322,6 +412,10 @@ export class HostViewRegistry {
 
   /** Host lifecycle/test seam; contributed APIs can only select their own view. */
   clearSelection(region: HostViewRegion): void {
+    if (this.dockSelection && isDockRegion(region)) {
+      this.dockSelection.clearSelection(region);
+      return;
+    }
     if (!this.selected.delete(region)) return;
     this.emitChange();
   }

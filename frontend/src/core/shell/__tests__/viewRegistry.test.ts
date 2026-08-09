@@ -119,6 +119,64 @@ describe("player-aside and bottom-dock regions", () => {
     ).toThrow(/unsupported region/);
   });
 
+  it("normalizes the regions a portable panel declares", () => {
+    const registry = new HostViewRegistry(new HostContextKeyService(), null);
+    registry.registerHostView({
+      ...view("host.scopes", 10),
+      defaultRegion: "bottom-dock",
+      // Declared out of order and with a duplicate, to prove the entry is the
+      // canonical list a move menu and the resolver can both rely on.
+      allowedRegions: ["right-sidebar", "bottom-dock", "right-sidebar"],
+    });
+
+    expect(registry.get("host.scopes")?.allowedRegions).toEqual([
+      "right-sidebar",
+      "bottom-dock",
+    ]);
+  });
+
+  it("fixes a panel to its own region unless it opts out", () => {
+    const registry = new HostViewRegistry(new HostContextKeyService(), null);
+    registry.registerHostView(view("host.assets", 10));
+    registry.registerHostView({
+      ...view("host.recent", 10),
+      defaultRegion: "projects-page.main",
+    });
+
+    expect(registry.get("host.assets")?.allowedRegions).toEqual([
+      "left-sidebar",
+    ]);
+    // Outside the docking model there is nowhere to move to at all.
+    expect(registry.get("host.recent")?.allowedRegions).toEqual([]);
+  });
+
+  it("rejects portability a panel could not honour", () => {
+    const registry = new HostViewRegistry(new HostContextKeyService(), null);
+
+    expect(() =>
+      registry.registerHostView({
+        ...view("host.a", 10),
+        allowedRegions: ["right-sidebar"],
+      }),
+    ).toThrow(/must include its default region/);
+    expect(() =>
+      registry.registerHostView({
+        ...view("host.b", 10),
+        allowedRegions: ["projects-page.main" as never],
+      }),
+    ).toThrow(/cannot be moved to region/);
+    expect(() =>
+      registry.registerHostView({
+        ...view("host.c", 10),
+        defaultRegion: "projects-page.main",
+        allowedRegions: ["left-sidebar"],
+      }),
+    ).toThrow(/outside the dock regions/);
+    expect(() =>
+      registry.registerHostView({ ...view("host.d", 10), allowedRegions: [] }),
+    ).toThrow(/non-empty array/);
+  });
+
   it("opens and closes the dock through selection alone", () => {
     const registry = new HostViewRegistry(new HostContextKeyService(), null);
     registry.registerHostView({

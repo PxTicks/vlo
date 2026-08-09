@@ -188,6 +188,7 @@ export function migrateLegacyViewLayout(
     panels,
     regions: {},
     workspaceLayouts: {},
+    legacyPanelsMerged: true,
   };
 }
 
@@ -210,7 +211,31 @@ export function parseShellLayoutDocument(
     regions: readRegions(raw.regions),
     ...(lowerStage === null ? {} : { lowerStage }),
     workspaceLayouts: readWorkspaceLayouts(raw.workspaceLayouts),
+    ...(raw.legacyPanelsMerged === true ? { legacyPanelsMerged: true } : {}),
   };
+}
+
+/**
+ * Folds version 1 panel preferences under a version 2 document that predates
+ * panel ownership. The version 2 entry always wins, so a placement the user has
+ * since changed is never reverted, and the result is flagged as merged so this
+ * runs exactly once per document.
+ */
+function mergeLegacyPanels(
+  current: ShellLayoutDocumentV2,
+  legacy: ShellLayoutDocumentV2 | null,
+): ShellLayoutDocumentV2 {
+  if (current.legacyPanelsMerged === true) return current;
+  const merged = { ...current, legacyPanelsMerged: true };
+  if (legacy === null) return merged;
+  const panels: Record<string, PersistedPanelPlacement> = { ...legacy.panels };
+  let kept = Object.keys(panels).length;
+  for (const [viewId, placement] of Object.entries(current.panels)) {
+    if (panels[viewId] === undefined && kept >= MAX_PERSISTED_PANELS) continue;
+    if (panels[viewId] === undefined) kept += 1;
+    panels[viewId] = placement;
+  }
+  return { ...merged, panels };
 }
 
 /**
@@ -221,9 +246,8 @@ export function selectShellLayoutDocument(sources: {
   readonly current?: unknown;
   readonly legacy?: unknown;
 }): ShellLayoutDocumentV2 {
-  return (
-    parseShellLayoutDocument(sources.current) ??
-    parseShellLayoutDocument(sources.legacy) ??
-    EMPTY_SHELL_LAYOUT_DOCUMENT
-  );
+  const legacy = parseShellLayoutDocument(sources.legacy);
+  const current = parseShellLayoutDocument(sources.current);
+  if (current !== null) return mergeLegacyPanels(current, legacy);
+  return legacy ?? EMPTY_SHELL_LAYOUT_DOCUMENT;
 }

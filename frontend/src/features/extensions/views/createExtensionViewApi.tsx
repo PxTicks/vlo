@@ -115,6 +115,9 @@ export function createExtensionViewApi(
       if (!entry || entry.source !== "extension") {
         throw new Error(`UI view '${qualifiedId}' is not registered.`);
       }
+      // Extension views are not portable in this release, so the registration
+      // region is still the region; for dock regions the registry forwards to
+      // the layout kernel, which owns selection.
       return registry.select(entry.defaultRegion, qualifiedId);
     },
   });

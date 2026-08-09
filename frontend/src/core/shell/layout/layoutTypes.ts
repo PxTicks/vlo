@@ -25,6 +25,15 @@ export const DOCK_REGIONS = [
 
 export type DockRegion = (typeof DOCK_REGIONS)[number];
 
+/** Human-readable region names for move menus, separators, and announcements. */
+export const DOCK_REGION_LABELS: Readonly<Record<DockRegion, string>> =
+  Object.freeze({
+    "left-sidebar": "Left sidebar",
+    "right-sidebar": "Right sidebar",
+    "player-aside": "Player aside",
+    "bottom-dock": "Bottom dock",
+  });
+
 /**
  * Places that hold the editor's primary working surfaces. Declared here so the
  * layout vocabulary is complete; stage resolution arrives with Phase D, when
@@ -245,6 +254,17 @@ export interface ShellLayoutDocumentV2 {
   /** Geometry only; surface selection is introduced with Phase D. */
   readonly lowerStage?: PersistedRegionGeometry;
   readonly workspaceLayouts: Readonly<Record<string, WorkspaceLayoutOverride>>;
+  /**
+   * Marks the one-time fold-in of the version 1 hidden/order preferences.
+   *
+   * Phase A could rely on "a version 2 document exists" meaning "the user has
+   * moved on", because only geometry lived here. Phase C moves panel visibility
+   * and ordering into this document too, so a user who resized a sidebar before
+   * this phase already has a version 2 document with an empty `panels` map and
+   * would otherwise lose their version 1 preferences. Merging until this flag is
+   * set folds them in exactly once, so a later unhide is not undone on reload.
+   */
+  readonly legacyPanelsMerged?: boolean;
 }
 
 export const EMPTY_SHELL_LAYOUT_DOCUMENT: ShellLayoutDocumentV2 = Object.freeze({
@@ -252,4 +272,5 @@ export const EMPTY_SHELL_LAYOUT_DOCUMENT: ShellLayoutDocumentV2 = Object.freeze(
   panels: Object.freeze({}),
   regions: Object.freeze({}),
   workspaceLayouts: Object.freeze({}),
+  legacyPanelsMerged: true,
 });

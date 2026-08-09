@@ -43,12 +43,17 @@ function RightSidebarPanelComponent() {
   const selectedEntry = views.find((view) => view.id === selectedViewId);
   const coreViews = views.filter((view) => view.source === "host");
   const extensionViews = views.filter((view) => view.source === "extension");
+  // Snapping governs this sidebar's own selection-driven tabs. A panel that
+  // registered somewhere else and was moved in is a guest, and stays put.
+  const selectedIsGuest =
+    selectedEntry !== undefined &&
+    (selectedEntry.source === "extension" ||
+      selectedEntry.defaultRegion !== "right-sidebar");
 
   // On selection-kind changes, snap to the matching editor: Transition for a
   // transition, Adjust for a clip, and Generate when selection is cleared.
-  // Selection changes do not displace an explicitly selected extension view.
   useEffect(() => {
-    if (selectedEntry?.source === "extension") return;
+    if (selectedIsGuest) return;
     const preferred =
       selectionMode === "transition"
         ? "host.transition"
@@ -56,7 +61,7 @@ function RightSidebarPanelComponent() {
           ? "host.generate"
           : "host.adjust";
     selectView(preferred);
-  }, [selectView, selectedEntry?.source, selectionMode]);
+  }, [selectView, selectedIsGuest, selectionMode]);
 
   useEffect(() => {
     const { setMaskTabActive } = useMaskViewStore.getState();

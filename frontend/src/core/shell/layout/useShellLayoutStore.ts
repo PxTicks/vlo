@@ -11,7 +11,11 @@ import {
   createLocalShellLayoutPersistence,
   type ShellLayoutPersistence,
 } from "./layoutPersistence";
-import { arePanelDescriptorsEqual } from "./layoutDescriptors";
+import { hostViewRegistry } from "../viewRegistry";
+import {
+  arePanelDescriptorsEqual,
+  observeShellPanels,
+} from "./layoutDescriptors";
 import { resolveShellLayout } from "./layoutResolver";
 import {
   DOCK_REGION_CONSTRAINTS,
@@ -45,7 +49,10 @@ export interface ShellLayoutState {
   setPanelDescriptors(panels: readonly ShellPanelDescriptor[]): void;
   setViewport(viewport: ShellViewport | null): void;
 
-  /** Returns false when the panel does not permit the target region. */
+  /**
+   * Moves a panel to one of its allowed regions and reveals it there. Returns
+   * false when the panel does not permit the target region.
+   */
   movePanel(viewId: string, region: DockRegion): boolean;
   /** Moves a panel one slot within its region, hidden siblings included. */
   reorderPanel(viewId: string, delta: -1 | 1): boolean;
@@ -257,15 +264,49 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
           return false;
         }
         const state = get();
-        if (state.resolved.panelRegions[viewId] === region) return true;
+        const from = state.resolved.panelRegions[viewId];
+        if (from === region) return true;
         const placement: DraftPlacement = { ...state.document.panels[viewId] };
         // An ordering index only means something inside the region it was
         // recorded for, so a move drops it and the panel lands on its
         // registration order in the new region.
         delete placement.order;
+        // Naming a panel and choosing where to put it is a request to see it
+        // there. Carrying an older hide across the move would land it out of
+        // sight, with nothing selected and no way to toggle it back on.
+        delete placement.visible;
         if (region === descriptor.defaultRegion) delete placement.region;
         else placement.region = region;
-        commit(withPlacement(state.document, viewId, placement), "now");
+        // A move is one transaction: the panel changes region, is revealed
+        // where it landed, and stops being the source region's selection. The
+        // resolver would ignore the stale ID anyway, but leaving it recorded
+        // would resurrect it the moment the panel came back.
+        const regions = { ...state.document.regions };
+        const wasSelected =
+          from !== undefined &&
+          state.resolved.regions[from].selectedViewId === viewId;
+        if (wasSelected) {
+          regions[from] = { ...regions[from], selectedViewId: null };
+        }
+        const target: DraftRegionState = { ...regions[region] };
+        target.selectedViewId = viewId;
+        delete target.collapsed;
+        regions[region] = target;
+        // Below the responsive breakpoint a sidebar's visibility is the
+        // transient overlay rather than the persisted collapse flag, so
+        // clearing that flag alone would reveal nothing.
+        const responsiveExpandedRegion =
+          isResponsiveSidebar(region) && isNarrowViewport(state.viewport)
+            ? region
+            : state.responsiveExpandedRegion;
+        commit(
+          {
+            ...withPlacement(state.document, viewId, placement),
+            regions,
+          },
+          "now",
+          responsiveExpandedRegion,
+        );
         return true;
       },
 
@@ -298,7 +339,26 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         const placement: DraftPlacement = { ...state.document.panels[viewId] };
         if (visible) delete placement.visible;
         else placement.visible = false;
-        commit(withPlacement(state.document, viewId, placement), "now");
+        const document = withPlacement(state.document, viewId, placement);
+        if (visible) {
+          commit(document, "now");
+          return;
+        }
+        // Hiding the active panel has to give up the selection with it. The
+        // resolver falls back either way, but a selection left recorded would
+        // become valid again the moment the panel is shown, snapping the
+        // region back to it instead of leaving the user where they were.
+        const regions = { ...document.regions };
+        let released = false;
+        for (const [regionId, regionState] of Object.entries(regions)) {
+          if (regionState?.selectedViewId !== viewId) continue;
+          regions[regionId as DockRegion] = {
+            ...regionState,
+            selectedViewId: null,
+          };
+          released = true;
+        }
+        commit(released ? { ...document, regions } : document, "now");
       },
 
       selectView: (region, viewId) => {
@@ -447,6 +507,10 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
             // Saved workspace overrides are a separate, explicitly-managed
             // scope; resetting the everyday layout must not discard them.
             workspaceLayouts: state.document.workspaceLayouts,
+            // A reset is a deliberate "start from defaults", so the version 1
+            // preferences must stay folded in rather than reappearing on the
+            // next read.
+            legacyPanelsMerged: true,
           },
           "now",
           null,
@@ -475,4 +539,34 @@ function getInitialViewport(): ShellViewport | null {
 
 export const useShellLayoutStore = createShellLayoutStore({
   viewport: getInitialViewport(),
+});
+
+/**
+ * The application store follows the live registry directly. Views register
+ * during module evaluation and extensions register at activation, both outside
+ * React, and placement is now the answer to "where does this panel live" for
+ * every caller — so the table cannot depend on a component being mounted.
+ */
+observeShellPanels((panels) => {
+  useShellLayoutStore.getState().setPanelDescriptors(panels);
+});
+
+/**
+ * ...and owns dock selection in return, so a caller addressing a view by region
+ * through the registry reaches the same state the shell renders.
+ */
+hostViewRegistry.attachDockSelectionAuthority({
+  select: (region, viewId) => {
+    const store = useShellLayoutStore.getState();
+    if (!store.selectView(region, viewId)) return false;
+    // Selecting a view inside a collapsed region has to reveal it, or the
+    // command silently does nothing the user can see.
+    store.setRegionCollapsed(region, false);
+    return true;
+  },
+  getSelected: (region) =>
+    useShellLayoutStore.getState().resolved.regions[region].selectedViewId,
+  clearSelection: (region) => {
+    useShellLayoutStore.getState().closeRegion(region);
+  },
 });

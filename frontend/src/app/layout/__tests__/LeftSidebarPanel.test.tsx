@@ -6,6 +6,7 @@ const views = ["assets", "text", "composite"].map((id, order) => ({
   id: `host.${id}`,
   title: id[0].toUpperCase() + id.slice(1),
   defaultRegion: "left-sidebar" as const,
+  allowedRegions: ["left-sidebar"] as const,
   order,
   keepMounted: false,
   eager: false,

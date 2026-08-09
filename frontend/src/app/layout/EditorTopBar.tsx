@@ -1,7 +1,11 @@
 import { Box, IconButton } from "@mui/material";
 import StackedLineChartIcon from "@mui/icons-material/StackedLineChart";
 import { ProjectTitle } from "../../features/project";
-import { useViewRegion } from "../../core/shell/useViewRegion";
+import { useShellLayoutStore } from "../../core/shell/layout/useShellLayoutStore";
+import {
+  dismissShellView,
+  revealShellView,
+} from "../../core/shell/shellViewPlacement";
 import { ProjectSettingsMenu } from "./ProjectSettingsMenu";
 import { declareBottomDockHostViews } from "./bottomDockHostViews";
 
@@ -12,14 +16,16 @@ declareBottomDockHostViews();
 const SCOPES_VIEW_ID = "host.scopes";
 
 export function EditorTopBar() {
-  // Scopes are a view in the bottom dock now, so the toggle is a region
-  // selection rather than a store of its own — which is also what lets an
-  // extension's own dock view be opened the same way.
-  const { selectedViewId, selectView, closeRegion } = useViewRegion(
-    "bottom-dock",
-    { autoSelect: false },
-  );
-  const scopesOpen = selectedViewId === SCOPES_VIEW_ID;
+  // Scopes are a shell view rather than a store of their own, and a portable
+  // one: the toggle asks for the view by ID and lets the layout answer where it
+  // currently lives, so moving it to the sidebar does not break this control.
+  const scopesOpen = useShellLayoutStore((state) => {
+    const region = state.resolved.panelRegions[SCOPES_VIEW_ID];
+    return (
+      region !== undefined &&
+      state.resolved.regions[region].selectedViewId === SCOPES_VIEW_ID
+    );
+  });
   return (
     <>
       <ProjectTitle />
@@ -29,8 +35,8 @@ export function EditorTopBar() {
           aria-label="Toggle video scopes"
           color={scopesOpen ? "primary" : "default"}
           onClick={() => {
-            if (scopesOpen) closeRegion();
-            else selectView(SCOPES_VIEW_ID);
+            if (scopesOpen) dismissShellView(SCOPES_VIEW_ID);
+            else revealShellView(SCOPES_VIEW_ID);
           }}
         >
           <StackedLineChartIcon fontSize="small" />

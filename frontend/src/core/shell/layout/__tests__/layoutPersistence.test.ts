@@ -37,6 +37,7 @@ describe("createLocalShellLayoutPersistence", () => {
       panels: { "host.a": { visible: false } },
       regions: { "bottom-dock": { sizePx: 300 } },
       workspaceLayouts: {},
+      legacyPanelsMerged: true,
     });
   });
 

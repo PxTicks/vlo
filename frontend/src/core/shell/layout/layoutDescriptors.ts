@@ -6,6 +6,7 @@
  * extension views go through the same path: the kernel never learns which is
  * which beyond the `source` hint it needs for default selection.
  */
+import { hostContextKeys, type HostContextKeyService } from "../contextKeys";
 import {
   hostViewRegistry,
   type HostViewRegistry,
@@ -37,9 +38,9 @@ export function describeShellPanels(
       descriptors.push({
         id: entry.id,
         defaultRegion: region,
-        // Phase C teaches registration about portability. Until then every
-        // panel is fixed to the region it registered into.
-        allowedRegions: [region],
+        // Validated at registration, so the resolver can trust it: a panel is
+        // fixed to its registration region unless it opted into more.
+        allowedRegions: entry.allowedRegions,
         defaultOrder: entry.order,
         available: available.has(entry.id),
         source: entry.source,
@@ -47,6 +48,32 @@ export function describeShellPanels(
     }
   }
   return descriptors;
+}
+
+/**
+ * Keeps a panel table in step with the live shell without React in the loop.
+ *
+ * Placement is now resolved state, so a non-React caller — an extension
+ * activating, a feature revealing its panel, a component rendered outside the
+ * editor shell in a test — must see the same table the editor does. Pushing
+ * descriptors from a component effect would make that depend on what happens to
+ * be mounted.
+ */
+export function observeShellPanels(
+  onChange: (panels: readonly ShellPanelDescriptor[]) => void,
+  registry: HostViewRegistry = hostViewRegistry,
+  contextKeys: HostContextKeyService = hostContextKeys,
+): () => void {
+  const publish = (): void => {
+    onChange(describeShellPanels(registry));
+  };
+  const unsubscribeViews = registry.subscribe(publish);
+  const unsubscribeContext = contextKeys.subscribe(publish);
+  publish();
+  return () => {
+    unsubscribeViews();
+    unsubscribeContext();
+  };
 }
 
 export function arePanelDescriptorsEqual(

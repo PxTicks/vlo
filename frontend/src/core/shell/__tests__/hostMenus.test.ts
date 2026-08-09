@@ -38,6 +38,13 @@ describe("Wave 3 host menu subjects", () => {
       },
     ],
     [
+      "app.view.move",
+      {
+        slot: "app.view.move",
+        view: { id: "host.scopes", region: "bottom-dock" },
+      },
+    ],
+    [
       "library.sort.options",
       {
         slot: "library.sort.options",
@@ -77,6 +84,21 @@ describe("Wave 3 host menu subjects", () => {
     ],
   ] as const)("validates %s", (menuId, subject) => {
     expect(hostMenuCatalog.validateSubject(menuId, subject)).toBe(true);
+  });
+
+  it("rejects a move subject without a panel and a region", () => {
+    expect(
+      hostMenuCatalog.validateSubject("app.view.move", {
+        slot: "app.view.move",
+        view: { id: "host.scopes" },
+      }),
+    ).toBe(false);
+    expect(
+      hostMenuCatalog.validateSubject("app.view.move", {
+        slot: "app.view.select",
+        view: { id: "host.scopes", region: "bottom-dock" },
+      }),
+    ).toBe(false);
   });
 
   it("rejects an app.settings subject carrying project state", () => {

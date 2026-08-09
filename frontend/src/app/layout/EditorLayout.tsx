@@ -10,9 +10,25 @@ import {
 } from "../../core/shell/layout/layoutTypes";
 import { useShellLayoutRuntime } from "../../core/shell/layout/useShellLayoutRuntime";
 import { useShellLayoutStore } from "../../core/shell/layout/useShellLayoutStore";
+import { ShellPortableViewHost } from "../../core/shell/ShellPortableViewHost";
+import type { ShellViewEntry } from "../../core/shell/viewRegistry";
 import type { ProjectConfig } from "../../features/project";
 import { useRegionFocus, useEditorFocusStore } from "../../features/editorFocus";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { EditorRegion } from "./EditorRegion";
+
+/**
+ * A portable panel renders from the shell's stable host rather than from inside
+ * the region showing it, so it needs its own boundary: a crash must take down
+ * one panel, not the editor that hosts it.
+ */
+function wrapPortableView(view: ShellViewEntry, content: ReactNode) {
+  return (
+    <ErrorBoundary boundaryName={view.title} variant="panel">
+      {content}
+    </ErrorBoundary>
+  );
+}
 
 interface EditorLayoutProps {
   readonly layoutMode?: ProjectConfig["layoutMode"];
@@ -103,6 +119,10 @@ export function EditorLayout({
         overflow: "hidden",
       }}
     >
+      {/* Above the regions, so a panel keeps its subtree, its subscriptions,
+          and its rendering surface when the user moves it (plan §3.6). */}
+      <ShellPortableViewHost wrap={wrapPortableView} />
+
       <EditorRegion
         id="shell-region-left-sidebar"
         area="left"

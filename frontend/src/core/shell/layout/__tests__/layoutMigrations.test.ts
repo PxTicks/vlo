@@ -27,6 +27,7 @@ describe("version 1 migration", () => {
       },
       regions: {},
       workspaceLayouts: {},
+      legacyPanelsMerged: true,
     });
   });
 
@@ -58,6 +59,7 @@ describe("version 1 migration", () => {
       panels: {},
       regions: {},
       workspaceLayouts: {},
+      legacyPanelsMerged: true,
     });
     expect(
       migrateLegacyViewLayout({ version: 1, hidden: "nope", order: 12 }),
@@ -213,14 +215,43 @@ describe("version 2 validation", () => {
 });
 
 describe("selectShellLayoutDocument", () => {
-  it("prefers the current document over the legacy one", () => {
+  // A version 2 document written before panels lived here — Phase B only ever
+  // stored geometry — must not silently discard the version 1 preferences.
+  it("folds legacy panels under an unmerged current document", () => {
+    const document = selectShellLayoutDocument({
+      current: {
+        version: 2,
+        panels: { "host.a": { visible: false } },
+        regions: { "left-sidebar": { sizePx: 400 } },
+        workspaceLayouts: {},
+      },
+      legacy: {
+        version: 1,
+        hidden: ["host.a", "host.b"],
+        order: { "left-sidebar": ["host.b"] },
+      },
+    });
+
+    expect(document.panels).toEqual({
+      // The current document wins wherever both have an opinion.
+      "host.a": { visible: false },
+      "host.b": { visible: false, order: 0 },
+    });
+    expect(document.regions).toEqual({ "left-sidebar": { sizePx: 400 } });
+    expect(document.legacyPanelsMerged).toBe(true);
+  });
+
+  it("leaves an already-merged document alone", () => {
     const document = selectShellLayoutDocument({
       current: {
         version: 2,
         panels: { "host.a": { visible: false } },
         regions: {},
         workspaceLayouts: {},
+        legacyPanelsMerged: true,
       },
+      // The user has since re-shown this panel, so the legacy record must not
+      // hide it again on the next reload.
       legacy: { version: 1, hidden: ["host.b"], order: {} },
     });
 

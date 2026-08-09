@@ -15,8 +15,10 @@ export function EditorLeftSidebar() {
       sx={{
         display: "flex",
         minWidth: 0,
+        minHeight: 0,
         flexGrow: 1,
         height: "100%",
+        overflow: "hidden",
       }}
     >
       <LeftSidebarPanel
@@ -29,7 +31,9 @@ export function EditorLeftSidebar() {
           display: "flex",
           flexDirection: "column",
           minWidth: 0,
+          minHeight: 0,
           flexGrow: 1,
+          overflow: "hidden",
         }}
       >
         <ViewRegionMount

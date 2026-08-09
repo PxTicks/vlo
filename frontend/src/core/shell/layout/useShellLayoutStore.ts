@@ -15,11 +15,16 @@ import { arePanelDescriptorsEqual } from "./layoutDescriptors";
 import { resolveShellLayout } from "./layoutResolver";
 import {
   DOCK_REGION_CONSTRAINTS,
+  LOWER_STAGE_CONSTRAINTS,
+  RESPONSIVE_SIDEBAR_BREAKPOINT_PX,
   type DockRegion,
   type DockRegionConstraints,
   type PersistedPanelPlacement,
+  type PersistedRegionGeometry,
   type PersistedRegionState,
   type ResolvedShellLayout,
+  type ResizableShellRegion,
+  type ResponsiveSidebarRegion,
   type ShellLayoutDocumentV2,
   type ShellPanelDescriptor,
   type ShellViewport,
@@ -34,6 +39,7 @@ export interface ShellLayoutState {
   /** Live panel table, pushed in by the registry adapter. */
   readonly panels: readonly ShellPanelDescriptor[];
   readonly viewport: ShellViewport | null;
+  readonly responsiveExpandedRegion: ResponsiveSidebarRegion | null;
   readonly resolved: ResolvedShellLayout;
 
   setPanelDescriptors(panels: readonly ShellPanelDescriptor[]): void;
@@ -48,9 +54,11 @@ export interface ShellLayoutState {
   selectView(region: DockRegion, viewId: string): boolean;
   /** Drops a region's selection. Auto-selecting regions fall back immediately. */
   closeRegion(region: DockRegion): void;
-  setRegionCollapsed(region: DockRegion, collapsed: boolean): void;
-  resizeRegion(region: DockRegion, sizePx: number): void;
-  resetRegion(region: DockRegion): void;
+  setRegionCollapsed(region: ResizableShellRegion, collapsed: boolean): void;
+  resizeRegion(region: ResizableShellRegion, sizePx: number): void;
+  resetRegion(region: ResizableShellRegion): void;
+  /** Resets only retained size, preserving placement, visibility, and selection. */
+  resetRegionSize(region: ResizableShellRegion): void;
   resetLayout(): void;
   /** Writes any debounced resize immediately. */
   flushPersistence(): void;
@@ -99,6 +107,31 @@ function withRegionState(
   return { ...document, regions };
 }
 
+function withLowerStageState(
+  document: ShellLayoutDocumentV2,
+  state: PersistedRegionGeometry,
+): ShellLayoutDocumentV2 {
+  if (Object.keys(state).length === 0) {
+    const { lowerStage: _lowerStage, ...rest } = document;
+    return rest;
+  }
+  return { ...document, lowerStage: state };
+}
+
+function isResponsiveSidebar(
+  region: ResizableShellRegion,
+): region is ResponsiveSidebarRegion {
+  return region === "left-sidebar" || region === "right-sidebar";
+}
+
+function isNarrowViewport(viewport: ShellViewport | null): boolean {
+  return (
+    viewport !== null &&
+    viewport.widthPx > 0 &&
+    viewport.widthPx < RESPONSIVE_SIDEBAR_BREAKPOINT_PX
+  );
+}
+
 export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
   const persistence =
     options.persistence ?? createLocalShellLayoutPersistence();
@@ -113,8 +146,15 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
       document: ShellLayoutDocumentV2,
       panels: readonly ShellPanelDescriptor[],
       viewport: ShellViewport | null,
+      responsiveExpandedRegion: ResponsiveSidebarRegion | null,
     ): ResolvedShellLayout =>
-      resolveShellLayout({ panels, document, viewport, constraints });
+      resolveShellLayout({
+        panels,
+        document,
+        viewport,
+        constraints,
+        responsiveExpandedRegion,
+      });
 
     const cancelPendingWrite = (): void => {
       if (pendingWrite === null) return;
@@ -143,9 +183,19 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
     const commit = (
       document: ShellLayoutDocumentV2,
       persist: "now" | "debounced",
+      responsiveExpandedRegion = get().responsiveExpandedRegion,
     ): void => {
       const state = get();
-      set({ document, resolved: resolve(document, state.panels, state.viewport) });
+      set({
+        document,
+        responsiveExpandedRegion,
+        resolved: resolve(
+          document,
+          state.panels,
+          state.viewport,
+          responsiveExpandedRegion,
+        ),
+      });
       if (persist === "now") persistNow();
       else persistSoon();
     };
@@ -161,14 +211,20 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
       document: initialDocument,
       panels: initialPanels,
       viewport: initialViewport,
-      resolved: resolve(initialDocument, initialPanels, initialViewport),
+      responsiveExpandedRegion: null,
+      resolved: resolve(initialDocument, initialPanels, initialViewport, null),
 
       setPanelDescriptors: (panels) => {
         const state = get();
         if (arePanelDescriptorsEqual(state.panels, panels)) return;
         set({
           panels,
-          resolved: resolve(state.document, panels, state.viewport),
+          resolved: resolve(
+            state.document,
+            panels,
+            state.viewport,
+            state.responsiveExpandedRegion,
+          ),
         });
       },
 
@@ -180,9 +236,18 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         ) {
           return;
         }
+        const responsiveExpandedRegion = isNarrowViewport(viewport)
+          ? state.responsiveExpandedRegion
+          : null;
         set({
           viewport,
-          resolved: resolve(state.document, state.panels, viewport),
+          responsiveExpandedRegion,
+          resolved: resolve(
+            state.document,
+            state.panels,
+            viewport,
+            responsiveExpandedRegion,
+          ),
         });
       },
 
@@ -267,37 +332,82 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
       },
 
       setRegionCollapsed: (region, collapsed) => {
-        if (!constraints[region].collapsible) return;
         const state = get();
-        if (state.resolved.regions[region].collapsed === collapsed) return;
-        const next: DraftRegionState = { ...state.document.regions[region] };
+        if (isResponsiveSidebar(region) && isNarrowViewport(state.viewport)) {
+          const responsiveExpandedRegion = collapsed ? null : region;
+          if (
+            state.responsiveExpandedRegion === responsiveExpandedRegion &&
+            state.resolved.regions[region].collapsed === collapsed
+          ) {
+            return;
+          }
+          set({
+            responsiveExpandedRegion,
+            resolved: resolve(
+              state.document,
+              state.panels,
+              state.viewport,
+              responsiveExpandedRegion,
+            ),
+          });
+          return;
+        }
+        const regionConstraints =
+          region === "lower-stage" ? LOWER_STAGE_CONSTRAINTS : constraints[region];
+        if (!regionConstraints.collapsible) return;
+        const resolved =
+          region === "lower-stage"
+            ? state.resolved.lowerStage
+            : state.resolved.regions[region];
+        if (resolved.collapsed === collapsed) return;
+        const persisted =
+          region === "lower-stage"
+            ? state.document.lowerStage
+            : state.document.regions[region];
+        const next: DraftRegionState = { ...persisted };
         if (collapsed) next.collapsed = true;
         else delete next.collapsed;
-        commit(withRegionState(state.document, region, next), "now");
+        commit(
+          region === "lower-stage"
+            ? withLowerStageState(state.document, next)
+            : withRegionState(state.document, region, next),
+          "now",
+        );
       },
 
       resizeRegion: (region, sizePx) => {
         if (!Number.isFinite(sizePx) || sizePx <= 0) return;
         const state = get();
-        const resolved = state.resolved.regions[region];
+        const resolved =
+          region === "lower-stage"
+            ? state.resolved.lowerStage
+            : state.resolved.regions[region];
         // Clamp before storing: a drag past the edge must not persist a size
         // the region could never honour.
         const clamped = Math.min(
           Math.max(sizePx, resolved.minimumSizePx),
           resolved.maximumSizePx,
         );
-        if (state.document.regions[region]?.sizePx === clamped) return;
+        const persisted =
+          region === "lower-stage"
+            ? state.document.lowerStage
+            : state.document.regions[region];
+        if (persisted?.sizePx === clamped) return;
+        const next = { ...persisted, sizePx: clamped };
         commit(
-          withRegionState(state.document, region, {
-            ...state.document.regions[region],
-            sizePx: clamped,
-          }),
+          region === "lower-stage"
+            ? withLowerStageState(state.document, next)
+            : withRegionState(state.document, region, next),
           "debounced",
         );
       },
 
       resetRegion: (region) => {
         const state = get();
+        if (region === "lower-stage") {
+          commit(withLowerStageState(state.document, {}), "now");
+          return;
+        }
         const panels = { ...state.document.panels };
         for (const descriptor of state.panels) {
           if (
@@ -312,6 +422,21 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         commit({ ...state.document, panels, regions }, "now");
       },
 
+      resetRegionSize: (region) => {
+        const state = get();
+        if (region === "lower-stage") {
+          if (state.document.lowerStage?.sizePx === undefined) return;
+          const next = { ...state.document.lowerStage };
+          delete next.sizePx;
+          commit(withLowerStageState(state.document, next), "now");
+          return;
+        }
+        if (state.document.regions[region]?.sizePx === undefined) return;
+        const next: DraftRegionState = { ...state.document.regions[region] };
+        delete next.sizePx;
+        commit(withRegionState(state.document, region, next), "now");
+      },
+
       resetLayout: () => {
         const state = get();
         commit(
@@ -324,6 +449,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
             workspaceLayouts: state.document.workspaceLayouts,
           },
           "now",
+          null,
         );
       },
 
@@ -336,4 +462,17 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
 }
 
 /** Application-wide layout store. */
-export const useShellLayoutStore = createShellLayoutStore();
+function getInitialViewport(): ShellViewport | null {
+  const widthPx = globalThis.innerWidth;
+  const heightPx = globalThis.innerHeight;
+  return Number.isFinite(widthPx) &&
+    widthPx > 0 &&
+    Number.isFinite(heightPx) &&
+    heightPx > 0
+    ? { widthPx, heightPx }
+    : null;
+}
+
+export const useShellLayoutStore = createShellLayoutStore({
+  viewport: getInitialViewport(),
+});

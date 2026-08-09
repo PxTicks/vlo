@@ -10,11 +10,15 @@
 import {
   DOCK_REGIONS,
   DOCK_REGION_CONSTRAINTS,
+  LOWER_STAGE_CONSTRAINTS,
+  RESPONSIVE_SIDEBAR_BREAKPOINT_PX,
   type DockRegion,
   type DockRegionConstraints,
   type PersistedPanelPlacement,
   type ResolvedDockRegion,
+  type ResolvedLowerStage,
   type ResolvedShellLayout,
+  type ResponsiveSidebarRegion,
   type ShellLayoutDocumentV2,
   type ShellPanelDescriptor,
   type ShellViewport,
@@ -26,6 +30,14 @@ export interface ShellLayoutResolutionInput {
   /** Omitted or null skips viewport clamping (server render, tests, headless). */
   readonly viewport?: ShellViewport | null;
   readonly constraints?: Readonly<Record<DockRegion, DockRegionConstraints>>;
+  /** Session-only sidebar opened over a narrow viewport. */
+  readonly responsiveExpandedRegion?: ResponsiveSidebarRegion | null;
+}
+
+function isResponsiveSidebar(
+  region: DockRegion,
+): region is ResponsiveSidebarRegion {
+  return region === "left-sidebar" || region === "right-sidebar";
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -183,6 +195,22 @@ function resolveSize(
   return { sizePx, userSizePx, minimumSizePx, maximumSizePx };
 }
 
+function resolveLowerStage(
+  document: ShellLayoutDocumentV2,
+  viewport: ShellViewport | null | undefined,
+): ResolvedLowerStage {
+  return Object.freeze({
+    id: "lower-stage",
+    collapsed: document.lowerStage?.collapsed === true,
+    ...resolveSize(
+      LOWER_STAGE_CONSTRAINTS,
+      document.lowerStage?.sizePx,
+      undefined,
+      viewport,
+    ),
+  });
+}
+
 export function resolveShellLayout(
   input: ShellLayoutResolutionInput,
 ): ResolvedShellLayout {
@@ -241,14 +269,26 @@ export function resolveShellLayout(
       byId,
       regionConstraints.autoSelect,
     );
+    const userCollapsed =
+      regionConstraints.collapsible && regionState?.collapsed === true;
+    const responsiveCollapsed =
+      regionConstraints.collapsible &&
+      isResponsiveSidebar(regionId) &&
+      input.viewport !== null &&
+      input.viewport !== undefined &&
+      Number.isFinite(input.viewport.widthPx) &&
+      input.viewport.widthPx > 0 &&
+      input.viewport.widthPx < RESPONSIVE_SIDEBAR_BREAKPOINT_PX;
 
     regions[regionId] = Object.freeze({
       id: regionId,
       orderedViewIds: Object.freeze(orderedViewIds),
       placedViewIds: Object.freeze(placedViewIds),
       selectedViewId,
-      collapsed:
-        regionConstraints.collapsible && regionState?.collapsed === true,
+      userCollapsed,
+      collapsed: responsiveCollapsed
+        ? input.responsiveExpandedRegion !== regionId
+        : userCollapsed,
       ...resolveSize(
         regionConstraints,
         regionState?.sizePx,
@@ -260,6 +300,7 @@ export function resolveShellLayout(
 
   return Object.freeze({
     regions: Object.freeze(regions),
+    lowerStage: resolveLowerStage(input.document, input.viewport),
     panelRegions: Object.freeze(panelRegions),
   });
 }

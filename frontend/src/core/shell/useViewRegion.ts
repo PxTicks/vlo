@@ -1,5 +1,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { hostContextKeys } from "./contextKeys";
+import { isDockRegion } from "./layout/layoutTypes";
+import { useShellLayoutStore } from "./layout/useShellLayoutStore";
 import {
   hostViewRegistry,
   type HostViewRegion,
@@ -52,7 +54,13 @@ export function useViewRegion(
       ? views.find((view) => view.source === "host")?.id ?? views[0]?.id ?? null
       : null);
   const selectView = useCallback(
-    (viewId: string) => hostViewRegistry.select(region, viewId),
+    (viewId: string) => {
+      const selected = hostViewRegistry.select(region, viewId);
+      if (selected && isDockRegion(region)) {
+        useShellLayoutStore.getState().setRegionCollapsed(region, false);
+      }
+      return selected;
+    },
     [region],
   );
   const closeRegion = useCallback(

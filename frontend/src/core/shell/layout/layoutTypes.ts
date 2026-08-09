@@ -34,6 +34,14 @@ export const EDITOR_STAGES = ["main-stage", "lower-stage"] as const;
 
 export type EditorStage = (typeof EDITOR_STAGES)[number];
 
+/** Regions whose outer boundary can be resized by the shell. */
+export type ResizableShellRegion = DockRegion | "lower-stage";
+
+export type ResponsiveSidebarRegion = "left-sidebar" | "right-sidebar";
+
+export const RESPONSIVE_SIDEBAR_BREAKPOINT_PX = 900;
+export const COLLAPSED_REGION_SIZE_PX = 32;
+
 export function isDockRegion(value: unknown): value is DockRegion {
   return DOCK_REGIONS.includes(value as DockRegion);
 }
@@ -60,6 +68,20 @@ export interface DockRegionConstraints {
    */
   readonly maximumViewportFraction: number;
 }
+
+/**
+ * The lower stage is structural rather than a dock, but its boundary follows
+ * the same sizing rules. Surface selection remains a Phase D concern.
+ */
+export const LOWER_STAGE_CONSTRAINTS: DockRegionConstraints = Object.freeze({
+  axis: "height",
+  defaultSizePx: 280,
+  minimumSizePx: 160,
+  maximumSizePx: 720,
+  autoSelect: false,
+  collapsible: true,
+  maximumViewportFraction: 0.65,
+});
 
 /**
  * Defaults match the geometry EditorLayout, PlayerAsidePanel, and
@@ -102,7 +124,7 @@ export const DOCK_REGION_CONSTRAINTS: Readonly<
     maximumSizePx: 720,
     autoSelect: false,
     collapsible: true,
-    // Mirrors the dock's current `maxHeight: 60%`.
+    // Retains the dock's previous 60% viewport cap.
     maximumViewportFraction: 0.6,
   }),
 } satisfies Record<DockRegion, DockRegionConstraints>);
@@ -151,18 +173,33 @@ export interface ResolvedDockRegion {
    */
   readonly placedViewIds: readonly string[];
   readonly selectedViewId: string | null;
+  /** Persisted collapse intent before responsive adaptation. */
+  readonly userCollapsed: boolean;
+  /** Effective collapse state rendered by the shell. */
   readonly collapsed: boolean;
   /** Effective size after viewport clamping. What the shell should render. */
   readonly sizePx: number;
   /** The user's preference before viewport clamping. What gets persisted. */
   readonly userSizePx: number;
-  /** Effective bounds for this region right now, for separator semantics. */
+  /** User-resize bounds; responsive output may render below the minimum. */
+  readonly minimumSizePx: number;
+  readonly maximumSizePx: number;
+}
+
+export interface ResolvedLowerStage {
+  readonly id: "lower-stage";
+  readonly collapsed: boolean;
+  /** Effective size after viewport clamping. What the shell should render. */
+  readonly sizePx: number;
+  /** The user's preference before viewport clamping. What gets persisted. */
+  readonly userSizePx: number;
   readonly minimumSizePx: number;
   readonly maximumSizePx: number;
 }
 
 export interface ResolvedShellLayout {
   readonly regions: Readonly<Record<DockRegion, ResolvedDockRegion>>;
+  readonly lowerStage: ResolvedLowerStage;
   /** Effective region of every known panel, keyed by view ID. */
   readonly panelRegions: Readonly<Record<string, DockRegion>>;
 }
@@ -190,6 +227,11 @@ export interface PersistedRegionState {
   readonly sizePx?: number;
 }
 
+export type PersistedRegionGeometry = Pick<
+  PersistedRegionState,
+  "collapsed" | "sizePx"
+>;
+
 /** A dedicated workspace's saved layout override. Consumed from Phase E. */
 export interface WorkspaceLayoutOverride {
   readonly panels: Readonly<Record<string, PersistedPanelPlacement>>;
@@ -200,6 +242,8 @@ export interface ShellLayoutDocumentV2 {
   readonly version: 2;
   readonly panels: Readonly<Record<string, PersistedPanelPlacement>>;
   readonly regions: Readonly<Partial<Record<DockRegion, PersistedRegionState>>>;
+  /** Geometry only; surface selection is introduced with Phase D. */
+  readonly lowerStage?: PersistedRegionGeometry;
   readonly workspaceLayouts: Readonly<Record<string, WorkspaceLayoutOverride>>;
 }
 

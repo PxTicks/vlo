@@ -71,6 +71,31 @@ describe("version 1 migration", () => {
 });
 
 describe("version 2 validation", () => {
+  it("validates lower-stage geometry", () => {
+    const parsed = parseShellLayoutDocument({
+      version: 2,
+      panels: {},
+      regions: {},
+      lowerStage: {
+        selectedViewId: "host.timeline",
+        collapsed: true,
+        sizePx: 420,
+      },
+      workspaceLayouts: {},
+    });
+    expect(parsed?.lowerStage).toEqual({ collapsed: true, sizePx: 420 });
+
+    expect(
+      parseShellLayoutDocument({
+        version: 2,
+        panels: {},
+        regions: {},
+        lowerStage: { collapsed: "yes", sizePx: Number.NaN },
+        workspaceLayouts: {},
+      }),
+    ).not.toHaveProperty("lowerStage");
+  });
+
   it("keeps every valid field", () => {
     const parsed = parseShellLayoutDocument({
       version: 2,

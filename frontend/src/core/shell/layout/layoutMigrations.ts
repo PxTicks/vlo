@@ -9,6 +9,7 @@ import {
   isDockRegion,
   type DockRegion,
   type PersistedPanelPlacement,
+  type PersistedRegionGeometry,
   type PersistedRegionState,
   type ShellLayoutDocumentV2,
   type WorkspaceLayoutOverride,
@@ -99,6 +100,15 @@ function readRegionState(value: unknown): PersistedRegionState | null {
     state.sizePx = value.sizePx;
   }
   return Object.keys(state).length === 0 ? null : state;
+}
+
+function readRegionGeometry(value: unknown): PersistedRegionGeometry | null {
+  const state = readRegionState(value);
+  if (state === null) return null;
+  const geometry: { collapsed?: boolean; sizePx?: number } = {};
+  if (state.collapsed !== undefined) geometry.collapsed = state.collapsed;
+  if (state.sizePx !== undefined) geometry.sizePx = state.sizePx;
+  return Object.keys(geometry).length === 0 ? null : geometry;
 }
 
 function readRegions(
@@ -193,10 +203,12 @@ export function parseShellLayoutDocument(
   if (!isPlainObject(raw)) return null;
   if (raw.version === 1) return migrateLegacyViewLayout(raw);
   if (raw.version !== 2) return null;
+  const lowerStage = readRegionGeometry(raw.lowerStage);
   return {
     version: 2,
     panels: readPanels(raw.panels),
     regions: readRegions(raw.regions),
+    ...(lowerStage === null ? {} : { lowerStage }),
     workspaceLayouts: readWorkspaceLayouts(raw.workspaceLayouts),
   };
 }

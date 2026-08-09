@@ -1,12 +1,18 @@
 import type { ReactNode } from "react";
 import { Box } from "@mui/material";
+import { useShallow } from "zustand/react/shallow";
+import { RegionCollapseButton } from "../../core/shell/components/RegionCollapseButton";
+import { RegionSeparator } from "../../core/shell/components/RegionSeparator";
+import {
+  COLLAPSED_REGION_SIZE_PX,
+  RESPONSIVE_SIDEBAR_BREAKPOINT_PX,
+  type ResponsiveSidebarRegion,
+} from "../../core/shell/layout/layoutTypes";
+import { useShellLayoutRuntime } from "../../core/shell/layout/useShellLayoutRuntime";
+import { useShellLayoutStore } from "../../core/shell/layout/useShellLayoutStore";
 import type { ProjectConfig } from "../../features/project";
 import { useRegionFocus, useEditorFocusStore } from "../../features/editorFocus";
 import { EditorRegion } from "./EditorRegion";
-
-const LEFT_PANEL_WIDTH = 356;
-const RIGHT_SIDEBAR_WIDTH = 340;
-const TIMELINE_HEIGHT = 280;
 
 interface EditorLayoutProps {
   readonly layoutMode?: ProjectConfig["layoutMode"];
@@ -33,10 +39,42 @@ export function EditorLayout({
   rightSidebar,
   timeline,
 }: EditorLayoutProps) {
+  useShellLayoutRuntime();
+  const geometry = useShellLayoutStore(
+    useShallow((state) => ({
+      left: state.resolved.regions["left-sidebar"],
+      right: state.resolved.regions["right-sidebar"],
+      lower: state.resolved.lowerStage,
+      viewportWidthPx: state.viewport?.widthPx ?? null,
+      setRegionCollapsed: state.setRegionCollapsed,
+    })),
+  );
   const timelineFocusProps = useRegionFocus("timeline");
   const clearRegion = useEditorFocusStore((state) => state.setRegion);
-  const gridTemplateColumns = `${LEFT_PANEL_WIDTH}px 1fr ${RIGHT_SIDEBAR_WIDTH}px`;
-  const gridTemplateRows = `48px 1fr ${TIMELINE_HEIGHT}px`;
+  const leftWidthPx = geometry.left.collapsed
+    ? COLLAPSED_REGION_SIZE_PX
+    : geometry.left.sizePx;
+  const rightWidthPx = geometry.right.collapsed
+    ? COLLAPSED_REGION_SIZE_PX
+    : geometry.right.sizePx;
+  const lowerHeightPx = geometry.lower.collapsed
+    ? COLLAPSED_REGION_SIZE_PX
+    : geometry.lower.sizePx;
+  const useResponsiveOverlays =
+    geometry.viewportWidthPx !== null &&
+    geometry.viewportWidthPx < RESPONSIVE_SIDEBAR_BREAKPOINT_PX;
+  const responsiveOpenRegion: ResponsiveSidebarRegion | null =
+    !useResponsiveOverlays
+      ? null
+      : !geometry.left.collapsed
+        ? "left-sidebar"
+        : !geometry.right.collapsed
+          ? "right-sidebar"
+          : null;
+  const gridTemplateColumns = useResponsiveOverlays
+    ? "0px minmax(0, 1fr) 0px"
+    : `${leftWidthPx}px minmax(0, 1fr) ${rightWidthPx}px`;
+  const gridTemplateRows = `48px minmax(0, 1fr) ${lowerHeightPx}px`;
   const gridAreas =
     layoutMode === "full-height"
       ? `
@@ -60,11 +98,13 @@ export function EditorLayout({
         gridTemplateAreas: gridAreas,
         height: "100vh",
         width: "100vw",
+        position: "relative",
         bgcolor: "#121212",
         overflow: "hidden",
       }}
     >
       <EditorRegion
+        id="shell-region-left-sidebar"
         area="left"
         blocked={nonTimelineRegionsLocked}
         overlayTestId="editor-lock-left"
@@ -75,10 +115,63 @@ export function EditorLayout({
           flexDirection: "column",
           zIndex: 20,
           overflow: "hidden",
+          ...(useResponsiveOverlays
+            ? {
+                position: "absolute",
+                gridArea: "auto",
+                inset: `0 auto ${layoutMode === "compact" ? lowerHeightPx : 0}px 0`,
+                width: leftWidthPx,
+                boxShadow: "8px 0 20px rgba(0, 0, 0, 0.28)",
+              }
+            : {}),
         }}
       >
-        {leftSidebar}
+        <Box
+          data-testid="shell-region-left-sidebar-content"
+          aria-hidden={geometry.left.collapsed}
+          sx={{
+            display: "flex",
+            flexGrow: 1,
+            minWidth: 0,
+            minHeight: 0,
+            height: "100%",
+            overflow: "hidden",
+            visibility: geometry.left.collapsed ? "hidden" : "visible",
+          }}
+        >
+          {leftSidebar}
+        </Box>
+        {geometry.left.collapsed ? (
+          <Box sx={{ position: "absolute", right: 2, bottom: 2, zIndex: 30 }}>
+            <RegionCollapseButton
+              region="left-sidebar"
+              label="Left sidebar"
+            />
+          </Box>
+        ) : null}
+        <RegionSeparator
+          region="left-sidebar"
+          label="Left sidebar"
+          edge="right"
+          controls="shell-region-left-sidebar"
+        />
       </EditorRegion>
+
+      {responsiveOpenRegion !== null ? (
+        <Box
+          data-testid="responsive-layout-scrim"
+          aria-hidden="true"
+          onClick={() =>
+            geometry.setRegionCollapsed(responsiveOpenRegion, true)
+          }
+          sx={{
+            position: "absolute",
+            inset: `0 0 ${layoutMode === "compact" ? lowerHeightPx : 0}px`,
+            zIndex: 15,
+            bgcolor: "rgba(0, 0, 0, 0.38)",
+          }}
+        />
+      ) : null}
 
       <EditorRegion
         area="top"
@@ -130,6 +223,7 @@ export function EditorLayout({
       </EditorRegion>
 
       <EditorRegion
+        id="shell-region-right-sidebar"
         area="right"
         focusRegion="inspector"
         blocked={nonTimelineRegionsLocked}
@@ -141,13 +235,50 @@ export function EditorLayout({
           display: "flex",
           flexDirection: "column",
           zIndex: 20,
+          ...(useResponsiveOverlays
+            ? {
+                position: "absolute",
+                gridArea: "auto",
+                inset: `0 0 ${layoutMode === "compact" ? lowerHeightPx : 0}px auto`,
+                width: rightWidthPx,
+                boxShadow: "-8px 0 20px rgba(0, 0, 0, 0.28)",
+              }
+            : {}),
         }}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        {rightSidebar}
+        <Box
+          data-testid="shell-region-right-sidebar-content"
+          aria-hidden={geometry.right.collapsed}
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            flexGrow: 1,
+            minHeight: 0,
+            overflow: "hidden",
+            visibility: geometry.right.collapsed ? "hidden" : "visible",
+          }}
+        >
+          {rightSidebar}
+        </Box>
+        {geometry.right.collapsed ? (
+          <Box sx={{ position: "absolute", left: 2, bottom: 2, zIndex: 30 }}>
+            <RegionCollapseButton
+              region="right-sidebar"
+              label="Right sidebar"
+            />
+          </Box>
+        ) : null}
+        <RegionSeparator
+          region="right-sidebar"
+          label="Right sidebar"
+          edge="left"
+          controls="shell-region-right-sidebar"
+        />
       </EditorRegion>
 
       <Box
+        id="shell-region-lower-stage"
         {...timelineFocusProps}
         sx={{
           gridArea: "bottom",
@@ -157,9 +288,33 @@ export function EditorLayout({
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
+          position: "relative",
         }}
       >
-        {timeline}
+        <Box
+          aria-hidden={geometry.lower.collapsed}
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            flexGrow: 1,
+            minHeight: 0,
+            visibility: geometry.lower.collapsed ? "hidden" : "visible",
+          }}
+        >
+          {timeline}
+        </Box>
+        <Box sx={{ position: "absolute", right: 4, top: 1, zIndex: 30 }}>
+          <RegionCollapseButton
+            region="lower-stage"
+            label="Timeline"
+          />
+        </Box>
+        <RegionSeparator
+          region="lower-stage"
+          label="Timeline"
+          edge="top"
+          controls="shell-region-lower-stage"
+        />
       </Box>
     </Box>
   );

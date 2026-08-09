@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { useShellLayoutStore } from "../layout/useShellLayoutStore";
 import { ViewLayoutButton } from "../ViewLayoutButton";
-import { hostViewRegistry } from "../viewRegistry";
+import { hostViewRegistry, type HostViewRegion } from "../viewRegistry";
 import type { ShellDisposable } from "../hostMenuCatalog";
 
 const REGION = "projects-page.main";
@@ -9,11 +10,11 @@ const REGION = "projects-page.main";
 describe("ViewLayoutButton", () => {
   const registrations: ShellDisposable[] = [];
 
-  function registerView(id: string) {
+  function registerView(id: string, region: HostViewRegion = REGION) {
     registrations.push(
       hostViewRegistry.registerHostView({
         id,
-        defaultRegion: REGION,
+        defaultRegion: region,
         title: id,
         component: () => <div>{id}</div>,
       }),
@@ -22,6 +23,7 @@ describe("ViewLayoutButton", () => {
 
   afterEach(() => {
     while (registrations.length) registrations.pop()?.dispose();
+    useShellLayoutStore.getState().resetLayout();
   });
 
   // Hiding the only view would empty the region and take the control that
@@ -44,6 +46,26 @@ describe("ViewLayoutButton", () => {
 
     expect(
       screen.getByRole("button", { name: "Manage panels" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps geometry controls reachable for a single-view dock", () => {
+    registerView("host.aside-only", "player-aside");
+    render(<ViewLayoutButton region="player-aside" allowSingleView />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage panels" }));
+    expect(
+      screen.getByRole("checkbox", { name: "Show host.aside-only" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse region" }));
+    expect(
+      useShellLayoutStore.getState().resolved.regions["player-aside"].collapsed,
+    ).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Reset region" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Reset all regions" }),
     ).toBeInTheDocument();
   });
 });

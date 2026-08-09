@@ -46,6 +46,7 @@ function ViewMount({ entry, region, active, layout, tabId }: ViewMountProps) {
               display: active ? "flex" : "none",
               flexDirection: "column",
               minWidth: 0,
+              minHeight: 0,
               flexGrow: 1,
               overflow: "hidden",
             }

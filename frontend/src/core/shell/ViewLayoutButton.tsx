@@ -16,23 +16,36 @@ import {
   Tooltip,
 } from "@mui/material";
 import { useViewRegion } from "./useViewRegion";
-import type { HostViewRegion } from "./viewRegistry";
+import { DOCK_REGIONS, isDockRegion } from "./layout/layoutTypes";
+import { useShellLayoutStore } from "./layout/useShellLayoutStore";
+import { hostViewRegistry, type HostViewRegion } from "./viewRegistry";
 
 export interface ViewLayoutButtonProps {
   readonly region: HostViewRegion;
   readonly edge?: "left" | "right";
+  /** Keep region geometry controls reachable when only one panel is present. */
+  readonly allowSingleView?: boolean;
 }
 
 /** User-owned visibility and ordering controls for one shell region. */
-export function ViewLayoutButton({ region, edge }: ViewLayoutButtonProps) {
+export function ViewLayoutButton({
+  region,
+  edge,
+  allowSingleView = false,
+}: ViewLayoutButtonProps) {
   const [open, setOpen] = useState(false);
   const { allViews, isViewVisible, setViewVisible, moveView, resetLayout } =
     useViewRegion(region);
+  const resetShellRegion = useShellLayoutStore((state) => state.resetRegion);
+  const resetShellLayout = useShellLayoutStore((state) => state.resetLayout);
+  const setRegionCollapsed = useShellLayoutStore(
+    (state) => state.setRegionCollapsed,
+  );
 
   // A single-view region has nothing to order and nothing safe to hide —
   // hiding the only view would empty the region with no control left to
   // restore it. Extensions contributing a view bring the control back.
-  if (allViews.length <= 1) return null;
+  if (allViews.length <= 1 && !allowSingleView) return null;
 
   return (
     <>
@@ -87,6 +100,7 @@ export function ViewLayoutButton({ region, edge }: ViewLayoutButtonProps) {
                 <Checkbox
                   edge="start"
                   checked={isViewVisible(view.id)}
+                  disabled={allViews.length === 1}
                   onChange={(_, checked) => setViewVisible(view.id, checked)}
                   inputProps={{ "aria-label": `Show ${view.title}` }}
                 />
@@ -101,7 +115,31 @@ export function ViewLayoutButton({ region, edge }: ViewLayoutButtonProps) {
           </List>
         </DialogContent>
         <DialogActions>
-          <Button onClick={resetLayout}>Reset</Button>
+          {isDockRegion(region) ? (
+            <Button onClick={() => setRegionCollapsed(region, true)}>
+              Collapse region
+            </Button>
+          ) : null}
+          <Button
+            onClick={() => {
+              resetLayout();
+              if (isDockRegion(region)) resetShellRegion(region);
+            }}
+          >
+            Reset region
+          </Button>
+          {isDockRegion(region) ? (
+            <Button
+              onClick={() => {
+                for (const dockRegion of DOCK_REGIONS) {
+                  hostViewRegistry.resetRegion(dockRegion);
+                }
+                resetShellLayout();
+              }}
+            >
+              Reset all regions
+            </Button>
+          ) : null}
           <Button onClick={() => setOpen(false)}>Done</Button>
         </DialogActions>
       </Dialog>

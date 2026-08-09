@@ -128,6 +128,7 @@ export function LibraryBrowserGrid<TItem>({
       onClick={onBackgroundClick}
       sx={{
         flexGrow: 1,
+        minHeight: 0,
         overflowY: isScrollLocked ? "hidden" : "auto",
         overscrollBehaviorY: isScrollLocked ? "none" : "auto",
         scrollbarGutter: "stable",

@@ -2,6 +2,7 @@ import { memo } from "react";
 import { Box, Tab, Tabs, Tooltip } from "@mui/material";
 import ExtensionIcon from "@mui/icons-material/Extension";
 import type { ShellViewEntry } from "../../core/shell/viewRegistry";
+import { RegionCollapseButton } from "../../core/shell/components/RegionCollapseButton";
 import { ViewLayoutButton } from "../../core/shell/ViewLayoutButton";
 
 const TAB_SX = {
@@ -79,7 +80,11 @@ function LeftSidebarPanelComponent({
           />
         ))}
       </Tabs>
-      <ViewLayoutButton region="left-sidebar" />
+      <ViewLayoutButton region="left-sidebar" allowSingleView />
+      <RegionCollapseButton
+        region="left-sidebar"
+        label="Left sidebar"
+      />
     </Box>
   );
 }

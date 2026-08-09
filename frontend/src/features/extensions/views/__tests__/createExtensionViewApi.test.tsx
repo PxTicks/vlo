@@ -45,6 +45,9 @@ describe("createExtensionViewApi", () => {
         "example.views/dashboard:projects-page.main:true",
       ),
     ).toBeInTheDocument();
+    expect(
+      globalThis.getComputedStyle(screen.getByRole("tabpanel")),
+    ).toMatchObject({ minHeight: "0", overflow: "hidden" });
 
     registration.dispose();
     expect(registry.get("example.views/dashboard")).toBeUndefined();

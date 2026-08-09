@@ -43,6 +43,27 @@ function region(
   return resolveShellLayout({ panels, document: doc }).regions[id];
 }
 
+describe("lower-stage geometry", () => {
+  it("clamps the effective height without overwriting desktop intent", () => {
+    const resolved = resolveShellLayout({
+      panels: [],
+      document: document({
+        lowerStage: { collapsed: true, sizePx: 600 },
+      }),
+      viewport: { widthPx: 1200, heightPx: 400 },
+    });
+
+    expect(resolved.lowerStage).toMatchObject({
+      id: "lower-stage",
+      collapsed: true,
+      sizePx: 260,
+      userSizePx: 600,
+      minimumSizePx: 160,
+      maximumSizePx: 720,
+    });
+  });
+});
+
 describe("placement", () => {
   it("places panels in their registered region by default", () => {
     const resolved = resolveShellLayout({
@@ -310,6 +331,35 @@ describe("collapse", () => {
     });
 
     expect(resolved.regions["left-sidebar"].collapsed).toBe(false);
+  });
+
+  it("derives narrow collapse separately from persisted intent", () => {
+    const input = {
+      panels: [
+        panel("host.a"),
+        panel("host.b", { defaultRegion: "right-sidebar" }),
+      ],
+      document: document(),
+      viewport: { widthPx: 600, heightPx: 700 },
+    } as const;
+
+    const collapsed = resolveShellLayout(input);
+    expect(collapsed.regions["left-sidebar"]).toMatchObject({
+      collapsed: true,
+      userCollapsed: false,
+    });
+    expect(collapsed.regions["right-sidebar"]).toMatchObject({
+      collapsed: true,
+      userCollapsed: false,
+    });
+
+    const leftOpen = resolveShellLayout({
+      ...input,
+      responsiveExpandedRegion: "left-sidebar",
+    });
+    expect(leftOpen.regions["left-sidebar"].collapsed).toBe(false);
+    expect(leftOpen.regions["right-sidebar"].collapsed).toBe(true);
+    expect(leftOpen.regions["left-sidebar"].userCollapsed).toBe(false);
   });
 });
 

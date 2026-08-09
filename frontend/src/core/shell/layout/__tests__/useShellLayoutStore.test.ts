@@ -45,6 +45,31 @@ function createStore(document?: ShellLayoutDocumentV2) {
   return { store, persistence };
 }
 
+describe("lower-stage actions", () => {
+  it("resizes, collapses, and resets the lower stage atomically", () => {
+    const { store, persistence } = createStore();
+
+    store.getState().resizeRegion("lower-stage", 420);
+    store.getState().setRegionCollapsed("lower-stage", true);
+    expect(store.getState().resolved.lowerStage).toMatchObject({
+      collapsed: true,
+      sizePx: 420,
+      userSizePx: 420,
+    });
+    expect(persistence.current.lowerStage).toEqual({
+      sizePx: 420,
+      collapsed: true,
+    });
+
+    store.getState().resetRegion("lower-stage");
+    expect(store.getState().document.lowerStage).toBeUndefined();
+    expect(store.getState().resolved.lowerStage).toMatchObject({
+      collapsed: false,
+      sizePx: 280,
+    });
+  });
+});
+
 describe("initial state", () => {
   it("resolves the persisted document against the registered panels", () => {
     const { store } = createStore({
@@ -241,6 +266,62 @@ describe("collapse and resize", () => {
     expect(store.getState().document.regions["left-sidebar"]).toBeUndefined();
   });
 
+  it("keeps narrow sidebar expansion transient and mutually exclusive", () => {
+    const { store, persistence } = createStore();
+    store.getState().setViewport({ widthPx: 600, heightPx: 700 });
+
+    expect(store.getState().resolved.regions["left-sidebar"]).toMatchObject({
+      collapsed: true,
+      userCollapsed: false,
+    });
+    expect(store.getState().resolved.regions["right-sidebar"]).toMatchObject({
+      collapsed: true,
+      userCollapsed: false,
+    });
+
+    store.getState().setRegionCollapsed("left-sidebar", false);
+    expect(store.getState().responsiveExpandedRegion).toBe("left-sidebar");
+    expect(store.getState().resolved.regions["left-sidebar"].collapsed).toBe(
+      false,
+    );
+    expect(store.getState().resolved.regions["right-sidebar"].collapsed).toBe(
+      true,
+    );
+
+    store.getState().setRegionCollapsed("right-sidebar", false);
+    expect(store.getState().responsiveExpandedRegion).toBe("right-sidebar");
+    expect(store.getState().resolved.regions["left-sidebar"].collapsed).toBe(
+      true,
+    );
+    expect(store.getState().resolved.regions["right-sidebar"].collapsed).toBe(
+      false,
+    );
+    expect(store.getState().document.regions).toEqual({});
+    expect(persistence.writeCount).toBe(0);
+  });
+
+  it("restores desktop collapse intent after a responsive session", () => {
+    const { store, persistence } = createStore();
+    store.getState().setRegionCollapsed("left-sidebar", true);
+    expect(persistence.writeCount).toBe(1);
+
+    store.getState().setViewport({ widthPx: 600, heightPx: 700 });
+    store.getState().setRegionCollapsed("left-sidebar", false);
+    expect(store.getState().resolved.regions["left-sidebar"].collapsed).toBe(
+      false,
+    );
+    expect(persistence.writeCount).toBe(1);
+
+    store.getState().setViewport({ widthPx: 1200, heightPx: 700 });
+    expect(store.getState().resolved.regions["left-sidebar"]).toMatchObject({
+      collapsed: true,
+      userCollapsed: true,
+    });
+    expect(store.getState().document.regions["left-sidebar"]?.collapsed).toBe(
+      true,
+    );
+  });
+
   it("clamps a resize to the region bounds and reports it immediately", () => {
     const { store } = createStore();
 
@@ -288,6 +369,34 @@ describe("collapse and resize", () => {
 });
 
 describe("reset actions", () => {
+  it("resets size without touching panel or region intent", () => {
+    const document: ShellLayoutDocumentV2 = {
+      version: 2,
+      panels: {
+        "host.a": { visible: false, order: 2 },
+        "example.a/tool": { region: "right-sidebar" },
+      },
+      regions: {
+        "left-sidebar": {
+          selectedViewId: "host.b",
+          collapsed: true,
+          sizePx: 300,
+        },
+      },
+      workspaceLayouts: {},
+    };
+    const { store, persistence } = createStore(document);
+
+    store.getState().resetRegionSize("left-sidebar");
+
+    expect(store.getState().document.panels).toEqual(document.panels);
+    expect(store.getState().document.regions["left-sidebar"]).toEqual({
+      selectedViewId: "host.b",
+      collapsed: true,
+    });
+    expect(persistence.current.panels).toEqual(document.panels);
+  });
+
   it("resets one region without disturbing the others", () => {
     const { store } = createStore();
     store.getState().setPanelVisible("host.a", false);
@@ -355,6 +464,7 @@ describe("transactions", () => {
           panels: state.panels,
           document: state.document,
           viewport: state.viewport,
+          responsiveExpandedRegion: state.responsiveExpandedRegion,
         }),
       );
     });

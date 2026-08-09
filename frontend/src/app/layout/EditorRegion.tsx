@@ -16,6 +16,7 @@ type SxArray = Extract<SxValue, readonly unknown[]>;
 type SxArrayItem = SxArray[number];
 
 interface EditorRegionProps {
+  readonly id?: string;
   readonly area: string;
   readonly blocked: boolean;
   readonly children: ReactNode;
@@ -43,6 +44,7 @@ function toSxArray(sx?: SxProps<Theme>): SxArrayItem[] {
 }
 
 export function EditorRegion({
+  id,
   area,
   blocked,
   children,
@@ -55,6 +57,7 @@ export function EditorRegion({
   const focusProps = useRegionFocus(focusRegion ?? "canvas");
   return (
     <Box
+      id={id}
       sx={[
         {
           gridArea: area,

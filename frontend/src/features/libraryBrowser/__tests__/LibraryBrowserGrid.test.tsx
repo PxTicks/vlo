@@ -50,6 +50,16 @@ describe("LibraryBrowserGrid", () => {
     ).not.toBeNull();
   });
 
+  it("stays shrinkable so overflowing items scroll inside a flex panel", () => {
+    renderGrid({ items: makeItems(4) });
+
+    expect(
+      globalThis.getComputedStyle(
+        screen.getByTestId("library-browser-scroll-region"),
+      ),
+    ).toMatchObject({ minHeight: "0", overflowY: "auto" });
+  });
+
   it("pads the final row with a filler when the item count is odd", () => {
     renderGrid({ items: makeItems(3) });
 

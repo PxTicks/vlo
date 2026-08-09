@@ -939,6 +939,8 @@ function AssetBrowserComponent() {
         display: "flex",
         flexDirection: "column",
         height: "100%",
+        minHeight: 0,
+        overflow: "hidden",
         position: "relative",
       }}
       onDragEnter={handleDragEnter}

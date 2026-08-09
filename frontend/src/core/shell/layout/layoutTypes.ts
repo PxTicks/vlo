@@ -102,7 +102,7 @@ export const DOCK_REGION_CONSTRAINTS: Readonly<
   "right-sidebar": Object.freeze({
     axis: "width",
     defaultSizePx: 340,
-    minimumSizePx: 220,
+    minimumSizePx: 300,
     maximumSizePx: 640,
     autoSelect: true,
     collapsible: true,

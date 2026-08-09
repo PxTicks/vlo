@@ -15,6 +15,8 @@ import {
 import { ColorWheel } from "./ColorWheel";
 import type { WheelAdjustment } from "../utils/wheelMath";
 
+const COLOR_WHEEL_GRID_STACK_BREAKPOINT_PX = 280;
+
 function numericValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -102,12 +104,16 @@ export function ColorWheelsControl({
   );
 
   return (
-    <Box>
+    <Box sx={{ containerType: "inline-size", minWidth: 0 }}>
       <Box
         sx={{
           display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(124px, 1fr))",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
           gap: 1.5,
+          minWidth: 0,
+          [`@container (max-width: ${COLOR_WHEEL_GRID_STACK_BREAKPOINT_PX - 1}px)`]: {
+            gridTemplateColumns: "minmax(0, 1fr)",
+          },
         }}
       >
         {COLOR_WHEEL_NAMES.map((wheel) => (
@@ -154,6 +160,10 @@ export function ColorWheelsControl({
                   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                   gap: 1.5,
                   pt: 1,
+                  minWidth: 0,
+                  [`@container (max-width: ${COLOR_WHEEL_GRID_STACK_BREAKPOINT_PX - 1}px)`]: {
+                    gridTemplateColumns: "minmax(0, 1fr)",
+                  },
                 }}
               >
                 {COLOR_WHEEL_NAMES.map((wheel) => (

@@ -138,7 +138,15 @@ export function ColorWheel({
   );
 
   return (
-    <Box sx={{ minWidth: 124, textAlign: "center", opacity: disabled ? 0.5 : 1 }}>
+    <Box
+      sx={{
+        boxSizing: "border-box",
+        minWidth: 0,
+        maxWidth: "100%",
+        textAlign: "center",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
       <Typography variant="caption" sx={{ color: "text.secondary" }}>
         {label}
       </Typography>

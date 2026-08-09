@@ -376,7 +376,15 @@ describe("GenerationInputs", () => {
 
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.getAllByText("Denoise")).toHaveLength(2);
-    expect(screen.getByRole("slider")).toBeInTheDocument();
+    const slider = screen.getByRole("slider", { name: "Denoise" });
+    const sliderRoot = slider.closest(".MuiSlider-root");
+    const sliderInset = sliderRoot?.parentElement;
+
+    expect(sliderRoot).toHaveClass("MuiSlider-sizeSmall");
+    expect(sliderInset).toHaveStyle({
+      paddingLeft: "8px",
+      paddingRight: "8px",
+    });
     expect(screen.getByText("80%")).toBeInTheDocument();
   });
 

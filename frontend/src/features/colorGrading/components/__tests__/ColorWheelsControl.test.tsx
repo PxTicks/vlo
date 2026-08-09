@@ -8,6 +8,28 @@ vi.mock("../ColorWheel", () => ({
 }));
 
 describe("ColorWheelsControl", () => {
+  it("keeps its wheel grid inside a resizable panel", () => {
+    const { container } = render(
+      <ColorWheelsControl
+        control={{ type: "custom", name: "_wheels", label: "Wheels" }}
+        value={undefined}
+        values={{}}
+        onCommit={vi.fn()}
+        onCommitMany={vi.fn()}
+        groupId="wheels"
+      />,
+    );
+
+    const root = container.firstElementChild;
+    const grid = root?.firstElementChild;
+
+    expect(root).toHaveStyle({ containerType: "inline-size", minWidth: 0 });
+    expect(grid).toHaveStyle({
+      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+      minWidth: 0,
+    });
+  });
+
   it("exposes every wheel channel through the host parameter renderer", () => {
     const renderParameterControl = vi.fn((control: ControlDefinition) => (
       <span>{control.name}</span>

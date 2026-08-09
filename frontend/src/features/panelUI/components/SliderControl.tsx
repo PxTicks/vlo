@@ -26,6 +26,9 @@ export interface SliderControlProps {
 const Root = styled("div")({
   display: "flex",
   flexDirection: "column",
+  boxSizing: "border-box",
+  minWidth: 0,
+  maxWidth: "100%",
   width: "100%",
   paddingLeft: 8,
   paddingRight: 8,
@@ -35,17 +38,24 @@ const Header = styled("div")({
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
+  minWidth: 0,
+  gap: 4,
   marginBottom: 4,
 });
 
 const Label = styled("div")(({ theme }) => ({
   ...theme.typography.caption,
   color: theme.palette.text.secondary,
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 }));
 
 const Controls = styled("div")({
   display: "flex",
   alignItems: "center",
+  flexShrink: 0,
   gap: 4,
 });
 

@@ -67,6 +67,13 @@ describe("ColorWheel", () => {
   it("exposes master as a separate vertical slider", () => {
     const { onPreview } = renderWheel();
     const slider = screen.getByRole("slider", { name: "Lift master" });
+    const wheel = screen.getByText("Lift").parentElement;
+
+    expect(wheel).toHaveStyle({
+      boxSizing: "border-box",
+      minWidth: 0,
+      maxWidth: "100%",
+    });
     expect(slider).toHaveAttribute("aria-orientation", "vertical");
     expect(slider).toHaveAttribute("aria-valuemin", "-0.5");
     expect(slider).toHaveAttribute("aria-valuemax", "0.5");

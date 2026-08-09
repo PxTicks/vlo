@@ -126,6 +126,12 @@ describe("EditorLayout", () => {
       useShellLayoutStore.getState().document.regions["left-sidebar"]?.sizePx,
     ).toBe(initialLeftSize + 16);
 
+    const rightSeparator = screen.getByRole("separator", {
+      name: "Resize right sidebar",
+    });
+    expect(rightSeparator).toHaveAttribute("aria-valuemin", "300");
+    expect(rightSeparator).toHaveAttribute("aria-valuemax", "640");
+
     const timelineSeparator = screen.getByRole("separator", {
       name: "Resize timeline",
     });

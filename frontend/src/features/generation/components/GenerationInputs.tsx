@@ -995,22 +995,25 @@ function WidgetRow({
             {formatSliderValue(widget, sliderValue)}
           </Typography>
         </Box>
-        <Slider
-          value={sliderValue}
-          min={min}
-          max={max}
-          step={step}
-          valueLabelDisplay="off"
-          valueLabelFormat={(nextValue) => formatSliderValue(widget, nextValue)}
-          onChange={(_, nextValue) => {
-            if (typeof nextValue !== "number") return;
-            onWidgetChange(widget.nodeId, widget.param, nextValue);
-          }}
-          sx={{
-            color: "primary.light",
-            px: 0.5,
-          }}
-        />
+        <Box sx={{ px: 1 }}>
+          <Slider
+            aria-label={widget.config.label}
+            size="small"
+            value={sliderValue}
+            min={min}
+            max={max}
+            step={step}
+            valueLabelDisplay="off"
+            valueLabelFormat={(nextValue) =>
+              formatSliderValue(widget, nextValue)
+            }
+            onChange={(_, nextValue) => {
+              if (typeof nextValue !== "number") return;
+              onWidgetChange(widget.nodeId, widget.param, nextValue);
+            }}
+            sx={{ color: "primary.light" }}
+          />
+        </Box>
         {widget.config.description ? (
           <Typography
             variant="caption"

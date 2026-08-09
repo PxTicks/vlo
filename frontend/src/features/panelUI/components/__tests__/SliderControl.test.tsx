@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 
 const sliderPropsSpy = vi.hoisted(() => vi.fn());
 
@@ -45,6 +45,21 @@ describe("SliderControl", () => {
     const props = sliderPropsSpy.mock.calls.at(-1)?.[0];
     expect(props).not.toHaveProperty("onMouseDown");
     expect(props).not.toHaveProperty("onMouseUp");
+  });
+
+  it("stays within its grid cell at narrow panel widths", () => {
+    renderSlider();
+    const slider = screen.getByRole("slider", { name: "mock slider" });
+    const root = slider.parentElement;
+
+    expect(root).toHaveStyle({
+      boxSizing: "border-box",
+      minWidth: 0,
+      maxWidth: "100%",
+      width: "100%",
+      paddingLeft: "8px",
+      paddingRight: "8px",
+    });
   });
 
   it("forwards supplied mouse handlers", () => {

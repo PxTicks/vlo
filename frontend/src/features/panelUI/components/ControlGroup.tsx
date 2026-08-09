@@ -23,6 +23,8 @@ interface ControlGroupProps {
   };
 }
 
+const CONTROL_GROUP_STACK_BREAKPOINT_PX = 420;
+
 export const ControlGroup = memo(function ControlGroup({
   group,
   values,
@@ -34,6 +36,10 @@ export const ControlGroup = memo(function ControlGroup({
   hideTitle = false,
   keyframe,
 }: ControlGroupProps) {
+  const columnCount =
+    typeof group.columns === "number"
+      ? Math.max(1, Math.floor(group.columns))
+      : null;
   // Resolve display values by applying valueTransform.toView
   const displayValues = useMemo(() => {
     // Rich controls may coordinate parameters that are intentionally not
@@ -78,7 +84,7 @@ export const ControlGroup = memo(function ControlGroup({
     (!hideTitle && Boolean(group.title)) || headerActions || keyframe?.enabled;
 
   return (
-    <Box>
+    <Box sx={{ containerType: "inline-size", minWidth: 0 }}>
       {showHeader ? (
         <Box
           sx={{
@@ -140,12 +146,20 @@ export const ControlGroup = memo(function ControlGroup({
         sx={{
           display: "grid",
           gridTemplateColumns:
-            typeof group.columns === "string"
-              ? group.columns
-              : `repeat(${group.columns || 1}, 1fr)`,
+            columnCount === null
+              ? group.columns ?? "minmax(0, 1fr)"
+              : `repeat(${columnCount}, minmax(0, 1fr))`,
           gap: 1,
           alignItems: "center",
+          minWidth: 0,
           opacity: disabled ? 0.5 : 1,
+          ...(columnCount !== null && columnCount > 1
+            ? {
+                [`@container (max-width: ${CONTROL_GROUP_STACK_BREAKPOINT_PX - 1}px)`]: {
+                  gridTemplateColumns: "minmax(0, 1fr)",
+                },
+              }
+            : {}),
         }}
       >
         {group.controls.filter((control) => !control.hidden).map((control) => (

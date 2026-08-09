@@ -8,6 +8,7 @@ import {
   Texture,
 } from "pixi.js";
 import { createMaskPreviewOverlayFilter } from "../../../../transformations/catalogue/mask/maskBinaryThresholdFilter";
+import { markPixiPreviewOnly } from "../../../../../core/pixi/previewOnly";
 
 export interface MaskOverlayScene {
   clipOverlayRef: MutableRefObject<Container | null>;
@@ -20,14 +21,14 @@ export interface MaskOverlayScene {
 }
 
 interface UseMaskOverlaySceneOptions {
-  viewport: Container | null;
+  parent: Container | null;
   trackZIndex: number;
   sam2BorderColor: number;
   onDispose?: () => void;
 }
 
 export function useMaskOverlayScene({
-  viewport,
+  parent,
   trackZIndex,
   sam2BorderColor,
   onDispose,
@@ -41,9 +42,10 @@ export function useMaskOverlayScene({
   const [gizmoTarget, setGizmoTarget] = useState<Container | null>(null);
 
   useEffect(() => {
-    if (!viewport) return;
+    if (!parent) return;
 
     const clipOverlay = new PixiContainer();
+    markPixiPreviewOnly(clipOverlay);
     const maskOverlay = new PixiContainer();
     const maskGraphics = new PixiGraphics();
     const sam2PointsGraphics = new PixiGraphics();
@@ -76,8 +78,8 @@ export function useMaskOverlayScene({
     clipOverlay.zIndex = trackZIndex + 0.5;
     clipOverlay.visible = false;
 
-    viewport.addChild(clipOverlay);
-    viewport.sortChildren();
+    parent.addChild(clipOverlay);
+    parent.sortChildren();
 
     clipOverlayRef.current = clipOverlay;
     maskOverlayRef.current = maskOverlay;
@@ -95,8 +97,8 @@ export function useMaskOverlayScene({
       }
       sam2PreviewThresholdFilter.destroy();
 
-      if (viewport && !viewport.destroyed) {
-        viewport.removeChild(clipOverlay);
+      if (!parent.destroyed) {
+        parent.removeChild(clipOverlay);
       }
       clipOverlay.destroy({ children: true });
       clipOverlayRef.current = null;
@@ -108,7 +110,7 @@ export function useMaskOverlayScene({
       setGizmoTarget(null);
       onDispose?.();
     };
-  }, [onDispose, sam2BorderColor, trackZIndex, viewport]);
+  }, [onDispose, parent, sam2BorderColor, trackZIndex]);
 
   return {
     clipOverlayRef,

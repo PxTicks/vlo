@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  getActivePixiApplication,
   getActivePixiContentTarget,
+  readActivePixiContentPixels,
 } from "../../core/pixi/activeApplication";
 import type { ScopeFrameSample } from "./scopeRegistry";
 
@@ -24,20 +24,18 @@ export function useScopeFrame(enabled: boolean): ScopeFrameSample | null {
     const sample = (): void => {
       const startedAt = performance.now();
       if (document.visibilityState !== "hidden") {
-        const application = getActivePixiApplication();
         const content = getActivePixiContentTarget();
-        if (application && content) {
+        if (content) {
           try {
             const resolution = Math.min(
               1,
               SAMPLE_MAX_WIDTH / Math.max(1, content.frame.width),
             );
-            const extracted = application.renderer.extract.pixels({
-              target: content.target,
-              frame: content.frame,
+            const extracted = readActivePixiContentPixels(
+              content.frame,
               resolution,
-            });
-            if (!disposed) {
+            );
+            if (!disposed && extracted) {
               setFrame({
                 pixels: extracted.pixels,
                 width: extracted.width,

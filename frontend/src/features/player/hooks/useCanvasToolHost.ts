@@ -8,6 +8,7 @@ import type {
 import { canvasToolHost } from "../../../core/shell/canvasToolHost";
 import { hostContextKeys } from "../../../core/shell/contextKeys";
 import { claimEditorRegion, useEditorFocusStore } from "../../editorFocus";
+import { markPixiPreviewOnly } from "../../../core/pixi/previewOnly";
 
 export interface CanvasToolSelectionHost {
   captureTargetClipId(): string | null;
@@ -89,6 +90,7 @@ export function useCanvasToolHost(
   useEffect(() => {
     if (!app || !viewport) return;
     const overlay = new Container();
+    markPixiPreviewOnly(overlay);
     overlay.label = "extension-canvas-tool-overlay";
     overlay.zIndex = 10_000;
     overlay.eventMode = "none";

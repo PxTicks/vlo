@@ -22,6 +22,7 @@ export function useTrackRenderer(
   trackId: string,
   app: Application | null,
   container: Container,
+  overlayContainer: Container,
   zIndex: number,
   logicalDimensions: { width: number; height: number },
   registerSynchronizedPlaybackRenderer?: (
@@ -65,7 +66,7 @@ export function useTrackRenderer(
     spriteInstance,
     activeClipRef,
     app,
-    container,
+    overlayContainer,
     handleLiveSpriteTransform,
   );
   const maskInteractionHandlers = useMaskInteractionController(
@@ -74,8 +75,9 @@ export function useTrackRenderer(
     spriteInstance,
     activeClipRef,
     app,
-    container,
+    overlayContainer,
     interactionsEnabled,
+    container,
   );
 
   // 4. Compose sprite pointer events: mask interactions first, then transform
@@ -145,7 +147,7 @@ export function useTrackRenderer(
       isClipSelectionActive &&
       !maskInteractionHandlers.isMaskGizmoVisible,
     app,
-    container,
+    overlayContainer,
     transformGizmoInteractions,
     // Never show the clip gizmo when the sprite itself isn't drawn (e.g. no
     // active frame / missing texture), which would otherwise leave a stale or
@@ -156,7 +158,7 @@ export function useTrackRenderer(
     maskInteractionHandlers.gizmoTarget,
     interactionsEnabled && maskInteractionHandlers.isMaskGizmoVisible,
     app,
-    container,
+    overlayContainer,
     maskGizmoInteractions,
   );
 }

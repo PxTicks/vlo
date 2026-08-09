@@ -1,4 +1,5 @@
 import type { Application, Container, Rectangle } from "pixi.js";
+import { withoutPixiPreviewOnlyNodes } from "./previewOnly";
 
 let activeApplication: Application | null = null;
 const activeApplicationListeners = new Set<() => void>();
@@ -42,4 +43,24 @@ export function clearActivePixiContentTarget(target: Container): void {
 
 export function getActivePixiContentTarget(): typeof activeContentTarget {
   return activeContentTarget;
+}
+
+/**
+ * The sole readback path for active viewer content. Preview-only descendants
+ * are excluded for the synchronous Pixi extraction and immediately restored.
+ */
+export function readActivePixiContentPixels(
+  frame: Rectangle,
+  resolution: number,
+) {
+  const application = activeApplication;
+  if (!application || !activeContentTarget) return null;
+  const { target } = activeContentTarget;
+  return withoutPixiPreviewOnlyNodes(target, () =>
+    application.renderer.extract.pixels({
+      target,
+      frame,
+      resolution,
+    }),
+  );
 }

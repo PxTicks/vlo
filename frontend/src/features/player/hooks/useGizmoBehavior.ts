@@ -3,6 +3,7 @@ import type { Application, Container, FederatedPointerEvent } from "pixi.js";
 import { SelectionGizmo, type GizmoTarget } from "../utils/SelectionGizmo";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { subscribeLiveSceneTransformSync } from "../services/liveSceneTransformSync";
+import { markPixiPreviewOnly } from "../../../core/pixi/previewOnly";
 
 interface GizmoInteractionHandlers {
   onHandlePointerDown: (e: FederatedPointerEvent, key: string) => void;
@@ -43,6 +44,7 @@ export function useGizmoBehavior(
     }
 
     const gizmo = new SelectionGizmo();
+    markPixiPreviewOnly(gizmo);
     gizmo.zIndex = 9999;
     viewport.addChild(gizmo);
     gizmoRef.current = gizmo;

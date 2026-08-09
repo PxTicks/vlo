@@ -1,16 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { Application, Graphics, Rectangle } from "pixi.js";
+import { Application, Container, Graphics, Rectangle } from "pixi.js";
 import { Viewport } from "pixi-viewport";
 import {
   clearActivePixiContentTarget,
   setActivePixiContentTarget,
 } from "../../../core/pixi/activeApplication";
+import { markPixiPreviewOnly } from "../../../core/pixi/previewOnly";
 
 interface ViewportConfig {
   screenWidth: number;
   screenHeight: number;
   logicalWidth: number;
   logicalHeight: number;
+}
+
+const contentTargets = new WeakMap<Viewport, Container>();
+
+/** Returns the output-bearing scene below a viewport's editor overlays. */
+export function getViewportContentTarget(
+  viewport: Viewport | null,
+): Container | null {
+  return viewport ? (contentTargets.get(viewport) ?? null) : null;
 }
 
 export function useViewport(app: Application | null, config: ViewportConfig) {
@@ -59,10 +69,18 @@ export function useViewport(app: Application | null, config: ViewportConfig) {
       maxScale: 10.0,
     });
 
+    const contentTarget = new Container();
+    contentTarget.label = "render-content";
+    contentTarget.zIndex = 0;
+    contentTarget.sortableChildren = true;
+    viewport.addChild(contentTarget);
+    contentTargets.set(viewport, contentTarget);
+
     // --- Overlay / Masking ---
     // Instead of completely masking out-of-bounds content, we draw a dark overlay
     // to "grey it out". This allows gizmos and clips to remain visible and interactive.
     const overlay = new Graphics();
+    markPixiPreviewOnly(overlay);
     overlay.zIndex = 9998; // High enough to cover tracks but below gizmos (9999)
     overlay.eventMode = "none"; // Essential: must not block pointer events!
 
@@ -90,7 +108,7 @@ export function useViewport(app: Application | null, config: ViewportConfig) {
 
     app.stage.addChild(viewport);
     setActivePixiContentTarget(
-      viewport,
+      contentTarget,
       new Rectangle(0, 0, logicalWidth, logicalHeight),
     );
     viewportRef.current = viewport;
@@ -101,7 +119,8 @@ export function useViewport(app: Application | null, config: ViewportConfig) {
     });
 
     return () => {
-      clearActivePixiContentTarget(viewport);
+      clearActivePixiContentTarget(contentTarget);
+      contentTargets.delete(viewport);
       if (app.stage && !app.stage.destroyed) {
         app.stage.removeChild(viewport);
       }
@@ -114,31 +133,34 @@ export function useViewport(app: Application | null, config: ViewportConfig) {
 
   // 2. Handle Resizing
   useEffect(() => {
-    if (viewportRef.current) {
-      viewportRef.current.resize(
-        config.screenWidth,
-        config.screenHeight,
-        config.logicalWidth,
-        config.logicalHeight,
-      );
-      setActivePixiContentTarget(
-        viewportRef.current,
-        new Rectangle(0, 0, config.logicalWidth, config.logicalHeight),
-      );
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const contentTarget = getViewportContentTarget(viewport);
+    if (!contentTarget) return;
 
-      // Update Overlay Dimensions
-      if (maskRef.current) {
-        const overlay = maskRef.current;
-        const w = config.logicalWidth;
-        const h = config.logicalHeight;
-        const inf = 100000;
-        overlay.clear();
-        overlay.rect(-inf, -inf, inf * 2, inf); // Top
-        overlay.rect(-inf, h, inf * 2, inf); // Bottom
-        overlay.rect(-inf, 0, inf, h); // Left
-        overlay.rect(w, 0, inf, h); // Right
-        overlay.fill({ color: 0x000000, alpha: 0.8 });
-      }
+    viewport.resize(
+      config.screenWidth,
+      config.screenHeight,
+      config.logicalWidth,
+      config.logicalHeight,
+    );
+    setActivePixiContentTarget(
+      contentTarget,
+      new Rectangle(0, 0, config.logicalWidth, config.logicalHeight),
+    );
+
+    // Update Overlay Dimensions
+    if (maskRef.current) {
+      const overlay = maskRef.current;
+      const w = config.logicalWidth;
+      const h = config.logicalHeight;
+      const inf = 100000;
+      overlay.clear();
+      overlay.rect(-inf, -inf, inf * 2, inf); // Top
+      overlay.rect(-inf, h, inf * 2, inf); // Bottom
+      overlay.rect(-inf, 0, inf, h); // Left
+      overlay.rect(w, 0, inf, h); // Right
+      overlay.fill({ color: 0x000000, alpha: 0.8 });
     }
   }, [
     config.screenWidth,

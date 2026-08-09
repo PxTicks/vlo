@@ -9,6 +9,7 @@ interface TrackLayerProps {
   trackId: string;
   app: Application;
   container: Container;
+  overlayContainer: Container;
   zIndex: number;
   logicalDimensions: { width: number; height: number };
   registerSynchronizedPlaybackRenderer?: (
@@ -25,6 +26,7 @@ function TrackLayerComponent({
   trackId,
   app,
   container,
+  overlayContainer,
   zIndex,
   logicalDimensions,
   registerSynchronizedPlaybackRenderer,
@@ -37,6 +39,7 @@ function TrackLayerComponent({
     trackId,
     app,
     container,
+    overlayContainer,
     zIndex,
     logicalDimensions,
     registerSynchronizedPlaybackRenderer,

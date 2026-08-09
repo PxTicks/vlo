@@ -2,6 +2,7 @@ import { Point, Rectangle } from "pixi.js";
 import {
   getActivePixiApplication,
   getActivePixiContentTarget,
+  readActivePixiContentPixels,
 } from "../../../core/pixi/activeApplication";
 import type { Rgb } from "../../../core/color";
 
@@ -21,11 +22,11 @@ function sampleViewerColor(event: PointerEvent): Rgb | null {
   const local = content.target.worldTransform.applyInverse(screen);
   if (!content.frame.contains(local.x, local.y)) return null;
 
-  const result = application.renderer.extract.pixels({
-    target: content.target,
-    frame: new Rectangle(local.x, local.y, 1, 1),
-    resolution: 1,
-  });
+  const result = readActivePixiContentPixels(
+    new Rectangle(local.x, local.y, 1, 1),
+    1,
+  );
+  if (!result) return null;
   const alpha = result.pixels[3] / 255;
   if (alpha <= 1e-6) return [0, 0, 0];
   return [

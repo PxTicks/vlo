@@ -1,6 +1,6 @@
 export { useTrackRenderEngine } from "./hooks/useTrackRenderEngine";
 export type { TrackRenderEngineResult } from "./hooks/useTrackRenderEngine";
-export { useViewport } from "./hooks/useViewport";
+export { getViewportContentTarget, useViewport } from "./hooks/useViewport";
 export { useAudioTrack } from "./hooks/useAudioTrack";
 export { useExportJobController } from "./hooks/useExportJobController";
 export { AudioTrackLayer } from "./components/AudioTrackLayer";

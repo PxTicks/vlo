@@ -328,6 +328,7 @@ export function useMaskInteractionController(
   app: Application | null,
   viewport: Container | null,
   interactionsEnabled: boolean = true,
+  renderContent?: Container | null,
 ): MaskInteractionHandlers {
   const setIsPlaying = usePlayerStore((state) => state.setIsPlaying);
   const projectFps = useProjectStore((state) => state.config.fps);
@@ -432,7 +433,7 @@ export function useMaskInteractionController(
     pathOverlayRef,
     gizmoTarget,
   } = useMaskOverlayScene({
-    viewport,
+    parent: renderContent ?? viewport,
     trackZIndex,
     sam2BorderColor: SAM2_BORDER_COLOR,
     onDispose: handleOverlaySceneDispose,

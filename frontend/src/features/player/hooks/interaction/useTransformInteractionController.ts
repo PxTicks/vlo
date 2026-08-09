@@ -28,6 +28,7 @@ import {
 } from "../../../transformations";
 import { liveParamStore } from "../../../../core/liveParams/liveParamStore";
 import { playbackClock } from "../../../../core/playback/PlaybackClock";
+import { markPixiPreviewOnly } from "../../../../core/pixi/previewOnly";
 import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
 import {
   commitTransformControl,
@@ -986,6 +987,7 @@ export function useTransformInteractionController(
     }
 
     const overlay = new Graphics();
+    markPixiPreviewOnly(overlay);
     overlay.zIndex = 9998;
     viewport.addChild(overlay);
     pathOverlayRef.current = overlay;

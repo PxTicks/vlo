@@ -14,6 +14,8 @@ const {
   mockLiveFrameGraphRenderFrame,
   mockLiveFrameGraphState,
   mockPixiApp,
+  mockRenderContent,
+  trackLayerProps,
   playerControlsProps,
   mockViewport,
   playbackClockMock,
@@ -91,6 +93,11 @@ const {
           stop: vi.fn(),
         },
       },
+      mockRenderContent: {
+        addChild: vi.fn(),
+        removeChild: vi.fn(),
+        destroyed: false,
+      },
       mockViewport: {
         addChild: vi.fn(),
         removeChild: vi.fn(),
@@ -101,6 +108,9 @@ const {
         fit: vi.fn(),
       },
       playerControlsProps: {
+        current: null as null | Record<string, unknown>,
+      },
+      trackLayerProps: {
         current: null as null | Record<string, unknown>,
       },
       playbackClockMock: playbackClock,
@@ -278,7 +288,10 @@ vi.mock("../../../core/playback/PlaybackClock", () => ({
 }));
 
 vi.mock("../components/TrackLayer", () => ({
-  TrackLayer: () => null,
+  TrackLayer: (props: Record<string, unknown>) => {
+    trackLayerProps.current = props;
+    return null;
+  },
 }));
 
 vi.mock("../components/PlayerControls", () => ({
@@ -320,6 +333,7 @@ vi.mock("../../renderer", () => ({
   startFramePlanningDiagnosticsConsole: () => () => {},
   getSharedDecoderWorkerPool: () => mockDecoderWorkerPool,
   useViewport: () => mockViewport,
+  getViewportContentTarget: () => mockRenderContent,
   useExportJobController: () => ({
     cancel: cancelExportMock,
     runSelectionExport: runSelectionExportMock,
@@ -359,6 +373,7 @@ describe("Player playback loop", () => {
     mockLiveFrameGraphState.enabled = true;
     mockLiveFrameGraphState.participantCount = 0;
     playerControlsProps.current = null;
+    trackLayerProps.current = null;
     extractDialogProps.current = null;
     globalThis.requestAnimationFrame = vi.fn(() => 1);
     globalThis.cancelAnimationFrame = vi.fn();
@@ -443,6 +458,17 @@ describe("Player playback loop", () => {
       playbackClock.setTime(2 * TICKS_PER_SECOND);
       playbackFrameClock.setTime(2 * TICKS_PER_SECOND);
     });
+  });
+
+  it("keeps rendered tracks separate from viewport interaction overlays", () => {
+    render(<Player />);
+
+    expect(trackLayerProps.current).toEqual(
+      expect.objectContaining({
+        container: mockRenderContent,
+        overlayContainer: mockViewport,
+      }),
+    );
   });
 
   it("does not restart playback loop initialization when clip transforms update", async () => {

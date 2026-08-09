@@ -272,6 +272,30 @@ describe("useMaskInteractionController", () => {
     expect(maskClips[0].maskMode).toBe("apply");
   });
 
+  it("keeps the mask overlay interleaved with tracks in render content", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const viewport = new Container();
+    const renderContent = new Container();
+
+    renderHook(() =>
+      useMaskInteractionController(
+        trackId,
+        1,
+        new Sprite(),
+        { current: parent },
+        new Application(),
+        viewport,
+        true,
+        renderContent,
+      ),
+    );
+
+    expect(viewport.children).toHaveLength(0);
+    expect(renderContent.children).toHaveLength(1);
+    expect(renderContent.children[0].zIndex).toBe(1.5);
+  });
+
   it("shows gizmo when a mask clip is selected on the active clip", () => {
     const trackId = useTimelineStore.getState().tracks[0].id;
     const parent = createParentClip(trackId);

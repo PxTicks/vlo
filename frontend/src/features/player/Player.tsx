@@ -5,6 +5,7 @@ import {
   AudioTrackLayer,
   getSharedDecoderWorkerPool,
   getProjectDimensions,
+  getViewportContentTarget,
   renderProjectFrameFileAtTick,
   resolveCompositePreviewRasterDimensions,
   useExportJobController,
@@ -174,6 +175,7 @@ function PlayerImpl() {
     logicalWidth: logicalDimensions.width,
     logicalHeight: logicalDimensions.height,
   });
+  const renderContent = getViewportContentTarget(viewport);
   const extensionCanvasSelectionHost = useMemo(
     () => ({
       captureTargetClipId: () =>
@@ -234,8 +236,8 @@ function PlayerImpl() {
   }, [visualTrackIds]);
 
   // Render-group orchestrator. Owns Pixi parenting of track engine
-  // containers and (in phase 3) time-bounded group containers under
-  // `viewport`. The sync ref fires per frame inside
+  // containers and (in phase 3) time-bounded group containers under the
+  // output-bearing content target. The sync ref fires per frame inside
   // processPendingPlaybackFrames below, between awaited per-track
   // renderers and pixiApp.render(). The hook also imperatively syncs on
   // `visualTrackIds` changes so paused edits to track order reflect
@@ -259,7 +261,7 @@ function PlayerImpl() {
     adjustmentEffectResolver,
     syncRef: renderGroupSyncRef,
   } = useRenderGroupOrchestrator(
-    viewport,
+    renderContent,
     logicalDimensions,
     visualTrackIds,
     liveFrameGraphEnabled,
@@ -546,8 +548,11 @@ function PlayerImpl() {
                       target = RenderTexture.create({ width, height });
                       temporalWarmupTargetRef.current = target;
                     }
+                    // Warm output-bearing content at project scale. Viewport
+                    // pan/zoom is editor presentation and must not determine
+                    // temporal shader/filter compilation scale.
                     pixiApp.renderer.render({
-                      container: viewport ?? pixiApp.stage,
+                      container: renderContent ?? pixiApp.stage,
                       target,
                       clear: true,
                     });
@@ -684,7 +689,7 @@ function PlayerImpl() {
     pixiApp,
     renderGroupOrchestrator,
     renderGroupSyncRef,
-    viewport,
+    renderContent,
   ]);
 
   // --- Extract / Export Logic ---
@@ -1017,12 +1022,14 @@ function PlayerImpl() {
         {/* Render Track Layers */}
         {pixiApp &&
           viewport &&
+          renderContent &&
           visualTracks.map((track, index) => (
             <TrackLayer
               key={track.id}
               trackId={track.id}
               app={pixiApp}
-              container={viewport}
+              container={renderContent}
+              overlayContainer={viewport}
               zIndex={visualTracks.length - 1 - index}
               logicalDimensions={logicalDimensions}
               registerSynchronizedPlaybackRenderer={

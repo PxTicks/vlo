@@ -2,7 +2,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { Application } from "pixi.js";
-import { useViewport } from "../useViewport";
+import type { Viewport } from "pixi-viewport";
+import { getActivePixiContentTarget } from "../../../../core/pixi/activeApplication";
+import { getViewportContentTarget, useViewport } from "../useViewport";
 
 // --- Mocks Setup ---
 const { mockViewportInstance, MockViewportConstructor } = vi.hoisted(() => {
@@ -130,5 +132,30 @@ describe("useViewport", () => {
     // Rerender with same props
     rerender({ app: mockApp, conf: config });
     expect(MockViewportConstructor).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishes a dedicated render-content target below viewport overlays", () => {
+    const config = {
+      screenWidth: 800,
+      screenHeight: 600,
+      logicalWidth: 1000,
+      logicalHeight: 500,
+    };
+
+    renderHook(() => useViewport(mockApp, config));
+
+    const contentTarget = getViewportContentTarget(
+      mockViewportInstance as unknown as Viewport,
+    );
+    expect(contentTarget).not.toBeNull();
+    expect(contentTarget?.label).toBe("render-content");
+    expect(mockViewportInstance.addChild).toHaveBeenNthCalledWith(
+      1,
+      contentTarget,
+    );
+    expect(getActivePixiContentTarget()).toEqual({
+      target: contentTarget,
+      frame: expect.objectContaining({ width: 1000, height: 500 }),
+    });
   });
 });

@@ -9,6 +9,7 @@ import type {
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import { usesInverseMaskCompositionAlgebra } from "../../../types/Components";
 import type { Asset } from "../../../types/Asset";
+import { markPixiPreviewOnly } from "../../../core/pixi/previewOnly";
 import {
   applyClipTransforms,
   calculateClipTime,
@@ -169,6 +170,7 @@ export class SpriteClipMaskController {
       this.maskSprite.renderable = false;
     }
     this.previewContainer = new Container();
+    markPixiPreviewOnly(this.previewContainer);
     this.previewContainer.visible = false;
     this.previewContainer.renderable = false;
     this.previewSprite = new Sprite(Texture.WHITE);

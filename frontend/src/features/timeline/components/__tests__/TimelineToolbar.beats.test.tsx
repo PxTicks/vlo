@@ -115,6 +115,14 @@ describe("TimelineToolbar beat detection", () => {
     seedStoreWithSelection(audioClip);
   });
 
+  it("reserves a gap beside the timeline collapse button", () => {
+    render(<TimelineToolbar />);
+
+    expect(
+      globalThis.getComputedStyle(screen.getByTestId("timeline-zoom-controls")),
+    ).toMatchObject({ marginRight: "48px" });
+  });
+
   it("writes detected beats as kind-tagged markers on the selected clip", async () => {
     render(<TimelineToolbar />);
 

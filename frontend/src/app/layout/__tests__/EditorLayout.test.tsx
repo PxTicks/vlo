@@ -54,6 +54,11 @@ describe("EditorLayout", () => {
       height: "100%",
       overflow: "hidden",
     });
+    expect(
+      globalThis.getComputedStyle(
+        screen.getByTestId("timeline-collapse-button").parentElement!,
+      ),
+    ).toMatchObject({ right: "4px", top: "3px" });
   });
 
   it("renders lock overlays for non-timeline regions only", () => {

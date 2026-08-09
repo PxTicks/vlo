@@ -404,10 +404,11 @@ export const TimelineToolbar = () => {
 
       {/* Right Zoom Controls */}
       <Stack
+        data-testid="timeline-zoom-controls"
         direction="row"
         spacing={2}
         alignItems="center"
-        sx={{ width: 200, mr: 2, justifySelf: "end" }}
+        sx={{ width: 200, mr: 6, justifySelf: "end" }}
       >
         <ZoomOutIcon sx={{ color: "#888", fontSize: 20 }} />
         <Slider

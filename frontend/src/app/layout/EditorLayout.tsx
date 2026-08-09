@@ -303,10 +303,11 @@ export function EditorLayout({
         >
           {timeline}
         </Box>
-        <Box sx={{ position: "absolute", right: 4, top: 1, zIndex: 30 }}>
+        <Box sx={{ position: "absolute", right: 4, top: 3, zIndex: 30 }}>
           <RegionCollapseButton
             region="lower-stage"
             label="Timeline"
+            testId="timeline-collapse-button"
           />
         </Box>
         <RegionSeparator

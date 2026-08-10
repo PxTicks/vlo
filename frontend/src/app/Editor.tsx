@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -16,11 +16,7 @@ import {
   COMFYUI_CANVAS_DROP_ID,
   COMFYUI_EDITOR_DROP_SINK_ID,
 } from "../features/generation";
-import {
-  AssetDragOverlay,
-  Timeline,
-  useAssetDrag,
-} from "../features/timeline/ui";
+import { AssetDragOverlay, useAssetDrag } from "../features/timeline/ui";
 import { TransformationDragOverlay } from "../features/transformations/components/TransformationDragOverlay";
 import { useTransformDrag } from "../features/transformations/hooks/useTransformDrag";
 import {
@@ -28,8 +24,9 @@ import {
   useTransitionDrag,
 } from "../features/transitions";
 import { useEditorFocusReconciler } from "../features/editorFocus";
-import { Player } from "../features/player/Player";
 import { EditorLayout } from "./layout/EditorLayout";
+import { EditorStageServicesContext } from "./layout/editorStageServices";
+import { declareEditorStageSurfaces } from "./layout/editorStageSurfaces";
 import { HighVramWorkflowPrompt } from "./layout/HighVramWorkflowPrompt";
 import { EditorLeftSidebar } from "./layout/EditorLeftSidebar";
 import { EditorTopBar } from "./layout/EditorTopBar";
@@ -47,6 +44,7 @@ import { MiniEditorModal } from "../features/miniEditor";
 
 registerColorGradingCustomControls();
 registerHostPanelControls();
+declareEditorStageSurfaces();
 
 const ASSET_DRAG_ACTIVATION_DISTANCE_PX = 1;
 
@@ -175,6 +173,13 @@ export function Editor() {
     }),
   );
 
+  // What the timeline surface needs from the editor around it. Kept in one
+  // memo so remounting a stage does not depend on unrelated renders.
+  const stageServices = useMemo(
+    () => ({ scrollContainerRef, clipOverlays }),
+    [clipOverlays, scrollContainerRef],
+  );
+
   return (
     <DndContext
       sensors={sensors}
@@ -185,48 +190,37 @@ export function Editor() {
       onDragCancel={handleDragCancel}
       autoScroll={ASSET_AUTO_SCROLL}
     >
-      <EditorLayout
-        layoutMode={layoutMode}
-        nonTimelineRegionsLocked={nonTimelineRegionsLocked}
-        leftSidebar={
-          <ErrorBoundary boundaryName="Left sidebar" variant="region">
-            <EditorLeftSidebar />
-          </ErrorBoundary>
-        }
-        topBar={
-          <ErrorBoundary boundaryName="Top bar" variant="region">
-            <EditorTopBar />
-          </ErrorBoundary>
-        }
-        player={
-          <ErrorBoundary boundaryName="Player" variant="region">
-            <Player />
-          </ErrorBoundary>
-        }
-        playerAside={
-          <ErrorBoundary boundaryName="Player aside" variant="region">
-            <PlayerAsidePanel />
-          </ErrorBoundary>
-        }
-        bottomDock={
-          <ErrorBoundary boundaryName="Bottom dock" variant="region">
-            <EditorBottomDock />
-          </ErrorBoundary>
-        }
-        rightSidebar={
-          <ErrorBoundary boundaryName="Right sidebar" variant="region">
-            <RightSidebarPanel />
-          </ErrorBoundary>
-        }
-        timeline={
-          <ErrorBoundary boundaryName="Timeline" variant="region">
-            <Timeline
-              scrollContainerRef={scrollContainerRef}
-              clipOverlays={clipOverlays}
-            />
-          </ErrorBoundary>
-        }
-      />
+      <EditorStageServicesContext.Provider value={stageServices}>
+        <EditorLayout
+          layoutMode={layoutMode}
+          nonTimelineRegionsLocked={nonTimelineRegionsLocked}
+          leftSidebar={
+            <ErrorBoundary boundaryName="Left sidebar" variant="region">
+              <EditorLeftSidebar />
+            </ErrorBoundary>
+          }
+          topBar={
+            <ErrorBoundary boundaryName="Top bar" variant="region">
+              <EditorTopBar />
+            </ErrorBoundary>
+          }
+          playerAside={
+            <ErrorBoundary boundaryName="Player aside" variant="region">
+              <PlayerAsidePanel />
+            </ErrorBoundary>
+          }
+          bottomDock={
+            <ErrorBoundary boundaryName="Bottom dock" variant="region">
+              <EditorBottomDock />
+            </ErrorBoundary>
+          }
+          rightSidebar={
+            <ErrorBoundary boundaryName="Right sidebar" variant="region">
+              <RightSidebarPanel />
+            </ErrorBoundary>
+          }
+        />
+      </EditorStageServicesContext.Provider>
 
       <AssetDragOverlay />
       <TransformationDragOverlay />

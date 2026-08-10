@@ -57,6 +57,14 @@
 /frontend/src/app/layout/AssetsSidebarView.tsx extension-surface=adapter
 /frontend/src/app/layout/leftSidebarHostViews.tsx extension-surface=adapter
 /frontend/src/app/layout/rightSidebarHostViews.ts extension-surface=adapter
+# The editor's structural stages. Surfaces are host-only for now
+# (docs/configurable-docking-and-dedicated-workspaces-plan.md §6), so these are
+# not a contributed surface today — they are catalogued because they are the
+# composition root that would have to be reviewed if stages are ever opened up,
+# and because they decide what the shell mounts where.
+/frontend/src/app/layout/editorStageSurfaces.ts extension-surface=adapter
+/frontend/src/app/layout/EditorStageSurfaceViews.tsx extension-surface=adapter
+/frontend/src/app/layout/editorStageServices.ts extension-surface=adapter
 /frontend/src/core/pixi/activeApplication.ts extension-surface=adapter
 /frontend/src/core/playback/PlaybackClock.ts extension-surface=adapter
 # Transport authority the player installs and api.playback dispatches through.

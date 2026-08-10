@@ -8,10 +8,18 @@
  */
 import { hostContextKeys, type HostContextKeyService } from "../contextKeys";
 import {
+  editorSurfaceRegistry,
+  type EditorSurfaceRegistry,
+} from "../editorSurfaces";
+import {
   hostViewRegistry,
   type HostViewRegistry,
 } from "../viewRegistry";
-import { DOCK_REGIONS, type ShellPanelDescriptor } from "./layoutTypes";
+import {
+  DOCK_REGIONS,
+  type ShellPanelDescriptor,
+  type ShellSurfaceDescriptor,
+} from "./layoutTypes";
 
 export function describeShellPanels(
   registry: HostViewRegistry = hostViewRegistry,
@@ -74,6 +82,65 @@ export function observeShellPanels(
     unsubscribeViews();
     unsubscribeContext();
   };
+}
+
+export function describeEditorSurfaces(
+  registry: EditorSurfaceRegistry = editorSurfaceRegistry,
+): readonly ShellSurfaceDescriptor[] {
+  return registry
+    .list()
+    .map((entry) => ({
+      id: entry.id,
+      defaultStage: entry.defaultStage,
+      // Validated at registration, so the resolver can trust it.
+      allowedStages: entry.allowedStages,
+      defaultOrder: entry.order,
+      available: registry.isAvailable(entry.id),
+    }))
+    .sort(
+      (left, right) =>
+        left.defaultOrder - right.defaultOrder ||
+        left.id.localeCompare(right.id),
+    );
+}
+
+/** Surface counterpart to {@link observeShellPanels}; same reasons apply. */
+export function observeEditorSurfaces(
+  onChange: (surfaces: readonly ShellSurfaceDescriptor[]) => void,
+  registry: EditorSurfaceRegistry = editorSurfaceRegistry,
+  contextKeys: HostContextKeyService = hostContextKeys,
+): () => void {
+  const publish = (): void => {
+    onChange(describeEditorSurfaces(registry));
+  };
+  const unsubscribeSurfaces = registry.subscribe(publish);
+  const unsubscribeContext = contextKeys.subscribe(publish);
+  publish();
+  return () => {
+    unsubscribeSurfaces();
+    unsubscribeContext();
+  };
+}
+
+export function areSurfaceDescriptorsEqual(
+  left: readonly ShellSurfaceDescriptor[],
+  right: readonly ShellSurfaceDescriptor[],
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((descriptor, index) => {
+    const other = right[index];
+    return (
+      descriptor.id === other.id &&
+      descriptor.defaultStage === other.defaultStage &&
+      descriptor.defaultOrder === other.defaultOrder &&
+      descriptor.available === other.available &&
+      descriptor.allowedStages.length === other.allowedStages.length &&
+      descriptor.allowedStages.every(
+        (stage, stageIndex) => stage === other.allowedStages[stageIndex],
+      )
+    );
+  });
 }
 
 export function arePanelDescriptorsEqual(

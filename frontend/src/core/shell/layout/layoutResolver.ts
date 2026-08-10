@@ -10,28 +10,37 @@
 import {
   DOCK_REGIONS,
   DOCK_REGION_CONSTRAINTS,
+  EDITOR_STAGES,
   LOWER_STAGE_CONSTRAINTS,
   RESPONSIVE_SIDEBAR_BREAKPOINT_PX,
   type DockRegion,
   type DockRegionConstraints,
+  type EditorStage,
+  type EditorStageSurfaces,
   type PersistedPanelPlacement,
   type ResolvedDockRegion,
+  type ResolvedEditorStage,
   type ResolvedLowerStage,
   type ResolvedShellLayout,
   type ResponsiveSidebarRegion,
   type ShellLayoutDocumentV2,
   type ShellPanelDescriptor,
+  type ShellSurfaceDescriptor,
   type ShellViewport,
 } from "./layoutTypes";
 
 export interface ShellLayoutResolutionInput {
   readonly panels: readonly ShellPanelDescriptor[];
+  /** Registered editor surfaces. Omitted leaves both stages empty. */
+  readonly surfaces?: readonly ShellSurfaceDescriptor[];
   readonly document: ShellLayoutDocumentV2;
   /** Omitted or null skips viewport clamping (server render, tests, headless). */
   readonly viewport?: ShellViewport | null;
   readonly constraints?: Readonly<Record<DockRegion, DockRegionConstraints>>;
   /** Session-only sidebar opened over a narrow viewport. */
   readonly responsiveExpandedRegion?: ResponsiveSidebarRegion | null;
+  /** Session-only stage composition, e.g. an active dedicated workspace. */
+  readonly stageSurfaces?: EditorStageSurfaces;
 }
 
 function isResponsiveSidebar(
@@ -211,6 +220,62 @@ function resolveLowerStage(
   });
 }
 
+/**
+ * Which surface each stage mounts.
+ *
+ * A stage's default is the available surface that *registered* for it, lowest
+ * order first. Being merely allowed in a stage is not enough to be its default,
+ * or unregistering the player would drop the timeline into the picture area.
+ *
+ * A session composition wins over the default, but only when the named surface
+ * exists, is available, and permits that stage — so a workspace holding a
+ * reference to a surface an extension took away resolves back to the editor's
+ * own arrangement instead of blanking the stage.
+ */
+function resolveStages(
+  surfaces: readonly ShellSurfaceDescriptor[],
+  stageSurfaces: EditorStageSurfaces | undefined,
+): Record<EditorStage, ResolvedEditorStage> {
+  const seen = new Set<string>();
+  const known: ShellSurfaceDescriptor[] = [];
+  for (const descriptor of surfaces) {
+    // Duplicate IDs cannot survive registration, but the resolver stays total
+    // either way: first wins, exactly as it does for panels.
+    if (seen.has(descriptor.id)) continue;
+    seen.add(descriptor.id);
+    known.push(descriptor);
+  }
+  known.sort(
+    (left, right) =>
+      left.defaultOrder - right.defaultOrder || left.id.localeCompare(right.id),
+  );
+
+  const stages = {} as Record<EditorStage, ResolvedEditorStage>;
+  for (const stage of EDITOR_STAGES) {
+    const candidates = known.filter(
+      (descriptor) =>
+        descriptor.available && descriptor.allowedStages.includes(stage),
+    );
+    const requested = stageSurfaces?.[stage];
+    const requestedSurface =
+      requested === undefined
+        ? undefined
+        : candidates.find((descriptor) => descriptor.id === requested);
+    const surfaceId =
+      requestedSurface?.id ??
+      candidates.find((descriptor) => descriptor.defaultStage === stage)?.id ??
+      null;
+    stages[stage] = Object.freeze({
+      id: stage,
+      surfaceId,
+      candidateSurfaceIds: Object.freeze(
+        candidates.map((descriptor) => descriptor.id),
+      ),
+    });
+  }
+  return stages;
+}
+
 export function resolveShellLayout(
   input: ShellLayoutResolutionInput,
 ): ResolvedShellLayout {
@@ -300,6 +365,9 @@ export function resolveShellLayout(
 
   return Object.freeze({
     regions: Object.freeze(regions),
+    stages: Object.freeze(
+      resolveStages(input.surfaces ?? [], input.stageSurfaces),
+    ),
     lowerStage: resolveLowerStage(input.document, input.viewport),
     panelRegions: Object.freeze(panelRegions),
   });

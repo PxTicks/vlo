@@ -1,8 +1,32 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { editorSurfaceRegistry } from "../../../core/shell/editorSurfaces";
 import { useShellLayoutStore } from "../../../core/shell/layout/useShellLayoutStore";
 import { useEditorFocusStore } from "../../../features/editorFocus";
 import { EditorLayout } from "../EditorLayout";
+
+// The stages mount registered surfaces rather than JSX handed to the layout,
+// so the layout's own test supplies stand-ins for the editor's real ones.
+const surfaceDisposers: Array<() => void> = [];
+
+function registerStageSurfaces() {
+  surfaceDisposers.push(
+    editorSurfaceRegistry.register({
+      id: "test.player",
+      title: "Player",
+      defaultStage: "main-stage",
+      focusRegion: "canvas",
+      component: () => <div data-testid="player">Player</div>,
+    }).dispose,
+    editorSurfaceRegistry.register({
+      id: "test.timeline",
+      title: "Timeline",
+      defaultStage: "lower-stage",
+      focusRegion: "timeline",
+      component: () => <div data-testid="timeline">Timeline</div>,
+    }).dispose,
+  );
+}
 
 function renderEditorLayout({
   locked = false,
@@ -16,13 +40,11 @@ function renderEditorLayout({
       nonTimelineRegionsLocked={locked}
       leftSidebar={<div data-testid="left-sidebar">Left</div>}
       topBar={<div data-testid="top-bar">Top</div>}
-      player={<div data-testid="player">Player</div>}
       rightSidebar={
         <button type="button" onClick={handleRightSidebarClick}>
           Sidebar action
         </button>
       }
-      timeline={<div data-testid="timeline">Timeline</div>}
     />,
   );
 
@@ -33,7 +55,13 @@ describe("EditorLayout", () => {
   beforeEach(() => {
     useEditorFocusStore.getState().setRegion(null);
     useShellLayoutStore.getState().resetLayout();
+    useShellLayoutStore.getState().clearStageSurfaces();
     useShellLayoutStore.getState().setViewport(null);
+    registerStageSurfaces();
+  });
+
+  afterEach(() => {
+    for (const dispose of surfaceDisposers.splice(0)) dispose();
   });
 
   it("renders each editor region", () => {

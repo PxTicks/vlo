@@ -6,6 +6,7 @@
 // barrel would drag every API consumer into the timeline UI import cycle.
 // Only the editor/app shell should import from here.
 export { TimelineContainer as Timeline } from "./TimelineContainer";
+export { cancelTimelineInteractions } from "./cancelTimelineInteractions";
 export type { TimelineContainerProps } from "./TimelineContainer";
 export { AssetDragOverlay } from "./components/AssetDragOverlay";
 export { useAssetDrag } from "./hooks/dnd/useAssetDrag";

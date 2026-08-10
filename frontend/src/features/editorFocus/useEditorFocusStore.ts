@@ -9,14 +9,32 @@ import { create } from "zustand";
  */
 // Region names are shell-owned (plan §3.10); re-exported for existing imports.
 export {
+  DATA_EDITOR_REGION,
   EDITOR_REGIONS,
   type EditorRegion,
 } from "../../core/shell/editorRegions";
-import type { EditorRegion } from "../../core/shell/editorRegions";
+import {
+  attachEditorRegionFocusAuthority,
+  DATA_EDITOR_REGION,
+  type EditorRegion,
+  type EditorRegionClaimant,
+} from "../../core/shell/editorRegions";
 
 interface EditorFocusState {
   region: EditorRegion | null;
-  setRegion: (region: EditorRegion | null) => void;
+  /**
+   * Which region root claimed the current region, when one identified itself.
+   * Only used to decide whether a `releaseRegion` still applies; nothing reads
+   * it to render. Cleared with the region, so at most one detached element is
+   * ever held.
+   */
+  claimant: EditorRegionClaimant | null;
+  setRegion: (
+    region: EditorRegion | null,
+    claimant?: EditorRegionClaimant | null,
+  ) => void;
+  /** Drops ownership only if `claimant` is the one that still holds it. */
+  releaseRegion: (claimant: EditorRegionClaimant) => void;
 }
 
 /**
@@ -31,8 +49,17 @@ interface EditorFocusState {
  */
 export const useEditorFocusStore = create<EditorFocusState>((set) => ({
   region: null,
-  setRegion: (region) =>
-    set((state) => (state.region === region ? state : { region })),
+  claimant: null,
+  setRegion: (region, claimant = null) =>
+    set((state) =>
+      state.region === region && state.claimant === claimant
+        ? state
+        : { region, claimant: region === null ? null : claimant },
+    ),
+  releaseRegion: (claimant) =>
+    set((state) =>
+      state.claimant === claimant ? { region: null, claimant: null } : state,
+    ),
 }));
 
 /** Canonical Zustand identity exposed only through the trusted host directory. */
@@ -40,7 +67,18 @@ export function getEditorFocusStoreForTrustedHostAccess(): typeof useEditorFocus
   return useEditorFocusStore;
 }
 
-export const DATA_EDITOR_REGION = "data-editor-region";
+/**
+ * Editor surfaces are mounted by the shell, which cannot import this feature
+ * (`src/core` never depends on `src/features`). This hands the shell the two
+ * operations a stage mount needs — claim on interaction, release when the
+ * surface it belongs to goes away — so keyboard ownership still has exactly one
+ * owner. Installed at module load, alongside the store it drives.
+ */
+attachEditorRegionFocusAuthority({
+  claim: (region, claimant) =>
+    useEditorFocusStore.getState().setRegion(region, claimant),
+  release: (claimant) => useEditorFocusStore.getState().releaseRegion(claimant),
+});
 
 /**
  * Props to spread on a region's root element so it claims keyboard ownership
@@ -49,13 +87,18 @@ export const DATA_EDITOR_REGION = "data-editor-region";
  * space); the `data-editor-region` attribute lets the document-level focus
  * reconciler map real DOM focus (tab navigation, clicking inputs) back to the
  * same region. See {@link useEditorFocusReconciler}.
+ *
+ * The claim records the region root it came from, so a claimant that later
+ * releases (a shell stage losing its surface) can tell its own claim from an
+ * identically-named one another area has since taken.
  */
 export function useRegionFocus(region: EditorRegion) {
   const setRegion = useEditorFocusStore((state) => state.setRegion);
   return useMemo(
     () => ({
       [DATA_EDITOR_REGION]: region,
-      onPointerDownCapture: () => setRegion(region),
+      onPointerDownCapture: (event: { readonly currentTarget: object }) =>
+        setRegion(region, event.currentTarget),
     }),
     [region, setRegion],
   );
@@ -70,11 +113,25 @@ export function claimEditorRegion(region: EditorRegion): void {
   useEditorFocusStore.getState().setRegion(region);
 }
 
-function resolveRegionFromNode(node: EventTarget | null): EditorRegion | null {
-  if (!(node instanceof HTMLElement)) return null;
+interface ResolvedRegionClaim {
+  readonly region: EditorRegion | null;
+  readonly claimant: EditorRegionClaimant | null;
+}
+
+/**
+ * The region root a node belongs to. Resolving the element as well as the name
+ * keeps DOM focus and pointer claims on the same identity: focusing an input
+ * inside a surface re-asserts that surface's claim rather than replacing it
+ * with an anonymous one.
+ */
+function resolveRegionFromNode(node: EventTarget | null): ResolvedRegionClaim {
+  if (!(node instanceof HTMLElement)) return { region: null, claimant: null };
   const root = node.closest(`[${DATA_EDITOR_REGION}]`);
   const region = root?.getAttribute(DATA_EDITOR_REGION) ?? null;
-  return (region as EditorRegion | null) ?? null;
+  return {
+    region: (region as EditorRegion | null) ?? null,
+    claimant: region === null ? null : root,
+  };
 }
 
 /**
@@ -88,7 +145,8 @@ function resolveRegionFromNode(node: EventTarget | null): EditorRegion | null {
 export function useEditorFocusReconciler(): void {
   useEffect(() => {
     const syncRegion = (target: EventTarget | null) => {
-      useEditorFocusStore.getState().setRegion(resolveRegionFromNode(target));
+      const { region, claimant } = resolveRegionFromNode(target);
+      useEditorFocusStore.getState().setRegion(region, claimant);
     };
 
     const handleFocusIn = (event: FocusEvent) => {

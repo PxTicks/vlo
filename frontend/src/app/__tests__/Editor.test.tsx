@@ -113,6 +113,7 @@ vi.mock("../../features/timeline", () => ({
 // UI surface moved from the timeline barrel to `timeline/ui`.
 vi.mock("../../features/timeline/ui", () => ({
   Timeline: () => <div data-testid="timeline-container">Timeline</div>,
+  cancelTimelineInteractions: vi.fn(),
   useAssetDrag: () => ({
     handleAssetDragStart: vi.fn(),
     handleAssetDragMove: vi.fn(),

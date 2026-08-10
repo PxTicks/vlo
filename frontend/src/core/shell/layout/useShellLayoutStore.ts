@@ -11,18 +11,24 @@ import {
   createLocalShellLayoutPersistence,
   type ShellLayoutPersistence,
 } from "./layoutPersistence";
+import { cancelEditorSurfaceInteractions } from "../editorSurfaces";
 import { hostViewRegistry } from "../viewRegistry";
 import {
   arePanelDescriptorsEqual,
+  areSurfaceDescriptorsEqual,
+  observeEditorSurfaces,
   observeShellPanels,
 } from "./layoutDescriptors";
 import { resolveShellLayout } from "./layoutResolver";
 import {
   DOCK_REGION_CONSTRAINTS,
+  EDITOR_STAGES,
   LOWER_STAGE_CONSTRAINTS,
   RESPONSIVE_SIDEBAR_BREAKPOINT_PX,
   type DockRegion,
   type DockRegionConstraints,
+  type EditorStage,
+  type EditorStageSurfaces,
   type PersistedPanelPlacement,
   type PersistedRegionGeometry,
   type PersistedRegionState,
@@ -31,6 +37,7 @@ import {
   type ResponsiveSidebarRegion,
   type ShellLayoutDocumentV2,
   type ShellPanelDescriptor,
+  type ShellSurfaceDescriptor,
   type ShellViewport,
 } from "./layoutTypes";
 
@@ -42,12 +49,26 @@ export interface ShellLayoutState {
   readonly document: ShellLayoutDocumentV2;
   /** Live panel table, pushed in by the registry adapter. */
   readonly panels: readonly ShellPanelDescriptor[];
+  /** Live editor-surface table, pushed in by the registry adapter. */
+  readonly surfaces: readonly ShellSurfaceDescriptor[];
+  /** Session-only stage composition. Never persisted (plan §3.3). */
+  readonly stageSurfaces: EditorStageSurfaces;
   readonly viewport: ShellViewport | null;
   readonly responsiveExpandedRegion: ResponsiveSidebarRegion | null;
   readonly resolved: ResolvedShellLayout;
 
   setPanelDescriptors(panels: readonly ShellPanelDescriptor[]): void;
+  setSurfaceDescriptors(surfaces: readonly ShellSurfaceDescriptor[]): void;
   setViewport(viewport: ShellViewport | null): void;
+
+  /**
+   * Mounts a surface in a stage for this session, or returns to the stage's
+   * registered default when passed null. Returns false when the surface is
+   * unknown, unavailable, or does not permit the stage.
+   */
+  setStageSurface(stage: EditorStage, surfaceId: string | null): boolean;
+  /** Returns every stage to its registered default. */
+  clearStageSurfaces(): void;
 
   /**
    * Moves a panel to one of its allowed regions and reveals it there. Returns
@@ -76,7 +97,10 @@ export interface ShellLayoutStoreOptions {
   readonly constraints?: Readonly<Record<DockRegion, DockRegionConstraints>>;
   readonly resizePersistDelayMs?: number;
   readonly panels?: readonly ShellPanelDescriptor[];
+  readonly surfaces?: readonly ShellSurfaceDescriptor[];
   readonly viewport?: ShellViewport | null;
+  /** Seam for tests; defaults to the registered surface's own canceller. */
+  readonly cancelSurfaceInteractions?: (surfaceId: string) => void;
 }
 
 /** Mutable mirrors of the persisted shapes, for building the next document. */
@@ -139,29 +163,31 @@ function isNarrowViewport(viewport: ShellViewport | null): boolean {
   );
 }
 
+/** Everything the resolver reads. A superset of it is the store's own state. */
+interface LayoutResolutionInputs {
+  readonly document: ShellLayoutDocumentV2;
+  readonly panels: readonly ShellPanelDescriptor[];
+  readonly surfaces: readonly ShellSurfaceDescriptor[];
+  readonly viewport: ShellViewport | null;
+  readonly responsiveExpandedRegion: ResponsiveSidebarRegion | null;
+  readonly stageSurfaces: EditorStageSurfaces;
+}
+
 export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
   const persistence =
     options.persistence ?? createLocalShellLayoutPersistence();
   const constraints = options.constraints ?? DOCK_REGION_CONSTRAINTS;
   const resizePersistDelayMs =
     options.resizePersistDelayMs ?? DEFAULT_RESIZE_PERSIST_DELAY_MS;
+  const cancelSurfaceInteractions =
+    options.cancelSurfaceInteractions ??
+    ((surfaceId: string) => cancelEditorSurfaceInteractions(surfaceId));
 
   return create<ShellLayoutState>()((set, get) => {
     let pendingWrite: ReturnType<typeof setTimeout> | null = null;
 
-    const resolve = (
-      document: ShellLayoutDocumentV2,
-      panels: readonly ShellPanelDescriptor[],
-      viewport: ShellViewport | null,
-      responsiveExpandedRegion: ResponsiveSidebarRegion | null,
-    ): ResolvedShellLayout =>
-      resolveShellLayout({
-        panels,
-        document,
-        viewport,
-        constraints,
-        responsiveExpandedRegion,
-      });
+    const resolve = (inputs: LayoutResolutionInputs): ResolvedShellLayout =>
+      resolveShellLayout({ ...inputs, constraints });
 
     const cancelPendingWrite = (): void => {
       if (pendingWrite === null) return;
@@ -196,12 +222,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
       set({
         document,
         responsiveExpandedRegion,
-        resolved: resolve(
-          document,
-          state.panels,
-          state.viewport,
-          responsiveExpandedRegion,
-        ),
+        resolved: resolve({ ...state, document, responsiveExpandedRegion }),
       });
       if (persist === "now") persistNow();
       else persistSoon();
@@ -210,29 +231,29 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
     const findDescriptor = (viewId: string): ShellPanelDescriptor | undefined =>
       get().panels.find((descriptor) => descriptor.id === viewId);
 
-    const initialDocument = persistence.read();
-    const initialPanels = options.panels ?? [];
-    const initialViewport = options.viewport ?? null;
+    const initialInputs: LayoutResolutionInputs = {
+      document: persistence.read(),
+      panels: options.panels ?? [],
+      surfaces: options.surfaces ?? [],
+      viewport: options.viewport ?? null,
+      responsiveExpandedRegion: null,
+      stageSurfaces: {},
+    };
 
     return {
-      document: initialDocument,
-      panels: initialPanels,
-      viewport: initialViewport,
-      responsiveExpandedRegion: null,
-      resolved: resolve(initialDocument, initialPanels, initialViewport, null),
+      ...initialInputs,
+      resolved: resolve(initialInputs),
 
       setPanelDescriptors: (panels) => {
         const state = get();
         if (arePanelDescriptorsEqual(state.panels, panels)) return;
-        set({
-          panels,
-          resolved: resolve(
-            state.document,
-            panels,
-            state.viewport,
-            state.responsiveExpandedRegion,
-          ),
-        });
+        set({ panels, resolved: resolve({ ...state, panels }) });
+      },
+
+      setSurfaceDescriptors: (surfaces) => {
+        const state = get();
+        if (areSurfaceDescriptorsEqual(state.surfaces, surfaces)) return;
+        set({ surfaces, resolved: resolve({ ...state, surfaces }) });
       },
 
       setViewport: (viewport) => {
@@ -249,13 +270,60 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         set({
           viewport,
           responsiveExpandedRegion,
-          resolved: resolve(
-            state.document,
-            state.panels,
+          resolved: resolve({
+            ...state,
             viewport,
             responsiveExpandedRegion,
-          ),
+          }),
         });
+      },
+
+      setStageSurface: (stage, surfaceId) => {
+        const state = get();
+        if (surfaceId !== null) {
+          const descriptor = state.surfaces.find(
+            (candidate) => candidate.id === surfaceId,
+          );
+          if (
+            !descriptor ||
+            !descriptor.available ||
+            !descriptor.allowedStages.includes(stage)
+          ) {
+            return false;
+          }
+        }
+        if ((state.stageSurfaces[stage] ?? null) === surfaceId) return true;
+        const outgoing = state.resolved.stages[stage].surfaceId;
+        const stageSurfaces = { ...state.stageSurfaces };
+        if (surfaceId === null) delete stageSurfaces[stage];
+        else stageSurfaces[stage] = surfaceId;
+        const resolved = resolve({ ...state, stageSurfaces });
+        // Nothing the outgoing surface was dragging may outlive it, and the
+        // mount's own cleanup runs after the swap has already been committed
+        // (plan §4.8). Cancelling here means the guarantee holds even for a
+        // caller that changes the composition with no shell rendered at all.
+        if (outgoing !== null && outgoing !== resolved.stages[stage].surfaceId) {
+          cancelSurfaceInteractions(outgoing);
+        }
+        set({ stageSurfaces, resolved });
+        return true;
+      },
+
+      clearStageSurfaces: () => {
+        const state = get();
+        if (Object.keys(state.stageSurfaces).length === 0) return;
+        const stageSurfaces: EditorStageSurfaces = {};
+        const resolved = resolve({ ...state, stageSurfaces });
+        for (const stage of EDITOR_STAGES) {
+          const outgoing = state.resolved.stages[stage].surfaceId;
+          if (
+            outgoing !== null &&
+            outgoing !== resolved.stages[stage].surfaceId
+          ) {
+            cancelSurfaceInteractions(outgoing);
+          }
+        }
+        set({ stageSurfaces, resolved });
       },
 
       movePanel: (viewId, region) => {
@@ -403,12 +471,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
           }
           set({
             responsiveExpandedRegion,
-            resolved: resolve(
-              state.document,
-              state.panels,
-              state.viewport,
-              responsiveExpandedRegion,
-            ),
+            resolved: resolve({ ...state, responsiveExpandedRegion }),
           });
           return;
         }
@@ -549,6 +612,11 @@ export const useShellLayoutStore = createShellLayoutStore({
  */
 observeShellPanels((panels) => {
   useShellLayoutStore.getState().setPanelDescriptors(panels);
+});
+
+/** Editor surfaces follow the live registry for the same reasons. */
+observeEditorSurfaces((surfaces) => {
+  useShellLayoutStore.getState().setSurfaceDescriptors(surfaces);
 });
 
 /**

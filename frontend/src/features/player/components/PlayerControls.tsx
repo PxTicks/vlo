@@ -21,6 +21,8 @@ interface PlayerControlsProps {
   isFullscreen?: boolean;
   onOpenExport: () => void;
   exportDisabled?: boolean;
+  /** A compact preview keeps transport and framing but not project export. */
+  showExport?: boolean;
 }
 
 export const PlayerControls = memo(function PlayerControls({
@@ -31,6 +33,7 @@ export const PlayerControls = memo(function PlayerControls({
   isFullscreen = false,
   onOpenExport,
   exportDisabled = false,
+  showExport = true,
 }: PlayerControlsProps) {
   return (
     <Paper
@@ -106,7 +109,7 @@ export const PlayerControls = memo(function PlayerControls({
           </>
         )}
 
-        {!isFullscreen && (
+        {showExport && !isFullscreen && (
           <>
             <Divider orientation="vertical" flexItem sx={{ bgcolor: "#333" }} />
 

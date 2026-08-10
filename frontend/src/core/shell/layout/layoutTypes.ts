@@ -35,13 +35,23 @@ export const DOCK_REGION_LABELS: Readonly<Record<DockRegion, string>> =
   });
 
 /**
- * Places that hold the editor's primary working surfaces. Declared here so the
- * layout vocabulary is complete; stage resolution arrives with Phase D, when
- * the player and timeline become registered editor surfaces.
+ * Places that hold the editor's primary working surfaces. `main-stage` holds
+ * the picture and `lower-stage` holds the timeline; a dedicated workspace
+ * composes the editor by choosing a different surface for one or both.
  */
 export const EDITOR_STAGES = ["main-stage", "lower-stage"] as const;
 
 export type EditorStage = (typeof EDITOR_STAGES)[number];
+
+export const EDITOR_STAGE_LABELS: Readonly<Record<EditorStage, string>> =
+  Object.freeze({
+    "main-stage": "Main stage",
+    "lower-stage": "Lower stage",
+  });
+
+export function isEditorStage(value: unknown): value is EditorStage {
+  return EDITOR_STAGES.includes(value as EditorStage);
+}
 
 /** Regions whose outer boundary can be resized by the shell. */
 export type ResizableShellRegion = DockRegion | "lower-stage";
@@ -168,6 +178,34 @@ export interface ShellPanelDescriptor {
 }
 
 /**
+ * What a registered editor surface tells the layout kernel about itself. Same
+ * owner-neutral shape as a panel descriptor, with `available` carrying the
+ * already-evaluated `when` condition so the resolver stays pure.
+ */
+export interface ShellSurfaceDescriptor {
+  readonly id: string;
+  readonly defaultStage: EditorStage;
+  /** Stages a workspace may mount this surface in; always includes the default. */
+  readonly allowedStages: readonly EditorStage[];
+  /** Registration-time tie-breaker among a stage's default surfaces. */
+  readonly defaultOrder: number;
+  readonly available: boolean;
+}
+
+/**
+ * One stage's resolved state. A stage shows exactly one surface, so unlike a
+ * dock region there is no ordering or tab set — only which surface is mounted
+ * and which ones could be.
+ */
+export interface ResolvedEditorStage {
+  readonly id: EditorStage;
+  /** The surface the shell mounts. Null when the stage has nothing to show. */
+  readonly surfaceId: string | null;
+  /** Available surfaces permitting this stage, in default order. */
+  readonly candidateSurfaceIds: readonly string[];
+}
+
+/**
  * One region's resolved state. Placement, visibility, selection, collapse, and
  * size are separate concerns (plan §4.2): collapse and size belong to the
  * region, not to whichever view happens to be selected.
@@ -195,6 +233,7 @@ export interface ResolvedDockRegion {
   readonly maximumSizePx: number;
 }
 
+/** The lower stage's geometry. Which surface it shows lives in `stages`. */
 export interface ResolvedLowerStage {
   readonly id: "lower-stage";
   readonly collapsed: boolean;
@@ -208,10 +247,21 @@ export interface ResolvedLowerStage {
 
 export interface ResolvedShellLayout {
   readonly regions: Readonly<Record<DockRegion, ResolvedDockRegion>>;
+  readonly stages: Readonly<Record<EditorStage, ResolvedEditorStage>>;
   readonly lowerStage: ResolvedLowerStage;
   /** Effective region of every known panel, keyed by view ID. */
   readonly panelRegions: Readonly<Record<string, DockRegion>>;
 }
+
+/**
+ * A session-only stage composition: which surface each stage should mount right
+ * now. A dedicated workspace supplies one while it is active (plan §4.4 layer
+ * 4). Deliberately not part of the persisted document — the editor always opens
+ * on its registered defaults (plan §3.3, §5.2).
+ */
+export type EditorStageSurfaces = Readonly<
+  Partial<Record<EditorStage, string>>
+>;
 
 /**
  * A panel's persisted intent.
@@ -251,7 +301,11 @@ export interface ShellLayoutDocumentV2 {
   readonly version: 2;
   readonly panels: Readonly<Record<string, PersistedPanelPlacement>>;
   readonly regions: Readonly<Partial<Record<DockRegion, PersistedRegionState>>>;
-  /** Geometry only; surface selection is introduced with Phase D. */
+  /**
+   * Geometry only. Which surface a stage shows is session state, not a saved
+   * preference: the editor always opens on its registered defaults, and a
+   * dedicated workspace's composition is transient by design (§3.3, §5.2).
+   */
   readonly lowerStage?: PersistedRegionGeometry;
   readonly workspaceLayouts: Readonly<Record<string, WorkspaceLayoutOverride>>;
   /**

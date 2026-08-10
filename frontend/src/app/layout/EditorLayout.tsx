@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import { Box } from "@mui/material";
 import { useShallow } from "zustand/react/shallow";
+import { EditorStageMount } from "../../core/shell/components/EditorStageMount";
 import { RegionCollapseButton } from "../../core/shell/components/RegionCollapseButton";
 import { RegionSeparator } from "../../core/shell/components/RegionSeparator";
+import type { EditorSurfaceEntry } from "../../core/shell/editorSurfaces";
 import {
   COLLAPSED_REGION_SIZE_PX,
   RESPONSIVE_SIDEBAR_BREAKPOINT_PX,
@@ -13,7 +15,7 @@ import { useShellLayoutStore } from "../../core/shell/layout/useShellLayoutStore
 import { ShellPortableViewHost } from "../../core/shell/ShellPortableViewHost";
 import type { ShellViewEntry } from "../../core/shell/viewRegistry";
 import type { ProjectConfig } from "../../features/project";
-import { useRegionFocus, useEditorFocusStore } from "../../features/editorFocus";
+import { useEditorFocusStore } from "../../features/editorFocus";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { EditorRegion } from "./EditorRegion";
 
@@ -30,18 +32,29 @@ function wrapPortableView(view: ShellViewEntry, content: ReactNode) {
   );
 }
 
+/**
+ * A stage is one surface wide, so its boundary is the surface's. Naming it
+ * after the surface keeps a crash attributable to whatever is mounted rather
+ * than to the stage that happens to hold it.
+ */
+function wrapStageSurface(surface: EditorSurfaceEntry, content: ReactNode) {
+  return (
+    <ErrorBoundary boundaryName={surface.title} variant="region">
+      {content}
+    </ErrorBoundary>
+  );
+}
+
 interface EditorLayoutProps {
   readonly layoutMode?: ProjectConfig["layoutMode"];
   readonly nonTimelineRegionsLocked: boolean;
   readonly leftSidebar: ReactNode;
   readonly topBar: ReactNode;
-  readonly player: ReactNode;
   /** Shell region beside the player; renders nothing when it holds no views. */
   readonly playerAside?: ReactNode;
   /** Shell region under the player; renders nothing while it is closed. */
   readonly bottomDock?: ReactNode;
   readonly rightSidebar: ReactNode;
-  readonly timeline: ReactNode;
 }
 
 export function EditorLayout({
@@ -49,11 +62,9 @@ export function EditorLayout({
   nonTimelineRegionsLocked,
   leftSidebar,
   topBar,
-  player,
   playerAside,
   bottomDock,
   rightSidebar,
-  timeline,
 }: EditorLayoutProps) {
   useShellLayoutRuntime();
   const geometry = useShellLayoutStore(
@@ -65,7 +76,6 @@ export function EditorLayout({
       setRegionCollapsed: state.setRegionCollapsed,
     })),
   );
-  const timelineFocusProps = useRegionFocus("timeline");
   const clearRegion = useEditorFocusStore((state) => state.setRegion);
   const leftWidthPx = geometry.left.collapsed
     ? COLLAPSED_REGION_SIZE_PX
@@ -235,7 +245,9 @@ export function EditorLayout({
           }}
         >
           <Box sx={{ display: "flex", flexGrow: 1, minHeight: 0 }}>
-            <Box sx={{ display: "flex", flexGrow: 1, minWidth: 0 }}>{player}</Box>
+            <Box sx={{ display: "flex", flexGrow: 1, minWidth: 0 }}>
+              <EditorStageMount stage="main-stage" wrap={wrapStageSurface} />
+            </Box>
             {playerAside}
           </Box>
           {bottomDock}
@@ -297,9 +309,10 @@ export function EditorLayout({
         />
       </EditorRegion>
 
+      {/* Keyboard ownership of the lower stage belongs to whatever surface is
+          mounted in it, so the stage mount claims it rather than this frame. */}
       <Box
         id="shell-region-lower-stage"
-        {...timelineFocusProps}
         sx={{
           gridArea: "bottom",
           bgcolor: "#000",
@@ -321,7 +334,7 @@ export function EditorLayout({
             visibility: geometry.lower.collapsed ? "hidden" : "visible",
           }}
         >
-          {timeline}
+          <EditorStageMount stage="lower-stage" wrap={wrapStageSurface} />
         </Box>
         <Box sx={{ position: "absolute", right: 4, top: 3, zIndex: 30 }}>
           <RegionCollapseButton

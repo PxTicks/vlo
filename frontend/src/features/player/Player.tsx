@@ -78,7 +78,24 @@ import { useCanvasToolHost } from "./hooks/useCanvasToolHost";
 
 type SynchronizedPlaybackRenderer = (time: number) => Promise<void>;
 
-function PlayerImpl() {
+/**
+ * How much chrome the preview carries
+ * (docs/configurable-docking-and-dedicated-workspaces-plan.md §4.8).
+ *
+ * `compact` is the reuse seam for a task-focused stage: the same playback,
+ * media, and frame services, minus the project-level chrome a focused workspace
+ * has no business offering. It is deliberately a mode of this component rather
+ * than a second preview, because a parallel player stack would mean a second
+ * Pixi application, decoder pool lease, and audio graph.
+ */
+export type PlayerChrome = "full" | "compact";
+
+export interface PlayerProps {
+  readonly chrome?: PlayerChrome;
+}
+
+function PlayerImpl({ chrome = "full" }: PlayerProps) {
+  const compact = chrome === "compact";
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRootRef = useRef<HTMLDivElement>(null);
@@ -696,6 +713,7 @@ function PlayerImpl() {
   const extractDialogOpen = useExtractStore((s) => s.dialogOpen);
   const extractDialogView = useExtractStore((s) => s.dialogView);
   const extractProgress = useExtractStore((s) => s.progress);
+  const extractIsProcessing = useExtractStore((s) => s.isProcessing);
   const selectionMode = useTimelineSelectionStore((s) => s.selectionMode);
   const frameSelectionMode = useExtractStore((s) => s.frameSelectionMode);
 
@@ -1057,24 +1075,29 @@ function PlayerImpl() {
         isPlaying={isPlaying}
         onTogglePlay={handleTogglePlay}
         onFitView={fitViewportToScreen}
-        onToggleFullscreen={handleToggleFullscreen}
+        onToggleFullscreen={compact ? undefined : handleToggleFullscreen}
         isFullscreen={isFullscreen}
         onOpenExport={() => useExtractStore.getState().openDialog()}
         exportDisabled={selectionMode || frameSelectionMode}
+        showExport={!compact}
       />
 
-      <ExtractDialog
-        open={extractDialogOpen}
-        dialogView={extractDialogView}
-        onClose={() => useExtractStore.getState().closeDialog()}
-        onCancelProcessing={handleCancelProcessing}
-        onExtractFrame={handleExtractFrame}
-        onExtractSelection={handleExtractSelection}
-        onExport={handleExport}
-        onSetView={(view) => useExtractStore.getState().setDialogView(view)}
-        isProcessing={useExtractStore((s) => s.isProcessing)}
-        progress={extractProgress}
-      />
+      {/* Export and extraction are project-level actions owned by the full
+          editor; a compact preview borrows the picture, not the workflow. */}
+      {compact ? null : (
+        <ExtractDialog
+          open={extractDialogOpen}
+          dialogView={extractDialogView}
+          onClose={() => useExtractStore.getState().closeDialog()}
+          onCancelProcessing={handleCancelProcessing}
+          onExtractFrame={handleExtractFrame}
+          onExtractSelection={handleExtractSelection}
+          onExport={handleExport}
+          onSetView={(view) => useExtractStore.getState().setDialogView(view)}
+          isProcessing={extractIsProcessing}
+          progress={extractProgress}
+        />
+      )}
     </Box>
   );
 }

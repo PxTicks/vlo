@@ -122,6 +122,33 @@ export async function getPendingDeliveries(
   return Array.isArray(payload.deliveries) ? payload.deliveries : [];
 }
 
+export async function registerIframeGenerationClient(
+  projectId: string,
+  clientId: string,
+  bindingVersion: number,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/app/generation-delivery/projects/${encodeURIComponent(
+      projectId,
+    )}/iframe-clients/${encodeURIComponent(clientId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ binding_version: bindingVersion }),
+    },
+  );
+  if (!response.ok) {
+    await throwRequestError("Iframe client registration", response);
+  }
+  const payload = (await response.json()) as {
+    accepted?: boolean;
+    project_id?: string;
+  };
+  if (payload.accepted !== true || payload.project_id !== projectId) {
+    throw new Error("Iframe client registration was superseded");
+  }
+}
+
 export async function adoptIframeGeneration(
   projectId: string,
   promptId: string,

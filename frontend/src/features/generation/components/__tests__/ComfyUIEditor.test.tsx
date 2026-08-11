@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -10,6 +11,7 @@ import {
 
 const bridgeMocks = vi.hoisted(() => ({
   state: { isReady: false },
+  currentClientId: null as string | null,
   readActive: vi.fn(),
   health: vi.fn(),
   onGraphChanged: vi.fn(
@@ -21,9 +23,15 @@ const bridgeMocks = vi.hoisted(() => ({
   onIframeGeneration: vi.fn(
     (_handler: (generation: unknown) => void): (() => void) => () => {},
   ),
+  onReady: vi.fn((_handler: () => void): (() => void) => () => {}),
   notifyIframeReloaded: vi.fn(),
   isPeerBooting: vi.fn(() => false),
   waitForReady: vi.fn(),
+}));
+const deliveryApiMocks = vi.hoisted(() => ({
+  adopt: vi.fn().mockResolvedValue(undefined),
+  progress: vi.fn().mockResolvedValue(undefined),
+  registerClient: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../services/workflowBridge", () => ({
@@ -34,15 +42,24 @@ vi.mock("../../services/iframeBridgeClient", () => ({
     get isReady() {
       return bridgeMocks.state.isReady;
     },
+    get currentClientId() {
+      return bridgeMocks.currentClientId;
+    },
     readActive: bridgeMocks.readActive,
     health: bridgeMocks.health,
     onGraphChanged: bridgeMocks.onGraphChanged,
     onHealthChanged: bridgeMocks.onHealthChanged,
     onIframeGeneration: bridgeMocks.onIframeGeneration,
+    onReady: bridgeMocks.onReady,
     notifyIframeReloaded: bridgeMocks.notifyIframeReloaded,
     isPeerBooting: bridgeMocks.isPeerBooting,
     waitForReady: bridgeMocks.waitForReady,
   },
+}));
+vi.mock("../../services/generationDeliveryApi", () => ({
+  adoptIframeGeneration: deliveryApiMocks.adopt,
+  reportIframeGenerationProgress: deliveryApiMocks.progress,
+  registerIframeGenerationClient: deliveryApiMocks.registerClient,
 }));
 vi.mock("../../services/workflowSyncController", () => ({
   // Never resolves: keeps the init effect parked so it can't churn state
@@ -62,6 +79,7 @@ import { buildWorkflowResultFromGraphData } from "../../services/workflowBridge"
 import { useGenerationStore } from "../../useGenerationStore";
 import { useExtractStore } from "../../../../core/extract/useExtractStore";
 import { useTimelineSelectionStore } from "../../../timelineSelection";
+import { useProjectStore } from "../../../project";
 
 function resetStore(overrides: Record<string, unknown> = {}) {
   useGenerationStore.setState({
@@ -81,10 +99,13 @@ function resetStore(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   resetStore();
+  useProjectStore.setState({ project: null });
   useTimelineSelectionStore.getState().exitSelectionMode();
   useExtractStore.getState().setOnConfirmSelection(null);
   useExtractStore.getState().setOnCancelSelection(null);
   bridgeMocks.state.isReady = false;
+  bridgeMocks.currentClientId = null;
+  deliveryApiMocks.registerClient.mockClear();
   bridgeMocks.isPeerBooting.mockReturnValue(false);
   bridgeMocks.readActive.mockResolvedValue(null);
   bridgeMocks.health.mockResolvedValue(null);
@@ -130,6 +151,89 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
     const openLink = screen.getByRole("link");
     expect(openLink).toHaveAttribute("href", "/comfyui-frame/");
     expect(openLink).toHaveAttribute("target", "_blank");
+  });
+
+  it("keeps the iframe URL stable when the active project changes", () => {
+    useProjectStore.setState({
+      project: {
+        id: "project / one",
+        title: "Project One",
+        createdAt: Date.now(),
+        lastModified: Date.now(),
+        rootAssetsFolder: "project-one",
+      },
+    });
+
+    render(<ComfyUIEditor open onClose={() => {}} />);
+
+    const iframe = screen.getByTitle("ComfyUI Node Editor");
+    expect(iframe).toHaveAttribute(
+      "src",
+      "/comfyui-frame/",
+    );
+
+    act(() => {
+      useProjectStore.setState({
+        project: {
+          id: "project-two",
+          title: "Project Two",
+          createdAt: Date.now(),
+          lastModified: Date.now(),
+          rootAssetsFolder: "project-two",
+        },
+      });
+    });
+
+    expect(screen.getByTitle("ComfyUI Node Editor")).toBe(iframe);
+    expect(iframe).toHaveAttribute("src", "/comfyui-frame/");
+  });
+
+  it("rebinds the persistent iframe client without replacing the iframe", async () => {
+    bridgeMocks.state.isReady = true;
+    bridgeMocks.currentClientId = "iframe-client-1";
+    useProjectStore.setState({
+      project: {
+        id: "project-one",
+        title: "Project One",
+        createdAt: Date.now(),
+        lastModified: Date.now(),
+        rootAssetsFolder: "project-one",
+      },
+    });
+
+    render(<ComfyUIEditor open onClose={() => {}} />);
+    const iframe = screen.getByTitle("ComfyUI Node Editor");
+    await waitFor(() =>
+      expect(deliveryApiMocks.registerClient).toHaveBeenCalledWith(
+        "project-one",
+        "iframe-client-1",
+        expect.any(Number),
+      ),
+    );
+    const firstBindingVersion = deliveryApiMocks.registerClient.mock.calls[0][2];
+
+    act(() => {
+      useProjectStore.setState({
+        project: {
+          id: "project-two",
+          title: "Project Two",
+          createdAt: Date.now(),
+          lastModified: Date.now(),
+          rootAssetsFolder: "project-two",
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(deliveryApiMocks.registerClient).toHaveBeenCalledWith(
+        "project-two",
+        "iframe-client-1",
+        expect.any(Number),
+      ),
+    );
+    const secondBindingVersion = deliveryApiMocks.registerClient.mock.calls.at(-1)?.[2];
+    expect(secondBindingVersion).toBeGreaterThan(firstBindingVersion);
+    expect(screen.getByTitle("ComfyUI Node Editor")).toBe(iframe);
   });
 
   it("opens advanced settings from the timeline-selection split button", () => {

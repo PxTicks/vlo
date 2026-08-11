@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -12,8 +13,10 @@ from services.comfyui.comfyui_proxy import (
     proxy_websocket,
     upstream_path_from_raw_request,
 )
+from services.generation_delivery import generation_holding_service
 
 compat_router = APIRouter(tags=["comfyui-compat"])
+logger = logging.getLogger(__name__)
 
 _BRIDGE_EXTENSION_URL = "/extensions/vlo-host/vlo-bridge.js"
 _BRIDGE_ASSET_ROOT = (
@@ -28,6 +31,7 @@ _BRIDGE_BOOTSTRAP_TAG = (
     b'src="/comfyui-frame/extensions/vlo-host/vlo-bridge.js"></script>'
 )
 _IFRAME_EXTENSION_LIST_PATHS = {"api/extensions", "extensions"}
+_PROMPT_UPSTREAM_PATHS = {"/prompt", "/api/prompt"}
 
 
 def _is_installed_vlo_bridge(extension_url: str) -> bool:
@@ -98,6 +102,83 @@ def _decorate_iframe_html(response: Response) -> Response:
     )
 
 
+def _iframe_submission_metadata(payload: object) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        return {}
+    metadata: dict[str, object] = {}
+    prompt = payload.get("prompt")
+    if isinstance(prompt, dict) and prompt:
+        metadata["comfyuiPrompt"] = prompt
+    extra_data = payload.get("extra_data")
+    if isinstance(extra_data, dict):
+        extra_pnginfo = extra_data.get("extra_pnginfo")
+        if isinstance(extra_pnginfo, dict):
+            workflow = extra_pnginfo.get("workflow")
+            if isinstance(workflow, dict) and workflow:
+                metadata["comfyuiWorkflow"] = workflow
+    return metadata
+
+
+async def _adopt_accepted_iframe_prompt(
+    request_payload: object,
+    response: Response,
+) -> None:
+    if not isinstance(request_payload, dict) or not 200 <= response.status_code < 300:
+        return
+    client_id = request_payload.get("client_id")
+    if not isinstance(client_id, str) or not client_id.strip():
+        return
+    normalized_client_id = client_id.strip()
+    project_id = await generation_holding_service.get_iframe_client_project(
+        normalized_client_id
+    )
+    if project_id is None:
+        return
+    try:
+        response_payload = json.loads(bytes(response.body))
+    except (AttributeError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        return
+    if not isinstance(response_payload, dict):
+        return
+    prompt_id = response_payload.get("prompt_id")
+    if not isinstance(prompt_id, str) or not prompt_id.strip():
+        return
+    try:
+        await generation_holding_service.adopt_delivery(
+            project_id=project_id,
+            prompt_id=prompt_id.strip(),
+            client_id=normalized_client_id,
+            generation_metadata=_iframe_submission_metadata(request_payload),
+        )
+    except Exception:
+        # The accepted ComfyUI submission must still reach the iframe. Bridge
+        # lifecycle adoption remains a retrying fallback for this rare failure.
+        logger.exception(
+            "Failed to create holding delivery for iframe prompt %s",
+            prompt_id,
+        )
+
+
+async def _proxy_with_prompt_adoption(
+    request: Request,
+    upstream_path: str,
+) -> Response:
+    normalized_path = f"/{upstream_path.lstrip('/')}"
+    is_prompt_submission = (
+        request.method == "POST" and normalized_path in _PROMPT_UPSTREAM_PATHS
+    )
+    request_payload: object = None
+    if is_prompt_submission:
+        try:
+            request_payload = await request.json()
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            pass
+    response = await proxy_http_request(request, upstream_path)
+    if is_prompt_submission:
+        await _adopt_accepted_iframe_prompt(request_payload, response)
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Root compatibility routes for same-origin ComfyUI iframe usage
 # ---------------------------------------------------------------------------
@@ -118,7 +199,7 @@ async def proxy_comfyui_frame(request: Request, path: str = ""):
 
     # Preserve raw encoded file paths when proxying iframe-scoped requests.
     upstream_path = upstream_path_from_raw_request(request, "/comfyui-frame")
-    response = await proxy_http_request(request, upstream_path)
+    response = await _proxy_with_prompt_adoption(request, upstream_path)
     if request.method == "GET" and normalized_path == "":
         return _decorate_iframe_html(response)
     if request.method == "GET" and normalized_path in _IFRAME_EXTENSION_LIST_PATHS:
@@ -131,7 +212,7 @@ async def proxy_comfyui_frame(request: Request, path: str = ""):
 async def proxy_api_root(request: Request, path: str = ""):
     # Preserve both the /api prefix and raw encoded path segments.
     upstream_path = upstream_path_from_raw_request(request)
-    return await proxy_http_request(request, upstream_path)
+    return await _proxy_with_prompt_adoption(request, upstream_path)
 
 
 @compat_router.api_route("/scripts", methods=PROXY_HTTP_METHODS)
@@ -149,7 +230,10 @@ async def proxy_extensions_root(request: Request, path: str = ""):
 @compat_router.api_route("/prompt", methods=PROXY_HTTP_METHODS)
 @compat_router.api_route("/prompt/{path:path}", methods=PROXY_HTTP_METHODS)
 async def proxy_prompt_root(request: Request, path: str = ""):
-    return await proxy_http_request(request, compose_upstream_path("prompt", path))
+    return await _proxy_with_prompt_adoption(
+        request,
+        compose_upstream_path("prompt", path),
+    )
 
 
 @compat_router.api_route("/queue", methods=PROXY_HTTP_METHODS)

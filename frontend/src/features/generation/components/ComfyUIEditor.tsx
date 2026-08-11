@@ -35,10 +35,8 @@ import {
   waitForAppReady,
   type ShouldAbort,
 } from "../services/workflowSyncController";
-import {
-  adoptIframeGeneration,
-  reportIframeGenerationProgress,
-} from "../services/generationDeliveryApi";
+import { iframeGenerationAdoptionController } from "../services/IframeGenerationAdoptionController";
+import { registerIframeGenerationClient } from "../services/generationDeliveryApi";
 import { useProjectStore } from "../../project";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
@@ -63,6 +61,15 @@ import { IframeTimelineSelectionSettingsDialog } from "../iframeTimelineSelectio
 
 const HEALTH_WATCHDOG_MS = 10_000;
 const IFRAME_PROGRESS_THROTTLE_MS = 250;
+let lastIframeClientBindingVersion = Date.now();
+
+function nextIframeClientBindingVersion(): number {
+  lastIframeClientBindingVersion = Math.max(
+    Date.now(),
+    lastIframeClientBindingVersion + 1,
+  );
+  return lastIframeClientBindingVersion;
+}
 const APP_READY_TIMEOUT_MS = 10_000;
 const RECOVERY_POLL_MS = 3000;
 const MAX_CONSECUTIVE_READ_FAILURES = 3;
@@ -201,6 +208,7 @@ function buildWorkflowSignature(
 
 export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const comfyuiDirectUrl = useGenerationStore((s) => s.comfyuiDirectUrl);
+  const projectId = useProjectStore((state) => state.project?.id ?? null);
   const registerEditor = useGenerationStore((s) => s.registerEditor);
   const unregisterEditor = useGenerationStore((s) => s.unregisterEditor);
   const registerWorkflowFromEditor = useGenerationStore(
@@ -786,6 +794,69 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
 
   useEffect(() => iframeBridge.onHealthChanged(applyHealth), [applyHealth]);
 
+  // ComfyUI persists this client id across iframe reloads. Bind it to the
+  // active project out-of-band so project switches leave the editor document,
+  // open tabs, and unsaved graph state intact. A monotonically increasing
+  // version prevents a slow registration for the previous project winning a
+  // request race after a switch.
+  useEffect(() => {
+    if (!projectId) return;
+    const bindingVersion = nextIframeClientBindingVersion();
+    let disposed = false;
+    let inFlight = false;
+    let retryAttempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const registerClient = () => {
+      const clientId = iframeBridge.currentClientId;
+      if (disposed || inFlight || !clientId) return;
+      inFlight = true;
+      void registerIframeGenerationClient(
+        projectId,
+        clientId,
+        bindingVersion,
+      )
+        .then(() => {
+          retryAttempt = 0;
+          if (retryTimer !== null) {
+            clearTimeout(retryTimer);
+            retryTimer = null;
+          }
+        })
+        .catch((error: unknown) => {
+          if (disposed) return;
+          if (retryAttempt === 0) {
+            console.warn(
+              "[ComfyUIEditor] Failed to register iframe generation client; retrying",
+              error,
+            );
+          }
+          const delay = Math.min(1_000 * 2 ** retryAttempt, 30_000);
+          retryAttempt += 1;
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            registerClient();
+          }, delay);
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+
+    const unsubscribeReady = iframeBridge.onReady(registerClient);
+    const unsubscribeHealth = iframeBridge.onHealthChanged((health) => {
+      if (health.backendConnected) registerClient();
+    });
+    registerClient();
+
+    return () => {
+      disposed = true;
+      if (retryTimer !== null) clearTimeout(retryTimer);
+      unsubscribeReady();
+      unsubscribeHealth();
+    };
+  }, [projectId]);
+
   // Node→asset bindings are keyed by ComfyUI node id, which is scoped to the
   // loaded workflow. Clear them whenever the workflow identity changes — a real
   // switch, since drops only bump the revision, not the instance id — so a later
@@ -802,55 +873,43 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   // progress, so failures here are non-fatal.
   useEffect(() => {
     const lastProgressAt = new Map<string, number>();
-    return iframeBridge.onIframeGeneration((generation) => {
+    const unsubscribe = iframeBridge.onIframeGeneration((generation) => {
       const projectId = useProjectStore.getState().project?.id;
       if (!projectId) return;
 
-      if (generation.phase === "started") {
-        void adoptIframeGeneration(projectId, generation.promptId, {
-          generationMetadata: getIframeTimelineSelectionGenerationMetadata(),
-        }).catch(
-          (error) => {
-            console.warn(
-              "[ComfyUIEditor] Failed to adopt in-editor generation",
-              error,
-            );
-          },
-        );
-        return;
-      }
-
       if (generation.phase === "finished") {
         lastProgressAt.delete(generation.promptId);
-        return;
       }
 
       if (
-        generation.value === null ||
-        generation.max === null ||
-        generation.max <= 0
+        generation.phase === "progress" &&
+        generation.value !== null &&
+        generation.max !== null &&
+        generation.max > 0
       ) {
-        return;
+        const now = Date.now();
+        if (
+          now - (lastProgressAt.get(generation.promptId) ?? 0) <
+          IFRAME_PROGRESS_THROTTLE_MS
+        ) {
+          return;
+        }
+        lastProgressAt.set(generation.promptId, now);
       }
-      const now = Date.now();
-      if (
-        now - (lastProgressAt.get(generation.promptId) ?? 0) <
-        IFRAME_PROGRESS_THROTTLE_MS
-      ) {
-        return;
-      }
-      lastProgressAt.set(generation.promptId, now);
-      const progress = Math.max(
-        0,
-        Math.min(100, Math.round((generation.value / generation.max) * 100)),
+
+      // Any lifecycle event can recover a start notification that raced the
+      // bridge handshake. The controller also retries transient HTTP failures
+      // and reports progress only after the idempotent adoption succeeds.
+      iframeGenerationAdoptionController.observe(
+        projectId,
+        generation,
+        getIframeTimelineSelectionGenerationMetadata(),
       );
-      void reportIframeGenerationProgress(projectId, generation.promptId, {
-        progress,
-        node: generation.node,
-      }).catch(() => {
-        // Best-effort; the backstop still settles the delivery.
-      });
     });
+    return () => {
+      unsubscribe();
+      iframeGenerationAdoptionController.dispose();
+    };
   }, []);
 
   const pollWorkflow = useCallback(async () => {

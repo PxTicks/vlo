@@ -139,6 +139,7 @@ vi.mock("../services/ComfyUIWebSocket", () => ({
 
 vi.mock("../services/GenerationDeliveryWebSocket", () => ({
   GenerationDeliveryWebSocket: class {
+    readonly boundProjectId: string;
     isConnected = false;
     private readonly messageHandlers = new Set<(message: unknown) => void>();
     private readonly previewHandlers = new Set<(preview: unknown) => void>();
@@ -146,8 +147,8 @@ vi.mock("../services/GenerationDeliveryWebSocket", () => ({
       (state: "connected" | "disconnected") => void
     >();
 
-    constructor(...args: [string, string]) {
-      void args;
+    constructor(_baseUrl: string, projectId: string) {
+      this.boundProjectId = projectId;
       mockDeliveryWsInstances.push(this);
     }
 
@@ -430,6 +431,8 @@ function getLatestClient(): MockWsClient {
 }
 
 interface MockDeliveryClient {
+  readonly boundProjectId: string;
+  readonly isConnected: boolean;
   emitMessage: (message: unknown) => void;
   emitPreview: (preview: {
     blob: Blob;
@@ -1975,6 +1978,29 @@ describe("useGenerationStore pipeline phases", () => {
     await flushMicrotasks();
 
     expect(useGenerationStore.getState().comfyQueueRemaining).toBe(3);
+  });
+
+  it("replaces the delivery connection when the active project changes", () => {
+    useGenerationStore.getState().connect();
+    const firstDeliveryClient = getLatestDeliveryClient();
+    const currentProject = useProjectStore.getState().project;
+    expect(currentProject).not.toBeNull();
+    expect(firstDeliveryClient.boundProjectId).toBe("project-1");
+
+    useProjectStore.setState({
+      project: {
+        ...currentProject!,
+        id: "project-2",
+        title: "Project Two",
+      },
+    });
+    useGenerationStore.getState().connect();
+
+    const secondDeliveryClient = getLatestDeliveryClient();
+    expect(mockDeliveryWsInstances).toHaveLength(2);
+    expect(firstDeliveryClient.isConnected).toBe(false);
+    expect(secondDeliveryClient.boundProjectId).toBe("project-2");
+    expect(secondDeliveryClient.isConnected).toBe(true);
   });
 
   it("keeps websocket preview frames ordered by explicit frame index", async () => {

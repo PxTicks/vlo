@@ -757,10 +757,28 @@ async def test_adopt_delivery_is_idempotent_and_reports_progress(
             "targetResolution": 720,
         },
     )
-    second = await service.adopt_delivery(project_id="p1", prompt_id="prompt-1")
+    api_prompt = {"7": {"class_type": "LoadImage", "inputs": {}}}
+    authored_workflow = {"nodes": [{"id": 7, "type": "LoadImage"}]}
+    second = await service.adopt_delivery(
+        project_id="p1",
+        prompt_id="prompt-1",
+        generation_metadata={
+            "comfyuiPrompt": api_prompt,
+            "comfyuiWorkflow": authored_workflow,
+        },
+    )
+    cross_project = await service.adopt_delivery(
+        project_id="p2",
+        prompt_id="prompt-1",
+        generation_metadata={"inputs": [{"nodeId": "wrong-project"}]},
+    )
 
-    # Idempotent per (project, prompt): one delivery, one monitor.
+    # ComfyUI prompt ids are global. A late lifecycle event after a project
+    # switch must resolve to the original delivery, not import it twice.
     assert first["delivery_id"] == second["delivery_id"]
+    assert cross_project["delivery_id"] == first["delivery_id"]
+    assert cross_project["project_id"] == "p1"
+    assert cross_project["generation_metadata"]["inputs"] == [selection_input]
     assert len(started) == 1
     assert started[0]["monitor_mode"] == "backstop"
     assert first["status"] == "queued"
@@ -768,6 +786,9 @@ async def test_adopt_delivery_is_idempotent_and_reports_progress(
     assert first["generation_metadata"]["inputs"] == [selection_input]
     assert first["generation_metadata"]["maskCropMetadata"]["mode"] == "cropped"
     assert first["generation_metadata"]["targetResolution"] == 720
+    assert second["generation_metadata"]["inputs"] == [selection_input]
+    assert second["generation_metadata"]["comfyuiPrompt"] == api_prompt
+    assert second["generation_metadata"]["comfyuiWorkflow"] == authored_workflow
     assert service._deliveries[first["delivery_id"]]["monitor_mode"] == "backstop"
 
     # Bridge-forwarded progress marks the delivery running.
@@ -790,6 +811,79 @@ async def test_adopt_delivery_is_idempotent_and_reports_progress(
     assert (
         await service.mark_running_for_prompt("p1", "prompt-1", progress=99) is False
     )
+
+
+@pytest.mark.anyio
+async def test_concurrent_iframe_adoption_creates_one_delivery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    started: list[dict] = []
+    original_create_delivery = service.create_delivery
+
+    async def _yielding_create_delivery(**kwargs):
+        await asyncio.sleep(0)
+        return await original_create_delivery(**kwargs)
+
+    async def _fake_start_monitor(**kwargs) -> None:
+        started.append(kwargs)
+
+    monkeypatch.setattr(service, "create_delivery", _yielding_create_delivery)
+    monkeypatch.setattr(service, "start_monitor", _fake_start_monitor)
+
+    proxy_adoption, bridge_adoption = await asyncio.gather(
+        service.adopt_delivery(
+            project_id="p1",
+            prompt_id="prompt-race",
+            generation_metadata={"comfyuiPrompt": {"1": {"class_type": "A"}}},
+        ),
+        service.adopt_delivery(
+            project_id="p1",
+            prompt_id="prompt-race",
+            generation_metadata={"inputs": [{"nodeId": "1"}]},
+        ),
+    )
+
+    assert proxy_adoption["delivery_id"] == bridge_adoption["delivery_id"]
+    assert len(service._deliveries) == 1
+    assert len(started) == 1
+    metadata = bridge_adoption["generation_metadata"]
+    assert metadata["comfyuiPrompt"] == {"1": {"class_type": "A"}}
+    assert metadata["inputs"] == [{"nodeId": "1"}]
+
+
+@pytest.mark.anyio
+async def test_iframe_client_project_binding_rejects_stale_switches(
+    tmp_path: Path,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+
+    assert (
+        await service.register_iframe_client_project(
+            client_id="iframe-client",
+            project_id="p1",
+            binding_version=10,
+        )
+        == "p1"
+    )
+    assert (
+        await service.register_iframe_client_project(
+            client_id="iframe-client",
+            project_id="p2",
+            binding_version=12,
+        )
+        == "p2"
+    )
+    assert (
+        await service.register_iframe_client_project(
+            client_id="iframe-client",
+            project_id="p1",
+            binding_version=11,
+        )
+        == "p2"
+    )
+    assert await service.get_iframe_client_project("iframe-client") == "p2"
 
 
 def test_history_prompt_metadata_extractor_reads_the_prompt_tuple() -> None:
@@ -902,6 +996,9 @@ async def test_metadata_enrichment_skips_panel_submissions_and_survives_fetch_er
     # Panel submissions already carry the workflow record: no history fetch.
     context = _delivery_context()
     context["generation_metadata"]["comfyuiPrompt"] = {"1": {"class_type": "X"}}
+    context["generation_metadata"]["comfyuiWorkflow"] = {
+        "nodes": [{"id": 1, "type": "X"}]
+    }
     await service.create_delivery(
         project_id="p1",
         delivery_id="delivery-panel",

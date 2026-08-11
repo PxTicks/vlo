@@ -1,7 +1,7 @@
 export const BRIDGE_PROTOCOL = "vlo-bridge";
-// v3 stamps `documentId` on every message so the parent can fence traffic from
-// a document it is replacing; v2 parents cannot tell the two apart.
-export const BRIDGE_VERSION = 3;
+// v4 exposes ComfyUI's persistent client id during the handshake so the host
+// can attribute proxied prompt submissions without navigating the iframe.
+export const BRIDGE_VERSION = 4;
 export const BRIDGE_CAPABILITIES = Object.freeze([
   "health",
   "health-changed",
@@ -17,6 +17,7 @@ export const BRIDGE_CAPABILITIES = Object.freeze([
   // the target node can run its own upload. A runtime without this capability
   // would silently ignore the file and drop nothing.
   "drop-asset-file",
+  "client-id",
 ]);
 
 const APP_READY_POLL_MS = 100;
@@ -25,6 +26,7 @@ const WORKFLOW_ACTIVE_TIMEOUT_MS = 3_000;
 const WARNING_CAPTURE_POLL_MS = 50;
 const WARNING_CAPTURE_TIMEOUT_MS = 1_000;
 const GRAPH_CHANGED_DEBOUNCE_MS = 300;
+const MAX_PENDING_IFRAME_GENERATIONS = 256;
 // Matches ComfyUI's own per-file upload bound (useNodeImageUpload), so the
 // fallback path fails with a typed error rather than running until the parent's
 // request timeout gives up on it.
@@ -286,6 +288,7 @@ export function startVloBridge({ app, api, windowObject = window }) {
     `document-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   let activeChannelId = null;
+  let bridgeReady = false;
   let workflowCounter = 0;
   let graphChangedTimer = null;
   let announcePending = false;
@@ -384,10 +387,18 @@ export function startVloBridge({ app, api, windowObject = window }) {
 
   function announceReady() {
     if (!isAppReady()) return false;
+    const clientId =
+      typeof api?.clientId === "string" && api.clientId.trim()
+        ? api.clientId.trim()
+        : null;
+    if (clientId === null) return false;
     post({
       type: "ready",
       capabilities: BRIDGE_CAPABILITIES,
+      clientId,
     });
+    bridgeReady = true;
+    flushPendingIframeGenerationEvents();
     return true;
   }
 
@@ -939,6 +950,7 @@ export function startVloBridge({ app, api, windowObject = window }) {
         return;
       }
       activeChannelId = data.channelId;
+      bridgeReady = false;
       if (!announceReady()) {
         // Tell the parent the document is alive but ComfyUI is still booting,
         // so it waits instead of reloading the app out from under itself.
@@ -1010,25 +1022,76 @@ export function startVloBridge({ app, api, windowObject = window }) {
   // execution events to it, so as the iframe's own client we see exactly the
   // prompts queued from inside the editor (and nothing vlo submitted, whose
   // events go to the backend monitor's client_id). We forward them so the
-  // parent can adopt the run as a delivery. execution_start scopes the set of
-  // prompt ids we own; progress/terminal events are filtered against it.
+  // parent can adopt the run as a delivery. A progress/terminal event can be
+  // the first event after a ComfyUI socket blip, so it implicitly starts an
+  // unknown prompt rather than depending on execution_start being lossless.
   const observedPromptIds = new Set();
+  const finishedPromptIds = new Set();
+  const pendingIframeGenerations = new Map();
+
+  function bufferIframeGeneration(data) {
+    let pending = pendingIframeGenerations.get(data.promptId);
+    if (!pending) {
+      if (pendingIframeGenerations.size >= MAX_PENDING_IFRAME_GENERATIONS) {
+        const oldestPromptId = pendingIframeGenerations.keys().next().value;
+        pendingIframeGenerations.delete(oldestPromptId);
+      }
+      pending = { started: null, progress: null, finished: null };
+      pendingIframeGenerations.set(data.promptId, pending);
+    }
+    pending[data.phase] = data;
+  }
 
   function postIframeGeneration(data) {
+    if (!activeChannelId || !bridgeReady) {
+      bufferIframeGeneration(data);
+      return;
+    }
     post({ type: "event", event: "iframe-generation", data });
+  }
+
+  function flushPendingIframeGenerationEvents() {
+    const pending = [...pendingIframeGenerations.values()];
+    pendingIframeGenerations.clear();
+    for (const generation of pending) {
+      for (const data of [
+        generation.started,
+        generation.progress,
+        generation.finished,
+      ]) {
+        if (data) postIframeGeneration(data);
+      }
+    }
+  }
+
+  function observePrompt(promptId) {
+    if (finishedPromptIds.has(promptId)) return false;
+    if (observedPromptIds.has(promptId)) return true;
+    observedPromptIds.add(promptId);
+    postIframeGeneration({ promptId, phase: "started" });
+    return true;
+  }
+
+  function rememberFinishedPrompt(promptId) {
+    if (finishedPromptIds.size >= MAX_PENDING_IFRAME_GENERATIONS) {
+      const oldestPromptId = finishedPromptIds.values().next().value;
+      finishedPromptIds.delete(oldestPromptId);
+    }
+    finishedPromptIds.add(promptId);
   }
 
   function handleExecutionStart(event) {
     const promptId = event?.detail?.prompt_id;
     if (typeof promptId !== "string" || !promptId) return;
-    observedPromptIds.add(promptId);
-    postIframeGeneration({ promptId, phase: "started" });
+    finishedPromptIds.delete(promptId);
+    observePrompt(promptId);
   }
 
   function handleExecutionProgress(event) {
     const detail = event?.detail;
     const promptId = detail?.prompt_id;
-    if (typeof promptId !== "string" || !observedPromptIds.has(promptId)) return;
+    if (typeof promptId !== "string" || !promptId) return;
+    if (!observePrompt(promptId)) return;
     postIframeGeneration({
       promptId,
       phase: "progress",
@@ -1040,8 +1103,10 @@ export function startVloBridge({ app, api, windowObject = window }) {
 
   function handleExecutionEnd(event) {
     const promptId = event?.detail?.prompt_id;
-    if (typeof promptId !== "string" || !observedPromptIds.has(promptId)) return;
+    if (typeof promptId !== "string" || !promptId) return;
+    if (!observePrompt(promptId)) return;
     observedPromptIds.delete(promptId);
+    rememberFinishedPrompt(promptId);
     postIframeGeneration({ promptId, phase: "finished" });
   }
 
@@ -1059,6 +1124,7 @@ export function startVloBridge({ app, api, windowObject = window }) {
     stop() {
       stopped = true;
       activeChannelId = null;
+      bridgeReady = false;
       if (graphChangedTimer !== null) windowObject.clearTimeout(graphChangedTimer);
       windowObject.removeEventListener("message", handleMessage);
       api?.removeEventListener?.("graphChanged", handleGraphChanged);

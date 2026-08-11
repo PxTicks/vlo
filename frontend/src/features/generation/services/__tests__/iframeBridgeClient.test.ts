@@ -52,6 +52,7 @@ function announceReady(
     documentId: PEER_DOCUMENT_ID,
     type: "ready",
     capabilities: [...REQUIRED_BRIDGE_CAPABILITIES],
+    clientId: "iframe-client-1",
     ...overrides,
   });
 }
@@ -75,6 +76,7 @@ describe("IframeBridgeClient", () => {
     });
     announceReady(contentWindow, hello);
     expect(client.currentStatus).toBe("ready");
+    expect(client.currentClientId).toBe("iframe-client-1");
 
     const promise = client.readActive();
     const request = postMessage.mock.calls.at(-1)?.[0] as PostedMessage;
@@ -175,6 +177,13 @@ describe("IframeBridgeClient", () => {
     const blank = setupClient();
     announceReady(blank.contentWindow, blank.hello, { documentId: "" });
     expect(blank.client.currentStatus).toBe("incompatible");
+  });
+
+  it("rejects a runtime that does not identify its ComfyUI client", () => {
+    const { client, contentWindow, hello } = setupClient();
+    announceReady(contentWindow, hello, { clientId: undefined });
+    expect(client.currentStatus).toBe("incompatible");
+    expect(client.currentError?.message).toMatch(/ComfyUI client/i);
   });
 
   it("drops responses and events from a document it is replacing", async () => {

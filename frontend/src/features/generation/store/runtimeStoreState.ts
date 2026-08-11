@@ -265,6 +265,11 @@ export function buildRuntimeStoreState(
           createDeliveryClient(projectId);
           return;
         }
+        if (existingDelivery.boundProjectId !== projectId) {
+          existingDelivery.disconnect();
+          createDeliveryClient(projectId);
+          return;
+        }
         if (!existingDelivery.isConnected) {
           set({ deliveryConnectionStatus: "connecting" });
           existingDelivery.connect();

@@ -362,6 +362,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const workflowInputs =
     mode === "manual" ? manualWorkflowInputs : rulesWorkflowInputs;
   const projectConfig = useProjectStore((state) => state.config);
+  const projectId = useProjectStore((state) => state.project?.id ?? null);
   const workflowInputById = useMemo(
     () => buildWorkflowInputLookup(workflowInputs),
     [workflowInputs],
@@ -586,7 +587,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [projectId]);
 
   const handleGenerate = useCallback(
     async (count = 1) => {

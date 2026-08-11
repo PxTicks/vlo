@@ -40,6 +40,10 @@ export class GenerationDeliveryWebSocket {
     this.projectId = projectId;
   }
 
+  get boundProjectId(): string {
+    return this.projectId;
+  }
+
   get isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
   }

@@ -10,6 +10,32 @@ from services.generation_delivery import generation_holding_service
 router = APIRouter(prefix="/app/generation-delivery", tags=["generation-delivery"])
 
 
+@router.put("/projects/{project_id}/iframe-clients/{client_id}")
+async def register_iframe_generation_client(
+    project_id: str,
+    client_id: str,
+    request: Request,
+):
+    body = await request.json()
+    binding_version = body.get("binding_version") if isinstance(body, dict) else None
+    if (
+        isinstance(binding_version, bool)
+        or not isinstance(binding_version, int)
+        or binding_version < 0
+    ):
+        raise HTTPException(status_code=400, detail="binding_version is required")
+    bound_project_id = await generation_holding_service.register_iframe_client_project(
+        client_id=client_id,
+        project_id=project_id,
+        binding_version=binding_version,
+    )
+    return {
+        "client_id": client_id,
+        "project_id": bound_project_id,
+        "accepted": bound_project_id == project_id,
+    }
+
+
 @router.get("/projects/{project_id}/pending")
 async def list_pending_generation_deliveries(project_id: str):
     return {

@@ -1,7 +1,7 @@
 export const BRIDGE_PROTOCOL = "vlo-bridge";
-// v3 stamps `documentId` on every message so traffic from a document being
-// replaced can be fenced off; a v2 runtime cannot be fenced and is rejected.
-export const BRIDGE_VERSION = 3;
+// v4 carries ComfyUI's persistent client id in the ready handshake so prompt
+// proxy attribution does not depend on the iframe URL or document reloads.
+export const BRIDGE_VERSION = 4;
 
 export const REQUIRED_BRIDGE_CAPABILITIES = [
   "health",
@@ -17,6 +17,7 @@ export const REQUIRED_BRIDGE_CAPABILITIES = [
   // A runtime predating file-carrying drops would accept the request and drop
   // nothing, so it must fail the handshake instead.
   "drop-asset-file",
+  "client-id",
 ] as const;
 
 export type BridgeClientStatus =
@@ -231,6 +232,7 @@ export class IframeBridgeClient {
   private peerDocumentId: string | null = null;
   /** Document we asked to go away; its answers no longer count. */
   private outgoingDocumentId: string | null = null;
+  private peerClientId: string | null = null;
   private lastBootingAt = 0;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly readyHandlers = new Set<() => void>();
@@ -263,6 +265,10 @@ export class IframeBridgeClient {
     return this.iframe;
   }
 
+  get currentClientId(): string | null {
+    return this.isReady ? this.peerClientId : null;
+  }
+
   /**
    * Whether the iframe answered a recent handshake with "still booting".
    * A booting peer is alive and will announce on its own, so reloading it
@@ -280,6 +286,7 @@ export class IframeBridgeClient {
     this.iframe = iframe;
     this.peerDocumentId = null;
     this.outgoingDocumentId = null;
+    this.peerClientId = null;
     this.lastBootingAt = 0;
     this.ensureListener();
     if (!iframe) {
@@ -302,6 +309,7 @@ export class IframeBridgeClient {
     // recovery must not forget which document is still on its way out).
     this.outgoingDocumentId = this.peerDocumentId ?? this.outgoingDocumentId;
     this.peerDocumentId = null;
+    this.peerClientId = null;
     this.lastBootingAt = 0;
     if (this.iframe) this.beginHandshake();
   }
@@ -515,7 +523,21 @@ export class IframeBridgeClient {
         return;
       }
       const wasReady = this.isReady;
+      const clientId =
+        typeof data.clientId === "string" && data.clientId.trim()
+          ? data.clientId.trim()
+          : null;
+      if (clientId === null) {
+        const error = new IframeBridgeError(
+          "incompatible",
+          "Iframe bridge did not identify its ComfyUI client",
+        );
+        this.rejectAllPending(error);
+        this.setStatus("incompatible", error);
+        return;
+      }
       this.peerDocumentId = documentId;
+      this.peerClientId = clientId;
       this.outgoingDocumentId = null;
       this.lastBootingAt = 0;
       this.setStatus("ready", null);

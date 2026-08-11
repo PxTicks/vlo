@@ -5,6 +5,7 @@ import {
   fetchDeliveryFileAsFile,
   getPendingDeliveries,
   parseGenerationDeliveryMessage,
+  registerIframeGenerationClient,
 } from "../generationDeliveryApi";
 
 describe("generationDeliveryApi", () => {
@@ -62,6 +63,24 @@ describe("generationDeliveryApi", () => {
             maskCropMetadata: { mode: "full" },
           },
         }),
+      }),
+    );
+  });
+
+  it("registers the iframe client against the active project", async () => {
+    const fetchMock = stubFetch(
+      createMockResponse({
+        json: { accepted: true, project_id: "project one" },
+      }),
+    );
+
+    await registerIframeGenerationClient("project one", "client / one", 42);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/app/generation-delivery/projects/project%20one/iframe-clients/client%20%2F%20one",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ binding_version: 42 }),
       }),
     );
   });

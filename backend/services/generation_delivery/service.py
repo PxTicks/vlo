@@ -393,12 +393,14 @@ class GenerationHoldingService:
         self._root = (root or GENERATION_HOLDING_ROOT).resolve()
         self._root.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
+        self._adoption_lock = asyncio.Lock()
         self._loaded = False
         self._deliveries: dict[str, dict[str, Any]] = {}
         self._project_index: dict[str, set[str]] = {}
         self._project_consumers: dict[str, list[_ProjectConsumer]] = {}
         self._active_consumer_id_by_project: dict[str, str] = {}
         self._monitor_tasks: dict[str, asyncio.Task[None]] = {}
+        self._iframe_client_projects: dict[str, tuple[int, str]] = {}
 
     async def _ensure_loaded(self) -> None:
         reattach_manifests: list[dict[str, Any]] = []
@@ -707,16 +709,80 @@ class GenerationHoldingService:
 
     def _find_delivery_id_for_prompt_locked(
         self,
-        project_id: str,
         prompt_id: str,
     ) -> str | None:
         for delivery_id, manifest in self._deliveries.items():
-            if (
-                manifest.get("project_id") == project_id
-                and manifest.get("prompt_id") == prompt_id
-            ):
+            if manifest.get("prompt_id") == prompt_id:
                 return delivery_id
         return None
+
+    async def register_iframe_client_project(
+        self,
+        *,
+        client_id: str,
+        project_id: str,
+        binding_version: int,
+    ) -> str:
+        """Bind a ComfyUI browser client to its active vlo project.
+
+        Binding versions prevent a slow request from the previous project from
+        overwriting a newer project switch for the same persistent client id.
+        """
+        async with self._lock:
+            existing = self._iframe_client_projects.get(client_id)
+            if existing is None or binding_version >= existing[0]:
+                self._iframe_client_projects[client_id] = (
+                    binding_version,
+                    project_id,
+                )
+                return project_id
+            return existing[1]
+
+    async def get_iframe_client_project(self, client_id: str) -> str | None:
+        async with self._lock:
+            binding = self._iframe_client_projects.get(client_id)
+            return binding[1] if binding is not None else None
+
+    def _merge_adopted_metadata_locked(
+        self,
+        manifest: dict[str, Any],
+        generation_metadata: dict[str, Any] | None,
+    ) -> bool:
+        if not isinstance(generation_metadata, dict):
+            return False
+        metadata = manifest.get("generation_metadata")
+        if not isinstance(metadata, dict):
+            return False
+
+        changed = False
+        if isinstance(generation_metadata.get("inputs"), list):
+            inputs = [
+                dict(generation_input)
+                for generation_input in generation_metadata["inputs"]
+                if isinstance(generation_input, dict)
+            ]
+            if metadata.get("inputs") != inputs:
+                metadata["inputs"] = inputs
+                changed = True
+
+        for key in ("maskCropMetadata", "comfyuiPrompt", "comfyuiWorkflow"):
+            value = generation_metadata.get(key)
+            if isinstance(value, dict) and value and metadata.get(key) != value:
+                metadata[key] = dict(value)
+                changed = True
+
+        target_resolution = generation_metadata.get("targetResolution")
+        if (
+            isinstance(target_resolution, int)
+            and target_resolution > 0
+            and metadata.get("targetResolution") != target_resolution
+        ):
+            metadata["targetResolution"] = target_resolution
+            changed = True
+
+        if changed:
+            manifest["updated_at"] = _now_ms()
+        return changed
 
     async def adopt_delivery(
         self,
@@ -732,15 +798,43 @@ class GenerationHoldingService:
         Creates a delivery manifest and a backstop-only monitor so the run
         settles from ComfyUI's history/queue without opening a websocket on the
         iframe's client_id (which would steal the iframe's own job events).
-        Idempotent per (project_id, prompt_id).
+        Idempotent globally per ComfyUI prompt id.
         """
         await self._ensure_loaded()
-        async with self._lock:
-            existing_id = self._find_delivery_id_for_prompt_locked(
-                project_id, prompt_id
+        # Proxy submission adoption and bridge fallback can race immediately
+        # after ComfyUI accepts a prompt. Keep the lookup/create sequence
+        # atomic so both paths converge on one persisted delivery and monitor.
+        async with self._adoption_lock:
+            return await self._adopt_delivery_once(
+                project_id=project_id,
+                prompt_id=prompt_id,
+                client_id=client_id,
+                workflow_name=workflow_name,
+                generation_metadata=generation_metadata,
             )
+
+    async def _adopt_delivery_once(
+        self,
+        *,
+        project_id: str,
+        prompt_id: str,
+        client_id: str | None,
+        workflow_name: str | None,
+        generation_metadata: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        async with self._lock:
+            existing_id = self._find_delivery_id_for_prompt_locked(prompt_id)
             if existing_id is not None:
-                return self._serialize_delivery(self._deliveries[existing_id])
+                existing = self._deliveries[existing_id]
+                if (
+                    existing.get("project_id") == project_id
+                    and self._merge_adopted_metadata_locked(
+                        existing,
+                        generation_metadata,
+                    )
+                ):
+                    await self._persist_manifest(existing)
+                return self._serialize_delivery(existing)
 
         label = workflow_name or "ComfyUI (in-editor)"
         delivery_id = str(uuid.uuid4())
@@ -772,6 +866,10 @@ class GenerationHoldingService:
             target_resolution = generation_metadata.get("targetResolution")
             if isinstance(target_resolution, int) and target_resolution > 0:
                 adopted_generation_metadata["targetResolution"] = target_resolution
+            for key in ("comfyuiPrompt", "comfyuiWorkflow"):
+                value = generation_metadata.get(key)
+                if isinstance(value, dict) and value:
+                    adopted_generation_metadata[key] = dict(value)
 
         manifest = await self.create_delivery(
             project_id=project_id,
@@ -809,16 +907,18 @@ class GenerationHoldingService:
         """
         await self._ensure_loaded()
         async with self._lock:
-            delivery_id = self._find_delivery_id_for_prompt_locked(
-                project_id, prompt_id
-            )
+            delivery_id = self._find_delivery_id_for_prompt_locked(prompt_id)
             manifest = self._deliveries.get(delivery_id) if delivery_id else None
             # Never resurrect an already-settled delivery with a late progress
             # ping (the backstop may have finalized it first).
-            if manifest is None or manifest.get("status") in {
-                "completed_pending_ack",
-                "error",
-            }:
+            if (
+                manifest is None
+                or manifest.get("project_id") != project_id
+                or manifest.get("status") in {
+                    "completed_pending_ack",
+                    "error",
+                }
+            ):
                 return False
         await self.mark_running(
             delivery_id,
@@ -1370,7 +1470,7 @@ class GenerationHoldingService:
             metadata = manifest.get("generation_metadata")
             if not isinstance(metadata, dict):
                 return
-            if metadata.get("comfyuiPrompt") or metadata.get("comfyuiWorkflow"):
+            if metadata.get("comfyuiPrompt") and metadata.get("comfyuiWorkflow"):
                 return
 
         try:

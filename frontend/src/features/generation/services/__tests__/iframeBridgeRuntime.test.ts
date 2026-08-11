@@ -118,6 +118,7 @@ function createHarness() {
     refreshMissingModels: vi.fn(),
   };
   const api = {
+    clientId: "iframe-client-1",
     socket: { readyState: 1, OPEN: 1 },
     // ComfyUI's upload endpoint, used only when a loader has no drop handler.
     fetchApi: vi.fn(async () => ({
@@ -223,7 +224,7 @@ function request(
 }
 
 describe("hosted iframe bridge runtime", () => {
-  it("announces the complete v3 contract only to its same-origin parent", () => {
+  it("announces the complete v4 contract only to its same-origin parent", () => {
     const harness = createHarness();
     expect(
       startVloBridge({
@@ -268,6 +269,7 @@ describe("hosted iframe bridge runtime", () => {
       version: BRIDGE_VERSION,
       channelId: "channel-1",
       capabilities: [...BRIDGE_CAPABILITIES],
+      clientId: "iframe-client-1",
     });
   });
 
@@ -296,6 +298,30 @@ describe("hosted iframe bridge runtime", () => {
     hello(harness);
     expect(harness.posted.at(-1)).toMatchObject({
       type: "ready",
+      documentId: expect.any(String),
+    });
+  });
+
+  it("answers booting until ComfyUI assigns its websocket client id", () => {
+    const harness = createHarness();
+    harness.api.clientId = undefined as unknown as string;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+
+    hello(harness);
+    expect(harness.posted.at(-1)).toMatchObject({
+      type: "booting",
+      documentId: expect.any(String),
+    });
+
+    harness.api.clientId = "iframe-client-late";
+    hello(harness);
+    expect(harness.posted.at(-1)).toMatchObject({
+      type: "ready",
+      clientId: "iframe-client-late",
       documentId: expect.any(String),
     });
   });
@@ -339,14 +365,20 @@ describe("hosted iframe bridge runtime", () => {
     hello(harness);
     harness.posted.length = 0;
 
-    // Progress for a prompt we never saw start (e.g. a broadcast interrupt for
-    // a vlo-submitted job) is not ours to adopt.
+    // A socket reconnect can lose execution_start while later lifecycle
+    // events still arrive. Treat progress as an implicit start.
     harness.emitApi("progress", {
       detail: { prompt_id: "foreign", value: 1, max: 4 },
     });
+    harness.emitApi("execution_success", {
+      detail: { prompt_id: "foreign" },
+    });
     expect(
-      harness.posted.filter((m) => m.event === "iframe-generation"),
-    ).toHaveLength(0);
+      harness.posted
+        .filter((message) => message.event === "iframe-generation")
+        .map((message) => (message.data as { phase: string }).phase),
+    ).toEqual(["started", "progress", "finished"]);
+    harness.posted.length = 0;
 
     harness.emitApi("execution_start", { detail: { prompt_id: "p-1" } });
     harness.emitApi("progress", {
@@ -376,6 +408,68 @@ describe("hosted iframe bridge runtime", () => {
     expect(
       harness.posted.filter((m) => m.event === "iframe-generation"),
     ).toHaveLength(3);
+  });
+
+  it("replays generation lifecycle events that precede the parent handshake", () => {
+    const harness = createHarness();
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+
+    harness.emitApi("execution_start", { detail: { prompt_id: "p-early" } });
+    harness.emitApi("execution_success", {
+      detail: { prompt_id: "p-early" },
+    });
+    expect(
+      harness.posted.filter((m) => m.event === "iframe-generation"),
+    ).toHaveLength(0);
+
+    hello(harness);
+
+    const events = harness.posted.filter(
+      (message) => message.event === "iframe-generation",
+    );
+    expect(events.map((message) => message.data)).toEqual([
+      { promptId: "p-early", phase: "started" },
+      { promptId: "p-early", phase: "finished" },
+    ]);
+  });
+
+  it("collapses buffered progress and caps pending prompt lifecycles", () => {
+    const harness = createHarness();
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+
+    for (let index = 0; index < 300; index += 1) {
+      harness.emitApi("execution_start", {
+        detail: { prompt_id: `p-${index}` },
+      });
+    }
+    harness.emitApi("execution_start", { detail: { prompt_id: "p-progress" } });
+    for (let value = 1; value <= 5_001; value += 1) {
+      harness.emitApi("progress", {
+        detail: { prompt_id: "p-progress", value, max: 5_001 },
+      });
+    }
+
+    hello(harness);
+
+    const events = harness.posted.filter(
+      (message) => message.event === "iframe-generation",
+    );
+    expect(events.length).toBeLessThanOrEqual(257);
+    const progressEvents = events.filter(
+      (message) =>
+        (message.data as { promptId?: string }).promptId === "p-progress" &&
+        (message.data as { phase?: string }).phase === "progress",
+    );
+    expect(progressEvents).toHaveLength(1);
+    expect(progressEvents[0].data).toMatchObject({ value: 5_001 });
   });
 
   it("injects the workflow despite ComfyUI load-time drift and returns parsed warnings", async () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveShellLayout } from "../../layout/layoutResolver";
 import type {
   ShellLayoutDocumentV2,
   ShellPanelDescriptor,
@@ -130,7 +131,7 @@ describe("workspace layout layers", () => {
     expect(document.panels["host.scopes"]?.visible).toBe(true);
   });
 
-  it("extracts stage choices and a persistable override without subjects", () => {
+  it("extracts stage choices and saves only deltas from the composition", () => {
     expect(
       getWorkspaceStageSurfaces({
         stages: {
@@ -143,10 +144,64 @@ describe("workspace layout layers", () => {
       "lower-stage": "host.tools",
     });
 
-    expect(captureWorkspaceLayoutOverride(BASE)).toEqual({
-      panels: BASE.panels,
-      regions: BASE.regions,
-      lowerStage: BASE.lowerStage,
+    const composed = createWorkspaceLayoutDocument({
+      base: BASE,
+      composition: {
+        docks: {
+          "right-sidebar": {
+            mode: "replace",
+            panels: [{ viewId: "host.scopes" }],
+          },
+        },
+      },
+      panels: PANELS,
+    });
+    const composedResolved = resolveShellLayout({
+      panels: PANELS,
+      document: composed,
+    });
+    expect(
+      captureWorkspaceLayoutOverride({
+        document: composed,
+        resolved: composedResolved,
+        baselineDocument: composed,
+        baselineResolved: composedResolved,
+      }),
+    ).toEqual({ panels: {}, regions: {} });
+
+    const baselineResolved = resolveShellLayout({
+      panels: PANELS,
+      document: BASE,
+    });
+    const changed: ShellLayoutDocumentV2 = {
+      ...BASE,
+      panels: {
+        ...BASE.panels,
+        "host.scopes": { region: "right-sidebar", visible: false },
+      },
+      regions: {
+        ...BASE.regions,
+        "right-sidebar": { sizePx: 420 },
+      },
+      lowerStage: { sizePx: 300 },
+    };
+    expect(
+      captureWorkspaceLayoutOverride({
+        document: changed,
+        resolved: resolveShellLayout({ panels: PANELS, document: changed }),
+        baselineDocument: BASE,
+        baselineResolved,
+      }),
+    ).toEqual({
+      panels: {
+        "host.scopes": {
+          region: "right-sidebar",
+          visible: false,
+          order: 1,
+        },
+      },
+      regions: { "right-sidebar": { sizePx: 420 } },
+      lowerStage: { sizePx: 300 },
     });
   });
 });

@@ -9,9 +9,14 @@ const mocks = vi.hoisted(() => ({
       ownerId: "host.fixture",
       subject: { clipId: "a" },
       subjectLabel: "Clip a",
-      baseLayoutRevision: 1,
-    },
-    transition: "idle" as const,
+    } as {
+      id: string;
+      title: string;
+      ownerId: string;
+      subject: { clipId: string };
+      subjectLabel: string;
+    } | null,
+    transition: "idle" as "idle" | "opening" | "closing",
     lastError: null as Error | null,
   },
   exit: vi.fn(),
@@ -47,6 +52,14 @@ import { WorkspaceChrome } from "../WorkspaceChrome";
 describe("WorkspaceChrome", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.snapshot.active = {
+      id: "host.fixture",
+      title: "Fixture workspace",
+      ownerId: "host.fixture",
+      subject: { clipId: "a" },
+      subjectLabel: "Clip a",
+    };
+    mocks.snapshot.transition = "idle";
     mocks.snapshot.lastError = null;
   });
 
@@ -79,5 +92,27 @@ describe("WorkspaceChrome", () => {
       screen.getByRole("button", { name: "Dismiss workspace error" }),
     );
     expect(mocks.dismiss).toHaveBeenCalledOnce();
+  });
+
+  it("keeps exit enabled while switching workspaces", () => {
+    mocks.snapshot.transition = "opening";
+
+    render(<WorkspaceChrome />);
+
+    const exit = screen.getByRole("button", { name: /exit/i });
+    expect(exit).toBeEnabled();
+    fireEvent.click(exit);
+    expect(mocks.exit).toHaveBeenCalledOnce();
+  });
+
+  it("offers cancellation while the first workspace is opening", () => {
+    mocks.snapshot.active = null;
+    mocks.snapshot.transition = "opening";
+
+    render(<WorkspaceChrome />);
+
+    expect(screen.getByText("Opening workspace…")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(mocks.exit).toHaveBeenCalledOnce();
   });
 });

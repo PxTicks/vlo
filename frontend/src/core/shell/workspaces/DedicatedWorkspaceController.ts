@@ -28,13 +28,13 @@ import type {
 interface WorkspaceLayoutStore {
   getState(): Pick<
     ReturnType<typeof useShellLayoutStore.getState>,
-    | "baseLayoutRevision"
     | "panels"
     | "activateWorkspaceLayout"
     | "deactivateWorkspaceLayout"
     | "saveActiveWorkspaceLayoutOverride"
     | "clearWorkspaceLayoutOverride"
   >;
+  subscribe(listener: () => void): () => void;
 }
 
 interface ActiveRuntime {
@@ -66,16 +66,6 @@ function cancelActiveShellInteractions(): void {
 
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
-}
-
-function cloneJson(value: JsonValue): JsonValue {
-  if (Array.isArray(value)) return value.map(cloneJson);
-  if (typeof value === "object" && value !== null) {
-    const clone: Record<string, JsonValue> = {};
-    for (const [key, child] of Object.entries(value)) clone[key] = cloneJson(child);
-    return clone;
-  }
-  return value;
 }
 
 function isSession(value: unknown): value is DedicatedWorkspaceSession {
@@ -111,7 +101,10 @@ export class DedicatedWorkspaceController {
   private readonly layoutStore: WorkspaceLayoutStore;
   private readonly cancelShellInteractions: () => void;
   private readonly listeners = new Set<() => void>();
-  private readonly unsubscribeRegistry: () => void;
+  private readonly unsubscribeWorkspaceRegistry: () => void;
+  private readonly unsubscribeViews: () => void;
+  private readonly unsubscribeSurfaces: () => void;
+  private readonly unsubscribeLayout: () => void;
   private activeRuntime: ActiveRuntime | null = null;
   private pendingAbortController: AbortController | null = null;
   private operation = 0;
@@ -128,12 +121,18 @@ export class DedicatedWorkspaceController {
     this.layoutStore = options.layoutStore ?? useShellLayoutStore;
     this.cancelShellInteractions =
       options.cancelShellInteractions ?? cancelActiveShellInteractions;
-    this.unsubscribeRegistry = this.registry.subscribe(() => {
-      const active = this.activeRuntime;
-      if (active && this.registry.get(active.entry.id) !== active.entry) {
-        void this.exit({ force: true });
-      }
-    });
+    this.unsubscribeWorkspaceRegistry = this.registry.subscribe(() =>
+      this.revalidateActiveWorkspace(),
+    );
+    this.unsubscribeViews = this.views.subscribe(() =>
+      this.revalidateActiveWorkspace(),
+    );
+    this.unsubscribeSurfaces = this.surfaces.subscribe(() =>
+      this.revalidateActiveWorkspace(),
+    );
+    this.unsubscribeLayout = this.layoutStore.subscribe(() =>
+      this.revalidateActiveWorkspace(),
+    );
   }
 
   getSnapshot(): DedicatedWorkspaceControllerSnapshot {
@@ -160,7 +159,9 @@ export class DedicatedWorkspaceController {
       if (!parsed.success) {
         throw new Error(`Workspace '${workspaceId}' subject must be finite JSON.`);
       }
-      detachedSubject = cloneJson(parsed.data);
+      // Zod returns fresh arrays and objects, so the accepted subject is already
+      // detached from the feature-owned value supplied by the caller.
+      detachedSubject = parsed.data;
       if (!entry.validateSubject(detachedSubject)) {
         throw new Error(`Workspace '${workspaceId}' rejected its subject.`);
       }
@@ -212,6 +213,10 @@ export class DedicatedWorkspaceController {
         }
         return { status: "cancelled" };
       }
+      // Registrations and availability may have changed while a close guard or
+      // feature-owned session factory was awaiting. Required entries are
+      // authoritative at the commit boundary, not merely at invocation time.
+      composition = this.resolveLiveComposition(entry);
 
       const returnFocus =
         invocationTarget ??
@@ -229,7 +234,6 @@ export class DedicatedWorkspaceController {
         ownerId: entry.ownerId,
         subject: detachedSubject,
         subjectLabel,
-        baseLayoutRevision: this.layoutStore.getState().baseLayoutRevision,
       });
       this.activeRuntime = {
         entry,
@@ -274,8 +278,8 @@ export class DedicatedWorkspaceController {
     }
     if (token !== this.operation || this.activeRuntime !== active) return false;
 
-    this.layoutStore.getState().deactivateWorkspaceLayout();
     this.activeRuntime = null;
+    this.layoutStore.getState().deactivateWorkspaceLayout();
     this.publish({ active: null, transition: "idle", lastError: null });
     active.abortController.abort();
     await this.disposeSession(active.session);
@@ -307,7 +311,10 @@ export class DedicatedWorkspaceController {
 
   /** Test/application teardown seam. Active sessions are force-closed. */
   dispose(): void {
-    this.unsubscribeRegistry();
+    this.unsubscribeWorkspaceRegistry();
+    this.unsubscribeViews();
+    this.unsubscribeSurfaces();
+    this.unsubscribeLayout();
     this.operation += 1;
     this.pendingAbortController?.abort();
     this.pendingAbortController = null;
@@ -332,6 +339,22 @@ export class DedicatedWorkspaceController {
     } catch (error) {
       this.fail(error);
       return false;
+    }
+  }
+
+  private revalidateActiveWorkspace(): void {
+    const active = this.activeRuntime;
+    if (!active) return;
+    if (this.registry.get(active.entry.id) !== active.entry) {
+      void this.exit({ force: true });
+      return;
+    }
+    try {
+      this.resolveLiveComposition(active.entry);
+    } catch {
+      // A workspace cannot continue under a fallback if one of its required
+      // surfaces or panels disappears or becomes unavailable.
+      void this.exit({ force: true });
     }
   }
 

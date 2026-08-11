@@ -3,6 +3,7 @@ import {
   type DockRegion,
   type EditorStageSurfaces,
   type PersistedPanelPlacement,
+  type ResolvedShellLayout,
   type ShellLayoutDocumentV2,
   type ShellPanelDescriptor,
   type WorkspaceLayoutOverride,
@@ -152,14 +153,95 @@ export function getWorkspaceStageSurfaces(
   return stageSurfaces;
 }
 
-export function captureWorkspaceLayoutOverride(
-  document: ShellLayoutDocumentV2,
-): WorkspaceLayoutOverride {
+function panelOrder(
+  resolved: ResolvedShellLayout,
+  viewId: string,
+  region: DockRegion,
+): number {
+  return resolved.regions[region].placedViewIds.indexOf(viewId);
+}
+
+/** Records only intent that differs from a freshly composed workspace. */
+export function captureWorkspaceLayoutOverride(input: {
+  readonly document: ShellLayoutDocumentV2;
+  readonly resolved: ResolvedShellLayout;
+  readonly baselineDocument: ShellLayoutDocumentV2;
+  readonly baselineResolved: ResolvedShellLayout;
+}): WorkspaceLayoutOverride {
+  const panels: Record<string, PersistedPanelPlacement> = {};
+  const viewIds = new Set([
+    ...Object.keys(input.resolved.panelRegions),
+    ...Object.keys(input.baselineResolved.panelRegions),
+  ]);
+  for (const viewId of viewIds) {
+    const currentRegion = input.resolved.panelRegions[viewId];
+    const baselineRegion = input.baselineResolved.panelRegions[viewId];
+    if (currentRegion === undefined || baselineRegion === undefined) continue;
+    const placement: {
+      region?: DockRegion;
+      visible?: boolean;
+      order?: number;
+    } = {};
+    if (currentRegion !== baselineRegion) placement.region = currentRegion;
+    const visible = input.document.panels[viewId]?.visible !== false;
+    const baselineVisible =
+      input.baselineDocument.panels[viewId]?.visible !== false;
+    if (visible !== baselineVisible) placement.visible = visible;
+    const order = panelOrder(input.resolved, viewId, currentRegion);
+    const baselineOrder = panelOrder(
+      input.baselineResolved,
+      viewId,
+      baselineRegion,
+    );
+    if (currentRegion !== baselineRegion || order !== baselineOrder) {
+      placement.order = order;
+    }
+    if (Object.keys(placement).length > 0) panels[viewId] = placement;
+  }
+
+  const regions: Partial<
+    Record<
+      DockRegion,
+      { selectedViewId?: string | null; collapsed?: boolean; sizePx?: number }
+    >
+  > = {};
+  for (const region of DOCK_REGIONS) {
+    const current = input.resolved.regions[region];
+    const baseline = input.baselineResolved.regions[region];
+    const state: {
+      selectedViewId?: string | null;
+      collapsed?: boolean;
+      sizePx?: number;
+    } = {};
+    if (current.selectedViewId !== baseline.selectedViewId) {
+      state.selectedViewId = current.selectedViewId;
+    }
+    if (current.userCollapsed !== baseline.userCollapsed) {
+      state.collapsed = current.userCollapsed;
+    }
+    if (current.userSizePx !== baseline.userSizePx) {
+      state.sizePx = current.userSizePx;
+    }
+    if (Object.keys(state).length > 0) regions[region] = state;
+  }
+
+  const lowerStage: { collapsed?: boolean; sizePx?: number } = {};
+  if (
+    input.resolved.lowerStage.collapsed !==
+    input.baselineResolved.lowerStage.collapsed
+  ) {
+    lowerStage.collapsed = input.resolved.lowerStage.collapsed;
+  }
+  if (
+    input.resolved.lowerStage.userSizePx !==
+    input.baselineResolved.lowerStage.userSizePx
+  ) {
+    lowerStage.sizePx = input.resolved.lowerStage.userSizePx;
+  }
+
   return {
-    panels: { ...document.panels },
-    regions: { ...document.regions },
-    ...(document.lowerStage === undefined
-      ? {}
-      : { lowerStage: { ...document.lowerStage } }),
+    panels,
+    regions,
+    ...(Object.keys(lowerStage).length === 0 ? {} : { lowerStage }),
   };
 }

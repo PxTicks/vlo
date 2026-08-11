@@ -25,6 +25,32 @@ export function WorkspaceChrome() {
   });
 
   if (!snapshot.active) {
+    if (snapshot.transition === "opening") {
+      return (
+        <Box
+          data-testid="dedicated-workspace-opening-chrome"
+          sx={{
+            position: "absolute",
+            left: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            Opening workspace…
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            color="inherit"
+            onClick={() => void dedicatedWorkspaceController.exit()}
+          >
+            Cancel
+          </Button>
+        </Box>
+      );
+    }
     return snapshot.lastError ? (
       <Alert
         severity="error"
@@ -106,7 +132,7 @@ export function WorkspaceChrome() {
         variant="outlined"
         color="inherit"
         startIcon={<CloseIcon />}
-        disabled={snapshot.transition !== "idle"}
+        disabled={snapshot.transition === "closing"}
         onClick={() => void dedicatedWorkspaceController.exit()}
         sx={{ flexShrink: 0 }}
       >

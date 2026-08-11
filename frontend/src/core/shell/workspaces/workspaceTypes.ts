@@ -93,14 +93,14 @@ export interface ActiveDedicatedWorkspace {
   readonly ownerId: string;
   readonly subject: JsonValue;
   readonly subjectLabel: string;
-  readonly baseLayoutRevision: number;
 }
 
 export interface ActiveWorkspaceLayout {
   readonly workspaceId: string;
   readonly composition: WorkspaceComposition;
   readonly document: ShellLayoutDocumentV2;
-  readonly stageSurfaces: EditorStageSurfaces;
+  /** Session composition that was active before the workspace opened. */
+  readonly restoreStageSurfaces: EditorStageSurfaces;
 }
 
 export type WorkspaceActivationResult =

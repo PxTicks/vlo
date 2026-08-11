@@ -56,7 +56,6 @@ const DEFAULT_RESIZE_PERSIST_DELAY_MS = 250;
 export interface ShellLayoutState {
   /** Persisted user intent. Never read directly by components. */
   readonly document: ShellLayoutDocumentV2;
-  readonly baseLayoutRevision: number;
   /** Session-only document; null while the everyday layout is active. */
   readonly activeWorkspaceLayout: ActiveWorkspaceLayout | null;
   /** Live panel table, pushed in by the registry adapter. */
@@ -265,7 +264,6 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
       }
       set({
         document,
-        baseLayoutRevision: state.baseLayoutRevision + 1,
         responsiveExpandedRegion,
         resolved: resolve({ ...state, document, responsiveExpandedRegion }),
       });
@@ -287,7 +285,6 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
 
     return {
       ...initialInputs,
-      baseLayoutRevision: 0,
       activeWorkspaceLayout: null,
       resolved: resolve(initialInputs),
 
@@ -371,18 +368,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         if (outgoing !== null && outgoing !== resolved.stages[stage].surfaceId) {
           cancelSurfaceInteractions(outgoing);
         }
-        set({
-          stageSurfaces,
-          ...(state.activeWorkspaceLayout === null
-            ? {}
-            : {
-                activeWorkspaceLayout: {
-                  ...state.activeWorkspaceLayout,
-                  stageSurfaces,
-                },
-              }),
-          resolved,
-        });
+        set({ stageSurfaces, resolved });
         return true;
       },
 
@@ -404,18 +390,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
             cancelSurfaceInteractions(outgoing);
           }
         }
-        set({
-          stageSurfaces,
-          ...(state.activeWorkspaceLayout === null
-            ? {}
-            : {
-                activeWorkspaceLayout: {
-                  ...state.activeWorkspaceLayout,
-                  stageSurfaces,
-                },
-              }),
-          resolved,
-        });
+        set({ stageSurfaces, resolved });
       },
 
       activateWorkspaceLayout: (workspaceId, composition) => {
@@ -447,7 +422,9 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
             workspaceId,
             composition,
             document,
-            stageSurfaces,
+            restoreStageSurfaces:
+              state.activeWorkspaceLayout?.restoreStageSurfaces ??
+              state.stageSurfaces,
           },
           stageSurfaces,
           responsiveExpandedRegion: null,
@@ -457,8 +434,9 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
 
       deactivateWorkspaceLayout: () => {
         const state = get();
-        if (state.activeWorkspaceLayout === null) return;
-        const stageSurfaces: EditorStageSurfaces = {};
+        const active = state.activeWorkspaceLayout;
+        if (active === null) return;
+        const stageSurfaces = active.restoreStageSurfaces;
         const resolved = resolve({
           ...state,
           document: state.document,
@@ -483,16 +461,31 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         const state = get();
         const active = state.activeWorkspaceLayout;
         if (active === null) return false;
+        const baselineDocument = createWorkspaceLayoutDocument({
+          base: state.document,
+          composition: active.composition,
+          panels: state.panels,
+        });
+        const baselineResolved = resolve({
+          ...state,
+          document: baselineDocument,
+          stageSurfaces: getWorkspaceStageSurfaces(active.composition),
+        });
+        const override = captureWorkspaceLayoutOverride({
+          document: active.document,
+          resolved: state.resolved,
+          baselineDocument,
+          baselineResolved,
+        });
         const document = {
           ...state.document,
           workspaceLayouts: {
             ...state.document.workspaceLayouts,
-            [active.workspaceId]: captureWorkspaceLayoutOverride(active.document),
+            [active.workspaceId]: override,
           },
         };
         set({
           document,
-          baseLayoutRevision: state.baseLayoutRevision + 1,
           activeWorkspaceLayout: {
             ...active,
             document: { ...active.document, workspaceLayouts: document.workspaceLayouts },
@@ -519,12 +512,11 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
           });
           set({
             document,
-            baseLayoutRevision: state.baseLayoutRevision + 1,
             activeWorkspaceLayout: { ...active, document: activeDocument },
             resolved: resolve({ ...state, document: activeDocument }),
           });
         } else {
-          set({ document, baseLayoutRevision: state.baseLayoutRevision + 1 });
+          set({ document });
         }
         persistNow();
         return true;
@@ -743,6 +735,47 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
       resetRegion: (region) => {
         const state = get();
         const document = currentLayoutDocument(state);
+        const active = state.activeWorkspaceLayout;
+        if (active !== null) {
+          const baselineDocument = createWorkspaceLayoutDocument({
+            base: state.document,
+            override: state.document.workspaceLayouts[active.workspaceId],
+            composition: active.composition,
+            panels: state.panels,
+          });
+          if (region === "lower-stage") {
+            commit(
+              withLowerStageState(
+                document,
+                baselineDocument.lowerStage ?? {},
+              ),
+              "now",
+            );
+            return;
+          }
+          const baselineResolved = resolve({
+            ...state,
+            document: baselineDocument,
+          });
+          const panels = { ...document.panels };
+          for (const descriptor of state.panels) {
+            if (
+              state.resolved.panelRegions[descriptor.id] !== region &&
+              baselineResolved.panelRegions[descriptor.id] !== region
+            ) {
+              continue;
+            }
+            const baselinePlacement = baselineDocument.panels[descriptor.id];
+            if (baselinePlacement === undefined) delete panels[descriptor.id];
+            else panels[descriptor.id] = baselinePlacement;
+          }
+          const regions = { ...document.regions };
+          const baselineRegion = baselineDocument.regions[region];
+          if (baselineRegion === undefined) delete regions[region];
+          else regions[region] = baselineRegion;
+          commit({ ...document, panels, regions }, "now");
+          return;
+        }
         if (region === "lower-stage") {
           commit(withLowerStageState(document, {}), "now");
           return;
@@ -764,21 +797,68 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
       resetRegionSize: (region) => {
         const state = get();
         const document = currentLayoutDocument(state);
+        const active = state.activeWorkspaceLayout;
+        const baselineDocument =
+          active === null
+            ? null
+            : createWorkspaceLayoutDocument({
+                base: state.document,
+                override: state.document.workspaceLayouts[active.workspaceId],
+                composition: active.composition,
+                panels: state.panels,
+              });
         if (region === "lower-stage") {
           if (document.lowerStage?.sizePx === undefined) return;
           const next = { ...document.lowerStage };
-          delete next.sizePx;
+          const baselineSize = baselineDocument?.lowerStage?.sizePx;
+          if (baselineSize === undefined) delete next.sizePx;
+          else next.sizePx = baselineSize;
           commit(withLowerStageState(document, next), "now");
           return;
         }
         if (document.regions[region]?.sizePx === undefined) return;
         const next: DraftRegionState = { ...document.regions[region] };
-        delete next.sizePx;
+        const baselineSize = baselineDocument?.regions[region]?.sizePx;
+        if (baselineSize === undefined) delete next.sizePx;
+        else next.sizePx = baselineSize;
         commit(withRegionState(document, region, next), "now");
       },
 
       resetLayout: () => {
         const state = get();
+        const active = state.activeWorkspaceLayout;
+        if (active !== null) {
+          cancelPendingWrite();
+          const document = createWorkspaceLayoutDocument({
+            base: state.document,
+            override: state.document.workspaceLayouts[active.workspaceId],
+            composition: active.composition,
+            panels: state.panels,
+          });
+          const stageSurfaces = getWorkspaceStageSurfaces(active.composition);
+          const resolved = resolve({
+            ...state,
+            document,
+            stageSurfaces,
+            responsiveExpandedRegion: null,
+          });
+          for (const stage of EDITOR_STAGES) {
+            const outgoing = state.resolved.stages[stage].surfaceId;
+            if (
+              outgoing !== null &&
+              outgoing !== resolved.stages[stage].surfaceId
+            ) {
+              cancelSurfaceInteractions(outgoing);
+            }
+          }
+          set({
+            activeWorkspaceLayout: { ...active, document },
+            stageSurfaces,
+            responsiveExpandedRegion: null,
+            resolved,
+          });
+          return;
+        }
         commit(
           {
             version: 2,

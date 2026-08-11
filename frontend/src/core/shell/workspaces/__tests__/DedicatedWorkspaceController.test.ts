@@ -201,6 +201,55 @@ describe("DedicatedWorkspaceController", () => {
     harness.controller.dispose();
   });
 
+  it("restores the stage composition that was active before entry", async () => {
+    const harness = createHarness();
+    harness.registry.register(workspace(() => ({ dispose: vi.fn() })));
+    harness.store
+      .getState()
+      .setStageSurface("main-stage", "host.preview");
+    await harness.controller.enter("host.fixture", { clipId: "a" });
+    harness.store.getState().setStageSurface("main-stage", "host.player");
+
+    await harness.controller.exit();
+
+    expect(harness.store.getState().resolved.stages["main-stage"].surfaceId).toBe(
+      "host.preview",
+    );
+    expect(harness.store.getState().stageSurfaces).toEqual({
+      "main-stage": "host.preview",
+    });
+    harness.controller.dispose();
+  });
+
+  it("resets a workspace to its composition without ending the session", async () => {
+    const harness = createHarness();
+    harness.registry.register(workspace(() => ({ dispose: vi.fn() })));
+    await harness.controller.enter("host.fixture", { clipId: "a" });
+    harness.store.getState().movePanel("host.scopes", "right-sidebar");
+    harness.store.getState().resizeRegion("left-sidebar", 300);
+
+    harness.store.getState().resetRegion("right-sidebar");
+    expect(harness.store.getState().resolved.panelRegions["host.scopes"]).toBe(
+      "bottom-dock",
+    );
+    expect(harness.store.getState().resolved.regions["left-sidebar"].sizePx).toBe(
+      300,
+    );
+    expect(harness.store.getState().activeWorkspaceLayout).not.toBeNull();
+
+    harness.store.getState().setStageSurface("main-stage", "host.player");
+    harness.store.getState().movePanel("host.scopes", "right-sidebar");
+    harness.store.getState().resetLayout();
+    expect(harness.store.getState().resolved.stages["main-stage"].surfaceId).toBe(
+      "host.preview",
+    );
+    expect(harness.store.getState().resolved.panelRegions["host.scopes"]).toBe(
+      "bottom-dock",
+    );
+    expect(harness.store.getState().activeWorkspaceLayout).not.toBeNull();
+    harness.controller.dispose();
+  });
+
   it("saves and clears workspace overrides explicitly", async () => {
     const harness = createHarness();
     harness.registry.register(workspace(() => ({ dispose: vi.fn() })));
@@ -215,6 +264,11 @@ describe("DedicatedWorkspaceController", () => {
       ]?.sizePx,
     ).toBe(455);
     expect(harness.persistence.current.workspaceLayouts["host.fixture"]).toBeDefined();
+    expect(
+      Object.keys(
+        harness.persistence.current.workspaceLayouts["host.fixture"].panels,
+      ),
+    ).toEqual(["host.scopes"]);
     await harness.controller.exit();
     await harness.controller.enter("host.fixture", { clipId: "a" });
     expect(harness.store.getState().resolved.panelRegions["host.scopes"]).toBe(
@@ -342,6 +396,44 @@ describe("DedicatedWorkspaceController", () => {
     expect(dispose).toHaveBeenCalledOnce();
     expect(harness.store.getState().activeWorkspaceLayout).toBeNull();
     harness.controller.dispose();
+  });
+
+  it("revalidates required surfaces after async creation and while active", async () => {
+    const pending = createHarness();
+    let resolveSession: ((session: DedicatedWorkspaceSession) => void) | undefined;
+    const pendingDispose = vi.fn();
+    pending.registry.register(
+      workspace(
+        () =>
+          new Promise((resolve) => {
+            resolveSession = resolve;
+          }),
+      ),
+    );
+    const opening = pending.controller.enter("host.fixture", { clipId: "a" });
+    await vi.waitFor(() => expect(resolveSession).toBeDefined());
+    pending.registrations[5].dispose();
+    resolveSession?.({ dispose: pendingDispose });
+
+    const failed = await opening;
+    expect(failed.status).toBe("failed");
+    expect(pendingDispose).toHaveBeenCalledOnce();
+    expect(pending.controller.getSnapshot().active).toBeNull();
+    expect(pending.store.getState().resolved.stages["main-stage"].surfaceId).toBe(
+      "host.player",
+    );
+    pending.controller.dispose();
+
+    const active = createHarness();
+    const activeDispose = vi.fn();
+    active.registry.register(workspace(() => ({ dispose: activeDispose })));
+    await active.controller.enter("host.fixture", { clipId: "b" });
+    active.registrations[5].dispose();
+    await vi.waitFor(() => {
+      expect(active.controller.getSnapshot().active).toBeNull();
+    });
+    expect(activeDispose).toHaveBeenCalledOnce();
+    active.controller.dispose();
   });
 
   it("moves focus into the workspace and restores the invocation target", async () => {

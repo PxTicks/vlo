@@ -17,6 +17,7 @@ type SxArrayItem = SxArray[number];
 
 interface EditorRegionProps {
   readonly id?: string;
+  readonly tabIndex?: number;
   readonly area: string;
   readonly blocked: boolean;
   readonly children: ReactNode;
@@ -45,6 +46,7 @@ function toSxArray(sx?: SxProps<Theme>): SxArrayItem[] {
 
 export function EditorRegion({
   id,
+  tabIndex,
   area,
   blocked,
   children,
@@ -58,6 +60,7 @@ export function EditorRegion({
   return (
     <Box
       id={id}
+      tabIndex={tabIndex}
       sx={[
         {
           gridArea: area,

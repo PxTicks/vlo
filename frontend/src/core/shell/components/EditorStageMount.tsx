@@ -94,6 +94,7 @@ export function EditorStageMount({ stage, wrap }: EditorStageMountProps) {
   return (
     <Box
       ref={stageRef}
+      tabIndex={-1}
       data-shell-stage={stage}
       data-shell-surface={surface?.id}
       {...(focusRegion

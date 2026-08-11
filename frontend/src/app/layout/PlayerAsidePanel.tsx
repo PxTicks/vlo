@@ -24,6 +24,7 @@ export function PlayerAsidePanel() {
     <Box
       data-testid="player-aside"
       id="shell-region-player-aside"
+      tabIndex={-1}
       sx={{
         position: "relative",
         width: region.collapsed ? COLLAPSED_REGION_SIZE_PX : region.sizePx,

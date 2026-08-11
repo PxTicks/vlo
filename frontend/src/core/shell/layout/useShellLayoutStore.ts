@@ -21,6 +21,15 @@ import {
 } from "./layoutDescriptors";
 import { resolveShellLayout } from "./layoutResolver";
 import {
+  captureWorkspaceLayoutOverride,
+  createWorkspaceLayoutDocument,
+  getWorkspaceStageSurfaces,
+} from "../workspaces/workspaceLayout";
+import type {
+  ActiveWorkspaceLayout,
+  WorkspaceComposition,
+} from "../workspaces/workspaceTypes";
+import {
   DOCK_REGION_CONSTRAINTS,
   EDITOR_STAGES,
   LOWER_STAGE_CONSTRAINTS,
@@ -47,6 +56,9 @@ const DEFAULT_RESIZE_PERSIST_DELAY_MS = 250;
 export interface ShellLayoutState {
   /** Persisted user intent. Never read directly by components. */
   readonly document: ShellLayoutDocumentV2;
+  readonly baseLayoutRevision: number;
+  /** Session-only document; null while the everyday layout is active. */
+  readonly activeWorkspaceLayout: ActiveWorkspaceLayout | null;
   /** Live panel table, pushed in by the registry adapter. */
   readonly panels: readonly ShellPanelDescriptor[];
   /** Live editor-surface table, pushed in by the registry adapter. */
@@ -69,6 +81,15 @@ export interface ShellLayoutState {
   setStageSurface(stage: EditorStage, surfaceId: string | null): boolean;
   /** Returns every stage to its registered default. */
   clearStageSurfaces(): void;
+  /** Atomically applies every dock and stage slot in a workspace composition. */
+  activateWorkspaceLayout(
+    workspaceId: string,
+    composition: WorkspaceComposition,
+  ): void;
+  /** Restores the current base document against the live registries. */
+  deactivateWorkspaceLayout(): void;
+  saveActiveWorkspaceLayoutOverride(): boolean;
+  clearWorkspaceLayoutOverride(workspaceId: string): boolean;
 
   /**
    * Moves a panel to one of its allowed regions and reveals it there. Returns
@@ -173,6 +194,12 @@ interface LayoutResolutionInputs {
   readonly stageSurfaces: EditorStageSurfaces;
 }
 
+function currentLayoutDocument(
+  state: Pick<ShellLayoutState, "document" | "activeWorkspaceLayout">,
+): ShellLayoutDocumentV2 {
+  return state.activeWorkspaceLayout?.document ?? state.document;
+}
+
 export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
   const persistence =
     options.persistence ?? createLocalShellLayoutPersistence();
@@ -219,8 +246,26 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
       responsiveExpandedRegion = get().responsiveExpandedRegion,
     ): void => {
       const state = get();
+      if (state.activeWorkspaceLayout !== null) {
+        cancelPendingWrite();
+        const activeWorkspaceLayout = {
+          ...state.activeWorkspaceLayout,
+          document,
+        };
+        set({
+          activeWorkspaceLayout,
+          responsiveExpandedRegion,
+          resolved: resolve({
+            ...state,
+            document,
+            responsiveExpandedRegion,
+          }),
+        });
+        return;
+      }
       set({
         document,
+        baseLayoutRevision: state.baseLayoutRevision + 1,
         responsiveExpandedRegion,
         resolved: resolve({ ...state, document, responsiveExpandedRegion }),
       });
@@ -242,18 +287,34 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
 
     return {
       ...initialInputs,
+      baseLayoutRevision: 0,
+      activeWorkspaceLayout: null,
       resolved: resolve(initialInputs),
 
       setPanelDescriptors: (panels) => {
         const state = get();
         if (arePanelDescriptorsEqual(state.panels, panels)) return;
-        set({ panels, resolved: resolve({ ...state, panels }) });
+        set({
+          panels,
+          resolved: resolve({
+            ...state,
+            panels,
+            document: currentLayoutDocument(state),
+          }),
+        });
       },
 
       setSurfaceDescriptors: (surfaces) => {
         const state = get();
         if (areSurfaceDescriptorsEqual(state.surfaces, surfaces)) return;
-        set({ surfaces, resolved: resolve({ ...state, surfaces }) });
+        set({
+          surfaces,
+          resolved: resolve({
+            ...state,
+            surfaces,
+            document: currentLayoutDocument(state),
+          }),
+        });
       },
 
       setViewport: (viewport) => {
@@ -272,6 +333,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
           responsiveExpandedRegion,
           resolved: resolve({
             ...state,
+            document: currentLayoutDocument(state),
             viewport,
             responsiveExpandedRegion,
           }),
@@ -297,7 +359,11 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         const stageSurfaces = { ...state.stageSurfaces };
         if (surfaceId === null) delete stageSurfaces[stage];
         else stageSurfaces[stage] = surfaceId;
-        const resolved = resolve({ ...state, stageSurfaces });
+        const resolved = resolve({
+          ...state,
+          document: currentLayoutDocument(state),
+          stageSurfaces,
+        });
         // Nothing the outgoing surface was dragging may outlive it, and the
         // mount's own cleanup runs after the swap has already been committed
         // (plan §4.8). Cancelling here means the guarantee holds even for a
@@ -305,7 +371,18 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         if (outgoing !== null && outgoing !== resolved.stages[stage].surfaceId) {
           cancelSurfaceInteractions(outgoing);
         }
-        set({ stageSurfaces, resolved });
+        set({
+          stageSurfaces,
+          ...(state.activeWorkspaceLayout === null
+            ? {}
+            : {
+                activeWorkspaceLayout: {
+                  ...state.activeWorkspaceLayout,
+                  stageSurfaces,
+                },
+              }),
+          resolved,
+        });
         return true;
       },
 
@@ -313,7 +390,11 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         const state = get();
         if (Object.keys(state.stageSurfaces).length === 0) return;
         const stageSurfaces: EditorStageSurfaces = {};
-        const resolved = resolve({ ...state, stageSurfaces });
+        const resolved = resolve({
+          ...state,
+          document: currentLayoutDocument(state),
+          stageSurfaces,
+        });
         for (const stage of EDITOR_STAGES) {
           const outgoing = state.resolved.stages[stage].surfaceId;
           if (
@@ -323,7 +404,130 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
             cancelSurfaceInteractions(outgoing);
           }
         }
-        set({ stageSurfaces, resolved });
+        set({
+          stageSurfaces,
+          ...(state.activeWorkspaceLayout === null
+            ? {}
+            : {
+                activeWorkspaceLayout: {
+                  ...state.activeWorkspaceLayout,
+                  stageSurfaces,
+                },
+              }),
+          resolved,
+        });
+      },
+
+      activateWorkspaceLayout: (workspaceId, composition) => {
+        const state = get();
+        // A base resize waiting on its debounce belongs to the everyday layout
+        // and must land before the session starts suppressing persistence.
+        if (pendingWrite !== null) persistNow();
+        const stageSurfaces = getWorkspaceStageSurfaces(composition);
+        const document = createWorkspaceLayoutDocument({
+          base: state.document,
+          override: state.document.workspaceLayouts[workspaceId],
+          composition,
+          panels: state.panels,
+        });
+        const resolved = resolve({
+          ...state,
+          document,
+          stageSurfaces,
+          responsiveExpandedRegion: null,
+        });
+        for (const stage of EDITOR_STAGES) {
+          const outgoing = state.resolved.stages[stage].surfaceId;
+          if (outgoing !== null && outgoing !== resolved.stages[stage].surfaceId) {
+            cancelSurfaceInteractions(outgoing);
+          }
+        }
+        set({
+          activeWorkspaceLayout: {
+            workspaceId,
+            composition,
+            document,
+            stageSurfaces,
+          },
+          stageSurfaces,
+          responsiveExpandedRegion: null,
+          resolved,
+        });
+      },
+
+      deactivateWorkspaceLayout: () => {
+        const state = get();
+        if (state.activeWorkspaceLayout === null) return;
+        const stageSurfaces: EditorStageSurfaces = {};
+        const resolved = resolve({
+          ...state,
+          document: state.document,
+          stageSurfaces,
+          responsiveExpandedRegion: null,
+        });
+        for (const stage of EDITOR_STAGES) {
+          const outgoing = state.resolved.stages[stage].surfaceId;
+          if (outgoing !== null && outgoing !== resolved.stages[stage].surfaceId) {
+            cancelSurfaceInteractions(outgoing);
+          }
+        }
+        set({
+          activeWorkspaceLayout: null,
+          stageSurfaces,
+          responsiveExpandedRegion: null,
+          resolved,
+        });
+      },
+
+      saveActiveWorkspaceLayoutOverride: () => {
+        const state = get();
+        const active = state.activeWorkspaceLayout;
+        if (active === null) return false;
+        const document = {
+          ...state.document,
+          workspaceLayouts: {
+            ...state.document.workspaceLayouts,
+            [active.workspaceId]: captureWorkspaceLayoutOverride(active.document),
+          },
+        };
+        set({
+          document,
+          baseLayoutRevision: state.baseLayoutRevision + 1,
+          activeWorkspaceLayout: {
+            ...active,
+            document: { ...active.document, workspaceLayouts: document.workspaceLayouts },
+          },
+        });
+        persistNow();
+        return true;
+      },
+
+      clearWorkspaceLayoutOverride: (workspaceId) => {
+        const state = get();
+        if (state.document.workspaceLayouts[workspaceId] === undefined) {
+          return false;
+        }
+        const workspaceLayouts = { ...state.document.workspaceLayouts };
+        delete workspaceLayouts[workspaceId];
+        const document = { ...state.document, workspaceLayouts };
+        const active = state.activeWorkspaceLayout;
+        if (active?.workspaceId === workspaceId) {
+          const activeDocument = createWorkspaceLayoutDocument({
+            base: document,
+            composition: active.composition,
+            panels: state.panels,
+          });
+          set({
+            document,
+            baseLayoutRevision: state.baseLayoutRevision + 1,
+            activeWorkspaceLayout: { ...active, document: activeDocument },
+            resolved: resolve({ ...state, document: activeDocument }),
+          });
+        } else {
+          set({ document, baseLayoutRevision: state.baseLayoutRevision + 1 });
+        }
+        persistNow();
+        return true;
       },
 
       movePanel: (viewId, region) => {
@@ -332,9 +536,10 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
           return false;
         }
         const state = get();
+        const document = currentLayoutDocument(state);
         const from = state.resolved.panelRegions[viewId];
         if (from === region) return true;
-        const placement: DraftPlacement = { ...state.document.panels[viewId] };
+        const placement: DraftPlacement = { ...document.panels[viewId] };
         // An ordering index only means something inside the region it was
         // recorded for, so a move drops it and the panel lands on its
         // registration order in the new region.
@@ -349,7 +554,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         // where it landed, and stops being the source region's selection. The
         // resolver would ignore the stale ID anyway, but leaving it recorded
         // would resurrect it the moment the panel came back.
-        const regions = { ...state.document.regions };
+        const regions = { ...document.regions };
         const wasSelected =
           from !== undefined &&
           state.resolved.regions[from].selectedViewId === viewId;
@@ -369,7 +574,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
             : state.responsiveExpandedRegion;
         commit(
           {
-            ...withPlacement(state.document, viewId, placement),
+            ...withPlacement(document, viewId, placement),
             regions,
           },
           "now",
@@ -380,6 +585,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
 
       reorderPanel: (viewId, delta) => {
         const state = get();
+        const document = currentLayoutDocument(state);
         const region = state.resolved.panelRegions[viewId];
         if (region === undefined) return false;
         const ids = [...state.resolved.regions[region].placedViewIds];
@@ -391,23 +597,24 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         ids.splice(target, 0, viewId);
         // One transaction rewrites the whole region, so the stored indices stay
         // dense and independent of whichever panels happened to have one.
-        const panels = { ...state.document.panels };
+        const panels = { ...document.panels };
         ids.forEach((id, index) => {
           panels[id] = { ...panels[id], order: index };
         });
-        commit({ ...state.document, panels }, "now");
+        commit({ ...document, panels }, "now");
         return true;
       },
 
       setPanelVisible: (viewId, visible) => {
         const state = get();
-        if ((state.document.panels[viewId]?.visible !== false) === visible) {
+        const current = currentLayoutDocument(state);
+        if ((current.panels[viewId]?.visible !== false) === visible) {
           return;
         }
-        const placement: DraftPlacement = { ...state.document.panels[viewId] };
+        const placement: DraftPlacement = { ...current.panels[viewId] };
         if (visible) delete placement.visible;
         else placement.visible = false;
-        const document = withPlacement(state.document, viewId, placement);
+        const document = withPlacement(current, viewId, placement);
         if (visible) {
           commit(document, "now");
           return;
@@ -431,6 +638,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
 
       selectView: (region, viewId) => {
         const state = get();
+        const document = currentLayoutDocument(state);
         if (!state.resolved.regions[region].orderedViewIds.includes(viewId)) {
           return false;
         }
@@ -438,8 +646,8 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
           return true;
         }
         commit(
-          withRegionState(state.document, region, {
-            ...state.document.regions[region],
+          withRegionState(document, region, {
+            ...document.regions[region],
             selectedViewId: viewId,
           }),
           "now",
@@ -449,10 +657,11 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
 
       closeRegion: (region) => {
         const state = get();
-        if (state.document.regions[region]?.selectedViewId === null) return;
+        const document = currentLayoutDocument(state);
+        if (document.regions[region]?.selectedViewId === null) return;
         commit(
-          withRegionState(state.document, region, {
-            ...state.document.regions[region],
+          withRegionState(document, region, {
+            ...document.regions[region],
             selectedViewId: null,
           }),
           "now",
@@ -471,13 +680,18 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
           }
           set({
             responsiveExpandedRegion,
-            resolved: resolve({ ...state, responsiveExpandedRegion }),
+            resolved: resolve({
+              ...state,
+              document: currentLayoutDocument(state),
+              responsiveExpandedRegion,
+            }),
           });
           return;
         }
         const regionConstraints =
           region === "lower-stage" ? LOWER_STAGE_CONSTRAINTS : constraints[region];
         if (!regionConstraints.collapsible) return;
+        const document = currentLayoutDocument(state);
         const resolved =
           region === "lower-stage"
             ? state.resolved.lowerStage
@@ -485,15 +699,15 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         if (resolved.collapsed === collapsed) return;
         const persisted =
           region === "lower-stage"
-            ? state.document.lowerStage
-            : state.document.regions[region];
+            ? document.lowerStage
+            : document.regions[region];
         const next: DraftRegionState = { ...persisted };
         if (collapsed) next.collapsed = true;
         else delete next.collapsed;
         commit(
           region === "lower-stage"
-            ? withLowerStageState(state.document, next)
-            : withRegionState(state.document, region, next),
+            ? withLowerStageState(document, next)
+            : withRegionState(document, region, next),
           "now",
         );
       },
@@ -501,6 +715,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
       resizeRegion: (region, sizePx) => {
         if (!Number.isFinite(sizePx) || sizePx <= 0) return;
         const state = get();
+        const document = currentLayoutDocument(state);
         const resolved =
           region === "lower-stage"
             ? state.resolved.lowerStage
@@ -513,25 +728,26 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         );
         const persisted =
           region === "lower-stage"
-            ? state.document.lowerStage
-            : state.document.regions[region];
+            ? document.lowerStage
+            : document.regions[region];
         if (persisted?.sizePx === clamped) return;
         const next = { ...persisted, sizePx: clamped };
         commit(
           region === "lower-stage"
-            ? withLowerStageState(state.document, next)
-            : withRegionState(state.document, region, next),
+            ? withLowerStageState(document, next)
+            : withRegionState(document, region, next),
           "debounced",
         );
       },
 
       resetRegion: (region) => {
         const state = get();
+        const document = currentLayoutDocument(state);
         if (region === "lower-stage") {
-          commit(withLowerStageState(state.document, {}), "now");
+          commit(withLowerStageState(document, {}), "now");
           return;
         }
-        const panels = { ...state.document.panels };
+        const panels = { ...document.panels };
         for (const descriptor of state.panels) {
           if (
             descriptor.defaultRegion === region ||
@@ -540,24 +756,25 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
             delete panels[descriptor.id];
           }
         }
-        const regions = { ...state.document.regions };
+        const regions = { ...document.regions };
         delete regions[region];
-        commit({ ...state.document, panels, regions }, "now");
+        commit({ ...document, panels, regions }, "now");
       },
 
       resetRegionSize: (region) => {
         const state = get();
+        const document = currentLayoutDocument(state);
         if (region === "lower-stage") {
-          if (state.document.lowerStage?.sizePx === undefined) return;
-          const next = { ...state.document.lowerStage };
+          if (document.lowerStage?.sizePx === undefined) return;
+          const next = { ...document.lowerStage };
           delete next.sizePx;
-          commit(withLowerStageState(state.document, next), "now");
+          commit(withLowerStageState(document, next), "now");
           return;
         }
-        if (state.document.regions[region]?.sizePx === undefined) return;
-        const next: DraftRegionState = { ...state.document.regions[region] };
+        if (document.regions[region]?.sizePx === undefined) return;
+        const next: DraftRegionState = { ...document.regions[region] };
         delete next.sizePx;
-        commit(withRegionState(state.document, region, next), "now");
+        commit(withRegionState(document, region, next), "now");
       },
 
       resetLayout: () => {

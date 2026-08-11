@@ -295,6 +295,7 @@ export type PersistedRegionGeometry = Pick<
 export interface WorkspaceLayoutOverride {
   readonly panels: Readonly<Record<string, PersistedPanelPlacement>>;
   readonly regions: Readonly<Partial<Record<DockRegion, PersistedRegionState>>>;
+  readonly lowerStage?: PersistedRegionGeometry;
 }
 
 export interface ShellLayoutDocumentV2 {

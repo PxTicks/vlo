@@ -46,6 +46,7 @@ export function EditorBottomDock() {
     <Box
       data-testid="editor-bottom-dock"
       id="shell-region-bottom-dock"
+      tabIndex={-1}
       sx={{
         position: "relative",
         height: region.collapsed ? COLLAPSED_REGION_SIZE_PX : region.sizePx,

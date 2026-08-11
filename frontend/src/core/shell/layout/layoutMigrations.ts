@@ -134,9 +134,11 @@ function readWorkspaceLayouts(
   for (const [workspaceId, raw] of Object.entries(value)) {
     if (kept >= MAX_PERSISTED_WORKSPACES) break;
     if (!isUsableViewId(workspaceId) || !isPlainObject(raw)) continue;
+    const lowerStage = readRegionGeometry(raw.lowerStage);
     overrides[workspaceId] = {
       panels: readPanels(raw.panels),
       regions: readRegions(raw.regions),
+      ...(lowerStage === null ? {} : { lowerStage }),
     };
     kept += 1;
   }

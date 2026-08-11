@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { EditorStageMount } from "../../core/shell/components/EditorStageMount";
 import { RegionCollapseButton } from "../../core/shell/components/RegionCollapseButton";
 import { RegionSeparator } from "../../core/shell/components/RegionSeparator";
+import { WorkspaceChrome } from "../../core/shell/components/WorkspaceChrome";
 import type { EditorSurfaceEntry } from "../../core/shell/editorSurfaces";
 import {
   COLLAPSED_REGION_SIZE_PX,
@@ -135,6 +136,7 @@ export function EditorLayout({
 
       <EditorRegion
         id="shell-region-left-sidebar"
+        tabIndex={-1}
         area="left"
         blocked={nonTimelineRegionsLocked}
         overlayTestId="editor-lock-left"
@@ -217,6 +219,9 @@ export function EditorLayout({
         }}
       >
         {topBar}
+        {/* Shell-owned escape chrome is outside every feature surface and its
+            error boundary, so a crashed workspace view cannot trap the user. */}
+        <WorkspaceChrome />
       </EditorRegion>
 
       <EditorRegion
@@ -256,6 +261,7 @@ export function EditorLayout({
 
       <EditorRegion
         id="shell-region-right-sidebar"
+        tabIndex={-1}
         area="right"
         focusRegion="inspector"
         blocked={nonTimelineRegionsLocked}

@@ -116,6 +116,7 @@ describe("version 2 validation", () => {
         "host.color": {
           panels: { "host.scopes": { region: "right-sidebar" } },
           regions: { "right-sidebar": { sizePx: 480 } },
+          lowerStage: { collapsed: true, sizePx: 360 },
         },
       },
     });
@@ -137,6 +138,7 @@ describe("version 2 validation", () => {
         "host.color": {
           panels: { "host.scopes": { region: "right-sidebar" } },
           regions: { "right-sidebar": { sizePx: 480 } },
+          lowerStage: { collapsed: true, sizePx: 360 },
         },
       },
     });

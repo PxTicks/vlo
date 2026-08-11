@@ -1158,11 +1158,15 @@ export function useTransformInteractionController(
     drawOverlay();
 
     return () => {
-      app.ticker.remove(drawOverlay);
       unsubscribe();
-      if (pathOverlayRef.current) {
-        pathOverlayRef.current.clear();
-        pathOverlayRef.current.visible = false;
+      // The owning Pixi Application can be destroyed by the parent before
+      // React reaches this child passive cleanup. Pixi nulls `ticker` and
+      // destroys stage children in that path, which already detaches both.
+      app.ticker?.remove(drawOverlay);
+      const overlay = pathOverlayRef.current;
+      if (overlay && !overlay.destroyed) {
+        overlay.clear();
+        overlay.visible = false;
       }
     };
   }, [

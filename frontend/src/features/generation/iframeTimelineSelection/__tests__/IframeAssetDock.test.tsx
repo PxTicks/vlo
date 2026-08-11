@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     asset: { id: string; name: string };
   }>,
   openAssetInMiniEditor: vi.fn(),
+  assetBrowserProps: null as { previewPresentation?: string } | null,
 }));
 
 vi.mock("../../../composite", () => ({
@@ -25,7 +26,10 @@ vi.mock("../../../composite", () => ({
 }));
 
 vi.mock("../../../userAssets", () => ({
-  AssetBrowser: () => <div data-testid="asset-browser">Assets</div>,
+  AssetBrowser: (props: { previewPresentation?: string }) => {
+    mocks.assetBrowserProps = props;
+    return <div data-testid="asset-browser">Assets</div>;
+  },
   AssetCard: ({
     asset,
     onRequestPreview,
@@ -84,12 +88,14 @@ describe("IframeAssetDock", () => {
     mocks.assets = [];
     mocks.temporaryAssets = [];
     mocks.openAssetInMiniEditor.mockClear();
+    mocks.assetBrowserProps = null;
   });
 
   it("always exposes project and temporary assets but hides an empty composite tab", () => {
     render(<Harness />);
 
     expect(screen.getByTestId("comfyui-dock-tab-assets")).toBeInTheDocument();
+    expect(mocks.assetBrowserProps?.previewPresentation).toBeUndefined();
     expect(
       screen.getByTestId("comfyui-dock-tab-temporary"),
     ).toBeInTheDocument();

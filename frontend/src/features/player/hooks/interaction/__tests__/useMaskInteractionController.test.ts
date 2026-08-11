@@ -1288,4 +1288,31 @@ describe("useMaskInteractionController", () => {
       expect(useMaskViewStore.getState().brushTool).toBe("gizmo");
     });
   });
+
+  it("unmounts safely after the owning Pixi application destroys its ticker", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const app = new Application();
+    const ticker = app.ticker;
+    const sprite = new Sprite();
+    const activeClipRef = { current: null };
+    const viewport = new Container();
+    const { unmount } = renderHook(() =>
+      useMaskInteractionController(
+        trackId,
+        1,
+        sprite,
+        activeClipRef,
+        app,
+        viewport,
+      ),
+    );
+    expect(ticker.add).toHaveBeenCalled();
+
+    Object.defineProperty(app, "ticker", {
+      configurable: true,
+      value: null,
+    });
+
+    expect(() => unmount()).not.toThrow();
+  });
 });

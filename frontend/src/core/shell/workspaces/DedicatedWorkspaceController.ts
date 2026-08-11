@@ -45,6 +45,12 @@ interface ActiveRuntime {
   readonly returnFocus: HTMLElement | null;
 }
 
+interface PendingRuntime {
+  readonly entry: DedicatedWorkspaceEntry;
+  readonly subject: JsonValue;
+  readonly abortController: AbortController;
+}
+
 export interface DedicatedWorkspaceControllerSnapshot {
   readonly active: ActiveDedicatedWorkspace | null;
   readonly transition: "idle" | "opening" | "closing";
@@ -106,7 +112,7 @@ export class DedicatedWorkspaceController {
   private readonly unsubscribeSurfaces: () => void;
   private readonly unsubscribeLayout: () => void;
   private activeRuntime: ActiveRuntime | null = null;
-  private pendingAbortController: AbortController | null = null;
+  private pendingRuntime: PendingRuntime | null = null;
   private operation = 0;
   private snapshot: DedicatedWorkspaceControllerSnapshot = Object.freeze({
     active: null,
@@ -177,25 +183,33 @@ export class DedicatedWorkspaceController {
     }
 
     const token = ++this.operation;
-    this.pendingAbortController?.abort();
-    this.pendingAbortController = null;
+    this.pendingRuntime?.abortController.abort();
+    const abortController = new AbortController();
+    const pending: PendingRuntime = {
+      entry,
+      subject: detachedSubject,
+      abortController,
+    };
+    this.pendingRuntime = pending;
     this.publish({ transition: "opening", lastError: null });
 
     const previous = this.activeRuntime;
     if (previous && !(await this.canClose(previous))) {
-      if (token === this.operation) this.publish({ transition: "idle" });
+      if (this.pendingRuntime === pending) {
+        this.pendingRuntime = null;
+        abortController.abort();
+        this.publish({ transition: "idle" });
+      }
       return { status: "cancelled" };
     }
     if (token !== this.operation) return { status: "cancelled" };
 
-    const abortController = new AbortController();
-    this.pendingAbortController = abortController;
     let session: DedicatedWorkspaceSession | null = null;
     try {
       const created = await entry.createSession(detachedSubject, {
         workspaceId,
         signal: abortController.signal,
-        requestClose: () => this.exitActive(workspaceId),
+        requestClose: () => this.requestClose(pending),
       });
       if (!isSession(created)) {
         throw new Error(`Workspace '${workspaceId}' returned an invalid session.`);
@@ -207,8 +221,8 @@ export class DedicatedWorkspaceController {
         this.registry.get(workspaceId) !== entry
       ) {
         await this.disposeSession(session);
-        if (token === this.operation) {
-          this.pendingAbortController = null;
+        if (this.pendingRuntime === pending) {
+          this.pendingRuntime = null;
           this.publish({ transition: "idle" });
         }
         return { status: "cancelled" };
@@ -242,7 +256,7 @@ export class DedicatedWorkspaceController {
         abortController,
         returnFocus,
       };
-      this.pendingAbortController = null;
+      this.pendingRuntime = null;
       this.publish({ active: publicState, transition: "idle", lastError: null });
 
       if (previous) {
@@ -254,8 +268,8 @@ export class DedicatedWorkspaceController {
     } catch (error) {
       abortController.abort();
       if (session) await this.disposeSession(session);
-      if (this.pendingAbortController === abortController) {
-        this.pendingAbortController = null;
+      if (this.pendingRuntime === pending) {
+        this.pendingRuntime = null;
       }
       if (token !== this.operation) return { status: "cancelled" };
       return this.fail(error);
@@ -264,8 +278,8 @@ export class DedicatedWorkspaceController {
 
   async exit(options: { readonly force?: boolean } = {}): Promise<boolean> {
     const token = ++this.operation;
-    this.pendingAbortController?.abort();
-    this.pendingAbortController = null;
+    this.pendingRuntime?.abortController.abort();
+    this.pendingRuntime = null;
     const active = this.activeRuntime;
     if (!active) {
       this.publish({ transition: "idle" });
@@ -289,9 +303,28 @@ export class DedicatedWorkspaceController {
     return true;
   }
 
-  async invalidateSubject(workspaceId: string): Promise<boolean> {
-    if (this.activeRuntime?.entry.id !== workspaceId) return false;
-    return this.exit({ force: true });
+  async invalidateSubject(
+    workspaceId: string,
+    matchesSubject: (subject: JsonValue) => boolean = () => true,
+  ): Promise<boolean> {
+    let invalidatedPending = false;
+    const pending = this.pendingRuntime;
+    if (pending?.entry.id === workspaceId && matchesSubject(pending.subject)) {
+      this.operation += 1;
+      pending.abortController.abort();
+      this.pendingRuntime = null;
+      this.publish({ transition: "idle", lastError: null });
+      invalidatedPending = true;
+    }
+
+    const active = this.activeRuntime;
+    if (
+      active?.entry.id !== workspaceId ||
+      !matchesSubject(active.publicState.subject)
+    ) {
+      return invalidatedPending;
+    }
+    return (await this.exit({ force: true })) || invalidatedPending;
   }
 
   saveLayoutOverride(): boolean {
@@ -316,8 +349,8 @@ export class DedicatedWorkspaceController {
     this.unsubscribeSurfaces();
     this.unsubscribeLayout();
     this.operation += 1;
-    this.pendingAbortController?.abort();
-    this.pendingAbortController = null;
+    this.pendingRuntime?.abortController.abort();
+    this.pendingRuntime = null;
     const active = this.activeRuntime;
     this.activeRuntime = null;
     if (active) {
@@ -328,8 +361,17 @@ export class DedicatedWorkspaceController {
     this.listeners.clear();
   }
 
-  private async exitActive(workspaceId: string): Promise<boolean> {
-    return this.activeRuntime?.entry.id === workspaceId ? this.exit() : false;
+  private async requestClose(pending: PendingRuntime): Promise<boolean> {
+    if (this.pendingRuntime === pending) {
+      this.operation += 1;
+      pending.abortController.abort();
+      this.pendingRuntime = null;
+      this.publish({ transition: "idle", lastError: null });
+      return true;
+    }
+    return this.activeRuntime?.entry.id === pending.entry.id
+      ? this.exit()
+      : false;
   }
 
   private async canClose(runtime: ActiveRuntime): Promise<boolean> {

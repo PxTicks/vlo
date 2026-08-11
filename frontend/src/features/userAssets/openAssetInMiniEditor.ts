@@ -1,4 +1,5 @@
 import type { Asset } from "../../types/Asset";
+import type { WorkspaceActivationResult } from "../../core/shell/workspaces";
 import {
   openMiniEditorWorkspace,
   useMiniEditorStore,
@@ -32,7 +33,7 @@ interface OpenAssetInMiniEditorOptions {
 export async function openAssetInMiniEditor(
   asset: Asset,
   options: OpenAssetInMiniEditorOptions,
-): Promise<void> {
+): Promise<WorkspaceActivationResult> {
   const isTemporal = asset.type === "video" || asset.type === "audio";
 
   const args: MiniEditorOpenArgs = {
@@ -114,12 +115,12 @@ export async function openAssetInMiniEditor(
   };
 
   if (options.presentation === "workspace") {
-    await openMiniEditorWorkspace({
+    return openMiniEditorWorkspace({
       assetId: asset.id,
       title: asset.name,
       args,
     });
-    return;
   }
   await useMiniEditorStore.getState().open(args);
+  return { status: "opened" };
 }

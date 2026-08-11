@@ -1281,4 +1281,24 @@ describe("useTransformInteractionController", () => {
     unmount();
     expect(mockApp.ticker.remove).toHaveBeenCalled();
   });
+
+  it("unmounts safely after the owning Pixi application destroys its ticker", () => {
+    activeClipRef = { current: null };
+    const { unmount } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+    expect(mockApp.ticker.add).toHaveBeenCalled();
+
+    Object.defineProperty(mockApp, "ticker", {
+      configurable: true,
+      value: null,
+    });
+
+    expect(() => unmount()).not.toThrow();
+  });
 });

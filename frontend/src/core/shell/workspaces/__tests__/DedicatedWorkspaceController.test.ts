@@ -398,6 +398,50 @@ describe("DedicatedWorkspaceController", () => {
     harness.controller.dispose();
   });
 
+  it("invalidates only the matching pending subject and preserves another active workspace", async () => {
+    const harness = createHarness();
+    const activeDispose = vi.fn();
+    let resolvePending: ((session: DedicatedWorkspaceSession) => void) | undefined;
+    let pendingSignal: AbortSignal | undefined;
+    harness.registry.register(workspace(() => ({ dispose: activeDispose })));
+    harness.registry.register(
+      workspace(
+        (_subject, context) => {
+          pendingSignal = context.signal;
+          return new Promise((resolve) => {
+            resolvePending = resolve;
+          });
+        },
+        { id: "host.second", ownerId: "host.second" },
+      ),
+    );
+    await harness.controller.enter("host.fixture", { clipId: "active" });
+
+    const opening = harness.controller.enter("host.second", {
+      clipId: "pending",
+    });
+    await vi.waitFor(() => expect(pendingSignal).toBeDefined());
+
+    await expect(
+      harness.controller.invalidateSubject(
+        "host.second",
+        (subject) =>
+          typeof subject === "object" &&
+          subject !== null &&
+          !Array.isArray(subject) &&
+          subject.clipId === "pending",
+      ),
+    ).resolves.toBe(true);
+    expect(pendingSignal?.aborted).toBe(true);
+    expect(harness.controller.getSnapshot().active?.id).toBe("host.fixture");
+    expect(activeDispose).not.toHaveBeenCalled();
+
+    resolvePending?.({ dispose: vi.fn() });
+    await expect(opening).resolves.toEqual({ status: "cancelled" });
+    await harness.controller.exit({ force: true });
+    harness.controller.dispose();
+  });
+
   it("revalidates required surfaces after async creation and while active", async () => {
     const pending = createHarness();
     let resolveSession: ((session: DedicatedWorkspaceSession) => void) | undefined;

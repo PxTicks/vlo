@@ -2228,7 +2228,9 @@ export function useMaskInteractionController(
     updateOverlay();
 
     return () => {
-      app.ticker.remove(updateOverlay);
+      // Parent teardown may have destroyed the Pixi Application first; a null
+      // ticker means its callbacks were already detached by Pixi.
+      app.ticker?.remove(updateOverlay);
       if (pathOverlay && !pathOverlay.destroyed) {
         pathOverlay.clear();
         pathOverlay.visible = false;

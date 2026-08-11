@@ -59,6 +59,7 @@ import { AssetCard } from "./components/AssetCard";
 import {
   invalidateMiniEditorWorkspaceAsset,
   useMiniEditorStore,
+  type MiniEditorPresentation,
 } from "../miniEditor";
 import { openAssetInMiniEditor } from "./openAssetInMiniEditor";
 import { useAssetBrowserRevealStore } from "./useAssetBrowserRevealStore";
@@ -81,6 +82,11 @@ const ASSET_BROWSER_MINI_EDITOR_OPENER_ID = "asset-browser";
 interface FamilyScope {
   familyId: string;
   assetType: AssetType;
+}
+
+interface AssetBrowserProps {
+  /** The editor shell opts in; embedded/fullscreen consumers use the modal. */
+  readonly previewPresentation?: MiniEditorPresentation;
 }
 
 function hasDraggedFiles(event: React.DragEvent<HTMLDivElement>): boolean {
@@ -162,7 +168,9 @@ function resolveFamilyScopeForAsset(
     : null;
 }
 
-function AssetBrowserComponent() {
+function AssetBrowserComponent({
+  previewPresentation = "modal",
+}: AssetBrowserProps) {
   const assetBrowserFocusProps = useRegionFocus("assetBrowser");
   const [activeTab, setActiveTab] = useState<AssetType>("video");
   const [sortOption, setSortOption] = useState<string>(
@@ -883,7 +891,7 @@ function AssetBrowserComponent() {
     const navigation = previewNavigationRef.current;
     void openAssetInMiniEditor(asset, {
       openerId: ASSET_BROWSER_MINI_EDITOR_OPENER_ID,
-      presentation: "workspace",
+      presentation: previewPresentation,
       onClose: handleClosePreview,
       navigation: {
         onPrevious: handlePreviewPrev,
@@ -893,11 +901,17 @@ function AssetBrowserComponent() {
           navigation.previewIndex >= 0 &&
           navigation.previewIndex < navigation.assetIds.length - 1,
       },
+    }).then((result) => {
+      if (result.status === "opened") return;
+      setPreviewAssetId((current) =>
+        current === asset.id ? null : current,
+      );
     });
   }, [
     handleClosePreview,
     handlePreviewNext,
     handlePreviewPrev,
+    previewPresentation,
     previewAssetId,
   ]);
 

@@ -23,12 +23,10 @@ interface MiniEditorWorkspaceSubject {
 }
 
 interface PendingLaunch {
-  readonly assetId: string;
   readonly args: MiniEditorOpenArgs;
 }
 
 const pendingLaunches = new Map<string, PendingLaunch>();
-const liveLaunchAssets = new Map<string, string>();
 let installed = false;
 
 function isWorkspaceSubject(value: unknown): value is MiniEditorWorkspaceSubject {
@@ -74,27 +72,55 @@ async function createWorkspaceSession(
 ): Promise<DedicatedWorkspaceSession> {
   const launch = pendingLaunches.get(subject.launchId);
   if (!launch) {
-    throw new Error(`MiniEditor launch '${subject.launchId}' is no longer available.`);
+    throw new Error(
+      `MiniEditor launch '${subject.launchId}' is no longer available.`,
+    );
   }
   pendingLaunches.delete(subject.launchId);
-  liveLaunchAssets.set(subject.launchId, subject.assetId);
   const args: MiniEditorOpenArgs = {
     ...launch.args,
     presentation: "workspace",
   };
   const owner = args.prepare;
-  await waitForOpenOrAbort(useMiniEditorStore.getState().open(args), signal);
-
+  const opening = useMiniEditorStore.getState().open(args);
+  let sessionReady = false;
+  let resolveOwnershipLost: (() => void) | undefined;
+  const ownershipLost = new Promise<"ownership-lost">((resolve) => {
+    resolveOwnershipLost = () => resolve("ownership-lost");
+  });
   const unsubscribe = useMiniEditorStore.subscribe((state, previous) => {
     if (
-      previous.isOpen &&
-      previous._internal.prepare === owner &&
-      (!state.isOpen ||
-        (state._internal.prepare !== owner && state.presentation === "modal"))
-    ) {
-      void requestClose();
+      state.isOpen &&
+      state.presentation === "workspace" &&
+      state._internal.prepare === owner
+    ) return;
+    if (!previous.isOpen || previous._internal.prepare !== owner) return;
+    if (!sessionReady) {
+      resolveOwnershipLost?.();
+      return;
     }
+    // A workspace-to-workspace switch is serialized by the controller; only
+    // an external presentation takeover owns closing the active session.
+    if (!state.isOpen || state.presentation === "modal") void requestClose();
   });
+  const current = useMiniEditorStore.getState();
+  if (
+    !current.isOpen ||
+    current.presentation !== "workspace" ||
+    current._internal.prepare !== owner
+  ) {
+    resolveOwnershipLost?.();
+  }
+  const outcome = await Promise.race([
+    waitForOpenOrAbort(opening, signal).then(() => "settled" as const),
+    ownershipLost,
+  ]);
+  if (outcome === "ownership-lost") {
+    unsubscribe();
+    await requestClose();
+    return { dispose: () => undefined };
+  }
+  sessionReady = true;
 
   return {
     requestClose: async () => {
@@ -115,7 +141,6 @@ async function createWorkspaceSession(
     },
     dispose: () => {
       unsubscribe();
-      liveLaunchAssets.delete(subject.launchId);
       const state = useMiniEditorStore.getState();
       if (state.isOpen && state._internal.prepare === owner) state.close();
     },
@@ -131,7 +156,7 @@ export function declareMiniEditorWorkspace(): void {
     title: "MiniEditor preview",
     defaultStage: "main-stage",
     order: 20,
-    focusRegion: "canvas",
+    focusRegion: "miniEditor",
     cancelInteractions: () =>
       useMiniEditorStore.getState().setPlaying(false),
     component: MiniEditorWorkspacePreviewSurface,
@@ -141,7 +166,7 @@ export function declareMiniEditorWorkspace(): void {
     title: "MiniEditor controls",
     defaultStage: "lower-stage",
     order: 20,
-    focusRegion: "timeline",
+    focusRegion: "miniEditor",
     cancelInteractions: () =>
       useMiniEditorStore.getState().setPlaying(false),
     component: MiniEditorWorkspaceControlsSurface,
@@ -164,9 +189,11 @@ export function declareMiniEditorWorkspace(): void {
         },
       },
       docks: {
-        // Keep the invoking asset browser mounted for previous/next navigation;
-        // the project timeline and unrelated supporting docks still disappear.
-        "left-sidebar": { mode: "inherit" },
+        "left-sidebar": {
+          mode: "replace",
+          panels: [{ viewId: "host.assets", required: true }],
+          selectedViewId: "host.assets",
+        },
         "right-sidebar": { mode: "replace", panels: [] },
         "player-aside": { mode: "replace", panels: [] },
         "bottom-dock": { mode: "replace", panels: [] },
@@ -193,12 +220,15 @@ export async function openMiniEditorWorkspace(
   declareMiniEditorWorkspace();
   const launchId = crypto.randomUUID();
   pendingLaunches.set(launchId, {
-    assetId: options.assetId,
     args: options.args,
   });
   const result = await dedicatedWorkspaceController.enter(
     MINI_EDITOR_WORKSPACE_ID,
-    { assetId: options.assetId, launchId, title: options.title },
+    {
+      assetId: options.assetId,
+      launchId,
+      title: options.title.trim().slice(0, 160) || "Untitled asset",
+    },
     options.invocationTarget,
   );
   const abandoned = pendingLaunches.get(launchId);
@@ -208,29 +238,15 @@ export async function openMiniEditorWorkspace(
 }
 
 /** Feature-owned subject invalidation seam used when an asset is deleted. */
-export function invalidateMiniEditorWorkspaceAsset(assetId: string): Promise<boolean> {
-  const active = dedicatedWorkspaceController.getSnapshot().active;
-  const subject = active?.subject;
-  if (
-    active?.id === MINI_EDITOR_WORKSPACE_ID &&
-    typeof subject === "object" &&
-    subject !== null &&
-    !Array.isArray(subject) &&
-    subject.assetId === assetId
-  ) {
-    return dedicatedWorkspaceController.invalidateSubject(MINI_EDITOR_WORKSPACE_ID);
-  }
-  for (const [launchId, launch] of pendingLaunches) {
-    if (launch.assetId !== assetId) continue;
-    pendingLaunches.delete(launchId);
-    launch.args.onClose?.();
-    return dedicatedWorkspaceController
-      .exit({ force: true })
-      .then(() => true);
-  }
-  for (const liveAssetId of liveLaunchAssets.values()) {
-    if (liveAssetId !== assetId) continue;
-    return dedicatedWorkspaceController.exit({ force: true }).then(() => true);
-  }
-  return Promise.resolve(false);
+export function invalidateMiniEditorWorkspaceAsset(
+  assetId: string,
+): Promise<boolean> {
+  return dedicatedWorkspaceController.invalidateSubject(
+    MINI_EDITOR_WORKSPACE_ID,
+    (subject) =>
+      typeof subject === "object" &&
+      subject !== null &&
+      !Array.isArray(subject) &&
+      subject.assetId === assetId,
+  );
 }

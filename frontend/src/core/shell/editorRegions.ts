@@ -4,13 +4,19 @@
  * list without importing the editor-focus feature; the feature's store
  * re-exports these for its own consumers.
  */
-export type EditorRegion = "timeline" | "canvas" | "assetBrowser" | "inspector";
+export type EditorRegion =
+  | "timeline"
+  | "canvas"
+  | "assetBrowser"
+  | "inspector"
+  | "miniEditor";
 
 export const EDITOR_REGIONS = [
   "timeline",
   "canvas",
   "assetBrowser",
   "inspector",
+  "miniEditor",
 ] as const satisfies readonly EditorRegion[];
 
 /**

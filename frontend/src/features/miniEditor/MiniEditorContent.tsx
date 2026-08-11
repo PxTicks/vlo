@@ -30,6 +30,16 @@ function formatTicks(ticks: number): string {
     .padStart(2, "0")}`;
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  );
+}
+
 interface MiniEditorPreviewProps {
   readonly fillStage?: boolean;
 }
@@ -78,6 +88,7 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || isBusy || isSelectingExtraction) return;
+      if (isEditableTarget(event.target)) return;
       if (event.key === "ArrowLeft" && hasPrevious && onPrevious) {
         event.preventDefault();
         onPrevious();
@@ -238,7 +249,10 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
           onPause={() => setPlaying(false)}
           onEnded={() => setPlaying(false)}
           onSeeked={(event) => syncPlayheadFromMedia(event.currentTarget)}
-          style={{ maxHeight: "100%", maxWidth: "100%" }}
+          style={{
+            maxHeight: fillStage ? "100%" : 360,
+            maxWidth: "100%",
+          }}
           onLoadedMetadata={(event) => {
             const media = event.currentTarget;
             setSourceDimensions(media.videoWidth, media.videoHeight);

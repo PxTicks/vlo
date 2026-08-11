@@ -10,6 +10,7 @@ import { installAnimationFrameMock } from "../../../testUtils/animation";
 import { resetZustandStore } from "../../../testUtils/zustand";
 import { mediaSecondsToTick } from "../../../core/time";
 import { MiniEditorModal } from "../MiniEditorModal";
+import { MiniEditorPreview } from "../MiniEditorContent";
 import type { ResolvedEditorSource } from "../types";
 import { useMiniEditorStore } from "../useMiniEditorStore";
 
@@ -75,6 +76,7 @@ describe("MiniEditorModal", () => {
     const video = document.querySelector("video");
     expect(video).not.toBeNull();
     expect(video).toHaveAttribute("autoplay");
+    expect(video).toHaveStyle({ maxHeight: "360px" });
     Object.defineProperties(video, {
       videoWidth: { configurable: true, value: 1920 },
       videoHeight: { configurable: true, value: 1080 },
@@ -169,6 +171,35 @@ describe("MiniEditorModal", () => {
     expect(useMiniEditorStore.getState().playheadTicks).toBe(
       mediaSecondsToTick(2.5),
     );
+  });
+
+  it("does not navigate assets while an editable control owns the arrow key", async () => {
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    await act(async () => {
+      await useMiniEditorStore.getState().open({
+        prepare: vi.fn(async () => preparedSource()),
+        onPrevious,
+        onNext,
+        hasPrevious: true,
+        hasNext: true,
+      });
+    });
+    render(
+      <>
+        <input aria-label="Asset title" />
+        <MiniEditorPreview />
+      </>,
+    );
+
+    const input = screen.getByRole("textbox", { name: "Asset title" });
+    fireEvent.keyDown(input, { key: "ArrowLeft" });
+    fireEvent.keyDown(input, { key: "ArrowRight" });
+    expect(onPrevious).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(onNext).toHaveBeenCalledOnce();
   });
 
   it("saves successfully and disables closing while saving", async () => {

@@ -6,7 +6,16 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { useEditorFocusStore } from "../../editorFocus";
 import { AssetBrowser } from "../AssetBrowser";
 import { useAssetStore } from "../useAssetStore";
@@ -24,6 +33,7 @@ import { MiniEditorModal, useMiniEditorStore } from "../../miniEditor";
 import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
 import { EditorStageMount } from "../../../core/shell/components/EditorStageMount";
 import { dedicatedWorkspaceController } from "../../../core/shell/workspaces";
+import { hostViewRegistry } from "../../../core/shell/viewRegistry";
 
 const extractionMocks = vi.hoisted(() => ({
   extractRange: vi.fn(),
@@ -39,6 +49,7 @@ vi.mock("../services/AssetExtractionService", () => ({
 vi.mock("../useAssetStore");
 
 describe("AssetBrowser Component", () => {
+  let assetViewRegistration: { dispose(): void } | null = null;
   const mockAddLocalAssets = vi.fn();
   const mockDeleteAsset = vi.fn();
   const externalAssetDragClip: BaseClip = {
@@ -145,6 +156,18 @@ describe("AssetBrowser Component", () => {
     },
   ];
 
+  beforeAll(() => {
+    if (hostViewRegistry.get("host.assets")) return;
+    assetViewRegistration = hostViewRegistry.registerHostView({
+      id: "host.assets",
+      title: "Assets",
+      defaultRegion: "left-sidebar",
+      component: () => null,
+    });
+  });
+
+  afterAll(() => assetViewRegistration?.dispose());
+
   beforeEach(async () => {
     await dedicatedWorkspaceController.exit({ force: true });
     vi.clearAllMocks();
@@ -191,7 +214,7 @@ describe("AssetBrowser Component", () => {
   function renderWithMiniEditor() {
     return render(
       <>
-        <AssetBrowser />
+        <AssetBrowser previewPresentation="workspace" />
         <MiniEditorModal />
         <EditorStageMount stage="main-stage" />
         <EditorStageMount stage="lower-stage" />
@@ -906,6 +929,42 @@ describe("AssetBrowser Component", () => {
     expect(
       screen.getByRole("region", { name: "b-roll.mp4" }),
     ).toBeInTheDocument();
+  });
+
+  it("uses the modal presentation unless its host explicitly opts into the workspace", async () => {
+    mockStore({ assets: mockAssets, families: mockFamilies });
+    render(
+      <>
+        <AssetBrowser />
+        <MiniEditorModal />
+      </>,
+    );
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Preview video" })[0],
+    );
+
+    expect(await screen.findByRole("dialog")).toBeVisible();
+    expect(useMiniEditorStore.getState().presentation).toBe("modal");
+    expect(dedicatedWorkspaceController.getSnapshot().active).toBeNull();
+  });
+
+  it("clears a cancelled workspace request so the same asset can be retried", async () => {
+    mockStore({ assets: mockAssets, families: mockFamilies });
+    const enter = vi
+      .spyOn(dedicatedWorkspaceController, "enter")
+      .mockResolvedValue({ status: "cancelled" });
+    render(<AssetBrowser previewPresentation="workspace" />);
+    const preview = screen.getAllByRole("button", {
+      name: "Preview video",
+    })[0];
+
+    fireEvent.click(preview);
+    await waitFor(() => expect(enter).toHaveBeenCalledTimes(1));
+    await act(async () => Promise.resolve());
+    fireEvent.click(preview);
+    await waitFor(() => expect(enter).toHaveBeenCalledTimes(2));
+    enter.mockRestore();
   });
 
   it("refreshes navigation after the asset list changes without reloading the open media", async () => {

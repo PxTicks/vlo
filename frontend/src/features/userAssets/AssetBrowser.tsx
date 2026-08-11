@@ -56,7 +56,10 @@ import {
 } from "../editorFocus";
 import { useAssetStore } from "./useAssetStore";
 import { AssetCard } from "./components/AssetCard";
-import { useMiniEditorStore } from "../miniEditor";
+import {
+  invalidateMiniEditorWorkspaceAsset,
+  useMiniEditorStore,
+} from "../miniEditor";
 import { openAssetInMiniEditor } from "./openAssetInMiniEditor";
 import { useAssetBrowserRevealStore } from "./useAssetBrowserRevealStore";
 import { useAssetBrowserSelectionStore } from "./useAssetBrowserSelectionStore";
@@ -880,6 +883,7 @@ function AssetBrowserComponent() {
     const navigation = previewNavigationRef.current;
     void openAssetInMiniEditor(asset, {
       openerId: ASSET_BROWSER_MINI_EDITOR_OPENER_ID,
+      presentation: "workspace",
       onClose: handleClosePreview,
       navigation: {
         onPrevious: handlePreviewPrev,
@@ -916,6 +920,22 @@ function AssetBrowserComponent() {
     previewIndex,
     sortedAssets,
   ]);
+
+  React.useEffect(() => {
+    if (
+      !previewAssetId ||
+      assets.some((candidate) => candidate.id === previewAssetId)
+    ) {
+      return;
+    }
+    const invalidAssetId = previewAssetId;
+    void invalidateMiniEditorWorkspaceAsset(invalidAssetId).then((closed) => {
+      if (closed) return;
+      setPreviewAssetId((current) =>
+        current === invalidAssetId ? null : current,
+      );
+    });
+  }, [assets, previewAssetId]);
 
   const handleBrowserBackgroundClick = React.useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {

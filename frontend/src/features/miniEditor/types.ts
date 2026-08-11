@@ -13,6 +13,9 @@ export interface EditorRangeMask extends RangeMaskComponentParameters {
 
 export type MiniEditorMediaType = "video" | "audio" | "image" | "lut";
 
+/** The task controller is shared; only its shell presentation changes. */
+export type MiniEditorPresentation = "modal" | "workspace";
+
 /** The source media resolved by the opener (asset src, or a rendered selection mp4). */
 export interface ResolvedEditorSource {
   /** Object URL owned by the editor and revoked when it closes. */
@@ -54,6 +57,8 @@ export interface MiniEditorOpenArgs {
   openerId?: string;
   /** Start video playback on load when the browser permits it. */
   autoPlay?: boolean;
+  /** Defaults to the legacy modal while the workspace canary is evaluated. */
+  presentation?: MiniEditorPresentation;
   title?: string;
   /** Resolve the source media. May be slow (e.g. rendering a selection). */
   prepare: () => Promise<ResolvedEditorSource>;

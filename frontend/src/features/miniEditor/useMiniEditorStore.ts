@@ -6,6 +6,7 @@ import type {
   ResolvedEditorSource,
   MiniEditorEditSpec,
   MiniEditorOpenArgs,
+  MiniEditorPresentation,
 } from "./types";
 
 export type MiniEditorStatus =
@@ -53,6 +54,7 @@ interface MiniEditorInternal {
 
 export interface MiniEditorState {
   isOpen: boolean;
+  presentation: MiniEditorPresentation;
   title: string;
   status: MiniEditorStatus;
   error: string | null;
@@ -134,6 +136,7 @@ const INITIAL: Omit<
   | "extractFrame"
 > = {
   isOpen: false,
+  presentation: "modal",
   title: "Edit video",
   status: "preparing",
   error: null,
@@ -181,6 +184,7 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
     set({
       ...INITIAL,
       isOpen: true,
+      presentation: args.presentation ?? "modal",
       status: "preparing",
       title: args.title ?? "Edit video",
       ranges: args.initial?.ranges ?? [],

@@ -1,5 +1,10 @@
 import type { Asset } from "../../types/Asset";
-import { useMiniEditorStore } from "../miniEditor";
+import {
+  openMiniEditorWorkspace,
+  useMiniEditorStore,
+  type MiniEditorOpenArgs,
+  type MiniEditorPresentation,
+} from "../miniEditor";
 import { mediaSecondsToTick } from "../../core/time";
 import {
   extractAssetFrameFile,
@@ -19,6 +24,8 @@ interface OpenAssetInMiniEditorOptions {
   openerId: string;
   onClose?: () => void;
   navigation?: AssetMiniEditorNavigation;
+  /** The asset browser is the workspace canary; other callers retain the modal. */
+  presentation?: MiniEditorPresentation;
 }
 
 /** Opens any library-compatible asset through the shared mini editor. */
@@ -28,9 +35,10 @@ export async function openAssetInMiniEditor(
 ): Promise<void> {
   const isTemporal = asset.type === "video" || asset.type === "audio";
 
-  await useMiniEditorStore.getState().open({
+  const args: MiniEditorOpenArgs = {
     openerId: options.openerId,
     autoPlay: asset.type === "video",
+    presentation: options.presentation ?? "modal",
     title: asset.name,
     prepare: async () => {
       const hydrated = await useAssetStore
@@ -103,5 +111,15 @@ export async function openAssetInMiniEditor(
       asset.type === "video" && asset.fps && asset.fps > 0
         ? { fps: asset.fps, frameStep: 1 }
         : undefined,
-  });
+  };
+
+  if (options.presentation === "workspace") {
+    await openMiniEditorWorkspace({
+      assetId: asset.id,
+      title: asset.name,
+      args,
+    });
+    return;
+  }
+  await useMiniEditorStore.getState().open(args);
 }

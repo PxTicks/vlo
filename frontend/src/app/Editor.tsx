@@ -40,11 +40,15 @@ import { registerColorGradingCustomControls } from "../features/colorGrading";
 import { registerHostPanelControls } from "../features/extensions/ui/registerHostPanelControls";
 import { EditorBottomDock } from "./layout/EditorBottomDock";
 import { PlayerAsidePanel } from "./layout/PlayerAsidePanel";
-import { MiniEditorModal } from "../features/miniEditor";
+import {
+  declareMiniEditorWorkspace,
+  MiniEditorModal,
+} from "../features/miniEditor";
 
 registerColorGradingCustomControls();
 registerHostPanelControls();
 declareEditorStageSurfaces();
+declareMiniEditorWorkspace();
 
 const ASSET_DRAG_ACTIVATION_DISTANCE_PX = 1;
 

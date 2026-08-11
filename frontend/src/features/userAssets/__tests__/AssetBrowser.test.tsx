@@ -6,7 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEditorFocusStore } from "../../editorFocus";
 import { AssetBrowser } from "../AssetBrowser";
 import { useAssetStore } from "../useAssetStore";
@@ -22,6 +22,8 @@ import {
 import { useAssetBrowserSelectionStore } from "../useAssetBrowserSelectionStore";
 import { MiniEditorModal, useMiniEditorStore } from "../../miniEditor";
 import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
+import { EditorStageMount } from "../../../core/shell/components/EditorStageMount";
+import { dedicatedWorkspaceController } from "../../../core/shell/workspaces";
 
 const extractionMocks = vi.hoisted(() => ({
   extractRange: vi.fn(),
@@ -143,7 +145,8 @@ describe("AssetBrowser Component", () => {
     },
   ];
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await dedicatedWorkspaceController.exit({ force: true });
     vi.clearAllMocks();
     mockAddLocalAssets.mockReset();
     mockAddLocalAssets.mockResolvedValue({
@@ -179,6 +182,22 @@ describe("AssetBrowser Component", () => {
       copiedClips: [],
     });
   });
+
+  afterEach(async () => {
+    await dedicatedWorkspaceController.exit({ force: true });
+    useMiniEditorStore.getState().close();
+  });
+
+  function renderWithMiniEditor() {
+    return render(
+      <>
+        <AssetBrowser />
+        <MiniEditorModal />
+        <EditorStageMount stage="main-stage" />
+        <EditorStageMount stage="lower-stage" />
+      </>,
+    );
+  }
 
   function createTimelineClip(id: string, assetId: string): TimelineClip {
     return {
@@ -841,7 +860,7 @@ describe("AssetBrowser Component", () => {
     ).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("opens a preview dialog when an asset's preview button is clicked and navigates with arrow keys", async () => {
+  it("opens a focused asset workspace and navigates with arrow keys", async () => {
     mockStore({ assets: mockAssets, families: mockFamilies });
     useProjectStore.setState((state) => ({
       ...state,
@@ -851,12 +870,7 @@ describe("AssetBrowser Component", () => {
       },
     }));
 
-    render(
-      <>
-        <AssetBrowser />
-        <MiniEditorModal />
-      </>,
-    );
+    renderWithMiniEditor();
 
     // Video tab is default; sortedAssets (newest first):
     //   b-roll.mp4 (createdAt: 2), solo.mp4 (1), vacation.mp4 (0)
@@ -866,7 +880,7 @@ describe("AssetBrowser Component", () => {
     fireEvent.click(firstPreviewBtn);
 
     expect(
-      screen.getByRole("dialog", { name: "b-roll.mp4" }),
+      screen.getByRole("region", { name: "b-roll.mp4" }),
     ).toBeInTheDocument();
     expect(useMiniEditorStore.getState()._internal.onExtractRange).not.toBeNull();
     expect(useMiniEditorStore.getState()._internal.onExtractFrame).not.toBeNull();
@@ -875,7 +889,7 @@ describe("AssetBrowser Component", () => {
     fireEvent.keyDown(window, { key: "ArrowRight", code: "ArrowRight" });
     await waitFor(() => {
       expect(
-        screen.getByRole("dialog", { name: "solo.mp4" }),
+        screen.getByRole("region", { name: "solo.mp4" }),
       ).toBeInTheDocument();
     });
 
@@ -883,14 +897,14 @@ describe("AssetBrowser Component", () => {
     fireEvent.keyDown(window, { key: "ArrowLeft", code: "ArrowLeft" });
     await waitFor(() => {
       expect(
-        screen.getByRole("dialog", { name: "b-roll.mp4" }),
+        screen.getByRole("region", { name: "b-roll.mp4" }),
       ).toBeInTheDocument();
     });
 
     // ArrowLeft at first asset -> no change
     fireEvent.keyDown(window, { key: "ArrowLeft", code: "ArrowLeft" });
     expect(
-      screen.getByRole("dialog", { name: "b-roll.mp4" }),
+      screen.getByRole("region", { name: "b-roll.mp4" }),
     ).toBeInTheDocument();
   });
 
@@ -913,16 +927,11 @@ describe("AssetBrowser Component", () => {
     }));
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
 
-    render(
-      <>
-        <AssetBrowser />
-        <MiniEditorModal />
-      </>,
-    );
+    renderWithMiniEditor();
     fireEvent.click(
       screen.getAllByRole("button", { name: "Preview video" })[0],
     );
-    await screen.findByRole("dialog", { name: "b-roll.mp4" });
+    await screen.findByRole("region", { name: "b-roll.mp4" });
     expect(ensureAssetSourceLoaded).toHaveBeenCalledOnce();
 
     const newest: Asset = {
@@ -959,7 +968,7 @@ describe("AssetBrowser Component", () => {
       ).toBeEnabled(),
     );
     fireEvent.click(screen.getByRole("button", { name: "Previous asset" }));
-    await screen.findByRole("dialog", { name: "new-excerpt.mp4" });
+    await screen.findByRole("region", { name: "new-excerpt.mp4" });
   });
 
   it("can reopen the same asset after another feature takes over the editor", async () => {
@@ -979,18 +988,13 @@ describe("AssetBrowser Component", () => {
       config: { ...state.config, assetBrowserDisplay: "ungrouped" },
     }));
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
-    render(
-      <>
-        <AssetBrowser />
-        <MiniEditorModal />
-      </>,
-    );
+    renderWithMiniEditor();
 
     const previewButton = screen.getAllByRole("button", {
       name: "Preview video",
     })[0];
     fireEvent.click(previewButton);
-    await screen.findByRole("dialog", { name: "b-roll.mp4" });
+    await screen.findByRole("region", { name: "b-roll.mp4" });
 
     await act(async () => {
       await useMiniEditorStore.getState().open({
@@ -1006,24 +1010,19 @@ describe("AssetBrowser Component", () => {
     expect(screen.getByRole("dialog", { name: "Generation edit" })).toBeInTheDocument();
 
     fireEvent.click(previewButton);
-    await screen.findByRole("dialog", { name: "b-roll.mp4" });
+    await screen.findByRole("region", { name: "b-roll.mp4" });
   });
 
-  it("shows an image preview button that opens the preview dialog", () => {
+  it("shows an image preview button that opens the focused workspace", () => {
     mockStore({ assets: mockAssets, families: mockFamilies });
 
-    render(
-      <>
-        <AssetBrowser />
-        <MiniEditorModal />
-      </>,
-    );
+    renderWithMiniEditor();
     fireEvent.click(screen.getByLabelText("Images"));
 
     fireEvent.click(screen.getByRole("button", { name: "Preview image" }));
 
     expect(
-      screen.getByRole("dialog", { name: "thumbnail.jpg" }),
+      screen.getByRole("region", { name: "thumbnail.jpg" }),
     ).toBeInTheDocument();
     expect(useMiniEditorStore.getState()._internal.onExtractRange).toBeNull();
     expect(useMiniEditorStore.getState()._internal.onExtractFrame).toBeNull();
@@ -1064,12 +1063,7 @@ describe("AssetBrowser Component", () => {
       .spyOn(URL, "createObjectURL")
       .mockReturnValue("blob:asset-viewer");
 
-    render(
-      <>
-        <AssetBrowser />
-        <MiniEditorModal />
-      </>,
-    );
+    renderWithMiniEditor();
     fireEvent.click(
       screen.getAllByRole("button", { name: "Preview video" })[0],
     );

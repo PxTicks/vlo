@@ -224,3 +224,71 @@ async def test_upload_media_processor_reregisters_missing_cached_memory_id():
 
     assert calls == ["inspect", "register"]
     assert ctx.workflow["92"]["inputs"]["image"] == "media-id-123"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("disable_in_memory", "expected_calls", "expected_value"),
+    [
+        (False, ["register"], "media-id-123"),
+        (True, ["upload"], "frame.png"),
+    ],
+)
+async def test_upload_media_processor_wraps_batch_loader_values_for_comfyui(
+    disable_in_memory: bool,
+    expected_calls: list[str],
+    expected_value: str,
+):
+    calls: list[str] = []
+
+    async def upload_media_bytes_fn(*args, **kwargs):
+        calls.append("upload")
+        return "frame.png", None
+
+    async def register_media_bytes_fn(*args, **kwargs):
+        calls.append("register")
+        return "media-id-123", None
+
+    async def inspect_registered_media_fn(*args, **kwargs):
+        calls.append("inspect")
+        return False
+
+    ctx = _make_context(
+        disable_in_memory,
+        class_type="vloMemoryLoadImageBatch",
+    )
+    ctx.workflow["92"]["inputs"] = {
+        "images": {"__value__": []},
+        "disable_in_memory": disable_in_memory,
+    }
+    ctx.buffered_media = {
+        "92:images": {
+            "node_id": "92",
+            "param": "images",
+            "input_type": "image",
+            "class_type": "vloMemoryLoadImageBatch",
+            "bytes": b"image-bytes",
+            "content_type": "image/png",
+            "filename": "frame.png",
+        }
+    }
+    processor = create_upload_media_processor(
+        upload_media_bytes_fn=upload_media_bytes_fn,
+        register_media_bytes_fn=register_media_bytes_fn,
+        inspect_registered_media_fn=inspect_registered_media_fn,
+        input_node_map={
+            "vloMemoryLoadImageBatch": [
+                {"input_type": "image", "param": "images"},
+            ]
+        },
+    )
+
+    try:
+        await processor.execute(ctx)
+    finally:
+        await ctx.client.aclose()
+
+    assert calls == expected_calls
+    assert ctx.workflow["92"]["inputs"]["images"] == {
+        "__value__": [expected_value]
+    }

@@ -21,6 +21,15 @@ describe("generation input node constants", () => {
     ]);
     expect(resolveInputNodeMappings(INPUT_NODE_MAP, null)).toEqual([]);
     expect(resolveInputNodeMappings(INPUT_NODE_MAP, "Unknown")).toEqual([]);
+    expect(
+      resolveInputNodeMappings(INPUT_NODE_MAP, "vloMemoryLoadVideoBatch"),
+    ).toEqual([
+      expect.objectContaining({
+        inputType: "video",
+        param: "files",
+        label: "Video",
+      }),
+    ]);
   });
 
   it("merges valid dynamic entries while static parameters take precedence", () => {

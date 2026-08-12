@@ -1,0 +1,209 @@
+{
+  "version": 3,
+  "name": "MiniMax H3 Reference to Video",
+  "sections": [
+    {
+      "id": "references",
+      "title": "References",
+      "order": 0,
+      "default_open": true
+    },
+    {
+      "id": "prompt",
+      "title": "Prompt",
+      "order": 1,
+      "default_open": true
+    },
+    {
+      "id": "video_generation",
+      "title": "Video Generation",
+      "order": 2,
+      "default_open": true
+    }
+  ],
+  "nodes": {
+    "129": {
+      "widgets": {
+        "noise_seed": {
+          "label": "Noise seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "section_id": "video_generation",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 3
+        }
+      }
+    },
+    "136": {
+      "widgets": {
+        "prompt": {
+          "label": "Prompt",
+          "value_type": "string",
+          "section_id": "prompt",
+          "group_id": "prompt",
+          "group_title": "Prompt",
+          "group_order": 0
+        },
+        "width": {
+          "label": "Width",
+          "value_type": "int",
+          "hidden": true
+        },
+        "height": {
+          "label": "Height",
+          "value_type": "int",
+          "hidden": true
+        },
+        "length": {
+          "label": "Duration",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 124,
+          "max": 362,
+          "step": 17,
+          "default": 124,
+          "display_unit": {
+            "scale": 0.041666666666666664,
+            "unit": "s",
+            "precision": 1
+          },
+          "section_id": "video_generation",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 1
+        },
+        "ref_image_size": {
+          "label": "Reference image size",
+          "value_type": "enum",
+          "options": ["match", "max"],
+          "default": "match",
+          "section_id": "references",
+          "group_id": "reference_options",
+          "group_title": "Reference Options",
+          "group_order": 3
+        },
+        "use_embedded_video_audio": {
+          "label": "Use reference video audio",
+          "value_type": "boolean",
+          "default": false,
+          "section_id": "references",
+          "group_id": "reference_options",
+          "group_title": "Reference Options",
+          "group_order": 4
+        }
+      }
+    },
+    "141": {
+      "present": {
+        "label": "Reference images",
+        "input_type": "image",
+        "param": "images",
+        "class_type": "vloMemoryLoadImageBatch",
+        "section_id": "references",
+        "group_id": "reference_media",
+        "group_title": "Reference Media",
+        "group_order": 0,
+        "required": false
+      }
+    },
+    "142": {
+      "present": {
+        "label": "Reference videos",
+        "input_type": "video",
+        "param": "files",
+        "class_type": "vloMemoryLoadVideoBatch",
+        "section_id": "references",
+        "group_id": "reference_media",
+        "group_title": "Reference Media",
+        "group_order": 1,
+        "required": false
+      },
+      "selection": {
+        "export_fps": 24,
+        "frame_step": 4,
+        "max_frames": 360,
+        "message": "Select and prepare the reference video in vlo",
+        "include_tracks": true
+      }
+    },
+    "143": {
+      "present": {
+        "label": "Standalone reference audio",
+        "input_type": "audio",
+        "param": "audios",
+        "class_type": "vloMemoryLoadAudioBatch",
+        "section_id": "references",
+        "group_id": "reference_media",
+        "group_title": "Reference Media",
+        "group_order": 2,
+        "required": false
+      }
+    }
+  },
+  "validation": {
+    "inputs": [
+      {
+        "kind": "at_least_n",
+        "inputs": ["141", "142", "143"],
+        "min": 1,
+        "message": "Provide at least one image, video, or audio reference."
+      }
+    ]
+  },
+  "derived_widgets": [],
+  "rewrites": [],
+  "effect_switches": [],
+  "slots": {},
+  "media_fallbacks": [],
+  "pipeline": [
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolutions": [480, 720],
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
+        {
+          "width": {
+            "node_id": "136",
+            "param": "width"
+          },
+          "height": {
+            "node_id": "136",
+            "param": "height"
+          }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "options": [480, 720],
+          "default": 720,
+          "section_id": "video_generation",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "expose": "none",
+          "source": "client"
+        }
+      ]
+    }
+  ]
+}

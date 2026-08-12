@@ -97,6 +97,27 @@ function makePlan(classType: string): GenerationPlan {
   };
 }
 
+function makeBatchPlan(): GenerationPlan {
+  const plan = makePlan("vloMemoryLoadVideoBatch");
+  const node = plan.workflow.workflow?.["94"] as {
+    inputs: Record<string, unknown>;
+  };
+  node.inputs = {
+    files: { __value__: [] },
+    disable_in_memory: false,
+  };
+  plan.workflow.workflowInputs = [
+    {
+      ...makeWorkflowInput("vloMemoryLoadVideoBatch"),
+      param: "files",
+    },
+  ];
+  plan.preprocess.slotValues = {
+    "94:files": plan.preprocess.slotValues["94:file"],
+  };
+  return plan;
+}
+
 function makeCacheEntry(): GenerationPreprocessCacheEntry {
   return {
     key: "cache-key",
@@ -240,6 +261,65 @@ describe("generationPlan cache media extraction", () => {
     expect(buildGenerationPreprocessCacheKey(memoryPlan)).not.toBe(
       buildGenerationPreprocessCacheKey(filePlan),
     );
+  });
+
+  it("changes the preprocess cache key when a batch memory loader changes mode", () => {
+    const memoryPlan = makeBatchPlan();
+    const filePlan: GenerationPlan = {
+      ...memoryPlan,
+      submission: {
+        ...memoryPlan.submission,
+        widgetInputs: {
+          widget_94_disable_in_memory: "true",
+        },
+      },
+    };
+
+    expect(buildGenerationPreprocessCacheKey(memoryPlan)).not.toBe(
+      buildGenerationPreprocessCacheKey(filePlan),
+    );
+  });
+
+  it.each([
+    { __value__: [] },
+    { __value__: [""] },
+    { __value__: ["Loading..."] },
+  ])("does not cache empty or placeholder batch values", (files) => {
+    const entry = makeCacheEntry();
+    const updated = updateGenerationPreprocessCacheFromResponse(
+      entry,
+      makeBatchPlan(),
+      {
+        comfyui_prompt: {
+          "94": {
+            class_type: "vloMemoryLoadVideoBatch",
+            inputs: { files },
+          },
+        },
+      },
+    );
+
+    expect(updated.backendMedia).toBeNull();
+  });
+
+  it("caches a non-empty wrapped batch value", () => {
+    const entry = makeCacheEntry();
+    const updated = updateGenerationPreprocessCacheFromResponse(
+      entry,
+      makeBatchPlan(),
+      {
+        comfyui_prompt: {
+          "94": {
+            class_type: "vloMemoryLoadVideoBatch",
+            inputs: { files: { __value__: ["media-video-123"] } },
+          },
+        },
+      },
+    );
+
+    expect(updated.backendMedia?.cachedMediaInputs).toEqual({
+      "94": { files: { __value__: ["media-video-123"] } },
+    });
   });
 
   it("treats lowercase vlo memory loaders as in-memory loaders too", () => {

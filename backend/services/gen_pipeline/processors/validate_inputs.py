@@ -8,8 +8,12 @@ from services.workflow_rules import WorkflowValidationError, evaluate_input_vali
 def is_provided_value(value: object) -> bool:
     if value is None:
         return False
+    if isinstance(value, dict) and "__value__" in value:
+        return is_provided_value(value["__value__"])
     if isinstance(value, str):
         return value.strip() != ""
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(is_provided_value(item) for item in value)
     return True
 
 

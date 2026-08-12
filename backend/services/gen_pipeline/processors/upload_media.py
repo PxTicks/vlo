@@ -14,7 +14,21 @@ from services.workflow_rules.class_types import (
 
 
 MEMORY_LOADER_NODE_TYPES = frozenset(
-    {"vloMemoryLoadImage", "vloMemoryLoadVideo", "vloMemoryLoadAudio"}
+    {
+        "vloMemoryLoadImage",
+        "vloMemoryLoadVideo",
+        "vloMemoryLoadAudio",
+        "vloMemoryLoadImageBatch",
+        "vloMemoryLoadVideoBatch",
+        "vloMemoryLoadAudioBatch",
+    }
+)
+BATCH_MEMORY_LOADER_NODE_TYPES = frozenset(
+    {
+        "vloMemoryLoadImageBatch",
+        "vloMemoryLoadVideoBatch",
+        "vloMemoryLoadAudioBatch",
+    }
 )
 MEMORY_LOADER_DISABLE_PARAM = "disable_in_memory"
 
@@ -76,6 +90,28 @@ def _get_node_input_value(
     return inputs.get(param)
 
 
+def _get_single_memory_id(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value
+    if isinstance(value, dict):
+        wrapped = value.get("__value__")
+        if (
+            isinstance(wrapped, list)
+            and len(wrapped) == 1
+            and isinstance(wrapped[0], str)
+            and wrapped[0].strip()
+        ):
+            return wrapped[0]
+    return None
+
+
+def _format_memory_loader_injection(class_type: str, value: str) -> Any:
+    if canonicalize_class_type(class_type) in BATCH_MEMORY_LOADER_NODE_TYPES:
+        # ComfyUI reserves bare arrays for [node_id, output_slot] links.
+        return {"__value__": [value]}
+    return value
+
+
 class _UploadMediaProcessor:
     meta = ProcessorMeta(
         name="upload_media",
@@ -124,14 +160,15 @@ class _UploadMediaProcessor:
                     node if isinstance(node, dict) else None,
                     param,
                 )
-                if isinstance(current_value, str) and current_value.strip():
+                current_memory_id = _get_single_memory_id(current_value)
+                if current_memory_id is not None:
                     # Cached reruns may submit both the prior memory id and the
                     # original prepared file bytes. Reuse the id when it still
                     # exists; otherwise re-register from bytes in the same
                     # request so stale registry entries don't force a retry.
                     if await self._inspect_registered_media(
                         ctx.client,
-                        current_value,
+                        current_memory_id,
                         input_type,
                     ):
                         continue
@@ -178,7 +215,12 @@ class _UploadMediaProcessor:
                     if mapping is not None:
                         break
                 if mapping and mapping.get("input_type") == input_type:
-                    ctx.injections.setdefault(node_id, {})[param] = injected_value
+                    ctx.injections.setdefault(node_id, {})[param] = (
+                        _format_memory_loader_injection(
+                            current_class_type,
+                            injected_value,
+                        )
+                    )
                 elif mapping:
                     ctx.warnings.append(
                         pipeline_warning(

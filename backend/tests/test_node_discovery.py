@@ -34,3 +34,18 @@ def test_vlo_memory_load_audio_remains_discoverable_without_audio_upload_flag():
         }
     ]
     assert node_map["VLOMemoryLoadAudio"] == node_map["vloMemoryLoadAudio"]
+
+
+def test_vlo_batch_memory_loaders_use_generic_fallback_labels():
+    node_map = build_input_node_map({})
+
+    assert node_map["vloMemoryLoadImageBatch"] == [
+        {
+            "input_type": "image",
+            "param": "images",
+            "label": "Image",
+            "description": None,
+        }
+    ]
+    assert node_map["vloMemoryLoadVideoBatch"][0]["label"] == "Video"
+    assert node_map["vloMemoryLoadAudioBatch"][0]["label"] == "Audio"

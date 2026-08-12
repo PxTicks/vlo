@@ -29,11 +29,14 @@ logger = logging.getLogger(__name__)
 INPUT_NODE_MAP = {
     "LoadImage": {"input_type": "image", "param": "image"},
     "vloMemoryLoadImage": {"input_type": "image", "param": "image"},
+    "vloMemoryLoadImageBatch": {"input_type": "image", "param": "images"},
     "CLIPTextEncode": {"input_type": "text", "param": "text"},
     "LoadAudio": {"input_type": "audio", "param": "audio"},
     "vloMemoryLoadAudio": {"input_type": "audio", "param": "audio"},
+    "vloMemoryLoadAudioBatch": {"input_type": "audio", "param": "audios"},
     "LoadVideo": {"input_type": "video", "param": "file"},
     "vloMemoryLoadVideo": {"input_type": "video", "param": "file"},
+    "vloMemoryLoadVideoBatch": {"input_type": "video", "param": "files"},
     "VHS_LoadVideo": {"input_type": "video", "param": "video"},
     "VHS_LoadVideoFFmpeg": {"input_type": "video", "param": "video"},
 }

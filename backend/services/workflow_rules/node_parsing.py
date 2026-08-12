@@ -36,6 +36,14 @@ _INPUT_NODE_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "description": None,
         }
     ],
+    "vloMemoryLoadImageBatch": [
+        {
+            "input_type": "image",
+            "param": "images",
+            "label": "Image",
+            "description": None,
+        }
+    ],
     "LoadAudio": [
         {
             "input_type": "audio",
@@ -52,10 +60,26 @@ _INPUT_NODE_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "description": None,
         }
     ],
+    "vloMemoryLoadAudioBatch": [
+        {
+            "input_type": "audio",
+            "param": "audios",
+            "label": "Audio",
+            "description": None,
+        }
+    ],
     "vloMemoryLoadVideo": [
         {
             "input_type": "video",
             "param": "file",
+            "label": "Video",
+            "description": None,
+        }
+    ],
+    "vloMemoryLoadVideoBatch": [
+        {
+            "input_type": "video",
+            "param": "files",
             "label": "Video",
             "description": None,
         }

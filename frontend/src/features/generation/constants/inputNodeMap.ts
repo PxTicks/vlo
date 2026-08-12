@@ -28,11 +28,20 @@ export type InputNodeMap = Record<string, InputNodeMapEntry[]>;
 const STATIC_INPUT_NODE_MAP: InputNodeMap = {
   LoadImage: [{ inputType: "image", param: "image", label: "Image" }],
   vloMemoryLoadImage: [{ inputType: "image", param: "image", label: "Image" }],
+  vloMemoryLoadImageBatch: [
+    { inputType: "image", param: "images", label: "Image" },
+  ],
   CLIPTextEncode: [{ inputType: "text", param: "text", label: "Prompt" }],
   LoadAudio: [{ inputType: "audio", param: "audio", label: "Audio" }],
   vloMemoryLoadAudio: [{ inputType: "audio", param: "audio", label: "Audio" }],
+  vloMemoryLoadAudioBatch: [
+    { inputType: "audio", param: "audios", label: "Audio" },
+  ],
   LoadVideo: [{ inputType: "video", param: "file", label: "Video" }],
   vloMemoryLoadVideo: [{ inputType: "video", param: "file", label: "Video" }],
+  vloMemoryLoadVideoBatch: [
+    { inputType: "video", param: "files", label: "Video" },
+  ],
   VHS_LoadVideo: [{ inputType: "video", param: "video", label: "Video" }],
   VHS_LoadVideoFFmpeg: [{ inputType: "video", param: "video", label: "Video" }],
 };

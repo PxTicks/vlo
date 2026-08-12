@@ -740,15 +740,44 @@ function getWorkflowNodeInputValue(
   return (inputs as Record<string, unknown>)[param];
 }
 
+function unwrapComfyValue(value: unknown): unknown {
+  let current = value;
+  const seen = new Set<object>();
+
+  while (
+    typeof current === "object" &&
+    current !== null &&
+    !Array.isArray(current) &&
+    Object.prototype.hasOwnProperty.call(current, "__value__")
+  ) {
+    if (seen.has(current)) {
+      return null;
+    }
+    seen.add(current);
+    current = (current as Record<string, unknown>).__value__;
+  }
+
+  return current;
+}
+
+function containsMemoryLoaderPlaceholder(value: unknown): boolean {
+  const unwrapped = unwrapComfyValue(value);
+  if (typeof unwrapped === "string") {
+    return MEMORY_LOADER_PLACEHOLDER_VALUES.has(
+      unwrapped.trim().toLowerCase(),
+    );
+  }
+  if (Array.isArray(unwrapped)) {
+    return unwrapped.some(containsMemoryLoaderPlaceholder);
+  }
+  return false;
+}
+
 function isMemoryLoaderPlaceholderValue(
   workflow: Record<string, unknown>,
   nodeId: string,
   value: unknown,
 ): boolean {
-  if (typeof value !== "string") {
-    return false;
-  }
-
   const node = workflow[nodeId];
   if (typeof node !== "object" || node === null || Array.isArray(node)) {
     return false;
@@ -762,7 +791,7 @@ function isMemoryLoaderPlaceholderValue(
     return false;
   }
 
-  return MEMORY_LOADER_PLACEHOLDER_VALUES.has(value.trim().toLowerCase());
+  return containsMemoryLoaderPlaceholder(value);
 }
 
 function isCacheableMediaInputValue(
@@ -770,13 +799,22 @@ function isCacheableMediaInputValue(
   nodeId: string,
   value: unknown,
 ): boolean {
-  if (value === null || typeof value === "undefined") {
+  const unwrapped = unwrapComfyValue(value);
+  if (unwrapped === null || typeof unwrapped === "undefined") {
     return false;
   }
-  if (typeof value === "string") {
+  if (typeof unwrapped === "string") {
     return (
-      value.trim().length > 0 &&
-      !isMemoryLoaderPlaceholderValue(workflow, nodeId, value)
+      unwrapped.trim().length > 0 &&
+      !isMemoryLoaderPlaceholderValue(workflow, nodeId, unwrapped)
+    );
+  }
+  if (Array.isArray(unwrapped)) {
+    return (
+      unwrapped.length > 0 &&
+      unwrapped.every((item) =>
+        isCacheableMediaInputValue(workflow, nodeId, item),
+      )
     );
   }
   return true;

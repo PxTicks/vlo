@@ -10,6 +10,15 @@ const CANONICAL_WORKFLOW_CLASS_TYPE_ALIASES: Record<string, readonly string[]> =
   vloMemoryLoadVideo: ["vloMemoryLoadVideo", "VLOMemoryLoadVideo"],
 };
 
+const MEMORY_LOADER_CLASS_TYPES = new Set([
+  "vloMemoryLoadAudio",
+  "vloMemoryLoadImage",
+  "vloMemoryLoadVideo",
+  "vloMemoryLoadAudioBatch",
+  "vloMemoryLoadImageBatch",
+  "vloMemoryLoadVideoBatch",
+]);
+
 function normalizeWorkflowClassType(
   classType: string | null | undefined,
 ): string | null {
@@ -63,9 +72,5 @@ export function isMemoryLoaderClassType(
   classType: string | null | undefined,
 ): boolean {
   const canonical = canonicalizeWorkflowClassType(classType);
-  return (
-    canonical === "vloMemoryLoadAudio" ||
-    canonical === "vloMemoryLoadImage" ||
-    canonical === "vloMemoryLoadVideo"
-  );
+  return canonical !== null && MEMORY_LOADER_CLASS_TYPES.has(canonical);
 }

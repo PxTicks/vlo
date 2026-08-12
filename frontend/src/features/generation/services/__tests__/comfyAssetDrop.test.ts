@@ -27,6 +27,11 @@ describe("buildComfyAssetDropPlan", () => {
       widget: "image",
       requiresTruthyWidget: "disable_in_memory",
     });
+    expect(plan.targets).toContainEqual({
+      classType: "vloMemoryLoadImageBatch",
+      widget: "images",
+      requiresTruthyWidget: "disable_in_memory",
+    });
     // Loaders for other media kinds are not drop targets for an image.
     expect(
       plan.targets.some((target) => target.classType === "VHS_LoadVideo"),

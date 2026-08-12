@@ -1,6 +1,7 @@
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
 import type { GenerationMediaInputValue, WorkflowInput } from "../types";
 import {
+  buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
   getWorkflowInputId,
   getWorkflowInputValue,
@@ -288,7 +289,7 @@ export function carryOverMediaInputs(
       ),
   );
 
-  return Object.fromEntries(
+  const carried = Object.fromEntries(
     nextMediaInputs.flatMap((input) => {
       const nextId = getWorkflowInputId(input);
       const matchedPreviousId = matches.get(nextId);
@@ -304,4 +305,24 @@ export function carryOverMediaInputs(
       return [[nextId, value]];
     }),
   );
+
+  for (const nextInput of nextMediaInputs) {
+    const nextMax = nextInput.presentation?.repeatable?.max;
+    if (!nextMax) continue;
+    const previousInput = previousInputLookup.get(getWorkflowInputId(nextInput));
+    if (!previousInput || previousInput.inputType !== nextInput.inputType) {
+      continue;
+    }
+    const previousMax = previousInput.presentation?.repeatable?.max ?? 1;
+    for (let index = 0; index < Math.min(previousMax, nextMax); index += 1) {
+      const previousSlotId = buildRepeatableInputSlotId(previousInput, index);
+      const value = previousValues[previousSlotId];
+      if (!isDirectCompatibleMediaValue(nextInput.inputType, value)) {
+        continue;
+      }
+      carried[buildRepeatableInputSlotId(nextInput, index)] = value;
+    }
+  }
+
+  return carried;
 }

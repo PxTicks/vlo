@@ -97,27 +97,27 @@
     },
     "141": {
       "present": {
-        "label": "Reference images",
+        "label": "Image inputs",
         "input_type": "image",
         "param": "images",
         "class_type": "vloMemoryLoadImageBatch",
-        "section_id": "references",
-        "group_id": "reference_media",
-        "group_title": "Reference Media",
-        "group_order": 0,
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 9
+        },
         "required": false
       }
     },
     "142": {
       "present": {
-        "label": "Reference videos",
+        "label": "Video inputs",
         "input_type": "video",
         "param": "files",
         "class_type": "vloMemoryLoadVideoBatch",
-        "section_id": "references",
-        "group_id": "reference_media",
-        "group_title": "Reference Media",
-        "group_order": 1,
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 3
+        },
         "required": false
       },
       "selection": {
@@ -130,14 +130,14 @@
     },
     "143": {
       "present": {
-        "label": "Standalone reference audio",
+        "label": "Audio inputs",
         "input_type": "audio",
         "param": "audios",
         "class_type": "vloMemoryLoadAudioBatch",
-        "section_id": "references",
-        "group_id": "reference_media",
-        "group_title": "Reference Media",
-        "group_order": 2,
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 3
+        },
         "required": false
       }
     }

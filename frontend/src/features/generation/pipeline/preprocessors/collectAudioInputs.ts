@@ -2,7 +2,8 @@ import type { FrontendPreprocessContext, Processor } from "../types";
 import { throwIfAborted } from "../utils/abort";
 import {
   buildWorkflowInputLookup,
-  getNodeInputRequestKey,
+  getNodeInputRequestKeyForSlot,
+  resolveWorkflowInputForSlot,
 } from "../../utils/workflowInputs";
 
 /**
@@ -28,9 +29,11 @@ export const collectAudioInputs: Processor<FrontendPreprocessContext> = {
     for (const [inputId, value] of Object.entries(ctx.slotValues)) {
       throwIfAborted(ctx.signal);
       if (value.type !== "audio") continue;
-      const input = inputById.get(inputId);
+      const input = resolveWorkflowInputForSlot(inputId, inputById);
       if (!input) continue;
-      ctx.audioInputs[getNodeInputRequestKey(input, inputById)] = value.file;
+      ctx.audioInputs[
+        getNodeInputRequestKeyForSlot(inputId, input, inputById)
+      ] = value.file;
     }
   },
 };

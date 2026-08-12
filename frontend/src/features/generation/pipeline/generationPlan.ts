@@ -24,6 +24,7 @@ import { buildWorkflowInputMetadataMap } from "../utils/inputMetadata";
 import {
   buildWorkflowInputLookup,
   getNodeInputRequestKey,
+  resolveWorkflowInputForSlot,
 } from "../utils/workflowInputs";
 import { throwIfAborted } from "./utils/abort";
 import { isMemoryLoaderClassType } from "../utils/workflowClassTypes";
@@ -442,7 +443,7 @@ function collectTextInputsForRequest(
 
   for (const [inputId, value] of Object.entries(slotValues)) {
     if (value.type !== "text") continue;
-    const input = inputById.get(inputId);
+    const input = resolveWorkflowInputForSlot(inputId, inputById);
     if (!input) continue;
     textInputs[getNodeInputRequestKey(input, inputById)] = value.value;
   }
@@ -696,7 +697,7 @@ function collectCacheableMediaReferences(
       continue;
     }
 
-    const input = inputById.get(inputId);
+    const input = resolveWorkflowInputForSlot(inputId, inputById);
     if (!input) {
       continue;
     }

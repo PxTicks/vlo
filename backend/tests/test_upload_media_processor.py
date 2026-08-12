@@ -292,3 +292,140 @@ async def test_upload_media_processor_wraps_batch_loader_values_for_comfyui(
     assert ctx.workflow["92"]["inputs"]["images"] == {
         "__value__": [expected_value]
     }
+
+
+@pytest.mark.anyio
+async def test_upload_media_processor_preserves_order_for_repeatable_batch_inputs():
+    async def upload_media_bytes_fn(*args, **kwargs):
+        return None, {"code": "unexpected_upload"}
+
+    async def register_media_bytes_fn(
+        _client,
+        media_bytes,
+        *_args,
+        **_kwargs,
+    ):
+        return f"media-{media_bytes.decode()}", None
+
+    async def inspect_registered_media_fn(*args, **kwargs):
+        return False
+
+    ctx = _make_context(False, class_type="vloMemoryLoadImageBatch")
+    ctx.workflow["92"]["inputs"] = {
+        "images": {"__value__": []},
+        "disable_in_memory": False,
+    }
+    media_by_index = {
+        0: {
+            "node_id": "92",
+            "param": "images",
+            "input_type": "image",
+            "class_type": "vloMemoryLoadImageBatch",
+            "bytes": b"first",
+            "content_type": "image/png",
+            "filename": "first.png",
+            "batch_index": 0,
+        },
+        1: {
+            "node_id": "92",
+            "param": "images",
+            "input_type": "image",
+            "class_type": "vloMemoryLoadImageBatch",
+            "bytes": b"second",
+            "content_type": "image/png",
+            "filename": "second.png",
+            "batch_index": 1,
+        },
+        2: {
+            "node_id": "92",
+            "param": "images",
+            "input_type": "image",
+            "class_type": "vloMemoryLoadImageBatch",
+            "bytes": b"third",
+            "content_type": "image/png",
+            "filename": "third.png",
+            "batch_index": 2,
+        },
+    }
+    ctx.buffered_media = {
+        f"92:images:{index}": media_by_index[index] for index in (2, 0, 1)
+    }
+    processor = create_upload_media_processor(
+        upload_media_bytes_fn=upload_media_bytes_fn,
+        register_media_bytes_fn=register_media_bytes_fn,
+        inspect_registered_media_fn=inspect_registered_media_fn,
+        input_node_map={
+            "vloMemoryLoadImageBatch": [
+                {"input_type": "image", "param": "images"},
+            ]
+        },
+    )
+
+    try:
+        await processor.execute(ctx)
+    finally:
+        await ctx.client.aclose()
+
+    assert ctx.workflow["92"]["inputs"]["images"] == {
+        "__value__": ["media-first", "media-second", "media-third"]
+    }
+
+
+@pytest.mark.anyio
+async def test_upload_media_processor_does_not_reuse_positional_batch_ids():
+    registered: list[bytes] = []
+
+    async def upload_media_bytes_fn(*args, **kwargs):
+        return None, {"code": "unexpected_upload"}
+
+    async def register_media_bytes_fn(
+        _client,
+        media_bytes,
+        *_args,
+        **_kwargs,
+    ):
+        registered.append(media_bytes)
+        return f"fresh-{media_bytes.decode()}", None
+
+    async def inspect_registered_media_fn(_client, _media_id, _input_type):
+        return True
+
+    ctx = _make_context(False, class_type="vloMemoryLoadImageBatch")
+    cached = {"__value__": ["media-a", "media-b"]}
+    ctx.workflow["92"]["inputs"] = {
+        "images": cached,
+        "disable_in_memory": False,
+    }
+    ctx.buffered_media = {
+        f"92:images:{index}": {
+            "node_id": "92",
+            "param": "images",
+            "input_type": "image",
+            "class_type": "vloMemoryLoadImageBatch",
+            "bytes": value,
+            "content_type": "image/png",
+            "filename": f"{index}.png",
+            "batch_index": index,
+        }
+        for index, value in enumerate((b"b", b"a"))
+    }
+    processor = create_upload_media_processor(
+        upload_media_bytes_fn=upload_media_bytes_fn,
+        register_media_bytes_fn=register_media_bytes_fn,
+        inspect_registered_media_fn=inspect_registered_media_fn,
+        input_node_map={
+            "vloMemoryLoadImageBatch": [
+                {"input_type": "image", "param": "images"},
+            ]
+        },
+    )
+
+    try:
+        await processor.execute(ctx)
+    finally:
+        await ctx.client.aclose()
+
+    assert registered == [b"b", b"a"]
+    assert ctx.workflow["92"]["inputs"]["images"] == {
+        "__value__": ["fresh-b", "fresh-a"]
+    }

@@ -765,6 +765,83 @@ describe("useGenerationStore metadata replay", () => {
     });
   });
 
+  it("restores repeatable timeline selections into their saved slot ids", async () => {
+    const generatedAsset: Asset = {
+      id: "generated-repeatable-video",
+      hash: "hash-generated-repeatable-video",
+      name: "generated-repeatable-video.mp4",
+      type: "video",
+      src: "generated-repeatable-video.mp4",
+      createdAt: Date.now(),
+      creationMetadata: {
+        source: "generated",
+        workflowName: "MiniMax",
+        inputs: [
+          {
+            nodeId: "142",
+            inputId: "142:files",
+            kind: "timelineSelection",
+            timelineSelection: { start: 10, end: 20, clips: [] },
+          },
+          {
+            nodeId: "142",
+            inputId: "142:files::repeat::1",
+            kind: "timelineSelection",
+            timelineSelection: { start: 30, end: 40, clips: [] },
+          },
+        ],
+        replayState: {
+          version: 2,
+          workflowInputs: [
+            {
+              id: "142:files",
+              nodeId: "142",
+              classType: "vloMemoryLoadVideoBatch",
+              inputType: "video",
+              param: "files",
+              label: "Video inputs",
+              origin: "rule",
+              repeatableMax: 3,
+            },
+          ],
+        },
+        comfyuiPrompt: {
+          "142": {
+            class_type: "vloMemoryLoadVideoBatch",
+            inputs: { files: { __value__: [] } },
+          },
+        },
+      },
+    };
+
+    vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([]);
+
+    await useGenerationStore
+      .getState()
+      .loadWorkflowFromAssetMetadata(generatedAsset);
+
+    await vi.waitFor(() => {
+      expect(
+        useGenerationStore.getState().mediaInputs[
+          "142:files::repeat::1"
+        ],
+      ).toMatchObject({
+        kind: "timelineSelection",
+        timelineSelection: { start: 30, end: 40 },
+        isExtracting: false,
+      });
+    });
+    const state = useGenerationStore.getState();
+    expect(state.workflowInputs[0]?.presentation).toEqual({
+      repeatable: { max: 3 },
+    });
+    expect(state.mediaInputs["142:files"]).toMatchObject({
+      kind: "timelineSelection",
+      timelineSelection: { start: 10, end: 20 },
+      isExtracting: false,
+    });
+  });
+
   it("restores image timeline selections as frame captures", async () => {
     const restoredFrame = new File(["frame"], "frame.png", {
       type: "image/png",

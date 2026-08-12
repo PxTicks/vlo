@@ -20,9 +20,13 @@ import {
   extractAudioFromSelection,
 } from "../utils/manualSlotMedia";
 import {
+  buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
   getWorkflowInputId,
+  getWorkflowInputSlotValue,
   getWorkflowInputValue,
+  parseRepeatableInputSlotId,
+  resolveWorkflowInputForSlot,
 } from "../utils/workflowInputs";
 import { haveMatchingWorkflowNodes } from "../utils/workflowNodeSignature";
 import * as comfyApi from "../services/comfyuiApi";
@@ -195,6 +199,7 @@ export async function restoreMediaInputsFromMetadata(
   >,
 ): Promise<void> {
   const timelineClips = getTimelineClips();
+  const workflowInputById = buildWorkflowInputLookup(workflowInputs);
   const workflowInputByNodeId = new Map<string, WorkflowInput>();
   for (const workflowInput of workflowInputs) {
     if (!workflowInputByNodeId.has(workflowInput.nodeId)) {
@@ -203,12 +208,23 @@ export async function restoreMediaInputsFromMetadata(
   }
 
   for (const input of metadata.inputs) {
-    const workflowInput = workflowInputByNodeId.get(input.nodeId);
+    const workflowInput = input.inputId
+      ? resolveWorkflowInputForSlot(input.inputId, workflowInputById)
+      : workflowInputByNodeId.get(input.nodeId);
     if (!workflowInput) {
       continue;
     }
 
-    const inputId = getWorkflowInputId(workflowInput);
+    const requestedSlot = input.inputId
+      ? parseRepeatableInputSlotId(input.inputId)
+      : null;
+    const repeatableMax = workflowInput.presentation?.repeatable?.max;
+    const inputId =
+      input.inputId &&
+      repeatableMax &&
+      (requestedSlot?.index ?? 0) < repeatableMax
+        ? input.inputId
+        : getWorkflowInputId(workflowInput);
 
     if (input.kind === "draggedAsset") {
       const asset = getAssetById(input.parentAssetId);
@@ -307,7 +323,7 @@ export async function restoreMediaInputsFromMetadata(
 
     const sourceMappings = derivedMaskMappings.filter(
       (mapping) =>
-        mapping.sourceInputId === inputId ||
+        mapping.sourceInputId === getWorkflowInputId(workflowInput) ||
         (!mapping.sourceInputId && mapping.sourceNodeId === workflowInput.nodeId),
     );
 
@@ -413,41 +429,51 @@ export function buildGeneratedCreationMetadata(
   const inputById = buildWorkflowInputLookup(options.workflowInputs);
 
   for (const workflowInput of options.workflowInputs) {
-    const value = getWorkflowInputValue(
-      options.mediaInputs,
-      workflowInput,
-      inputById,
-    );
-    if (!value) continue;
+    const repeatableMax = workflowInput.presentation?.repeatable?.max ?? 1;
+    for (let index = 0; index < repeatableMax; index += 1) {
+      const value = getWorkflowInputSlotValue(
+        options.mediaInputs,
+        workflowInput,
+        index,
+        inputById,
+      );
+      if (!value) continue;
+      const inputId = buildRepeatableInputSlotId(workflowInput, index);
+      const repeatableIdentity =
+        workflowInput.presentation?.repeatable ? { inputId } : {};
 
-    if (value.kind === "timelineSelection") {
-      inputs.push({
-        nodeId: workflowInput.nodeId,
-        kind: "timelineSelection",
-        timelineSelection: cloneTimelineSelectionForMetadata(
-          value.timelineSelection,
-        ),
-      });
-      continue;
-    }
+      if (value.kind === "timelineSelection") {
+        inputs.push({
+          nodeId: workflowInput.nodeId,
+          ...repeatableIdentity,
+          kind: "timelineSelection",
+          timelineSelection: cloneTimelineSelectionForMetadata(
+            value.timelineSelection,
+          ),
+        });
+        continue;
+      }
 
-    if (value.kind === "frame" && value.timelineSelection) {
-      inputs.push({
-        nodeId: workflowInput.nodeId,
-        kind: "timelineSelection",
-        timelineSelection: cloneTimelineSelectionForMetadata(
-          value.timelineSelection,
-        ),
-      });
-      continue;
-    }
+      if (value.kind === "frame" && value.timelineSelection) {
+        inputs.push({
+          nodeId: workflowInput.nodeId,
+          ...repeatableIdentity,
+          kind: "timelineSelection",
+          timelineSelection: cloneTimelineSelectionForMetadata(
+            value.timelineSelection,
+          ),
+        });
+        continue;
+      }
 
-    if (value.kind === "asset") {
-      inputs.push({
-        nodeId: workflowInput.nodeId,
-        kind: "draggedAsset",
-        parentAssetId: value.asset.id,
-      });
+      if (value.kind === "asset") {
+        inputs.push({
+          nodeId: workflowInput.nodeId,
+          ...repeatableIdentity,
+          kind: "draggedAsset",
+          parentAssetId: value.asset.id,
+        });
+      }
     }
   }
 
@@ -559,6 +585,11 @@ export function parseReplayWorkflowInputs(
         description: snapshot.description ?? null,
         currentValue: null,
         origin: snapshot.origin,
+        presentation:
+          typeof snapshot.repeatableMax === "number" &&
+          snapshot.repeatableMax >= 1
+            ? { repeatable: { max: Math.floor(snapshot.repeatableMax) } }
+            : undefined,
         dispatch:
           snapshot.dispatch?.kind === "node"
             ? {
@@ -689,6 +720,9 @@ function buildWorkflowInputSnapshot(
   }
   if (workflowInput.description !== undefined) {
     snapshot.description = workflowInput.description;
+  }
+  if (workflowInput.presentation?.repeatable) {
+    snapshot.repeatableMax = workflowInput.presentation.repeatable.max;
   }
   if (workflowInput.dispatch?.kind === "node") {
     snapshot.dispatch = {

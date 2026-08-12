@@ -2415,6 +2415,17 @@
           "default": null,
           "title": "Param"
         },
+        "repeatable": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleRepeatableInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "required": {
           "anyOf": [
             {
@@ -2441,6 +2452,20 @@
         }
       },
       "title": "WorkflowRuleNodePresent",
+      "type": "object"
+    },
+    "WorkflowRuleRepeatableInput": {
+      "properties": {
+        "max": {
+          "minimum": 1,
+          "title": "Max",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max"
+      ],
+      "title": "WorkflowRuleRepeatableInput",
       "type": "object"
     },
     "WorkflowRuleSelectionConfig": {

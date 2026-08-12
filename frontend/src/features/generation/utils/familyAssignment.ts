@@ -15,9 +15,12 @@ import { getAssetById } from "../../userAssets/api";
 import type { SlotValue } from "../pipeline/types";
 import type { WorkflowInput } from "../types";
 import {
+  buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
   getNodeInputRequestKey,
+  getNodeInputRequestKeyForSlot,
   getWorkflowInputId,
+  getWorkflowInputSlotValue,
   getWorkflowInputValue,
 } from "./workflowInputs";
 import { buildWorkflowStructureSignature } from "./workflowNodeSignature";
@@ -68,7 +71,10 @@ function buildGeneratedInputLookup(
   generationInputs: readonly GeneratedCreationInput[],
 ): Map<string, GeneratedCreationInput> {
   return new Map(
-    generationInputs.map((generationInput) => [generationInput.nodeId, generationInput]),
+    generationInputs.map((generationInput) => [
+      generationInput.inputId ?? generationInput.nodeId,
+      generationInput,
+    ]),
   );
 }
 
@@ -77,8 +83,7 @@ async function buildExternalFileSignature(file: File): Promise<string> {
 }
 
 async function buildMediaInputDescriptor(
-  workflowInput: WorkflowInput,
-  workflowInputLookup: ReadonlyMap<string, WorkflowInput>,
+  requestKey: string,
   slotValue: SlotValue | undefined,
   generationInput: GeneratedCreationInput | undefined,
 ): Promise<Record<string, unknown> | null> {
@@ -90,14 +95,14 @@ async function buildMediaInputDescriptor(
     const asset = getAssetById(generationInput.parentAssetId);
     if (!asset) {
       return {
-        key: getNodeInputRequestKey(workflowInput, workflowInputLookup),
+        key: requestKey,
         kind: "asset",
         parentAssetId: generationInput.parentAssetId,
       };
     }
 
     return {
-      key: getNodeInputRequestKey(workflowInput, workflowInputLookup),
+      key: requestKey,
       kind: "asset",
       hash: asset.hash,
     };
@@ -105,7 +110,7 @@ async function buildMediaInputDescriptor(
 
   if (generationInput?.kind === "timelineSelection") {
     return {
-      key: getNodeInputRequestKey(workflowInput, workflowInputLookup),
+      key: requestKey,
       kind: "timelineSelection",
       selection: generationInput.timelineSelection,
     };
@@ -117,7 +122,7 @@ async function buildMediaInputDescriptor(
     slotValue.type === "audio"
   ) {
     return {
-      key: getNodeInputRequestKey(workflowInput, workflowInputLookup),
+      key: requestKey,
       kind: slotValue.type,
       hash: await buildExternalFileSignature(slotValue.file),
     };
@@ -125,7 +130,7 @@ async function buildMediaInputDescriptor(
 
   if (slotValue.type === "video_selection") {
     return {
-      key: getNodeInputRequestKey(workflowInput, workflowInputLookup),
+      key: requestKey,
       kind: "timelineSelection",
       selection: slotValue.selection,
     };
@@ -169,19 +174,28 @@ export async function buildGenerationFamilyRequestKey(
       continue;
     }
 
-    const slotValue = getWorkflowInputValue(
-      options.slotValues,
-      workflowInput,
-      workflowInputLookup,
-    );
-    const mediaDescriptor = await buildMediaInputDescriptor(
-      workflowInput,
-      workflowInputLookup,
-      slotValue,
-      generationInputLookup.get(workflowInput.nodeId),
-    );
-    if (mediaDescriptor) {
-      mediaInputs.push(mediaDescriptor);
+    const repeatableMax = workflowInput.presentation?.repeatable?.max ?? 1;
+    for (let index = 0; index < repeatableMax; index += 1) {
+      const inputId = buildRepeatableInputSlotId(workflowInput, index);
+      const slotValue = getWorkflowInputSlotValue(
+        options.slotValues,
+        workflowInput,
+        index,
+        workflowInputLookup,
+      );
+      const mediaDescriptor = await buildMediaInputDescriptor(
+        getNodeInputRequestKeyForSlot(
+          inputId,
+          workflowInput,
+          workflowInputLookup,
+        ),
+        slotValue,
+        generationInputLookup.get(inputId) ??
+          generationInputLookup.get(workflowInput.nodeId),
+      );
+      if (mediaDescriptor) {
+        mediaInputs.push(mediaDescriptor);
+      }
     }
   }
 

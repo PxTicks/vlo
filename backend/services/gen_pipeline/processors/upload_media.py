@@ -90,26 +90,49 @@ def _get_node_input_value(
     return inputs.get(param)
 
 
-def _get_single_memory_id(value: Any) -> str | None:
+def _get_memory_id_at_index(value: Any, index: int = 0) -> str | None:
     if isinstance(value, str) and value.strip():
-        return value
+        return value if index == 0 else None
     if isinstance(value, dict):
         wrapped = value.get("__value__")
         if (
             isinstance(wrapped, list)
-            and len(wrapped) == 1
-            and isinstance(wrapped[0], str)
-            and wrapped[0].strip()
+            and 0 <= index < len(wrapped)
+            and isinstance(wrapped[index], str)
+            and wrapped[index].strip()
         ):
-            return wrapped[0]
+            return wrapped[index]
     return None
 
 
-def _format_memory_loader_injection(class_type: str, value: str) -> Any:
-    if canonicalize_class_type(class_type) in BATCH_MEMORY_LOADER_NODE_TYPES:
-        # ComfyUI reserves bare arrays for [node_id, output_slot] links.
-        return {"__value__": [value]}
-    return value
+def _set_memory_loader_injection(
+    injections: dict[str, dict[str, Any]],
+    batch_injections: dict[tuple[str, str], dict[int, str]],
+    *,
+    node_id: str,
+    param: str,
+    class_type: str,
+    value: str,
+    batch_index: int | None,
+) -> None:
+    node_injections = injections.setdefault(node_id, {})
+    if canonicalize_class_type(class_type) not in BATCH_MEMORY_LOADER_NODE_TYPES:
+        node_injections[param] = value
+        return
+
+    index = batch_index if isinstance(batch_index, int) and batch_index >= 0 else 0
+    batch_injections.setdefault((node_id, param), {})[index] = value
+
+
+def _apply_batch_memory_loader_injections(
+    injections: dict[str, dict[str, Any]],
+    batch_injections: dict[tuple[str, str], dict[int, str]],
+) -> None:
+    for (node_id, param), indexed_values in batch_injections.items():
+        # Missing indices are compacted while supplied indices retain their
+        # relative order. ComfyUI reserves bare arrays for output links.
+        values = [value for _, value in sorted(indexed_values.items())]
+        injections.setdefault(node_id, {})[param] = {"__value__": values}
 
 
 class _UploadMediaProcessor:
@@ -136,6 +159,7 @@ class _UploadMediaProcessor:
         return bool(ctx.buffered_media)
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
+        batch_injections: dict[tuple[str, str], dict[int, str]] = {}
         for buffered_input_id, media_info in ctx.buffered_media.items():
             node_id = media_info.get("node_id")
             param = media_info.get("param")
@@ -151,6 +175,12 @@ class _UploadMediaProcessor:
                 if isinstance(node, dict)
                 else media_info.get("class_type", "")
             )
+            raw_batch_index = media_info.get("batch_index")
+            batch_index = (
+                raw_batch_index
+                if isinstance(raw_batch_index, int) and raw_batch_index >= 0
+                else None
+            )
 
             if _should_use_in_memory_loader(
                 current_class_type,
@@ -160,8 +190,16 @@ class _UploadMediaProcessor:
                     node if isinstance(node, dict) else None,
                     param,
                 )
-                current_memory_id = _get_single_memory_id(current_value)
-                if current_memory_id is not None:
+                current_memory_id = _get_memory_id_at_index(
+                    current_value,
+                    batch_index or 0,
+                )
+                is_indexed_batch_input = (
+                    canonicalize_class_type(current_class_type)
+                    in BATCH_MEMORY_LOADER_NODE_TYPES
+                    and batch_index is not None
+                )
+                if current_memory_id is not None and not is_indexed_batch_input:
                     # Cached reruns may submit both the prior memory id and the
                     # original prepared file bytes. Reuse the id when it still
                     # exists; otherwise re-register from bytes in the same
@@ -171,6 +209,15 @@ class _UploadMediaProcessor:
                         current_memory_id,
                         input_type,
                     ):
+                        _set_memory_loader_injection(
+                            ctx.injections,
+                            batch_injections,
+                            node_id=node_id,
+                            param=param,
+                            class_type=current_class_type,
+                            value=current_memory_id,
+                            batch_index=batch_index,
+                        )
                         continue
 
                 injected_value, upload_warning = await self._register_media_bytes(
@@ -215,11 +262,14 @@ class _UploadMediaProcessor:
                     if mapping is not None:
                         break
                 if mapping and mapping.get("input_type") == input_type:
-                    ctx.injections.setdefault(node_id, {})[param] = (
-                        _format_memory_loader_injection(
-                            current_class_type,
-                            injected_value,
-                        )
+                    _set_memory_loader_injection(
+                        ctx.injections,
+                        batch_injections,
+                        node_id=node_id,
+                        param=param,
+                        class_type=current_class_type,
+                        value=injected_value,
+                        batch_index=batch_index,
                     )
                 elif mapping:
                     ctx.warnings.append(
@@ -234,6 +284,7 @@ class _UploadMediaProcessor:
                         )
                     )
 
+        _apply_batch_memory_loader_injections(ctx.injections, batch_injections)
         ctx.workflow = apply_injections(ctx.workflow, ctx.injections)
 
 

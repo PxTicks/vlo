@@ -179,6 +179,64 @@ describe("familyAssignment", () => {
     expect(left).not.toBe(right);
   });
 
+  it("includes the order of repeatable media slots in the family key", async () => {
+    const repeatableInput: WorkflowInput = {
+      id: "141:images",
+      nodeId: "141",
+      classType: "vloMemoryLoadImageBatch",
+      inputType: "image",
+      param: "images",
+      label: "Image inputs",
+      currentValue: null,
+      origin: "rule",
+      presentation: { repeatable: { max: 2 } },
+    };
+    const first = { ...sourceAsset, id: "first", hash: "first-hash" };
+    const second = { ...sourceAsset, id: "second", hash: "second-hash" };
+    getAssetByIdMock.mockImplementation((id: string) =>
+      id === first.id ? first : second,
+    );
+    const slotValues: Record<string, SlotValue> = {
+      "141:images": {
+        type: "image",
+        file: new File(["first"], "first.png", { type: "image/png" }),
+      },
+      "141:images::repeat::1": {
+        type: "image",
+        file: new File(["second"], "second.png", { type: "image/png" }),
+      },
+    };
+    const makeInputs = (firstId: string, secondId: string) => [
+      {
+        nodeId: "141",
+        inputId: "141:images",
+        kind: "draggedAsset" as const,
+        parentAssetId: firstId,
+      },
+      {
+        nodeId: "141",
+        inputId: "141:images::repeat::1",
+        kind: "draggedAsset" as const,
+        parentAssetId: secondId,
+      },
+    ];
+
+    const original = await buildGenerationFamilyRequestKey({
+      workflow: makeWorkflow(1),
+      workflowInputs: [repeatableInput],
+      slotValues,
+      generationInputs: makeInputs("first", "second"),
+    });
+    const swapped = await buildGenerationFamilyRequestKey({
+      workflow: makeWorkflow(1),
+      workflowInputs: [repeatableInput],
+      slotValues,
+      generationInputs: makeInputs("second", "first"),
+    });
+
+    expect(original).not.toBe(swapped);
+  });
+
   it("changes the family hash when the workflow wiring changes", async () => {
     const left = await buildGenerationFamilyRequestKey({
       workflow: makeWorkflow(1, "2"),

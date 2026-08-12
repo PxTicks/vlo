@@ -15,7 +15,11 @@ import {
 } from "../../timelineSelection";
 import { useGenerationStore } from "../useGenerationStore";
 import { useProjectStore } from "../../project";
-import type { WorkflowSelectionConfig, WorkflowInput } from "../types";
+import type {
+  GenerationMediaInputValue,
+  WorkflowSelectionConfig,
+  WorkflowInput,
+} from "../types";
 import type { SlotValue } from "../utils/pipeline";
 import {
   captureFramePngAtTick,
@@ -48,10 +52,14 @@ import { parseInputsFromApiWorkflow } from "../services/apiWorkflowInputs";
 import { addLocalAsset, useAssetStore } from "../../userAssets";
 import { findWorkflowInputValidationFailures } from "../services/workflowRules";
 import {
+  buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
   getWorkflowInputId,
+  getWorkflowInputSlotValue,
   getWorkflowInputValue,
+  parseRepeatableInputSlotId,
   resolveWorkflowInputKeys,
+  resolveWorkflowInputForSlot,
 } from "../utils/workflowInputs";
 import { resolveExistingAssetForExternalDrop } from "../utils/externalDropAsset";
 import {
@@ -382,9 +390,22 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       }
 
       if (
-        hasProvidedMediaInputValue(
-          input.inputType as "image" | "video" | "audio",
-          getWorkflowInputValue(mediaInputs, input, workflowInputById),
+        Array.from(
+          {
+            length: input.presentation?.repeatable?.max ?? 1,
+          },
+          (_, index) =>
+            getWorkflowInputSlotValue(
+              mediaInputs,
+              input,
+              index,
+              workflowInputById,
+            ) ?? null,
+        ).some((value) =>
+          hasProvidedMediaInputValue(
+            input.inputType as "image" | "video" | "audio",
+            value,
+          ),
         )
       ) {
         provided.add(inputId);
@@ -610,88 +631,104 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             getWorkflowInputValue(textValues, input, workflowInputById) ?? "";
           slotValues[inputId] = { type: "text", value: text };
         } else {
-          const value = getWorkflowInputValue(
-            store.mediaInputs,
-            input,
-            workflowInputById,
+          const repeatableMax = input.presentation?.repeatable?.max ?? 1;
+          const mediaEntries = Array.from(
+            { length: repeatableMax },
+            (_, index) => {
+              const slotInputId = buildRepeatableInputSlotId(input, index);
+              return [
+                slotInputId,
+                getWorkflowInputSlotValue(
+                  store.mediaInputs,
+                  input,
+                  index,
+                  workflowInputById,
+                ) ?? null,
+              ] as const;
+            },
+          ).filter(
+            (entry): entry is readonly [string, GenerationMediaInputValue] =>
+              entry[1] !== null,
           );
-          if (!value) {
+          if (mediaEntries.length === 0) {
             if (mode === "manual") {
               bypassNodeIds.add(input.nodeId);
             }
             continue;
           }
 
-          if (input.inputType === "image") {
-            if (value.kind === "asset") {
-              if (!assetMatchesType(value.asset, "image")) {
-                continue;
+          for (const [slotInputId, value] of mediaEntries) {
+            if (input.inputType === "image") {
+              if (value.kind === "asset") {
+                if (!assetMatchesType(value.asset, "image")) {
+                  continue;
+                }
+                const file = await resolveAssetFileForGeneration(value.asset);
+                slotValues[slotInputId] = {
+                  type: "image",
+                  file,
+                };
+              } else if (value.kind === "frame") {
+                slotValues[slotInputId] = {
+                  type: "image",
+                  file: value.file,
+                };
               }
-              const file = await resolveAssetFileForGeneration(value.asset);
-              slotValues[inputId] = {
-                type: "image",
-                file,
-              };
-            } else if (value.kind === "frame") {
-              slotValues[inputId] = {
-                type: "image",
-                file: value.file,
-              };
-            }
-            continue;
-          }
-
-          if (input.inputType === "audio") {
-            if (value.kind === "asset") {
-              if (!assetMatchesType(value.asset, "audio")) {
-                continue;
-              }
-              const file = await resolveAssetFileForGeneration(value.asset);
-              slotValues[inputId] = {
-                type: "audio",
-                file,
-              };
-            } else if (
-              value.kind === "timelineSelection" &&
-              value.mediaType === "audio" &&
-              value.preparedAudioFile
-            ) {
-              slotValues[inputId] = {
-                type: "audio",
-                file: value.preparedAudioFile,
-              };
-            }
-            continue;
-          }
-
-          if (value.kind === "asset") {
-            if (!assetMatchesType(value.asset, "video")) {
               continue;
             }
-            const file = await resolveAssetFileForGeneration(value.asset);
-            slotValues[inputId] = {
-              type: "video",
-              file,
-              assetId: value.asset.id,
-            };
-            continue;
-          }
 
-          if (
-            value.kind === "timelineSelection" &&
-            value.mediaType === "video"
-          ) {
-            slotValues[inputId] = {
-              type: "video_selection",
-              selection: value.timelineSelection,
-              preparedVideoFile: value.preparedVideoFile ?? undefined,
-              preparedMaskFile: value.preparedMaskFile ?? undefined,
-              preparedDerivedMaskSignature:
-                value.preparedDerivedMaskSignature,
-              pendingExtractionRequestId: value.isExtracting
-                ? value.extractionRequestId
-                : undefined,
-            };
+            if (input.inputType === "audio") {
+              if (value.kind === "asset") {
+                if (!assetMatchesType(value.asset, "audio")) {
+                  continue;
+                }
+                const file = await resolveAssetFileForGeneration(value.asset);
+                slotValues[slotInputId] = {
+                  type: "audio",
+                  file,
+                };
+              } else if (
+                value.kind === "timelineSelection" &&
+                value.mediaType === "audio" &&
+                value.preparedAudioFile
+              ) {
+                slotValues[slotInputId] = {
+                  type: "audio",
+                  file: value.preparedAudioFile,
+                };
+              }
+              continue;
+            }
+
+            if (value.kind === "asset") {
+              if (!assetMatchesType(value.asset, "video")) {
+                continue;
+              }
+              const file = await resolveAssetFileForGeneration(value.asset);
+              slotValues[slotInputId] = {
+                type: "video",
+                file,
+                assetId: value.asset.id,
+              };
+              continue;
+            }
+
+            if (
+              value.kind === "timelineSelection" &&
+              value.mediaType === "video"
+            ) {
+              slotValues[slotInputId] = {
+                type: "video_selection",
+                selection: value.timelineSelection,
+                preparedVideoFile: value.preparedVideoFile ?? undefined,
+                preparedMaskFile: value.preparedMaskFile ?? undefined,
+                preparedDerivedMaskSignature:
+                  value.preparedDerivedMaskSignature,
+                pendingExtractionRequestId: value.isExtracting
+                  ? value.extractionRequestId
+                  : undefined,
+              };
+            }
           }
         }
       }
@@ -910,7 +947,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       const extractStore = useExtractStore.getState();
       const timelineSelectionStore = useTimelineSelectionStore.getState();
       const playerStore = usePlayerStore.getState();
-      const input = workflowInputById.get(inputId);
+      const input = resolveWorkflowInputForSlot(inputId, workflowInputById);
       const selectionConfig =
         input?.dispatch && "selectionConfig" in input.dispatch
           ? input.dispatch.selectionConfig
@@ -1060,13 +1097,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             const extractionRequestId =
               selectionExtractionRequestIdsRef.current[inputId] ?? 0;
             const storeMediaInputs = useGenerationStore.getState().mediaInputs;
-            const existingValue = input
-              ? getWorkflowInputValue(
-                  storeMediaInputs,
-                  input,
-                  workflowInputById,
-                )
-              : storeMediaInputs[inputId];
+            const existingValue = storeMediaInputs[inputId];
             if (
               existingValue?.kind === "timelineSelection" &&
               existingValue.extractionRequestId === extractionRequestId
@@ -1108,10 +1139,15 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const handleEditMedia = useCallback(
     (inputId: string, inputType: "video") => {
       if (inputType !== "video") return;
-      const input = workflowInputById.get(inputId);
+      const input = resolveWorkflowInputForSlot(inputId, workflowInputById);
       const currentMediaInputs = useGenerationStore.getState().mediaInputs;
       const value = input
-        ? getWorkflowInputValue(currentMediaInputs, input, workflowInputById)
+        ? getWorkflowInputSlotValue(
+            currentMediaInputs,
+            input,
+            parseRepeatableInputSlotId(inputId)?.index ?? 0,
+            workflowInputById,
+          )
         : currentMediaInputs[inputId];
       if (!value) return;
 

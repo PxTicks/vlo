@@ -10,6 +10,8 @@ import { buildDerivedMaskRenderSignature } from "../../utils/derivedMaskRenderSi
 import {
   buildWorkflowInputLookup,
   getNodeInputRequestKey,
+  getNodeInputRequestKeyForSlot,
+  resolveWorkflowInputForSlot,
 } from "../../utils/workflowInputs";
 import { prepareNormalizedSelection } from "./selectionHelpers";
 import { throwIfAborted } from "../utils/abort";
@@ -129,7 +131,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
 
     for (const [inputId, value] of Object.entries(ctx.slotValues)) {
       throwIfAborted(ctx.signal);
-      const input = inputById.get(inputId);
+      const input = resolveWorkflowInputForSlot(inputId, inputById);
 
       if (value.type !== "video" && value.type !== "video_selection") {
         continue;
@@ -142,7 +144,9 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
         // remove_transparency) — that would need extra plumbing, and may not
         // always be doable: removing pre-multiplied alpha can't be done by a
         // flat composite, it requires un-pre-multiplying first.
-        ctx.videoInputs[getNodeInputRequestKey(input, inputById)] = value.file;
+        ctx.videoInputs[
+          getNodeInputRequestKeyForSlot(inputId, input, inputById)
+        ] = value.file;
 
         // Direct uploads bypass the timeline render, so any derived mask
         // mappings normally wouldn't fire. Pipe the asset through
@@ -208,7 +212,9 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
             value.preparedDerivedMaskSignature,
           );
           throwIfAborted(ctx.signal);
-          ctx.videoInputs[getNodeInputRequestKey(input, inputById)] =
+          ctx.videoInputs[
+            getNodeInputRequestKeyForSlot(inputId, input, inputById)
+          ] =
             result.video;
           for (const mask of allMasks) {
             const maskInput = ctx.workflowInputs.find(
@@ -238,7 +244,9 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
             ctx.videoInputs[maskRequestKey] = renderedMask;
           }
         } else {
-          ctx.videoInputs[getNodeInputRequestKey(input, inputById)] =
+          ctx.videoInputs[
+            getNodeInputRequestKeyForSlot(inputId, input, inputById)
+          ] =
             await normalizeVideoSelection(
               value.selection,
               value.preparedVideoFile,

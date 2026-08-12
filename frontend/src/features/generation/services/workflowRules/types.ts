@@ -60,6 +60,7 @@ export type {
   WorkflowRewriteRule,
   WorkflowRuleNode,
   WorkflowRuleNodePresent,
+  WorkflowRuleRepeatableInput,
   WorkflowRuleSelectionConfig,
   WorkflowRuleSlot,
   WorkflowSection,

@@ -79,22 +79,22 @@ def test_minimax_h3_reference_rules_expose_vlo_controls():
     rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
 
     assert rules["nodes"]["141"]["present"] == {
-        "label": "Reference images",
+        "label": "Image inputs",
         "input_type": "image",
         "param": "images",
         "class_type": "vloMemoryLoadImageBatch",
-        "section_id": "references",
-        "group_id": "reference_media",
-        "group_title": "Reference Media",
-        "group_order": 0,
+        "section_id": "inputs",
+        "repeatable": {"max": 9},
         "required": False,
     }
     assert rules["nodes"]["142"]["present"]["class_type"] == (
         "vloMemoryLoadVideoBatch"
     )
+    assert rules["nodes"]["142"]["present"]["repeatable"] == {"max": 3}
     assert rules["nodes"]["143"]["present"]["class_type"] == (
         "vloMemoryLoadAudioBatch"
     )
+    assert rules["nodes"]["143"]["present"]["repeatable"] == {"max": 3}
     assert rules["nodes"]["136"]["widgets"]["use_embedded_video_audio"][
         "default"
     ] is False

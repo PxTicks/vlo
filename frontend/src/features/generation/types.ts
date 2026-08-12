@@ -144,6 +144,9 @@ export interface WorkflowInputPresentationSection {
 export interface WorkflowInputPresentation {
   section?: WorkflowInputPresentationSection;
   group?: WorkflowInputPresentationGroup;
+  repeatable?: {
+    max: number;
+  };
 }
 
 export interface InputSlot {

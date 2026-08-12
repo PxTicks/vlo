@@ -72,6 +72,36 @@ function makeConditioningWorkflow() {
 }
 
 describe("resolvePresentedInputs", () => {
+  it("preserves sidecar repeatable-input limits", () => {
+    const resolved = resolvePresentedInputs(
+      [
+        {
+          id: "141:images",
+          nodeId: "141",
+          classType: "vloMemoryLoadImageBatch",
+          inputType: "image",
+          param: "images",
+          label: "Image",
+          currentValue: null,
+          origin: "inferred",
+        },
+      ],
+      {
+        version: 3,
+        nodes: {
+          "141": {
+            present: {
+              label: "Image inputs",
+              repeatable: { max: 9 },
+            },
+          },
+        },
+      },
+    );
+
+    expect(resolved.inputs[0]?.presentation?.repeatable).toEqual({ max: 9 });
+  });
+
   it("preserves grouped media-input presentation metadata", () => {
     const resolved = resolvePresentedInputs(
       [

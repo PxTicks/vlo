@@ -21,6 +21,7 @@ import type {
 import type { WorkflowSection } from "../services/workflowRules";
 import type { AssetDropSlotValue } from "../../panelUI";
 import {
+  buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
   getWorkflowInputId,
   getWorkflowInputValue,
@@ -455,6 +456,11 @@ type RenderableInputBlock =
       input: MediaWorkflowInput;
     }
   | {
+      kind: "repeatableMedia";
+      sectionId: string;
+      input: MediaWorkflowInput;
+    }
+  | {
       kind: "mediaGroup";
       id: string;
       sectionId: string;
@@ -465,6 +471,7 @@ type RenderableInputBlock =
 function getRenderableInputBlockPriority(block: RenderableInputBlock): number {
   switch (block.kind) {
     case "media":
+    case "repeatableMedia":
     case "mediaGroup":
       return 0;
     case "text":
@@ -502,6 +509,11 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
     }
 
     const mediaInput = input;
+
+    if (mediaInput.presentation?.repeatable) {
+      blocks.push({ kind: "repeatableMedia", input: mediaInput, sectionId });
+      continue;
+    }
 
     const group = mediaInput.presentation?.group;
     if (!group?.id) {
@@ -831,6 +843,102 @@ function MediaInputSection({
 }
 
 const MemoizedMediaInputSection = memo(MediaInputSection);
+
+interface RepeatableMediaInputSectionProps {
+  input: MediaWorkflowInput;
+  bgColor: string;
+  mediaInputs: Record<string, GenerationMediaInputValue | null>;
+  firstValue: GenerationMediaInputValue | null | undefined;
+  onInputDrop: (inputId: string, asset: Asset) => void;
+  onExternalInputDrop: (inputId: string, file: File) => void | Promise<void>;
+  onInputClear: (inputId: string) => void;
+  onSwapMediaInputs: (sourceInputId: string, targetInputId: string) => void;
+  onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
+  onEditMedia?: (inputId: string, inputType: "video") => void;
+}
+
+function RepeatableMediaInputSection({
+  input,
+  bgColor,
+  mediaInputs,
+  firstValue,
+  onInputDrop,
+  onExternalInputDrop,
+  onInputClear,
+  onSwapMediaInputs,
+  onClickSelect,
+  onEditMedia,
+}: RepeatableMediaInputSectionProps) {
+  const max = Math.max(1, Math.floor(input.presentation?.repeatable?.max ?? 1));
+  const visibleSlotIds = useMemo(() => {
+    let highestFilledIndex = -1;
+    for (let index = 0; index < max; index += 1) {
+      const slotId = buildRepeatableInputSlotId(input, index);
+      const value = index === 0 ? firstValue : mediaInputs[slotId];
+      if (value) {
+        highestFilledIndex = index;
+      }
+    }
+    const visibleCount = Math.min(max, Math.max(1, highestFilledIndex + 2));
+    return Array.from({ length: visibleCount }, (_, index) =>
+      buildRepeatableInputSlotId(input, index),
+    );
+  }, [firstValue, input, max, mediaInputs]);
+  const acceptTypes = resolveAcceptTypes(input.inputType);
+  const slotLabelBase = input.label.replace(/\s+inputs?$/i, "").trim() || input.label;
+
+  return (
+    <PanelSection title={input.label} bgColor={bgColor} defaultOpen={true}>
+      {input.description ? (
+        <Typography sx={{ mb: 1, color: "text.secondary", fontSize: "0.8rem" }}>
+          {input.description}
+        </Typography>
+      ) : null}
+      <Box
+        sx={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 1.5,
+          alignItems: "flex-start",
+        }}
+      >
+        {visibleSlotIds.map((inputId, index) => {
+          const slotValue = toSlotValue(
+            index === 0 ? firstValue : mediaInputs[inputId],
+          );
+          return (
+            <AssetDropSlot
+              key={inputId}
+              id={inputId}
+              label={`${slotLabelBase} ${index + 1}`}
+              accept={acceptTypes}
+              value={slotValue}
+              reorderData={slotValue ? { type: "media-input", inputId } : null}
+              onReorderDrop={
+                slotValue
+                  ? (data) => onSwapMediaInputs(data.inputId, inputId)
+                  : undefined
+              }
+              onClear={() => onInputClear(inputId)}
+              onEdit={
+                input.inputType === "video" && slotValue && onEditMedia
+                  ? () => onEditMedia(inputId, "video")
+                  : undefined
+              }
+              onDrop={(asset: Asset) => onInputDrop(inputId, asset)}
+              onExternalDrop={(file: File) =>
+                onExternalInputDrop(inputId, file)
+              }
+              onSelect={() => onClickSelect(inputId, input.inputType)}
+            />
+          );
+        })}
+      </Box>
+    </PanelSection>
+  );
+}
+
+const MemoizedRepeatableMediaInputSection = memo(RepeatableMediaInputSection);
 
 interface MediaInputGroupSectionProps {
   title: string;
@@ -1247,6 +1355,8 @@ function getRenderableInputBlockKey(block: RenderableInputBlock): string {
       return `text:${getWorkflowInputId(block.input)}`;
     case "media":
       return `media:${getWorkflowInputId(block.input)}`;
+    case "repeatableMedia":
+      return `repeatable-media:${getWorkflowInputId(block.input)}`;
     case "mediaGroup":
       return `media-group:${block.id}`;
   }
@@ -1347,6 +1457,28 @@ export const GenerationInputs = memo(function GenerationInputs({
           inputs={block.inputs}
           bgColor={bgColor}
           mediaInputs={mediaInputs}
+          onInputDrop={onInputDrop}
+          onExternalInputDrop={onExternalInputDrop}
+          onInputClear={onInputClear}
+          onSwapMediaInputs={onSwapMediaInputs}
+          onClickSelect={onClickSelect}
+          onEditMedia={onEditMedia}
+        />
+      );
+    }
+
+    if (block.kind === "repeatableMedia") {
+      return (
+        <MemoizedRepeatableMediaInputSection
+          key={key ?? `repeatable-media:${getWorkflowInputId(block.input)}`}
+          input={block.input}
+          bgColor={bgColor}
+          mediaInputs={mediaInputs}
+          firstValue={getWorkflowInputValue(
+            mediaInputs,
+            block.input,
+            inputLookup,
+          )}
           onInputDrop={onInputDrop}
           onExternalInputDrop={onExternalInputDrop}
           onInputClear={onInputClear}

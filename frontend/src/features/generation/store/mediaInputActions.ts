@@ -1,8 +1,11 @@
 import type { Asset } from "../../../types/Asset";
 import type { GenerationMediaInputValue } from "../types";
 import {
+  buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
+  parseRepeatableInputSlotId,
   resolveWorkflowInputKeys,
+  resolveWorkflowInputForSlot,
 } from "../utils/workflowInputs";
 import { revokePreviewUrl } from "./mediaInputState";
 import type {
@@ -130,6 +133,36 @@ export function buildMediaInputActions(
     clearMediaInput: (inputId) => {
       const { workflowInputs, mediaInputs } = get();
       const inputById = buildWorkflowInputLookup(workflowInputs);
+      const workflowInput = resolveWorkflowInputForSlot(inputId, inputById);
+      const repeatableMax = workflowInput?.presentation?.repeatable?.max;
+      if (workflowInput && repeatableMax) {
+        const parsedSlot = parseRepeatableInputSlotId(inputId);
+        const clearedIndex = parsedSlot?.index ?? 0;
+        const next = { ...mediaInputs };
+        const clearedKeys =
+          clearedIndex === 0
+            ? resolveWorkflowInputKeys(inputId, inputById)
+            : [inputId];
+        const clearedValue = getExistingMediaInputValue(next, clearedKeys);
+        revokePreviewUrl(clearedValue);
+        for (const key of clearedKeys) {
+          delete next[key];
+        }
+        for (let index = clearedIndex; index < repeatableMax - 1; index += 1) {
+          const currentSlotId = buildRepeatableInputSlotId(workflowInput, index);
+          const nextSlotId = buildRepeatableInputSlotId(workflowInput, index + 1);
+          if (Object.prototype.hasOwnProperty.call(next, nextSlotId)) {
+            next[currentSlotId] = next[nextSlotId] ?? null;
+          } else {
+            delete next[currentSlotId];
+          }
+        }
+        delete next[
+          buildRepeatableInputSlotId(workflowInput, repeatableMax - 1)
+        ];
+        set({ mediaInputs: next });
+        return;
+      }
       const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
       const hasMatchingEntry = inputKeys.some((key) =>
         Object.prototype.hasOwnProperty.call(mediaInputs, key),
@@ -164,8 +197,8 @@ function reassignMediaInputs(
 ): Record<string, GenerationMediaInputValue | null> {
   const { workflowInputs, mediaInputs } = get();
   const inputById = buildWorkflowInputLookup(workflowInputs);
-  const sourceInput = inputById.get(sourceInputId);
-  const targetInput = inputById.get(targetInputId);
+  const sourceInput = resolveWorkflowInputForSlot(sourceInputId, inputById);
+  const targetInput = resolveWorkflowInputForSlot(targetInputId, inputById);
 
   if (!sourceInput || !targetInput) {
     return mediaInputs;

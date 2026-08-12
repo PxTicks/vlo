@@ -51,6 +51,10 @@ class WorkflowRuleWarningModel(WorkflowRuleBaseModel):
     details: dict[str, Any] | None = None
 
 
+class WorkflowRuleRepeatableInput(WorkflowRuleBaseModel):
+    max: int = Field(ge=1)
+
+
 class WorkflowRuleNodePresent(WorkflowRuleBaseModel):
     enabled: bool | None = None
     required: bool | None = None
@@ -62,6 +66,7 @@ class WorkflowRuleNodePresent(WorkflowRuleBaseModel):
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None
+    repeatable: WorkflowRuleRepeatableInput | None = None
 
 
 class WorkflowParamValueReference(WorkflowRuleBaseModel):

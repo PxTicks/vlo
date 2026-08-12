@@ -21,7 +21,8 @@ function resolveInputPresentation(
 ): WorkflowInput["presentation"] | undefined {
   const sectionId = present?.section_id?.trim();
   const groupId = present?.group_id?.trim();
-  if (!sectionId && !groupId) {
+  const repeatableMax = present?.repeatable?.max;
+  if (!sectionId && !groupId && typeof repeatableMax !== "number") {
     return undefined;
   }
 
@@ -43,6 +44,13 @@ function resolveInputPresentation(
             ...(typeof present?.group_order === "number"
               ? { order: present.group_order }
               : {}),
+          },
+        }
+      : {}),
+    ...(typeof repeatableMax === "number" && repeatableMax >= 1
+      ? {
+          repeatable: {
+            max: Math.floor(repeatableMax),
           },
         }
       : {}),

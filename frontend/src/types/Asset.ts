@@ -20,11 +20,13 @@ export interface AssetFamily {
 export type GeneratedCreationInput =
   | {
       nodeId: string;
+      inputId?: string;
       kind: "timelineSelection";
       timelineSelection: TimelineSelection;
     }
   | {
       nodeId: string;
+      inputId?: string;
       kind: "draggedAsset";
       parentAssetId: string;
     };
@@ -51,6 +53,7 @@ export interface GeneratedCreationWorkflowInputSnapshot {
   label: string;
   description?: string | null;
   origin: "rule" | "inferred";
+  repeatableMax?: number;
   dispatch?: GeneratedCreationWorkflowInputDispatch;
 }
 

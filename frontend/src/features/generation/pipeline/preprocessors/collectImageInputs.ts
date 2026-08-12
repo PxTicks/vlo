@@ -3,7 +3,8 @@ import type { FrontendPreprocessContext } from "../types";
 import { throwIfAborted } from "../utils/abort";
 import {
   buildWorkflowInputLookup,
-  getNodeInputRequestKey,
+  getNodeInputRequestKeyForSlot,
+  resolveWorkflowInputForSlot,
 } from "../../utils/workflowInputs";
 
 /**
@@ -30,9 +31,11 @@ export const collectImageInputs: Processor<FrontendPreprocessContext> = {
     for (const [inputId, value] of Object.entries(ctx.slotValues)) {
       throwIfAborted(ctx.signal);
       if (value.type !== "image") continue;
-      const input = inputById.get(inputId);
+      const input = resolveWorkflowInputForSlot(inputId, inputById);
       if (!input) continue;
-      ctx.imageInputs[getNodeInputRequestKey(input, inputById)] = value.file;
+      ctx.imageInputs[
+        getNodeInputRequestKeyForSlot(inputId, input, inputById)
+      ] = value.file;
     }
   },
 };

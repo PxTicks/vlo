@@ -168,4 +168,52 @@ describe("workflowInputCarryover", () => {
       ),
     ).toEqual({});
   });
+
+  it("preserves ordered repeatable media values for the same workflow input", () => {
+    const repeatableInput = makeInput({
+      nodeId: "141",
+      classType: "vloMemoryLoadImageBatch",
+      inputType: "image",
+      param: "images",
+      label: "Image inputs",
+      currentValue: null,
+      presentation: { repeatable: { max: 9 } },
+    });
+    const first = {
+      kind: "asset" as const,
+      asset: {
+        id: "first",
+        hash: "first",
+        name: "first.png",
+        type: "image" as const,
+        src: "assets/first.png",
+        createdAt: 1,
+      },
+    };
+    const second = {
+      kind: "asset" as const,
+      asset: {
+        id: "second",
+        hash: "second",
+        name: "second.png",
+        type: "image" as const,
+        src: "assets/second.png",
+        createdAt: 2,
+      },
+    };
+
+    expect(
+      carryOverMediaInputs(
+        [repeatableInput],
+        {
+          "141:images": first,
+          "141:images::repeat::1": second,
+        },
+        [repeatableInput],
+      ),
+    ).toEqual({
+      "141:images": first,
+      "141:images::repeat::1": second,
+    });
+  });
 });

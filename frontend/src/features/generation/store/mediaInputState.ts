@@ -1,6 +1,9 @@
 import type { GenerationMediaInputValue, WorkflowInput } from "../types";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
-import { buildWorkflowInputLookup } from "../utils/workflowInputs";
+import {
+  buildWorkflowInputLookup,
+  resolveWorkflowInputForSlot,
+} from "../utils/workflowInputs";
 
 export function revokePreviewUrl(
   value: GenerationMediaInputValue | null | undefined,
@@ -47,7 +50,7 @@ export function pruneMediaInputs(
   const next: Record<string, GenerationMediaInputValue | null> = {};
 
   for (const [inputId, value] of Object.entries(mediaInputs)) {
-    const inputType = inputsById.get(inputId)?.inputType;
+    const inputType = resolveWorkflowInputForSlot(inputId, inputsById)?.inputType;
     if (isCompatibleMediaInput(inputType, value)) {
       next[inputId] = value;
     } else {

@@ -142,6 +142,40 @@ describe("generation pipeline", () => {
     expect(request.targetResolution).toBe(1080);
   });
 
+  it("routes ordered repeatable media slots to distinct multipart request keys", async () => {
+    const first = new File(["first"], "first.png", { type: "image/png" });
+    const second = new File(["second"], "second.png", { type: "image/png" });
+    vi.spyOn(mediaUtils, "probeVisualFileAspectRatio").mockResolvedValue("1:1");
+
+    const request = await frontendPreprocess(
+      {},
+      "workflow.json",
+      [
+        {
+          id: "141:images",
+          nodeId: "141",
+          classType: "vloMemoryLoadImageBatch",
+          inputType: "image",
+          param: "images",
+          label: "Image inputs",
+          currentValue: null,
+          origin: "rule",
+          presentation: { repeatable: { max: 9 } },
+        },
+      ],
+      {
+        "141:images": { type: "image", file: first },
+        "141:images::repeat::1": { type: "image", file: second },
+      },
+      "client-id",
+    );
+
+    expect(request.imageInputs).toEqual({
+      "141__repeat_0": first,
+      "141__repeat_1": second,
+    });
+  });
+
   it("falls back to the project aspect ratio when no visual input is available", async () => {
     useProjectStore.setState((state) => ({
       ...state,

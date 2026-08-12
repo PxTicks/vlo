@@ -754,6 +754,17 @@ def _parse_node_input_form_key(raw_key: str) -> tuple[str, str | None]:
     return raw_key, None
 
 
+def _parse_repeatable_node_input_form_key(
+    raw_key: str,
+) -> tuple[str, str | None, int | None]:
+    base_key, separator, raw_index = raw_key.rpartition("__repeat_")
+    if separator and base_key and raw_index.isdigit():
+        node_id, param = _parse_node_input_form_key(base_key)
+        return node_id, param, int(raw_index)
+    node_id, param = _parse_node_input_form_key(raw_key)
+    return node_id, param, None
+
+
 def _apply_workflow_media_fallbacks(
     *,
     workflow_rules: dict[str, Any] | None,
@@ -1454,6 +1465,7 @@ async def generate(request: Request):
         explicit_param: str | None,
         upload_file: Any,
         media_type: str,
+        batch_index: int | None = None,
     ) -> None:
         if not hasattr(upload_file, "read"):
             workflow_warnings.append(
@@ -1498,7 +1510,10 @@ async def generate(request: Request):
         ]
         filename_value = getattr(file_obj, "filename", f"upload.{media_type}")
 
-        buffered_media[f"{node_id}:{mapping['param']}"] = {
+        buffer_key = f"{node_id}:{mapping['param']}"
+        if batch_index is not None:
+            buffer_key = f"{buffer_key}:{batch_index}"
+        buffered_media[buffer_key] = {
             "node_id": node_id,
             "param": mapping["param"],
             "input_type": media_type,
@@ -1506,6 +1521,7 @@ async def generate(request: Request):
             "bytes": media_bytes,
             "content_type": content_type,
             "filename": filename_value,
+            **({"batch_index": batch_index} if batch_index is not None else {}),
         }
 
     for key, value in form.multi_items():
@@ -1567,32 +1583,41 @@ async def generate(request: Request):
 
         # image_<nodeId>_<param> -> buffer image upload
         elif key.startswith("image_"):
-            node_id, explicit_param = _parse_node_input_form_key(key[6:])
+            node_id, explicit_param, batch_index = (
+                _parse_repeatable_node_input_form_key(key[6:])
+            )
             await _buffer_uploaded_media(
                 node_id=node_id,
                 explicit_param=explicit_param,
                 upload_file=value,
                 media_type="image",
+                batch_index=batch_index,
             )
 
         # audio_<nodeId>_<param> -> buffer audio upload
         elif key.startswith("audio_"):
-            node_id, explicit_param = _parse_node_input_form_key(key[6:])
+            node_id, explicit_param, batch_index = (
+                _parse_repeatable_node_input_form_key(key[6:])
+            )
             await _buffer_uploaded_media(
                 node_id=node_id,
                 explicit_param=explicit_param,
                 upload_file=value,
                 media_type="audio",
+                batch_index=batch_index,
             )
 
         # video_<nodeId>_<param> -> buffer for potential mask crop before upload
         elif key.startswith("video_"):
-            node_id, explicit_param = _parse_node_input_form_key(key[6:])
+            node_id, explicit_param, batch_index = (
+                _parse_repeatable_node_input_form_key(key[6:])
+            )
             await _buffer_uploaded_media(
                 node_id=node_id,
                 explicit_param=explicit_param,
                 upload_file=value,
                 media_type="video",
+                batch_index=batch_index,
             )
 
     _apply_workflow_media_fallbacks(

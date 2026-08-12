@@ -24,6 +24,17 @@ class DummyUploadFile:
         return self._payload
 
 
+def test_repeatable_media_form_keys_preserve_node_param_and_index():
+    assert comfyui._parse_repeatable_node_input_form_key(
+        "141_images__repeat_2"
+    ) == ("141", "images", 2)
+    assert comfyui._parse_repeatable_node_input_form_key("141_images") == (
+        "141",
+        "images",
+        None,
+    )
+
+
 def test_save_workflow_content_persists_to_backend_workflows_dir(
     tmp_path, monkeypatch
 ):

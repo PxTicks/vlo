@@ -33,8 +33,9 @@ import {
 import {
   buildWorkflowInputId,
   buildWorkflowInputLookup,
-  getNodeInputRequestKey,
   getWorkflowInputId,
+  matchesNodeInputRequestKey,
+  resolveWorkflowInputForSlot,
 } from "../utils/workflowInputs";
 import {
   createGenerationAbortError,
@@ -118,8 +119,10 @@ function collectProvidedInputIds(
 
     const workflowInputById = buildWorkflowInputLookup(plan.workflow.workflowInputs);
     for (const input of plan.workflow.workflowInputs) {
-      const requestKey = getNodeInputRequestKey(input, workflowInputById);
-      if (!requestInputKeys.has(requestKey)) {
+      const hasRequestInput = [...requestInputKeys].some((requestKey) =>
+        matchesNodeInputRequestKey(requestKey, input, workflowInputById),
+      );
+      if (!hasRequestInput) {
         continue;
       }
       ids.add(getWorkflowInputId(input));
@@ -191,6 +194,7 @@ function collectProvidedInputIdsFromSlotValues(
   slotValues: Record<string, SlotValue>,
 ): Set<string> {
   const ids = new Set<string>();
+  const workflowInputById = buildWorkflowInputLookup(workflowInputs);
   for (const [id, value] of Object.entries(slotValues)) {
     if (value.type === "text") {
       if (typeof value.value === "string" && value.value.trim().length > 0) {
@@ -204,8 +208,12 @@ function collectProvidedInputIdsFromSlotValues(
     const nodeId = input.nodeId;
     if (!nodeId) continue;
     const primaryId = input.id ?? `${nodeId}:${input.param}`;
-    if (ids.has(primaryId)) {
+    const hasInputSlot = [...ids].some((inputId) =>
+      resolveWorkflowInputForSlot(inputId, workflowInputById) === input,
+    );
+    if (ids.has(primaryId) || hasInputSlot) {
       ids.add(nodeId);
+      ids.add(primaryId);
     }
   }
   return ids;

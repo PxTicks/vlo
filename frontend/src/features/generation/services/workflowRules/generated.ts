@@ -306,6 +306,11 @@ export interface WorkflowRuleNodePresent {
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
+  repeatable?: WorkflowRuleRepeatableInput | null;
+}
+
+export interface WorkflowRuleRepeatableInput {
+  max: number;
 }
 
 export interface WorkflowRuleSelectionConfig {

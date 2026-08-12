@@ -153,6 +153,79 @@ describe("generation metadata replay helpers", () => {
     });
   });
 
+  it("captures each repeatable media slot with a stable replay identity", () => {
+    const workflowInputs: WorkflowInput[] = [
+      {
+        id: "141:images",
+        nodeId: "141",
+        classType: "vloMemoryLoadImageBatch",
+        inputType: "image",
+        param: "images",
+        label: "Image inputs",
+        currentValue: null,
+        origin: "rule",
+        presentation: { repeatable: { max: 9 } },
+      },
+    ];
+    const firstAsset = {
+      id: "first",
+      hash: "first-hash",
+      name: "first.png",
+      type: "image" as const,
+      src: "first.png",
+      createdAt: 1,
+    };
+    const secondAsset = {
+      id: "second",
+      hash: "second-hash",
+      name: "second.png",
+      type: "image" as const,
+      src: "second.png",
+      createdAt: 2,
+    };
+
+    const metadata = buildGeneratedCreationMetadata({
+      workflowName: "MiniMax",
+      workflowSourceId: "vlo_minimax_h3_r2v.json",
+      workflowRules: createDefaultWorkflowRules(),
+      workflowInputs,
+      mediaInputs: {
+        "141:images": { kind: "asset", asset: firstAsset },
+        "141:images::repeat::1": { kind: "asset", asset: secondAsset },
+      },
+      slotValues: {},
+      targetResolution: 720,
+      exactAspectRatio: false,
+      maskCropMode: "crop",
+      maskCropDilation: 0,
+      frontendStateWidgetValues: {},
+      widgetModes: {},
+      derivedWidgetInputs: {},
+    });
+
+    expect(metadata.inputs).toEqual([
+      {
+        nodeId: "141",
+        inputId: "141:images",
+        kind: "draggedAsset",
+        parentAssetId: "first",
+      },
+      {
+        nodeId: "141",
+        inputId: "141:images::repeat::1",
+        kind: "draggedAsset",
+        parentAssetId: "second",
+      },
+    ]);
+    expect(metadata.replayState?.workflowInputs?.[0]).toMatchObject({
+      id: "141:images",
+      repeatableMax: 9,
+    });
+    expect(parseReplayWorkflowInputs(metadata.replayState)[0]?.presentation).toEqual(
+      { repeatable: { max: 9 } },
+    );
+  });
+
   it("restores replay workflow inputs and panel state from saved metadata", () => {
     const replayState = {
       version: 1 as const,

@@ -4,6 +4,140 @@ import { describe, expect, it, vi } from "vitest";
 import { GenerationInputs } from "../GenerationInputs";
 
 describe("GenerationInputs", () => {
+  it("spawns repeatable media slots as preceding slots fill, up to the sidecar maximum", () => {
+    const input = {
+      id: "141:images",
+      nodeId: "141",
+      classType: "vloMemoryLoadImageBatch",
+      inputType: "image" as const,
+      param: "images",
+      label: "Image inputs",
+      currentValue: null,
+      origin: "rule" as const,
+      presentation: { repeatable: { max: 3 } },
+    };
+    const frameValue = (name: string) => ({
+      kind: "frame" as const,
+      file: new File([name], name, { type: "image/png" }),
+      previewUrl: `blob:${name}`,
+      timelineSelection: null,
+    });
+    const renderPanel = (
+      mediaInputs: Record<
+        string,
+        ReturnType<typeof frameValue> | null
+      >,
+    ) => (
+      <GenerationInputs
+        inputs={[input]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={mediaInputs}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />
+    );
+
+    const view = render(renderPanel({}));
+    expect(document.querySelectorAll("[data-drop-slot-id]")).toHaveLength(1);
+
+    view.rerender(renderPanel({ "141": frameValue("first.png") }));
+    expect(document.querySelectorAll("[data-drop-slot-id]")).toHaveLength(2);
+    expect(
+      document.querySelector(
+        '[data-drop-slot-id="141:images::repeat::1"]',
+      ),
+    ).not.toBeNull();
+
+    view.rerender(
+      renderPanel({
+        "141:images": frameValue("first.png"),
+        "141:images::repeat::1": frameValue("second.png"),
+      }),
+    );
+    expect(document.querySelectorAll("[data-drop-slot-id]")).toHaveLength(3);
+
+    view.rerender(
+      renderPanel({
+        "141:images": frameValue("first.png"),
+        "141:images::repeat::1": frameValue("second.png"),
+        "141:images::repeat::2": frameValue("third.png"),
+      }),
+    );
+    expect(document.querySelectorAll("[data-drop-slot-id]")).toHaveLength(3);
+  });
+
+  it("keeps the built-in inputs section ahead of explicitly ordered options", () => {
+    render(
+      <GenerationInputs
+        inputs={[
+          {
+            id: "141:images",
+            nodeId: "141",
+            classType: "vloMemoryLoadImageBatch",
+            inputType: "image",
+            param: "images",
+            label: "Image inputs",
+            currentValue: null,
+            origin: "rule",
+            presentation: {
+              section: { id: "inputs" },
+              repeatable: { max: 9 },
+            },
+          },
+        ]}
+        sections={[
+          {
+            id: "references",
+            title: "References",
+            order: 0,
+          },
+        ]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[
+          {
+            nodeId: "136",
+            param: "ref_image_size",
+            currentValue: "match",
+            config: {
+              label: "Reference image size",
+              controlAfterGenerate: false,
+              valueType: "enum",
+              options: ["match", "max"],
+              sectionId: "references",
+            },
+          },
+        ]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    const imageInputs = screen.getByText("Image inputs");
+    const references = screen.getByText("References");
+    expect(
+      imageInputs.compareDocumentPosition(references) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+  });
+
   it("buffers prompt edits locally and commits on blur", () => {
     const handleTextValueCommit = vi.fn();
 

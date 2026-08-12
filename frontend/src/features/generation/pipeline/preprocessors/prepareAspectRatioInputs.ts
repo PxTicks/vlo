@@ -1,7 +1,7 @@
 import type { WorkflowInput } from "../../types";
 import {
   buildWorkflowInputLookup,
-  getNodeInputRequestKey,
+  matchesNodeInputRequestKey,
 } from "../../utils/workflowInputs";
 import type { FrontendPreprocessContext, Processor } from "../types";
 import { throwIfAborted } from "../utils/abort";
@@ -20,13 +20,16 @@ async function resolveRequestedTargetAspectRatio(
   );
 
   const resolveInputFile = (input: WorkflowInput): File | undefined => {
-    if (input.inputType === "image") {
-      return ctx.imageInputs[getNodeInputRequestKey(input, inputById)];
-    }
-    if (input.inputType === "video") {
-      return ctx.videoInputs[getNodeInputRequestKey(input, inputById)];
-    }
-    return undefined;
+    const candidates =
+      input.inputType === "image"
+        ? ctx.imageInputs
+        : input.inputType === "video"
+          ? ctx.videoInputs
+          : null;
+    if (!candidates) return undefined;
+    return Object.entries(candidates).find(([requestKey]) =>
+      matchesNodeInputRequestKey(requestKey, input, inputById),
+    )?.[1];
   };
 
   const probeInputs = async (

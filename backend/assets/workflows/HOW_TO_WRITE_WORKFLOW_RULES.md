@@ -142,7 +142,7 @@ pipeline stages.
         "param": "file",
         "class_type": "vloMemoryLoadVideo"
       },
-      "selection": { "export_fps": 24, "frame_step": 8, "max_frames": 481 }
+      "selection": { "export_fps": "project", "frame_step": 8, "max_frames": 481 }
     },
     "771": {},
     "705": {
@@ -287,8 +287,8 @@ Things to read off this example:
 
 - **`774` is the only user-facing primary input.** It declares a video input
   with a specific `param` and a ComfyUI `class_type` override. `selection`
-  configures the frame picker (export at 24fps, step by 8, cap at 481
-  frames).
+  configures the frame picker (export at the project's frame rate, step by
+  8, cap at 481 frames).
 - **`771` is the mask**, not a user input. It appears in `nodes` (empty
   entry) so it is recognized, but because it is named as the `mask` target
   under `mask_processing.targets` it is hidden from the primary input list.
@@ -980,7 +980,7 @@ slot entry mirrors a subset of `present`:
 | `label`                                    | Display label                                    |
 | `param`                                    | Parameter name for value injection               |
 | `experimental`                             | Gated behind an experimental toggle in the UI    |
-| `export_fps` / `frame_step` / `max_frames` | Frame selection overrides                        |
+| `export_fps` / `frame_step` / `max_frames` | Frame selection overrides (numbers only)         |
 
 Slots are referenced by id from node `present` blocks when a node should
 appear behind a slot rather than as its own top-level input.
@@ -996,8 +996,31 @@ appear behind a slot rather than as its own top-level input.
 | `present`          | object                                   | Primary-input presentation (see below)               |
 | `widgets_mode`     | `"control_after_generate"` \| `"all"`    | Widget auto-discovery mode for this node             |
 | `widgets`          | `{ <param>: WidgetEntry }`               | Explicit widget definitions and overrides            |
-| `selection`        | `{ export_fps, frame_step, max_frames }` | Video frame selection for video inputs               |
+| `selection`        | `{ export_fps, frame_step, max_frames }` | Video frame selection for video inputs (see below)   |
 | `node_title`       | string                                   | Override for auto-derived group title fallback       |
+
+### `selection`
+
+Configures the timeline frame picker the user gets when filling a video or
+audio input.
+
+| Field            | Type                | Purpose                                                       |
+| ---------------- | ------------------- | ------------------------------------------------------------- |
+| `export_fps`     | integer \| `"project"` | Frame rate the selection is rendered at                    |
+| `frame_step`     | integer             | Selection length must be a multiple of this many frames        |
+| `max_frames`     | integer             | Cap on the selected frame count                                |
+| `message`        | string              | Hint shown in the selection overlay                            |
+| `include_tracks` | boolean             | Record which timeline tracks the selection covers              |
+
+`export_fps: "project"` links the selection to the open project's frame
+rate, so the extracted frames match the timeline the user is editing.
+Prefer it over a hardcoded number: a pinned rate that disagrees with the
+project silently resamples every generation. Reach for a number only when
+the model genuinely cannot run at anything else.
+
+Omitting `export_fps` also falls back to the project frame rate, but it
+gives the user no recommendation in the selection overlay — `"project"`
+states the intent and surfaces the rate in the UI.
 
 ### `present`
 

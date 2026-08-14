@@ -287,7 +287,9 @@ describe("ProjectManager", () => {
       target: { value: "My project" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Vertical/ }));
-    fireEvent.click(screen.getByRole("button", { name: /24 fps/ }));
+    // The frame rate is no longer offered at creation; new projects start on
+    // DEFAULT_NEW_PROJECT_FPS and change it from project settings afterwards.
+    expect(screen.queryByText("FRAME RATE")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {

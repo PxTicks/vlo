@@ -39,7 +39,7 @@
         "class_type": "VHS_LoadVideoFFmpeg"
       },
       "selection": {
-        "export_fps": 24,
+        "export_fps": "project",
         "frame_step": 8,
         "max_frames": 481
       }

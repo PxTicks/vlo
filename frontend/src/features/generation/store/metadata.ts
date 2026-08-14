@@ -5,6 +5,7 @@ import type {
 } from "../../../types/Asset";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { getAssetById } from "../../userAssets/api";
+import { useProjectStore } from "../../project";
 import { getTimelineClips } from "../../timeline/api";
 import { normalizeTimelineSelection } from "../../timelineSelection";
 import type { DerivedMaskMapping } from "../pipeline/types";
@@ -15,6 +16,7 @@ import {
   renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../utils/inputSelection";
 import { buildDerivedMaskRenderSignature } from "../utils/derivedMaskRenderSignature";
+import { resolveSelectionConfigFps } from "../utils/selectionFps";
 import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
@@ -282,7 +284,11 @@ export async function restoreMediaInputsFromMetadata(
     // and re-submissions for the entire render duration.
     if (workflowInput.inputType === "audio") {
       void extractAudioFromSelection(timelineSelection, {
-        exportFps: workflowInput.dispatch?.selectionConfig?.exportFps,
+        exportFps:
+          resolveSelectionConfigFps(
+            workflowInput.dispatch?.selectionConfig,
+            Math.max(1, useProjectStore.getState().config.fps),
+          ) ?? undefined,
       })
         .then((preparedAudioFile) => {
           actions.setMediaInputTimelineSelection(

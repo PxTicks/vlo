@@ -2476,6 +2476,10 @@
               "type": "integer"
             },
             {
+              "const": "project",
+              "type": "string"
+            },
+            {
               "type": "null"
             }
           ],

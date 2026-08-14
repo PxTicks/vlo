@@ -14,7 +14,7 @@
         "required": true
       },
       "selection": {
-        "export_fps": 16,
+        "export_fps": "project",
         "frame_step": 4,
         "max_frames": 229
       }

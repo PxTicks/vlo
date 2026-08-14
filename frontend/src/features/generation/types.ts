@@ -118,8 +118,14 @@ export interface GenerationJob {
   preparedMaskFile?: File | null;
 }
 
+/**
+ * A pinned frame rate, or `"project"` to follow the open project's frame rate.
+ * Resolve it with `resolveSelectionConfigFps` rather than reading it directly.
+ */
+export type WorkflowSelectionFps = number | "project";
+
 export interface WorkflowSelectionConfig {
-  exportFps?: number;
+  exportFps?: WorkflowSelectionFps;
   frameStep?: number;
   maxFrames?: number;
   message?: string;

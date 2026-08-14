@@ -62,6 +62,7 @@ import {
   resolveWorkflowInputForSlot,
 } from "../utils/workflowInputs";
 import { resolveExistingAssetForExternalDrop } from "../utils/externalDropAsset";
+import { resolveSelectionConfigFps } from "../utils/selectionFps";
 import {
   hasProvidedMediaInputValue,
   resolveAssetFileForGeneration,
@@ -993,11 +994,10 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       }
 
       const projectFps = Math.max(1, useProjectStore.getState().config.fps);
-      const recommendedFps =
-        typeof selectionConfig?.exportFps === "number" &&
-        selectionConfig.exportFps > 0
-          ? selectionConfig.exportFps
-          : null;
+      const recommendedFps = resolveSelectionConfigFps(
+        selectionConfig,
+        projectFps,
+      );
       const recommendedFrameStep =
         typeof selectionConfig?.frameStep === "number" &&
         selectionConfig.frameStep > 0
@@ -1278,9 +1278,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         ? sourceSelection.fps && sourceSelection.fps > 0
           ? sourceSelection.fps
           : projectFps
-        : selectionConfig?.exportFps && selectionConfig.exportFps > 0
-          ? selectionConfig.exportFps
-          : projectFps;
+        : (resolveSelectionConfigFps(selectionConfig, projectFps) ?? projectFps);
       const constraintFrameStep = sourceSelection
         ? sourceSelection.frameStep && sourceSelection.frameStep > 0
           ? sourceSelection.frameStep

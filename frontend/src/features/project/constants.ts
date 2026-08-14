@@ -18,6 +18,14 @@ const ENV_APP_VERSION =
 
 export const VLO_APP_VERSION = normalizeAppVersion(ENV_APP_VERSION);
 
+/**
+ * Frame rate every new project starts on. Deliberately separate from
+ * `DEFAULT_PROJECT_CONFIG.fps`, which is the fallback for legacy documents
+ * that predate a persisted `fps` — changing that would retime their
+ * timelines. The rate stays editable afterwards via project settings.
+ */
+export const DEFAULT_NEW_PROJECT_FPS = 24;
+
 export const PROJECT_MANIFEST_SCHEMA_VERSION = 3;
 export const TIMELINE_DOCUMENT_SCHEMA_VERSION = 3;
 export const ASSET_INDEX_DOCUMENT_SCHEMA_VERSION = 1;

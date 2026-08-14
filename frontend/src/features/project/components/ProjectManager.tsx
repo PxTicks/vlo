@@ -24,7 +24,7 @@ import vloLogo from "../../../assets/vlo.svg";
 import { ViewLayoutButton } from "../../../core/shell/ViewLayoutButton";
 import { ViewRegionMount } from "../../../core/shell/ViewRegionMount";
 import { useViewRegion } from "../../../core/shell/useViewRegion";
-import { VLO_APP_VERSION } from "../constants";
+import { DEFAULT_NEW_PROJECT_FPS, VLO_APP_VERSION } from "../constants";
 import { fileSystemService } from "../services/FileSystemService";
 import { newProjectDirectoryService } from "../services/NewProjectDirectoryService";
 import { projectPageActions } from "../services/ProjectPageActions";
@@ -45,11 +45,6 @@ const ASPECT_RATIO_OPTIONS: Array<{
   { value: "16:9", label: "Horizontal", sub: "16:9" },
   { value: "9:16", label: "Vertical", sub: "9:16" },
   { value: "1:1", label: "Square", sub: "1:1" },
-];
-
-const FPS_OPTIONS: Array<{ value: number; label: string; sub: string }> = [
-  { value: 16, label: "16 fps", sub: "Wan" },
-  { value: 24, label: "24 fps", sub: "LTX" },
 ];
 
 const LandingPanel = styled(Box)({
@@ -88,7 +83,6 @@ export function ProjectManager() {
     useState<FileSystemDirectoryHandle | null>(null);
   const [selectedAspectRatio, setSelectedAspectRatio] =
     useState<AspectRatio>("16:9");
-  const [selectedFps, setSelectedFps] = useState<number>(16);
   const directorySelectedThisSession = useRef(false);
   // UA capability check is stable for the component lifetime; compute it
   // lazily once instead of via a post-mount effect.
@@ -197,7 +191,7 @@ export function ProjectManager() {
       setLoading(true);
       await createProject(newProjectName, parentHandle, {
         aspectRatio: selectedAspectRatio,
-        fps: selectedFps,
+        fps: DEFAULT_NEW_PROJECT_FPS,
       });
       setCreateOpen(false);
     } catch (e: unknown) {
@@ -598,55 +592,6 @@ export function ProjectManager() {
               size="small"
             >
               {ASPECT_RATIO_OPTIONS.map((option) => (
-                <ToggleButton
-                  key={option.value}
-                  value={option.value}
-                  sx={{
-                    flexDirection: "column",
-                    gap: 0.35,
-                    py: 1.5,
-                    color: "#F4FBF9",
-                    borderColor: alpha("#FFFFFF", 0.1),
-                    "&.Mui-selected": {
-                      backgroundColor: alpha(BRAND_PRIMARY, 0.14),
-                      color: "#FFFFFF",
-                    },
-                  }}
-                >
-                  <Typography variant="body2" fontWeight={700}>
-                    {option.label}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{ color: alpha("#FFFFFF", 0.58) }}
-                  >
-                    {option.sub}
-                  </Typography>
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="caption"
-              sx={{
-                mb: 1,
-                display: "block",
-                color: alpha("#FFFFFF", 0.58),
-                letterSpacing: "0.14em",
-              }}
-            >
-              FRAME RATE
-            </Typography>
-            <ToggleButtonGroup
-              value={selectedFps}
-              exclusive
-              onChange={(_, value) => value && setSelectedFps(value)}
-              fullWidth
-              size="small"
-            >
-              {FPS_OPTIONS.map((option) => (
                 <ToggleButton
                   key={option.value}
                   value={option.value}

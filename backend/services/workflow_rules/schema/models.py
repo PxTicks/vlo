@@ -34,6 +34,10 @@ PostprocessingPanelPreview = Literal["raw_outputs", "replace_outputs"]
 PostprocessingOnFailure = Literal["fallback_raw", "show_error"]
 AspectRatioPostprocessMode = Literal["stretch_exact"]
 AspectRatioPostprocessApplyTo = Literal["all_visual_outputs"]
+# `export_fps: "project"` links a selection's frame rate to the open project's
+# frame rate instead of pinning it to a model-specific number in the rules.
+SelectionFpsProjectLink = Literal["project"]
+SelectionFps = int | SelectionFpsProjectLink
 DEFAULT_PIPELINE_STAGE_AFTER_BY_KIND: dict[str, tuple[str, ...]] = {
     "mask_processing": ("aspect_ratio",),
 }
@@ -274,7 +278,7 @@ class WorkflowConditionalBooleanOverride(WorkflowRuleBaseModel):
 
 
 class WorkflowRuleSelectionConfig(WorkflowRuleBaseModel):
-    export_fps: int | None = None
+    export_fps: SelectionFps | None = None
     frame_step: int | None = None
     max_frames: int | None = None
     message: str | None = None

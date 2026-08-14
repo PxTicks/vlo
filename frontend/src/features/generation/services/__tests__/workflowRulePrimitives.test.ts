@@ -122,6 +122,12 @@ describe("workflow rule primitives", () => {
     ).toBeUndefined();
   });
 
+  it("carries the project frame-rate link through as a selection config", () => {
+    expect(toSelectionConfig({ export_fps: "project" })).toEqual({
+      exportFps: "project",
+    });
+  });
+
   it("recognizes pipeline stages and their prepared-asset impact", () => {
     expect(isWorkflowPipelineStageKind("mask_processing")).toBe(true);
     expect(isWorkflowPipelineStageKind("aspect_ratio")).toBe(true);

@@ -32,7 +32,8 @@ export type GeneratedCreationInput =
     };
 
 export interface GeneratedCreationWorkflowSelectionConfig {
-  exportFps?: number;
+  /** A pinned frame rate, or `"project"` to follow the project's frame rate. */
+  exportFps?: number | "project";
   frameStep?: number;
   maxFrames?: number;
   message?: string;

@@ -4,6 +4,7 @@ import type {
   WidgetValueType,
 } from "../../types";
 import { isRecord } from "../parsers";
+import { PROJECT_SELECTION_FPS } from "../../utils/selectionFps";
 import type {
   WorkflowParamReference,
   WorkflowRuleSelectionConfig,
@@ -104,7 +105,12 @@ export function toSelectionConfig(
   if (!selection) return undefined;
 
   const next: WorkflowSelectionConfig = {};
-  if (typeof selection.export_fps === "number" && selection.export_fps > 0) {
+  if (selection.export_fps === PROJECT_SELECTION_FPS) {
+    next.exportFps = PROJECT_SELECTION_FPS;
+  } else if (
+    typeof selection.export_fps === "number" &&
+    selection.export_fps > 0
+  ) {
     next.exportFps = selection.export_fps;
   }
   if (typeof selection.frame_step === "number" && selection.frame_step > 0) {

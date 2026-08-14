@@ -32,8 +32,12 @@ export type GeneratedCreationInput =
     };
 
 export interface GeneratedCreationWorkflowSelectionConfig {
-  /** A pinned frame rate, or `"project"` to follow the project's frame rate. */
-  exportFps?: number | "project";
+  /**
+   * Always a resolved number. A rule's `"project"` frame-rate link is pinned
+   * to the rate in force when the snapshot was taken, so replaying a
+   * generation reproduces its original conditions.
+   */
+  exportFps?: number;
   frameStep?: number;
   maxFrames?: number;
   message?: string;

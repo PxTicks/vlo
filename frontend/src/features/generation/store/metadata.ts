@@ -731,35 +731,32 @@ function buildWorkflowInputSnapshot(
     snapshot.repeatableMax = workflowInput.presentation.repeatable.max;
   }
   if (workflowInput.dispatch?.kind === "node") {
+    const selectionConfig = workflowInput.dispatch.selectionConfig;
+    // Metadata records the conditions a generation actually ran under, so a
+    // project-linked rate is pinned to the number in force at capture time.
+    // Persisting the link itself would let a later project frame-rate change
+    // retroactively rewrite what an old generation claims to have used.
+    const exportFps = resolveSelectionConfigFps(
+      selectionConfig,
+      Math.max(1, useProjectStore.getState().config.fps),
+    );
     snapshot.dispatch = {
       kind: "node",
-      ...(workflowInput.dispatch.selectionConfig
+      ...(selectionConfig
         ? {
             selectionConfig: {
-              ...(workflowInput.dispatch.selectionConfig.exportFps != null
-                ? {
-                    exportFps: workflowInput.dispatch.selectionConfig.exportFps,
-                  }
+              ...(exportFps != null ? { exportFps } : {}),
+              ...(selectionConfig.frameStep != null
+                ? { frameStep: selectionConfig.frameStep }
                 : {}),
-              ...(workflowInput.dispatch.selectionConfig.frameStep != null
-                ? {
-                    frameStep: workflowInput.dispatch.selectionConfig.frameStep,
-                  }
+              ...(selectionConfig.maxFrames != null
+                ? { maxFrames: selectionConfig.maxFrames }
                 : {}),
-              ...(workflowInput.dispatch.selectionConfig.maxFrames != null
-                ? {
-                    maxFrames: workflowInput.dispatch.selectionConfig.maxFrames,
-                  }
+              ...(selectionConfig.message?.trim()
+                ? { message: selectionConfig.message.trim() }
                 : {}),
-              ...(workflowInput.dispatch.selectionConfig.message?.trim()
-                ? {
-                    message: workflowInput.dispatch.selectionConfig.message.trim(),
-                  }
-                : {}),
-              ...(workflowInput.dispatch.selectionConfig.includeTracks === true
-                ? {
-                    includeTracks: true,
-                  }
+              ...(selectionConfig.includeTracks === true
+                ? { includeTracks: true }
                 : {}),
             },
           }

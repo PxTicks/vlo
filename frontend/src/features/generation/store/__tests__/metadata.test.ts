@@ -6,8 +6,59 @@ import {
 } from "../metadata";
 import { createDefaultWorkflowRules } from "../../services/workflowRules";
 import type { WorkflowInput } from "../../types";
+import { useProjectStore } from "../../../project";
 
 describe("generation metadata replay helpers", () => {
+  it("pins a project-linked selection rate to the frame rate in force", () => {
+    const originalConfig = useProjectStore.getState().config;
+    const workflowInputs: WorkflowInput[] = [
+      {
+        id: "774:file",
+        nodeId: "774",
+        classType: "vloMemoryLoadVideo",
+        inputType: "video",
+        param: "file",
+        label: "Source video",
+        currentValue: null,
+        origin: "rule",
+        dispatch: {
+          kind: "node",
+          selectionConfig: { exportFps: "project", frameStep: 4 },
+        },
+      },
+    ];
+    const buildAtProjectFps = (fps: number) => {
+      useProjectStore.setState({ config: { ...originalConfig, fps } });
+      const metadata = buildGeneratedCreationMetadata({
+        workflowName: "Workflow",
+        workflowSourceId: "workflow.json",
+        workflowRules: createDefaultWorkflowRules(),
+        workflowInputs,
+        mediaInputs: {},
+        slotValues: {},
+        targetResolution: 720,
+        exactAspectRatio: false,
+        maskCropMode: "crop",
+        maskCropDilation: 0.1,
+        frontendStateWidgetValues: {},
+        widgetModes: {},
+        derivedWidgetInputs: {},
+      });
+      return metadata.replayState?.workflowInputs?.[0]?.dispatch
+        ?.selectionConfig;
+    };
+
+    try {
+      // The link resolves at capture time, so the same rule records whatever
+      // rate the project was on — never the sentinel, which a later project
+      // change would silently reinterpret.
+      expect(buildAtProjectFps(24)).toEqual({ exportFps: 24, frameStep: 4 });
+      expect(buildAtProjectFps(60)).toEqual({ exportFps: 60, frameStep: 4 });
+    } finally {
+      useProjectStore.setState({ config: originalConfig });
+    }
+  });
+
   it("captures replay-oriented frontend state alongside legacy generation metadata", () => {
     const workflowInputs: WorkflowInput[] = [
       {

@@ -78,6 +78,13 @@ def test_minimax_h3_reference_workflow_uses_vlo_batch_inputs():
 def test_minimax_h3_reference_rules_expose_vlo_controls():
     rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
 
+    assert rules["nodes"]["136"]["present"] == {"enabled": False}
+    length_widget = rules["nodes"]["136"]["widgets"]["length"]
+    # H3 requires 17k+5 frames, so 22 frames is the closest valid point to 1s.
+    assert length_widget["min"] == 22
+    assert length_widget["max"] == 600
+    assert length_widget["step"] == 17
+    assert length_widget["display_unit"]["scale"] == 1 / 24
     assert rules["nodes"]["141"]["present"] == {
         "label": "Image inputs",
         "input_type": "image",
@@ -99,6 +106,27 @@ def test_minimax_h3_reference_rules_expose_vlo_controls():
         "default"
     ] is False
     assert rules["validation"]["inputs"][0]["inputs"] == ["141", "142", "143"]
+    assert rules["rewrites"] == [
+        {
+            "when": {
+                "kind": "input_presence",
+                "inputs": [node_id],
+                "match": "all_missing",
+            },
+            "bypass": [node_id],
+        }
+        for node_id in ("141", "142", "143")
+    ]
+    expected_resolutions = [
+        240,
+        480,
+        540,
+        720,
+    ]
+    assert rules["pipeline"][0]["config"]["resolutions"] == expected_resolutions
+    assert rules["pipeline"][0]["controls"][0]["options"] == (
+        expected_resolutions
+    )
     assert rules["pipeline"][0]["targets"] == [
         {
             "width": {"node_id": "136", "param": "width"},

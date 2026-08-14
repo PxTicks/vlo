@@ -36,6 +36,9 @@
       }
     },
     "136": {
+      "present": {
+        "enabled": false
+      },
       "widgets": {
         "prompt": {
           "label": "Prompt",
@@ -60,8 +63,8 @@
           "value_type": "int",
           "control": "slider",
           "slider_display": "number",
-          "min": 124,
-          "max": 362,
+          "min": 22,
+          "max": 600,
           "step": 17,
           "default": 124,
           "display_unit": {
@@ -153,7 +156,32 @@
     ]
   },
   "derived_widgets": [],
-  "rewrites": [],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["141"],
+        "match": "all_missing"
+      },
+      "bypass": ["141"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["142"],
+        "match": "all_missing"
+      },
+      "bypass": ["142"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["143"],
+        "match": "all_missing"
+      },
+      "bypass": ["143"]
+    }
+  ],
   "effect_switches": [],
   "slots": {},
   "media_fallbacks": [],
@@ -165,7 +193,7 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [480, 720],
+        "resolutions": [240, 480, 540, 720],
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -190,7 +218,7 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [480, 720],
+          "options": [240, 480, 540, 720],
           "default": 720,
           "section_id": "video_generation",
           "group_id": "video_generation",

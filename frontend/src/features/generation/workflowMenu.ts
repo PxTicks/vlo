@@ -21,6 +21,8 @@ export const DEFAULT_GENERATION_WORKFLOW_MENU: MenuTreeDefinition = {
     { leafId: "vlo_SeedVR2_image.json", parentId: "image.enhance", order: 0 },
     { leafId: "vlo_ltx2_3.json", parentId: "video.generate", order: 0 },
     { leafId: "vlo_wan2_2.json", parentId: "video.generate", order: 1 },
+    { leafId: "vlo_minimax_h3_i2v.json", parentId: "video.generate", order: 2 },
+    { leafId: "vlo_minimax_h3_r2v.json", parentId: "video.generate", order: 3 },
     { leafId: "vlo_VACE_inpaint.json", parentId: "video.edit", order: 0 },
     { leafId: "vlo_ltx2_3_inpaint.json", parentId: "video.edit", order: 1 },
     { leafId: "vlo_ltx2_3_ic_edit.json", parentId: "video.edit", order: 2 },

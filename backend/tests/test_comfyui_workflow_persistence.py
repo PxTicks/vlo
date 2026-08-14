@@ -286,6 +286,8 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
         "vlo_SeedVR2_image.json": "image.enhance",
         "vlo_ltx2_3.json": "video.generate",
         "vlo_wan2_2.json": "video.generate",
+        "vlo_minimax_h3_i2v.json": "video.generate",
+        "vlo_minimax_h3_r2v.json": "video.generate",
         "vlo_VACE_inpaint.json": "video.edit",
         "vlo_ltx2_3_inpaint.json": "video.edit",
         "vlo_ltx2_3_ic_edit.json": "video.edit",

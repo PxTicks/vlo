@@ -80,6 +80,16 @@
       "order": 1
     },
     {
+      "workflow_id": "vlo_minimax_h3_i2v.json",
+      "parent_id": "video.generate",
+      "order": 2
+    },
+    {
+      "workflow_id": "vlo_minimax_h3_r2v.json",
+      "parent_id": "video.generate",
+      "order": 3
+    },
+    {
       "workflow_id": "vlo_VACE_inpaint.json",
       "parent_id": "video.edit",
       "order": 0

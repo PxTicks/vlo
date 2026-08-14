@@ -23,6 +23,11 @@ interface RegionSeparatorProps {
   /** The edge of the region on which the separator is mounted. */
   readonly edge: SeparatorEdge;
   readonly controls: string;
+  /**
+   * Rendered size retained while collapsed. Pointer thresholds are measured
+   * from this visible rail so every host snaps at the same inset from minimum.
+   */
+  readonly collapsedSizePx: number;
 }
 
 function eventCoordinate(event: globalThis.PointerEvent, edge: SeparatorEdge) {
@@ -39,6 +44,7 @@ export function RegionSeparator({
   label,
   edge,
   controls,
+  collapsedSizePx,
 }: RegionSeparatorProps) {
   const geometry = useShellLayoutStore(
     useShallow((state) => {
@@ -105,10 +111,16 @@ export function RegionSeparator({
       const delta = eventCoordinate(moveEvent, edge) - startCoordinate;
       const growthDelta = delta * direction;
       if (startCollapsed) {
-        // The collapsed rail is an inert grab target until the pointer moves
-        // out toward the panel's expanded direction.
-        if (growthDelta <= 0) return;
-        resizeTo(startSize + growthDelta);
+        const thresholdSize =
+          geometry.minimumSizePx - COLLAPSE_DRAG_THRESHOLD_PX;
+        const pointerSize = collapsedSizePx + growthDelta;
+        if (pointerSize < thresholdSize) {
+          useShellLayoutStore.getState().setRegionCollapsed(region, true);
+          return;
+        }
+        // Snap to the minimum while the pointer traverses the final inset,
+        // then follow it one-to-one after it passes the minimum boundary.
+        resizeTo(Math.max(pointerSize, geometry.minimumSizePx));
         return;
       }
       const nextSize = startSize + growthDelta;

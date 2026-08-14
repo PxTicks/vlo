@@ -196,7 +196,7 @@ describe("EditorLayout", () => {
     expect(useShellLayoutStore.getState().document.lowerStage?.sizePx).toBe(296);
   });
 
-  it("keeps a collapsed edge inert on hover and restores it by dragging", () => {
+  it("delays expansion until the threshold and can re-collapse in the same drag", () => {
     renderEditorLayout();
     const separator = screen.getByRole("separator", {
       name: "Resize left sidebar",
@@ -230,13 +230,29 @@ describe("EditorLayout", () => {
       clientX: 56,
       pointerId: 6,
     });
-    fireEvent.pointerMove(globalThis.window, { clientX: 76 });
-    fireEvent.pointerUp(globalThis.window);
+    // The collapsed rail is 56px wide. The panel remains collapsed until its
+    // pointer size reaches 220px minimum - 36px threshold = 184px.
+    fireEvent.pointerMove(globalThis.window, { clientX: 183 });
+    expect(
+      useShellLayoutStore.getState().resolved.regions["left-sidebar"].collapsed,
+    ).toBe(true);
 
+    fireEvent.pointerMove(globalThis.window, { clientX: 184 });
+    expect(
+      useShellLayoutStore.getState().resolved.regions["left-sidebar"],
+    ).toMatchObject({ collapsed: false, sizePx: 220 });
+
+    fireEvent.pointerMove(globalThis.window, { clientX: 183 });
+    expect(
+      useShellLayoutStore.getState().resolved.regions["left-sidebar"].collapsed,
+    ).toBe(true);
+
+    fireEvent.pointerMove(globalThis.window, { clientX: 184 });
+    fireEvent.pointerUp(globalThis.window);
     const restored =
       useShellLayoutStore.getState().resolved.regions["left-sidebar"];
     expect(restored.collapsed).toBe(false);
-    expect(restored.sizePx).toBe(retainedSize + 20);
+    expect(restored.sizePx).toBe(restored.minimumSizePx);
   });
 
   it("collapses after dragging past the minimum-size threshold", () => {
@@ -278,11 +294,24 @@ describe("EditorLayout", () => {
       clientX: 780,
       pointerId: 9,
     });
-    fireEvent.pointerMove(globalThis.window, { clientX: 760 });
+    // 8px rail + 255px growth is still below 300px minimum - 36px.
+    fireEvent.pointerMove(globalThis.window, { clientX: 525 });
+    expect(
+      useShellLayoutStore.getState().resolved.regions["right-sidebar"].collapsed,
+    ).toBe(true);
+    fireEvent.pointerMove(globalThis.window, { clientX: 524 });
+    expect(
+      useShellLayoutStore.getState().resolved.regions["right-sidebar"],
+    ).toMatchObject({ collapsed: false, sizePx: 300 });
+    fireEvent.pointerMove(globalThis.window, { clientX: 526 });
+    expect(
+      useShellLayoutStore.getState().resolved.regions["right-sidebar"].collapsed,
+    ).toBe(true);
+    fireEvent.pointerMove(globalThis.window, { clientX: 524 });
     fireEvent.pointerUp(globalThis.window);
     expect(
       useShellLayoutStore.getState().resolved.regions["right-sidebar"],
-    ).toMatchObject({ collapsed: false, sizePx: 320 });
+    ).toMatchObject({ collapsed: false, sizePx: 300 });
   });
 
   it("keeps an empty bottom rail and restores the timeline by dragging", () => {
@@ -317,12 +346,16 @@ describe("EditorLayout", () => {
       clientY: 700,
       pointerId: 10,
     });
-    fireEvent.pointerMove(globalThis.window, { clientY: 680 });
+    fireEvent.pointerMove(globalThis.window, { clientY: 585 });
+    expect(useShellLayoutStore.getState().resolved.lowerStage.collapsed).toBe(
+      true,
+    );
+    fireEvent.pointerMove(globalThis.window, { clientY: 584 });
     fireEvent.pointerUp(globalThis.window);
 
     expect(useShellLayoutStore.getState().resolved.lowerStage).toMatchObject({
       collapsed: false,
-      sizePx: 300,
+      sizePx: 160,
     });
     expect(screen.getByTestId("timeline")).toBeVisible();
   });

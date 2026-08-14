@@ -114,6 +114,7 @@ export function PlayerAsidePanel() {
         label="Player aside"
         edge="left"
         controls="shell-region-player-aside"
+        collapsedSizePx={COLLAPSED_REGION_SIZE_PX}
       />
     </Box>
   );

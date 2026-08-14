@@ -178,6 +178,7 @@ export function EditorLayout({
           label="Left sidebar"
           edge="right"
           controls="shell-region-left-sidebar"
+          collapsedSizePx={LEFT_SIDEBAR_RAIL_WIDTH_PX}
         />
       </EditorRegion>
 
@@ -296,6 +297,7 @@ export function EditorLayout({
           label="Right sidebar"
           edge="left"
           controls="shell-region-right-sidebar"
+          collapsedSizePx={COLLAPSED_EDGE_RAIL_SIZE_PX}
         />
       </EditorRegion>
 
@@ -331,6 +333,7 @@ export function EditorLayout({
           label="Timeline"
           edge="top"
           controls="shell-region-lower-stage"
+          collapsedSizePx={COLLAPSED_EDGE_RAIL_SIZE_PX}
         />
       </Box>
     </Box>

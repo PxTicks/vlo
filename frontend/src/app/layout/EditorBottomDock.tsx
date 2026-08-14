@@ -145,6 +145,7 @@ export function EditorBottomDock() {
         label="Bottom dock"
         edge="top"
         controls="shell-region-bottom-dock"
+        collapsedSizePx={COLLAPSED_REGION_SIZE_PX}
       />
     </Box>
   );

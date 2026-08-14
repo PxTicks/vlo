@@ -17,7 +17,6 @@ import { useMaskViewStore } from "../../features/masks";
 import { ViewRegionMount } from "../../core/shell/ViewRegionMount";
 import { useViewRegion } from "../../core/shell/useViewRegion";
 import { ViewLayoutButton } from "../../core/shell/ViewLayoutButton";
-import { RegionCollapseButton } from "../../core/shell/components/RegionCollapseButton";
 import { declareRightSidebarHostViews } from "./rightSidebarHostViews";
 
 declareRightSidebarHostViews();
@@ -184,10 +183,6 @@ function RightSidebarPanelComponent() {
           region="right-sidebar"
           edge="right"
           allowSingleView
-        />
-        <RegionCollapseButton
-          region="right-sidebar"
-          label="Right sidebar"
         />
       </Box>
       <Box sx={{ flexGrow: 1, position: "relative", overflow: "hidden" }}>

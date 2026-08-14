@@ -5,8 +5,17 @@ import type { ResizableShellRegion } from "../layout/layoutTypes";
 import { useShellLayoutStore } from "../layout/useShellLayoutStore";
 
 const KEYBOARD_RESIZE_STEP_PX = 16;
+// Roughly one CSS centimetre: enough overshoot to distinguish collapse intent
+// from an ordinary attempt to reach the minimum size.
+const COLLAPSE_DRAG_THRESHOLD_PX = 36;
 
 type SeparatorEdge = "left" | "right" | "top";
+
+const SEPARATOR_INDICATOR_POSITION = {
+  left: { top: 0, bottom: 0, left: 0, width: "2px" },
+  right: { top: 0, right: 0, bottom: 0, width: "2px" },
+  top: { top: 0, right: 0, left: 0, height: "2px" },
+} as const;
 
 interface RegionSeparatorProps {
   readonly region: ResizableShellRegion;
@@ -43,7 +52,6 @@ export function RegionSeparator({
         userSizePx: resolved.userSizePx,
         minimumSizePx: resolved.minimumSizePx,
         maximumSizePx: resolved.maximumSizePx,
-        resizeRegion: state.resizeRegion,
         setRegionCollapsed: state.setRegionCollapsed,
         resetRegionSize: state.resetRegionSize,
         flushPersistence: state.flushPersistence,
@@ -60,10 +68,15 @@ export function RegionSeparator({
   );
 
   const resizeTo = (sizePx: number): void => {
-    if (geometry.collapsed) {
-      geometry.setRegionCollapsed(region, false);
+    const state = useShellLayoutStore.getState();
+    const resolved =
+      region === "lower-stage"
+        ? state.resolved.lowerStage
+        : state.resolved.regions[region];
+    if (resolved.collapsed) {
+      state.setRegionCollapsed(region, false);
     }
-    geometry.resizeRegion(region, sizePx);
+    state.resizeRegion(region, sizePx);
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>): void => {
@@ -77,6 +90,7 @@ export function RegionSeparator({
     const startCoordinate =
       edge === "top" ? event.clientY : event.clientX;
     const startSize = geometry.userSizePx;
+    const startCollapsed = geometry.collapsed;
     const direction = growthDirection(edge);
     const documentElement = globalThis.document.documentElement;
     const previousUserSelect = documentElement.style.userSelect;
@@ -89,7 +103,24 @@ export function RegionSeparator({
 
     const handleMove = (moveEvent: globalThis.PointerEvent): void => {
       const delta = eventCoordinate(moveEvent, edge) - startCoordinate;
-      resizeTo(startSize + delta * direction);
+      const growthDelta = delta * direction;
+      if (startCollapsed) {
+        // The collapsed rail is an inert grab target until the pointer moves
+        // out toward the panel's expanded direction.
+        if (growthDelta <= 0) return;
+        resizeTo(startSize + growthDelta);
+        return;
+      }
+      const nextSize = startSize + growthDelta;
+      if (nextSize <= geometry.minimumSizePx - COLLAPSE_DRAG_THRESHOLD_PX) {
+        const state = useShellLayoutStore.getState();
+        // A single large pointer move should restore to the same minimum as a
+        // gradual drag, rather than retaining an unrelated wider preference.
+        state.resizeRegion(region, geometry.minimumSizePx);
+        state.setRegionCollapsed(region, true);
+        return;
+      }
+      resizeTo(nextSize);
     };
     const cleanup = (): void => {
       globalThis.removeEventListener("pointermove", handleMove);
@@ -189,21 +220,26 @@ export function RegionSeparator({
             }),
         touchAction: "none",
         outline: "none",
-        "&::after": {
-          content: '""',
-          position: "absolute",
-          ...(vertical
-            ? { top: 0, bottom: 0, left: 3, width: 1 }
-            : { left: 0, right: 0, top: 3, height: 1 }),
-          bgcolor: "transparent",
-        },
-        "&:hover::after, &:focus-visible::after": {
-          bgcolor: "primary.main",
-        },
+        "&:hover > [data-separator-indicator], &:focus-visible > [data-separator-indicator]":
+          {
+            bgcolor: "primary.main",
+          },
         "&:focus-visible": {
           bgcolor: "rgba(33, 150, 243, 0.16)",
         },
       }}
-    />
+    >
+      <Box
+        aria-hidden="true"
+        data-separator-indicator
+        data-testid={"region-separator-indicator-" + region}
+        sx={{
+          position: "absolute",
+          pointerEvents: "none",
+          bgcolor: "transparent",
+          ...SEPARATOR_INDICATOR_POSITION[edge],
+        }}
+      />
+    </Box>
   );
 }

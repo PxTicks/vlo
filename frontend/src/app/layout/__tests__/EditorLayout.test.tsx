@@ -83,10 +83,11 @@ describe("EditorLayout", () => {
       overflow: "hidden",
     });
     expect(
-      globalThis.getComputedStyle(
-        screen.getByTestId("timeline-collapse-button").parentElement!,
-      ),
-    ).toMatchObject({ right: "4px", top: "3px" });
+      screen.queryByRole("button", { name: /collapse (left|right) sidebar/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Collapse timeline" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders lock overlays for non-timeline regions only", () => {
@@ -149,6 +150,11 @@ describe("EditorLayout", () => {
       right: "0px",
       width: "7px",
     });
+    const leftIndicatorStyle = globalThis.getComputedStyle(
+      screen.getByTestId("region-separator-indicator-left-sidebar"),
+    );
+    expect(leftIndicatorStyle.right).toBe("0px");
+    expect(leftIndicatorStyle.width).toBe("2px");
     leftSeparator.focus();
     expect(leftSeparator).toHaveFocus();
 
@@ -164,6 +170,14 @@ describe("EditorLayout", () => {
     });
     expect(rightSeparator).toHaveAttribute("aria-valuemin", "300");
     expect(rightSeparator).toHaveAttribute("aria-valuemax", "640");
+    expect(globalThis.getComputedStyle(rightSeparator)).toMatchObject({
+      left: "0px",
+    });
+    const rightIndicatorStyle = globalThis.getComputedStyle(
+      screen.getByTestId("region-separator-indicator-right-sidebar"),
+    );
+    expect(rightIndicatorStyle.left).toBe("0px");
+    expect(rightIndicatorStyle.width).toBe("2px");
 
     const timelineSeparator = screen.getByRole("separator", {
       name: "Resize timeline",
@@ -173,11 +187,16 @@ describe("EditorLayout", () => {
       top: "0px",
       height: "7px",
     });
+    const timelineIndicatorStyle = globalThis.getComputedStyle(
+      screen.getByTestId("region-separator-indicator-lower-stage"),
+    );
+    expect(timelineIndicatorStyle.top).toBe("0px");
+    expect(timelineIndicatorStyle.height).toBe("2px");
     fireEvent.keyDown(timelineSeparator, { key: "ArrowUp" });
     expect(useShellLayoutStore.getState().document.lowerStage?.sizePx).toBe(296);
   });
 
-  it("collapses from the separator and restores the retained size", () => {
+  it("keeps a collapsed edge inert on hover and restores it by dragging", () => {
     renderEditorLayout();
     const separator = screen.getByRole("separator", {
       name: "Resize left sidebar",
@@ -195,13 +214,117 @@ describe("EditorLayout", () => {
       `Collapsed, ${retainedSize} pixels retained`,
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Expand left sidebar" }),
-    );
+    fireEvent.pointerEnter(separator);
+    expect(
+      useShellLayoutStore.getState().resolved.regions["left-sidebar"].collapsed,
+    ).toBe(true);
+    expect(separator).toHaveStyle({ cursor: "col-resize" });
+
+    Object.defineProperties(separator, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: () => false },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    fireEvent.pointerDown(separator, {
+      button: 0,
+      clientX: 56,
+      pointerId: 6,
+    });
+    fireEvent.pointerMove(globalThis.window, { clientX: 76 });
+    fireEvent.pointerUp(globalThis.window);
+
     const restored =
       useShellLayoutStore.getState().resolved.regions["left-sidebar"];
     expect(restored.collapsed).toBe(false);
-    expect(restored.sizePx).toBe(retainedSize);
+    expect(restored.sizePx).toBe(retainedSize + 20);
+  });
+
+  it("collapses after dragging past the minimum-size threshold", () => {
+    renderEditorLayout();
+    const separator = screen.getByRole("separator", {
+      name: "Resize right sidebar",
+    });
+    Object.defineProperties(separator, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: () => false },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+
+    fireEvent.pointerDown(separator, {
+      button: 0,
+      clientX: 700,
+      pointerId: 8,
+    });
+    // The right edge moves 80px inward: 340px -> 260px, which is 40px
+    // beyond this region's 300px minimum.
+    fireEvent.pointerMove(globalThis.window, { clientX: 780 });
+    fireEvent.pointerUp(globalThis.window);
+
+    const collapsed =
+      useShellLayoutStore.getState().resolved.regions["right-sidebar"];
+    expect(collapsed.collapsed).toBe(true);
+    expect(collapsed.userSizePx).toBe(collapsed.minimumSizePx);
+    expect(screen.getByTestId("editor-layout")).toHaveStyle({
+      gridTemplateColumns: "356px minmax(0, 1fr) 8px",
+    });
+
+    fireEvent.pointerEnter(separator);
+    expect(
+      useShellLayoutStore.getState().resolved.regions["right-sidebar"],
+    ).toMatchObject({ collapsed: true, sizePx: 300 });
+
+    fireEvent.pointerDown(separator, {
+      button: 0,
+      clientX: 780,
+      pointerId: 9,
+    });
+    fireEvent.pointerMove(globalThis.window, { clientX: 760 });
+    fireEvent.pointerUp(globalThis.window);
+    expect(
+      useShellLayoutStore.getState().resolved.regions["right-sidebar"],
+    ).toMatchObject({ collapsed: false, sizePx: 320 });
+  });
+
+  it("keeps an empty bottom rail and restores the timeline by dragging", () => {
+    renderEditorLayout();
+    const separator = screen.getByRole("separator", {
+      name: "Resize timeline",
+    });
+
+    fireEvent.keyDown(separator, { key: "Enter" });
+
+    expect(useShellLayoutStore.getState().resolved.lowerStage.collapsed).toBe(
+      true,
+    );
+    expect(separator).toHaveStyle({ cursor: "row-resize" });
+    expect(screen.getByTestId("editor-layout")).toHaveStyle({
+      gridTemplateRows: "48px minmax(0, 1fr) 8px",
+    });
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
+
+    fireEvent.pointerEnter(separator);
+    expect(useShellLayoutStore.getState().resolved.lowerStage.collapsed).toBe(
+      true,
+    );
+
+    Object.defineProperties(separator, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: () => false },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    fireEvent.pointerDown(separator, {
+      button: 0,
+      clientY: 700,
+      pointerId: 10,
+    });
+    fireEvent.pointerMove(globalThis.window, { clientY: 680 });
+    fireEvent.pointerUp(globalThis.window);
+
+    expect(useShellLayoutStore.getState().resolved.lowerStage).toMatchObject({
+      collapsed: false,
+      sizePx: 300,
+    });
+    expect(screen.getByTestId("timeline")).toBeVisible();
   });
 
   it("double-click resets only the separator size", () => {
@@ -292,8 +415,9 @@ describe("EditorLayout", () => {
       useShellLayoutStore.getState().document.regions["left-sidebar"]?.collapsed,
     ).toBeUndefined();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Expand left sidebar" }),
+    fireEvent.keyDown(
+      screen.getByRole("separator", { name: "Resize left sidebar" }),
+      { key: "Enter" },
     );
     expect(
       useShellLayoutStore.getState().resolved.regions["left-sidebar"].collapsed,

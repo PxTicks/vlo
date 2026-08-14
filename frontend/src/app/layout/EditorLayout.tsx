@@ -2,12 +2,10 @@ import type { ReactNode } from "react";
 import { Box } from "@mui/material";
 import { useShallow } from "zustand/react/shallow";
 import { EditorStageMount } from "../../core/shell/components/EditorStageMount";
-import { RegionCollapseButton } from "../../core/shell/components/RegionCollapseButton";
 import { RegionSeparator } from "../../core/shell/components/RegionSeparator";
 import { WorkspaceChrome } from "../../core/shell/components/WorkspaceChrome";
 import type { EditorSurfaceEntry } from "../../core/shell/editorSurfaces";
 import {
-  COLLAPSED_REGION_SIZE_PX,
   RESPONSIVE_SIDEBAR_BREAKPOINT_PX,
   type ResponsiveSidebarRegion,
 } from "../../core/shell/layout/layoutTypes";
@@ -19,6 +17,9 @@ import type { ProjectConfig } from "../../features/project";
 import { useEditorFocusStore } from "../../features/editorFocus";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { EditorRegion } from "./EditorRegion";
+import { LEFT_SIDEBAR_RAIL_WIDTH_PX } from "./LeftSidebarPanel";
+
+const COLLAPSED_EDGE_RAIL_SIZE_PX = 8;
 
 /**
  * A portable panel renders from the shell's stable host rather than from inside
@@ -79,13 +80,13 @@ export function EditorLayout({
   );
   const clearRegion = useEditorFocusStore((state) => state.setRegion);
   const leftWidthPx = geometry.left.collapsed
-    ? COLLAPSED_REGION_SIZE_PX
+    ? LEFT_SIDEBAR_RAIL_WIDTH_PX
     : geometry.left.sizePx;
   const rightWidthPx = geometry.right.collapsed
-    ? COLLAPSED_REGION_SIZE_PX
+    ? COLLAPSED_EDGE_RAIL_SIZE_PX
     : geometry.right.sizePx;
   const lowerHeightPx = geometry.lower.collapsed
-    ? COLLAPSED_REGION_SIZE_PX
+    ? COLLAPSED_EDGE_RAIL_SIZE_PX
     : geometry.lower.sizePx;
   const useResponsiveOverlays =
     geometry.viewportWidthPx !== null &&
@@ -117,6 +118,7 @@ export function EditorLayout({
 
   return (
     <Box
+      data-testid="editor-layout"
       onPointerDownCapture={() => clearRegion(null)}
       sx={{
         display: "grid",
@@ -160,7 +162,6 @@ export function EditorLayout({
       >
         <Box
           data-testid="shell-region-left-sidebar-content"
-          aria-hidden={geometry.left.collapsed}
           sx={{
             display: "flex",
             flexGrow: 1,
@@ -168,19 +169,10 @@ export function EditorLayout({
             minHeight: 0,
             height: "100%",
             overflow: "hidden",
-            visibility: geometry.left.collapsed ? "hidden" : "visible",
           }}
         >
           {leftSidebar}
         </Box>
-        {geometry.left.collapsed ? (
-          <Box sx={{ position: "absolute", right: 2, bottom: 2, zIndex: 30 }}>
-            <RegionCollapseButton
-              region="left-sidebar"
-              label="Left sidebar"
-            />
-          </Box>
-        ) : null}
         <RegionSeparator
           region="left-sidebar"
           label="Left sidebar"
@@ -299,14 +291,6 @@ export function EditorLayout({
         >
           {rightSidebar}
         </Box>
-        {geometry.right.collapsed ? (
-          <Box sx={{ position: "absolute", left: 2, bottom: 2, zIndex: 30 }}>
-            <RegionCollapseButton
-              region="right-sidebar"
-              label="Right sidebar"
-            />
-          </Box>
-        ) : null}
         <RegionSeparator
           region="right-sidebar"
           label="Right sidebar"
@@ -341,13 +325,6 @@ export function EditorLayout({
           }}
         >
           <EditorStageMount stage="lower-stage" wrap={wrapStageSurface} />
-        </Box>
-        <Box sx={{ position: "absolute", right: 4, top: 3, zIndex: 30 }}>
-          <RegionCollapseButton
-            region="lower-stage"
-            label="Timeline"
-            testId="timeline-collapse-button"
-          />
         </Box>
         <RegionSeparator
           region="lower-stage"

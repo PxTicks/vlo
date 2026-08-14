@@ -2,8 +2,9 @@ import { memo } from "react";
 import { Box, Tab, Tabs, Tooltip } from "@mui/material";
 import ExtensionIcon from "@mui/icons-material/Extension";
 import type { ShellViewEntry } from "../../core/shell/viewRegistry";
-import { RegionCollapseButton } from "../../core/shell/components/RegionCollapseButton";
 import { ViewLayoutButton } from "../../core/shell/ViewLayoutButton";
+
+export const LEFT_SIDEBAR_RAIL_WIDTH_PX = 56;
 
 const TAB_SX = {
   minWidth: 40,
@@ -33,7 +34,7 @@ function LeftSidebarPanelComponent({
   return (
     <Box
       sx={{
-        width: 56,
+        width: LEFT_SIDEBAR_RAIL_WIDTH_PX,
         flexShrink: 0,
         borderRight: "1px solid #333",
         bgcolor: "#0d0d0d",
@@ -81,10 +82,6 @@ function LeftSidebarPanelComponent({
         ))}
       </Tabs>
       <ViewLayoutButton region="left-sidebar" allowSingleView />
-      <RegionCollapseButton
-        region="left-sidebar"
-        label="Left sidebar"
-      />
     </Box>
   );
 }

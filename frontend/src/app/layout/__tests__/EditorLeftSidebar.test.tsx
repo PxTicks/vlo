@@ -1,7 +1,8 @@
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { useState } from "react";
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { EditorLeftSidebar } from "../EditorLeftSidebar";
+import { useShellLayoutStore } from "../../../core/shell/layout/useShellLayoutStore";
 import type {
   ExtensionApiScope,
   ExtensionResource,
@@ -43,6 +44,11 @@ function makeScope(id: string): ExtensionApiScope {
 }
 
 describe("EditorLeftSidebar", () => {
+  beforeEach(() => {
+    useShellLayoutStore.getState().resetLayout();
+    useShellLayoutStore.getState().setViewport(null);
+  });
+
   it("shows the core tabs and the assets panel by default", () => {
     render(<EditorLeftSidebar />);
 
@@ -57,6 +63,25 @@ describe("EditorLeftSidebar", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Composite" }));
     expect(screen.getByTestId("mock-composite-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("mock-asset-browser")).not.toBeInTheDocument();
+  });
+
+  it("keeps the tab rail available while the panel is collapsed", () => {
+    useShellLayoutStore
+      .getState()
+      .setRegionCollapsed("left-sidebar", true);
+
+    render(<EditorLeftSidebar />);
+
+    expect(screen.getByRole("tab", { name: "Assets" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Composite" })).toBeVisible();
+    expect(screen.getByTestId("mock-asset-browser")).not.toBeVisible();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Composite" }));
+
+    expect(
+      useShellLayoutStore.getState().resolved.regions["left-sidebar"].collapsed,
+    ).toBe(false);
+    expect(screen.getByTestId("mock-composite-panel")).toBeVisible();
   });
 
   it("hosts a stateful left-sidebar extension workspace as a persistent tab", () => {

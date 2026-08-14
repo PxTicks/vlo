@@ -1,0 +1,162 @@
+{
+  "version": 3,
+  "name": "MiniMax H3 Image to Video",
+  "nodes": {
+    "129": {
+      "widgets": {
+        "noise_seed": {
+          "label": "Noise seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 2
+        }
+      }
+    },
+    "136": {
+      "widgets": {
+        "length": {
+          "label": "Length",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 22,
+          "max": 600,
+          "step": 17,
+          "default": 124,
+          "display_unit": {
+            "scale": 0.041666666666666664,
+            "unit": "s",
+            "precision": 1
+          },
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 1
+        }
+      }
+    },
+    "141": {
+      "present": {
+        "label": "Start frame",
+        "group_id": "frames",
+        "group_title": "Frames",
+        "group_order": 0,
+        "required": false,
+        "input_type": "image",
+        "param": "image",
+        "class_type": "vloMemoryLoadImage"
+      }
+    },
+    "142": {
+      "present": {
+        "label": "End frame",
+        "group_id": "frames",
+        "group_title": "Frames",
+        "group_order": 1,
+        "required": false,
+        "input_type": "image",
+        "param": "image",
+        "class_type": "vloMemoryLoadImage"
+      }
+    },
+    "145": {
+      "widgets": {
+        "value": {
+          "label": "Width",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "146": {
+      "widgets": {
+        "value": {
+          "label": "Height",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    }
+  },
+  "validation": {
+    "inputs": [
+      {
+        "kind": "optional",
+        "input": "141"
+      },
+      {
+        "kind": "optional",
+        "input": "142"
+      }
+    ]
+  },
+  "derived_widgets": [],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["141"],
+        "match": "all_missing"
+      },
+      "bypass": ["141", "143"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["142"],
+        "match": "all_missing"
+      },
+      "bypass": ["142", "144"]
+    }
+  ],
+  "slots": {},
+  "pipeline": [
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolutions": [240, 480, 540, 720],
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
+        {
+          "width": {
+            "node_id": "145",
+            "param": "value"
+          },
+          "height": {
+            "node_id": "146",
+            "param": "value"
+          }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "options": [240, 480, 540, 720],
+          "default": 720,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "expose": "none",
+          "source": "client"
+        }
+      ]
+    }
+  ]
+}

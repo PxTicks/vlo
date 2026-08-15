@@ -71,8 +71,13 @@ function createHarness() {
 
   class FakeLGraph {
     nodes = new Map<string | number, typeof liveNode>();
+    extra: Record<string, unknown> = {};
 
-    configure(serialized: { nodes: Array<Record<string, unknown>> }) {
+    configure(serialized: {
+      nodes: Array<Record<string, unknown>>;
+      extra?: Record<string, unknown>;
+    }) {
+      this.extra = { ...(serialized.extra ?? {}) };
       for (const node of serialized.nodes) {
         const widgetValues = Array.isArray(node.widgets_values)
           ? node.widgets_values
@@ -105,14 +110,18 @@ function createHarness() {
     handleFile: vi.fn(),
     graphToPrompt: vi.fn(async (graph: FakeLGraph) => {
       const node = graph.getNodeById("node-a");
+      const output =
+        node?.mode === 4
+          ? {}
+          : {
+              "node-a": {
+                class_type: "LoadImage",
+                inputs: { image: node?.widgets[0].value },
+              },
+            };
       return {
-        output: {
-          "node-a": {
-            class_type: "LoadImage",
-            inputs: { image: node?.widgets[0].value },
-          },
-        },
-        workflow: {},
+        output,
+        workflow: { extra: { ...graph.extra } },
       };
     }),
     refreshMissingModels: vi.fn(),
@@ -621,6 +630,228 @@ describe("hosted iframe bridge runtime", () => {
     });
     expect(harness.liveNode.widgets[0].value).toBe("live.png");
     expect(harness.liveNode.mode).toBe(0);
+    expect(JSON.stringify(response)).not.toContain("__vloPromptGraphNonce");
+  });
+
+  it("fails closed and reports unresolved bypass node ids", async () => {
+    const harness = createHarness();
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "read-missing-bypass", "read-active");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "read-missing-bypass"),
+      ).toBe(true),
+    );
+    const snapshot = harness.posted.find(
+      (message) => message.requestId === "read-missing-bypass",
+    )?.result as Record<string, unknown>;
+
+    request(harness, "resolve-missing-bypass", "resolve-prompt", {
+      ...snapshot,
+      // Instance-scoped subgraph ids are discovered by vlo but cannot be
+      // resolved by a root LGraph's getNodeById.
+      bypassNodeIds: ["105:104", "105:104"],
+      widgetOverrides: [],
+    });
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some(
+          (message) => message.requestId === "resolve-missing-bypass",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find(
+        (message) => message.requestId === "resolve-missing-bypass",
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        code: "graph-override-target-missing",
+        details: {
+          bypassNodeIds: ["105:104"],
+          widgetOverrides: [],
+        },
+      },
+    });
+    expect(harness.app.graphToPrompt).not.toHaveBeenCalled();
+    expect(harness.liveNode.mode).toBe(0);
+  });
+
+  it("fails closed and reports unresolved widget override targets", async () => {
+    const harness = createHarness();
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "read-missing-widgets", "read-active");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "read-missing-widgets"),
+      ).toBe(true),
+    );
+    const snapshot = harness.posted.find(
+      (message) => message.requestId === "read-missing-widgets",
+    )?.result as Record<string, unknown>;
+
+    request(harness, "resolve-missing-widgets", "resolve-prompt", {
+      ...snapshot,
+      bypassNodeIds: [],
+      widgetOverrides: [
+        { node_id: "missing-node", widget: "image", value: "override.png" },
+        { node_id: "node-a", widget: "missing-widget", value: true },
+      ],
+    });
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some(
+          (message) => message.requestId === "resolve-missing-widgets",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find(
+        (message) => message.requestId === "resolve-missing-widgets",
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        code: "graph-override-target-missing",
+        details: {
+          bypassNodeIds: [],
+          widgetOverrides: [
+            {
+              index: 0,
+              nodeId: "missing-node",
+              widget: "image",
+              reason: "node-not-found",
+            },
+            {
+              index: 1,
+              nodeId: "node-a",
+              widget: "missing-widget",
+              reason: "widget-not-found",
+            },
+          ],
+        },
+      },
+    });
+    expect(harness.app.graphToPrompt).not.toHaveBeenCalled();
+    expect(harness.liveNode.widgets[0].value).toBe("live.png");
+  });
+
+  it("fails closed when a graphToPrompt wrapper drops the temporary graph argument", async () => {
+    const harness = createHarness();
+    harness.app.graphToPrompt.mockImplementationOnce(async () => ({
+      output: {
+        "node-a": {
+          class_type: "LoadImage",
+          inputs: { image: "live.png" },
+        },
+      },
+      workflow: { extra: {} },
+    }));
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "read-ignored-graph", "read-active");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "read-ignored-graph"),
+      ).toBe(true),
+    );
+    const snapshot = harness.posted.find(
+      (message) => message.requestId === "read-ignored-graph",
+    )?.result as Record<string, unknown>;
+
+    request(harness, "resolve-ignored-graph", "resolve-prompt", {
+      ...snapshot,
+      bypassNodeIds: ["node-a"],
+      widgetOverrides: [],
+    });
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some(
+          (message) => message.requestId === "resolve-ignored-graph",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find(
+        (message) => message.requestId === "resolve-ignored-graph",
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        code: "graph-argument-ignored",
+        details: {
+          hint: expect.stringContaining("graphToPrompt wrappers"),
+        },
+      },
+    });
+    expect(harness.liveNode.mode).toBe(0);
+  });
+
+  it("fails closed when graphToPrompt returns an applied bypass node", async () => {
+    const harness = createHarness();
+    harness.app.graphToPrompt.mockImplementationOnce(async (graph) => ({
+      output: {
+        "node-a": {
+          class_type: "LoadImage",
+          inputs: { image: "should-not-run.png" },
+        },
+      },
+      workflow: { extra: { ...graph.extra } },
+    }));
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "read-leaked-bypass", "read-active");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "read-leaked-bypass"),
+      ).toBe(true),
+    );
+    const snapshot = harness.posted.find(
+      (message) => message.requestId === "read-leaked-bypass",
+    )?.result as Record<string, unknown>;
+
+    request(harness, "resolve-leaked-bypass", "resolve-prompt", {
+      ...snapshot,
+      bypassNodeIds: ["node-a"],
+      widgetOverrides: [],
+    });
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some(
+          (message) => message.requestId === "resolve-leaked-bypass",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find(
+        (message) => message.requestId === "resolve-leaked-bypass",
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        code: "bypass-verification-failed",
+        details: { nodeIds: ["node-a"] },
+      },
+    });
   });
 
   it("rejects prompt resolution after the active workflow revision changes", async () => {
@@ -658,7 +889,7 @@ describe("hosted iframe bridge runtime", () => {
     const harness = createHarness();
     let finishResolution!: () => void;
     harness.app.graphToPrompt.mockImplementationOnce(
-      () =>
+      (graph) =>
         new Promise((resolve) => {
           finishResolution = () =>
             resolve({
@@ -668,7 +899,7 @@ describe("hosted iframe bridge runtime", () => {
                   inputs: { image: "live.png" },
                 },
               },
-              workflow: {},
+              workflow: { extra: { ...graph.extra } },
             });
         }),
     );

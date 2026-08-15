@@ -27,6 +27,11 @@ const WARNING_CAPTURE_POLL_MS = 50;
 const WARNING_CAPTURE_TIMEOUT_MS = 1_000;
 const GRAPH_CHANGED_DEBOUNCE_MS = 300;
 const MAX_PENDING_IFRAME_GENERATIONS = 256;
+// Temporary workflow metadata used to prove that graphToPrompt serialized the
+// graph supplied by vlo. Some frontend extensions monkey-patch graphToPrompt;
+// a wrapper that drops its arguments otherwise falls back to app.rootGraph and
+// returns a valid-looking prompt for the wrong graph.
+const PROMPT_GRAPH_NONCE_KEY = "__vloPromptGraphNonce";
 // Matches ComfyUI's own per-file upload bound (useNodeImageUpload), so the
 // fallback path fails with a typed error rather than running until the parent's
 // request timeout gives up on it.
@@ -253,16 +258,85 @@ function getNodeByExternalId(graph, rawId) {
 }
 
 function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
+  const bypassTargets = [];
+  const unresolvedBypassNodeIds = [];
+  const seenBypassNodeIds = new Set();
   for (const nodeId of bypassNodeIds) {
+    const externalNodeId = String(nodeId);
+    if (seenBypassNodeIds.has(externalNodeId)) continue;
+    seenBypassNodeIds.add(externalNodeId);
+
     const node = getNodeByExternalId(graph, nodeId);
-    if (node) node.mode = 4;
+    if (node) {
+      bypassTargets.push(node);
+    } else {
+      unresolvedBypassNodeIds.push(externalNodeId);
+    }
   }
-  for (const override of widgetOverrides) {
-    if (!isRecord(override) || typeof override.widget !== "string") continue;
+
+  const widgetTargets = [];
+  const unresolvedWidgetOverrides = [];
+  for (const [index, override] of widgetOverrides.entries()) {
+    if (!isRecord(override) || typeof override.widget !== "string") {
+      unresolvedWidgetOverrides.push({
+        index,
+        nodeId:
+          isRecord(override) &&
+          (typeof override.node_id === "string" || typeof override.node_id === "number")
+            ? String(override.node_id)
+            : null,
+        widget:
+          isRecord(override) && typeof override.widget === "string"
+            ? override.widget
+            : null,
+        reason: "invalid-override",
+      });
+      continue;
+    }
+
     const node = getNodeByExternalId(graph, override.node_id);
-    const widget = node?.widgets?.find((candidate) => candidate.name === override.widget);
-    if (widget) widget.value = override.value;
+    if (!node) {
+      unresolvedWidgetOverrides.push({
+        index,
+        nodeId: String(override.node_id),
+        widget: override.widget,
+        reason: "node-not-found",
+      });
+      continue;
+    }
+    const widget = findNodeWidget(node, override.widget);
+    if (!widget) {
+      unresolvedWidgetOverrides.push({
+        index,
+        nodeId: String(override.node_id),
+        widget: override.widget,
+        reason: "widget-not-found",
+      });
+      continue;
+    }
+    widgetTargets.push({ override, widget });
   }
+
+  if (unresolvedBypassNodeIds.length > 0 || unresolvedWidgetOverrides.length > 0) {
+    throw new BridgeRuntimeError(
+      "graph-override-target-missing",
+      "Could not resolve every bypass or widget override against the temporary ComfyUI graph",
+      {
+        bypassNodeIds: unresolvedBypassNodeIds,
+        widgetOverrides: unresolvedWidgetOverrides,
+      },
+    );
+  }
+
+  const appliedBypassNodeIds = [];
+  for (const node of bypassTargets) {
+    node.mode = 4;
+    appliedBypassNodeIds.push(String(node.id));
+  }
+  for (const { override, widget } of widgetTargets) {
+    widget.value = override.value;
+  }
+  return appliedBypassNodeIds;
 }
 
 function isSameOriginEmbedded(windowObject) {
@@ -290,6 +364,7 @@ export function startVloBridge({ app, api, windowObject = window }) {
   let activeChannelId = null;
   let bridgeReady = false;
   let workflowCounter = 0;
+  let promptResolutionCounter = 0;
   let graphChangedTimer = null;
   let announcePending = false;
   let stopped = false;
@@ -545,11 +620,23 @@ export function startVloBridge({ app, api, windowObject = window }) {
       );
     }
 
-    applyOverridesToGraph(
+    const appliedBypassNodeIds = applyOverridesToGraph(
       tempGraph,
       Array.isArray(payload?.bypassNodeIds) ? payload.bypassNodeIds : [],
       Array.isArray(payload?.widgetOverrides) ? payload.widgetOverrides : [],
     );
+    const randomNonce = windowObject.crypto?.randomUUID?.() ?? Date.now().toString(36);
+    const promptGraphNonce = `${++promptResolutionCounter}:${randomNonce}`;
+    const tempGraphExtra = isRecord(tempGraph.extra) ? tempGraph.extra : {};
+    const hadPromptGraphNonce = Object.prototype.hasOwnProperty.call(
+      tempGraphExtra,
+      PROMPT_GRAPH_NONCE_KEY,
+    );
+    const previousPromptGraphNonce = tempGraphExtra[PROMPT_GRAPH_NONCE_KEY];
+    tempGraph.extra = {
+      ...tempGraphExtra,
+      [PROMPT_GRAPH_NONCE_KEY]: promptGraphNonce,
+    };
 
     let resolved;
     try {
@@ -577,9 +664,42 @@ export function startVloBridge({ app, api, windowObject = window }) {
         "ComfyUI graphToPrompt returned an invalid result",
       );
     }
+    if (
+      !isRecord(resolved.workflow) ||
+      !isRecord(resolved.workflow.extra) ||
+      resolved.workflow.extra[PROMPT_GRAPH_NONCE_KEY] !== promptGraphNonce
+    ) {
+      throw new BridgeRuntimeError(
+        "graph-argument-ignored",
+        "A ComfyUI frontend extension ignored or replaced vlo's temporary prompt graph",
+        {
+          hint:
+            "Update installed frontend extensions and inspect graphToPrompt wrappers for an argument that is not forwarded",
+        },
+      );
+    }
+    const leakedBypassNodeIds = appliedBypassNodeIds.filter((nodeId) =>
+      Object.prototype.hasOwnProperty.call(resolved.output, nodeId),
+    );
+    if (leakedBypassNodeIds.length > 0) {
+      throw new BridgeRuntimeError(
+        "bypass-verification-failed",
+        "ComfyUI included bypassed nodes in the resolved prompt",
+        { nodeIds: leakedBypassNodeIds },
+      );
+    }
+    const workflowExtra = { ...resolved.workflow.extra };
+    if (hadPromptGraphNonce) {
+      workflowExtra[PROMPT_GRAPH_NONCE_KEY] = previousPromptGraphNonce;
+    } else {
+      delete workflowExtra[PROMPT_GRAPH_NONCE_KEY];
+    }
     return {
       output: resolved.output,
-      workflow: isRecord(resolved.workflow) ? resolved.workflow : {},
+      workflow: {
+        ...resolved.workflow,
+        extra: workflowExtra,
+      },
     };
   }
 

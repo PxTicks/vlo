@@ -2,13 +2,24 @@ import React, { useRef, useEffect, useState } from "react";
 import { Box } from "@mui/material";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { useProjectStore } from "../../project/useProjectStore";
-import {
-  PIXELS_PER_SECOND,
-  TRACK_HEADER_WIDTH,
-  RULER_HEIGHT,
-} from "../constants";
+import { TRACK_HEADER_WIDTH, RULER_HEIGHT } from "../constants";
 import { snapTickToFrameGrid } from "../../../core/time/frameGrid";
+import {
+  pixelsPerSecond,
+  pxToTicks as pxToTicksAt,
+  ticksToPx as ticksToPxAt,
+} from "../../../core/time/pixelGrid";
+import { chooseRulerScale, formatRulerLabel } from "../model/rulerScale";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
+
+/**
+ * The two tones of the gradation hierarchy, against the #1a1a1a ruler ground.
+ * The labelled gradations and their labels share one bright tone; the
+ * interstitial marks sit close to the ground so they read as a fine measure
+ * under the labelled ones rather than competing with them.
+ */
+const LABELLED_TICK_COLOR = "#c8c8c8";
+const INTERSTITIAL_TICK_COLOR = "#454545";
 
 interface TimelineRulerProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -20,6 +31,10 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
 
   // Local state for canvas sizing (Viewport Width)
   const [width, setWidth] = useState(0);
+
+  // fps decides the sub-second rungs of the gradation ladder, so the ruler
+  // re-scales on a project fps change the same way it does on a zoom change.
+  const fps = useProjectStore((state) => state.config.fps);
 
   // 1. Handle Resize: Observe the SCROLL CONTAINER (Viewport), not the content
   useEffect(() => {
@@ -46,7 +61,7 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
 
     const draw = () => {
       const { zoomScale } = useTimelineViewStore.getState();
-      const pps = PIXELS_PER_SECOND * zoomScale;
+      const pps = pixelsPerSecond(zoomScale);
 
       const scrollLeft = scrollContainer.scrollLeft;
 
@@ -70,38 +85,64 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
 
       const startX = TRACK_HEADER_WIDTH - scrollLeft;
 
-      // We only want to draw ticks that are visible on the canvas (0 to width)
-      // x = sec * pps + startX
-      // 0 <= sec * pps + startX <= width
-      // -startX <= sec * pps <= width - startX
-      // -startX / pps <= sec <= (width - startX) / pps
+      // We only draw gradations that land on the canvas (x in 0..width), which
+      // in tick space is the span the canvas covers: x = ticksToPx(tick) +
+      // startX, so tick = pxToTicks(x - startX), clamped at time 0.
+      const { gradationTicks, labelTicks, frameLabels } = chooseRulerScale(
+        pps,
+        fps,
+      );
+      const firstVisibleTick = Math.max(0, pxToTicksAt(-startX, zoomScale));
+      const lastVisibleTick = pxToTicksAt(width - startX, zoomScale);
 
-      const startSec = Math.floor(Math.max(0, -startX / pps));
-      const endSec = Math.ceil((width - startX) / pps);
+      // Step by index rather than accumulating ticks: `gradationTicks` is
+      // fractional whenever fps does not divide the tick base, and accumulated
+      // error would drag the whole-second gradations off the second.
+      const firstIndex = Math.floor(firstVisibleTick / gradationTicks);
+      const lastIndex = Math.ceil(lastVisibleTick / gradationTicks);
+      const labelEvery = Math.max(1, Math.round(labelTicks / gradationTicks));
 
-      ctx.beginPath();
-      ctx.strokeStyle = "#555";
-      ctx.fillStyle = "#888";
-      ctx.font = "10px sans-serif";
-      ctx.textAlign = "left";
+      // Split into two passes so each tone gets its own path: the labelled
+      // gradations carry the structure and are drawn at label brightness, the
+      // interstitial ones recede to a dim grey.
+      const labelledX: number[] = [];
+      const interstitialX: number[] = [];
+      const labels: { x: number; text: string }[] = [];
 
-      for (let sec = startSec; sec <= endSec; sec++) {
-        const x = sec * pps + startX;
+      for (let index = Math.max(0, firstIndex); index <= lastIndex; index++) {
+        const tick = index * gradationTicks;
+        const x = ticksToPxAt(tick, zoomScale) + startX;
 
-        // Major Tick (every 5s) or dynamic based on zoom?
-        const isMajor = sec % 5 === 0;
-        const tickHeight = isMajor ? 10 : 5;
-
-        // Draw tick
-        ctx.moveTo(x + 0.5, RULER_HEIGHT);
-        ctx.lineTo(x + 0.5, RULER_HEIGHT - tickHeight);
-
-        // Draw Label
-        if (isMajor) {
-          ctx.fillText(`${sec}s`, x + 4, 14);
+        if (index % labelEvery === 0) {
+          labelledX.push(x);
+          labels.push({ x, text: formatRulerLabel(tick, fps, frameLabels) });
+        } else {
+          interstitialX.push(x);
         }
       }
-      ctx.stroke();
+
+      const strokeGradations = (xs: number[], height: number, color: string) => {
+        if (xs.length === 0) return;
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        for (const x of xs) {
+          ctx.moveTo(x + 0.5, RULER_HEIGHT);
+          ctx.lineTo(x + 0.5, RULER_HEIGHT - height);
+        }
+        ctx.stroke();
+      };
+
+      strokeGradations(interstitialX, 5, INTERSTITIAL_TICK_COLOR);
+      strokeGradations(labelledX, 10, LABELLED_TICK_COLOR);
+
+      // Labels share the exact tone of the gradation they name, so a label and
+      // its mark read as one unit against the dimmer interstitial marks.
+      ctx.fillStyle = LABELLED_TICK_COLOR;
+      ctx.font = "10px sans-serif";
+      ctx.textAlign = "left";
+      for (const { x, text } of labels) {
+        ctx.fillText(text, x + 4, 14);
+      }
 
       // Draw sticky top-left corner to hide scrolling ticks
       ctx.fillStyle = "#222";
@@ -134,7 +175,7 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
       scrollContainer.removeEventListener("scroll", handleScroll);
       unsubscribeStore();
     };
-  }, [width, scrollContainerRef]);
+  }, [width, scrollContainerRef, fps]);
 
   // --- Interaction ---
   const handleScrub = (clientX: number) => {

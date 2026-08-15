@@ -21,31 +21,54 @@ vi.mock("../../hooks/useTimelineViewStore", () => ({
   },
 }));
 
-vi.mock("../../../project/useProjectStore", () => ({
-  useProjectStore: {
-    getState: () => ({ config: { fps: 24 } }),
-  },
-}));
+vi.mock("../../../project/useProjectStore", () => {
+  const state = { config: { fps: 24 } };
+  const useProjectStore = <T,>(selector: (value: typeof state) => T) =>
+    selector(state);
+  useProjectStore.getState = () => state;
+  return { useProjectStore };
+});
 
-vi.mock("../../../../core/time/frameGrid", () => ({
+vi.mock("../../../../core/time/frameGrid", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../core/time/frameGrid")>()),
   snapTickToFrameGrid: mocks.snapTickToFrameGrid,
 }));
 
+/**
+ * Records the style in force at each paint, so the tests can assert the
+ * gradation hierarchy (which tone drew which marks) and not just geometry.
+ */
 function canvasContext() {
-  return {
+  const context = {
     clearRect: vi.fn(),
     fillRect: vi.fn(),
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
-    stroke: vi.fn(),
-    fillText: vi.fn(),
+    stroke: vi.fn(() => {
+      context.strokedWith.push(context.strokeStyle);
+    }),
+    fillText: vi.fn((text: string) => {
+      context.labels.push({ text, color: context.fillStyle });
+    }),
     fillStyle: "",
     strokeStyle: "",
     lineWidth: 0,
     font: "",
     textAlign: "",
+    strokedWith: [] as string[],
+    labels: [] as { text: string; color: string }[],
   };
+  return context;
+}
+
+/** Mean channel value of a `#rrggbb` colour — enough to compare tones. */
+function brightness(color: string): number {
+  const channels = color.slice(1).match(/../g) ?? [];
+  return (
+    channels.reduce((sum, channel) => sum + parseInt(channel, 16), 0) /
+    (channels.length || 1)
+  );
 }
 
 describe("TimelineRuler", () => {
@@ -102,7 +125,7 @@ describe("TimelineRuler", () => {
     });
     expect(context.clearRect).toHaveBeenCalledWith(0, 0, 500, 24);
     expect(context.fillText).toHaveBeenCalledWith(
-      expect.stringMatching(/\d+s/),
+      expect.stringMatching(/^\d{2}:\d{2}$/),
       expect.any(Number),
       14,
     );
@@ -119,6 +142,57 @@ describe("TimelineRuler", () => {
     unmount();
     expect(removeSpy).toHaveBeenCalledWith("scroll", expect.any(Function));
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it("falls back to frame gradations when zoomed all the way in", () => {
+    mocks.zoomScale = 20;
+    const scrollContainer = document.createElement("div");
+    const context = canvasContext();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      context as never,
+    );
+    render(<TimelineRuler scrollContainerRef={{ current: scrollContainer }} />);
+    act(() => {
+      mocks.resizeCallback?.(
+        [{ contentRect: { width: 500 } } as ResizeObserverEntry],
+        {} as ResizeObserver,
+      );
+    });
+
+    // 24fps at 2000px/s: a gradation per frame, labels every second frame.
+    expect(context.labels.map((label) => label.text)).toEqual([
+      "00:00",
+      "2f",
+      "4f",
+      "6f",
+    ]);
+  });
+
+  it("draws labelled gradations brighter than the interstitial ones", () => {
+    mocks.zoomScale = 20;
+    const scrollContainer = document.createElement("div");
+    const context = canvasContext();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      context as never,
+    );
+    render(<TimelineRuler scrollContainerRef={{ current: scrollContainer }} />);
+    act(() => {
+      mocks.resizeCallback?.(
+        [{ contentRect: { width: 500 } } as ResizeObserverEntry],
+        {} as ResizeObserver,
+      );
+    });
+
+    // The borders are the only other strokes, so what is left is the two
+    // gradation passes: interstitial first, then labelled.
+    const [interstitial, labelled] = context.strokedWith.filter(
+      (color) => color !== "#333",
+    );
+    expect(brightness(labelled)).toBeGreaterThan(brightness(interstitial) * 2);
+
+    // Every label is painted in the same tone as the mark it names.
+    const labelColors = new Set(context.labels.map((label) => label.color));
+    expect([...labelColors]).toEqual([labelled]);
   });
 
   it("scrubs on mouse down and drag using scroll-adjusted pixels", () => {

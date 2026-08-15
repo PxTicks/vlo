@@ -46,6 +46,9 @@ def test_minimax_h3_image_to_video_workflow_is_flat_and_vlo_native():
         "PrimitiveFloat",
         "ImageScaleToTotalPixels",
         "GetImageSize",
+        # MiniMaxH3ImageToVideo sizes keyframes itself, so nothing sits between
+        # a loader and its optional slot for a bypass to have to unwind.
+        "ResizeImageMaskNode",
     }.intersection(node_types)
 
 
@@ -61,39 +64,35 @@ def test_minimax_h3_image_to_video_keyframes_are_optional_connections():
     assert inputs["last_frame"]["shape"] == 7
 
     links = {link[0]: tuple(link[1:5]) for link in workflow["links"]}
-    # start frame -> resize -> first_frame, end frame -> resize -> last_frame
-    assert links[inputs["first_frame"]["link"]][:2] == (143, 0)
-    assert links[inputs["last_frame"]["link"]][:2] == (144, 0)
-    assert links[nodes[143]["inputs"][0]["link"]][:2] == (141, 0)
-    assert links[nodes[144]["inputs"][0]["link"]][:2] == (142, 0)
+    # Each loader feeds its optional slot directly: bypassing the loader leaves
+    # nothing behind that could still resolve to an image.
+    assert links[inputs["first_frame"]["link"]][:2] == (141, 0)
+    assert links[inputs["last_frame"]["link"]][:2] == (142, 0)
 
-    # Both keyframes stretch to the generation canvas, so neither is cropped.
-    for resize_id in (143, 144):
-        assert nodes[resize_id]["widgets_values"][0] == "scale dimensions"
-        assert nodes[resize_id]["widgets_values"][3] == "disabled"
+    # No authored filename, so a stale value cannot be coerced to whatever
+    # happens to sit in the ComfyUI input directory.
+    for loader_id in (141, 142):
+        assert nodes[loader_id]["type"] == "vloMemoryLoadImage"
+        assert nodes[loader_id]["widgets_values"][0] == ""
+        assert nodes[loader_id]["widgets_values"][1] is False
 
-    # The labelled Width/Height primitives drive the generator and both resizes.
+    # The labelled Width/Height primitives drive the generator.
     assert nodes[145]["title"] == "Width"
     assert nodes[146]["title"] == "Height"
     assert {links[link_id] for link_id in nodes[145]["outputs"][0]["links"]} == {
         (145, 0, 136, 4),
-        (145, 0, 143, 1),
-        (145, 0, 144, 1),
     }
     assert {links[link_id] for link_id in nodes[146]["outputs"][0]["links"]} == {
         (146, 0, 136, 5),
-        (146, 0, 143, 2),
-        (146, 0, 144, 2),
     }
 
 
 def test_minimax_h3_image_to_video_rules_require_neither_frame():
     rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
 
-    assert rules["validation"]["inputs"] == [
-        {"kind": "optional", "input": "141"},
-        {"kind": "optional", "input": "142"},
-    ]
+    # Like vlo_ltx2_3, which also allows both frames to be blank: nothing is
+    # required, and `required: false` on each present block carries the intent.
+    assert rules["validation"]["inputs"] == []
     assert rules["nodes"]["141"]["present"] == {
         "label": "Start frame",
         "group_id": "frames",
@@ -107,8 +106,8 @@ def test_minimax_h3_image_to_video_rules_require_neither_frame():
     assert rules["nodes"]["142"]["present"]["label"] == "End frame"
     assert rules["nodes"]["142"]["present"]["required"] is False
 
-    # A missing frame bypasses its loader together with its resize node, so the
-    # generator's optional slot is left unconnected instead of dangling.
+    # An unfilled frame bypasses its loader, and the loader is the whole chain,
+    # so the generator's optional slot is simply left unconnected.
     assert rules["rewrites"] == [
         {
             "when": {
@@ -116,9 +115,9 @@ def test_minimax_h3_image_to_video_rules_require_neither_frame():
                 "inputs": [loader_id],
                 "match": "all_missing",
             },
-            "bypass": [loader_id, resize_id],
+            "bypass": [loader_id],
         }
-        for loader_id, resize_id in (("141", "143"), ("142", "144"))
+        for loader_id in ("141", "142")
     ]
 
 

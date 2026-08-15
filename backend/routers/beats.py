@@ -12,6 +12,8 @@ from services.beats.beats_service import (
     BeatThisRuntimeError,
     BeatThisSourceNotFoundError,
 )
+from services.model_work.http_errors import http_exception_for
+from services.model_work.leases import ModelWorkError
 
 
 router = APIRouter(prefix="/beats", tags=["beats"])
@@ -65,6 +67,8 @@ async def detect_beats(request: BeatThisDetectRequest) -> dict[str, Any]:
             request.dbn,
             request.model,
         )
+    except ModelWorkError as exc:
+        raise http_exception_for(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except BeatThisSourceNotFoundError as exc:

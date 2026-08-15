@@ -1,5 +1,9 @@
 import * as comfyApi from "../services/comfyuiApi";
 import { useProjectStore } from "../../project";
+import {
+  selectIsLocalModelWorkHoldingGpu,
+  useModelWorkStore,
+} from "../../modelWork";
 import { mergeRuleWarnings } from "../services/warnings";
 import {
   buildSubmittedGeneration,
@@ -226,6 +230,32 @@ function isComfyReadyForDispatch(
     state.runtimeStatus?.comfyui.status === "connected" ||
     state.connectionStatus === "connected"
   );
+}
+
+/**
+ * Advisory only. The authoritative reservation is taken in the backend before
+ * the prompt is forwarded (a check-then-submit gap here could never exclude
+ * anything); this just keeps the queue from firing requests it knows will come
+ * back 409.
+ */
+function isLocalModelWorkHoldingGpu(): boolean {
+  return selectIsLocalModelWorkHoldingGpu(useModelWorkStore.getState());
+}
+
+/** Fallback resume interval when no ledger event arrives to lift a GPU hold. */
+const GPU_ADMISSION_HOLD_RETRY_MS = 2000;
+
+function isGpuBusyRejection(error: unknown): boolean {
+  // Duck-typed rather than `instanceof ComfyApiError`: the shape is what
+  // matters, and this stays true through module mocking and bundle splitting.
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const { status, payload } = error as {
+    status?: unknown;
+    payload?: { error?: { code?: unknown } };
+  };
+  return status === 409 && payload?.error?.code === "gpu_busy";
 }
 
 interface PendingExtractionEntry {
@@ -904,9 +934,71 @@ export function buildExecutionStoreState(
         return null;
       }
 
+      if (isGpuBusyRejection(error)) {
+        // The backend refused admission because vlo's own models own the GPU.
+        // Hold the plan rather than failing it: no request stays open, and the
+        // ledger subscription resumes the queue when the resource frees. The
+        // hold is essential — the ledger may not have caught up with the 409
+        // yet, and without it this plan would be resubmitted immediately.
+        holdForGpu();
+        set((state) => ({
+          generationQueue: [plan, ...state.generationQueue],
+          preprocessAbortController: null,
+          pipelineStatus: {
+            phase: "idle",
+            message: "Waiting for the GPU",
+            interruptible: false,
+          },
+        }));
+        return null;
+      }
+
       generationPreprocessCache = null;
       return buildSubmissionErrorPatch(get, set, error);
     }
+  }
+
+  /**
+   * Set when the backend refuses admission (409) or the ledger says vlo's own
+   * models hold the GPU. Without it the queue would spin: nothing here awaits,
+   * so a plan that stays queued would be retried immediately and forever — and
+   * a 409 arriving before the ledger update would resubmit at full speed.
+   */
+  let gpuAdmissionHold = false;
+  let gpuAdmissionHoldTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function holdForGpu(): void {
+    gpuAdmissionHold = true;
+    if (gpuAdmissionHoldTimer !== null) {
+      return;
+    }
+    // A safety net only: the ledger subscription below is the real resume
+    // signal, but the queue must not stall forever if that event never lands.
+    gpuAdmissionHoldTimer = setTimeout(() => {
+      gpuAdmissionHoldTimer = null;
+      releaseGpuHold();
+    }, GPU_ADMISSION_HOLD_RETRY_MS);
+  }
+
+  function releaseGpuHold(): void {
+    if (gpuAdmissionHoldTimer !== null) {
+      clearTimeout(gpuAdmissionHoldTimer);
+      gpuAdmissionHoldTimer = null;
+    }
+    const wasHeld = gpuAdmissionHold;
+    gpuAdmissionHold = false;
+    if (wasHeld || get().generationQueue.length > 0) {
+      void processGenerationQueue();
+    }
+  }
+
+  function canDispatchNow(state: ReturnType<GenerationStoreGet>): boolean {
+    return (
+      Boolean(state.wsClient) &&
+      isComfyReadyForDispatch(state) &&
+      !gpuAdmissionHold &&
+      !isLocalModelWorkHoldingGpu()
+    );
   }
 
   async function processGenerationQueue(): Promise<void> {
@@ -927,7 +1019,9 @@ export function buildExecutionStoreState(
         ) {
           return;
         }
-        if (!state.wsClient || !isComfyReadyForDispatch(state)) {
+        if (!canDispatchNow(state)) {
+          // Leave the plan queued; the ledger subscription resumes the queue as
+          // soon as vlo's own models hand the GPU back.
           return;
         }
 
@@ -948,8 +1042,7 @@ export function buildExecutionStoreState(
         state.generationQueue.length > 0 &&
         state.pipelineStatus.phase !== "preprocessing" &&
         !isActiveGenerationJob(activeJob) &&
-        state.wsClient &&
-        isComfyReadyForDispatch(state)
+        canDispatchNow(state)
       ) {
         void processGenerationQueue();
       }
@@ -1117,6 +1210,8 @@ export function buildExecutionStoreState(
     },
 
     processGenerationQueue,
+
+    resumeGenerationQueueAfterGpuRelease: releaseGpuHold,
 
     clearGenerationQueue: () => {
       set({ generationQueue: [] });

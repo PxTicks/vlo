@@ -131,6 +131,7 @@ vi.mock("../../services/warnings", () => ({
   mergeRuleWarnings: mocks.mergeRuleWarnings,
 }));
 
+import { useModelWorkStore } from "../../../modelWork";
 import {
   WorkflowOutOfSyncError,
   buildExecutionStoreState,
@@ -240,9 +241,31 @@ function createHarness(overrides: Record<string, unknown> = {}): Harness {
   };
 }
 
+/** Put the shared ledger into a state where `local-gpu` is held by a tenant. */
+function holdGpuWith(tenant: string | null): void {
+  useModelWorkStore.setState({
+    ready: true,
+    revision: 1,
+    entries: [],
+    resources:
+      tenant === null
+        ? []
+        : [
+            {
+              resource: "local-gpu",
+              width: 1,
+              tenant,
+              occupancyId: "occ-1",
+              holderCount: 1,
+            },
+          ],
+  });
+}
+
 describe("buildExecutionStoreState", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    holdGpuWith(null);
     mocks.projectState.project = { id: "project-1" };
     const plan = makePlan();
     mocks.createGenerationPlan.mockReturnValue(plan);
@@ -668,6 +691,38 @@ describe("buildExecutionStoreState", () => {
     expect(harness.state.generationQueue).toHaveLength(2);
     harness.actions.clearGenerationQueue();
     expect(harness.state.generationQueue).toEqual([]);
+  });
+
+  it("holds queued plans while vlo's own models own the GPU, without spinning", async () => {
+    // Regression: the GPU gate returns without dequeuing anything, and the
+    // `finally` block re-invokes the queue. With no `await` on that path the
+    // re-invocation recursed synchronously until the stack blew.
+    holdGpuWith("backend-process");
+    const harness = createHarness();
+
+    await harness.actions.queueGeneration({}, {}, {}, {}, 2);
+
+    expect(harness.state.generationQueue).toHaveLength(2);
+    expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it("requeues once on a 409 instead of resubmitting until the ledger catches up", async () => {
+    const harness = createHarness();
+    // The backend refuses admission, but the ledger has not caught up yet — so
+    // the gate alone would let the queue resubmit immediately and forever.
+    mocks.generate.mockRejectedValue({
+      status: 409,
+      payload: { error: { code: "gpu_busy" } },
+    });
+
+    await harness.actions.queueGeneration({}, {}, {}, {}, 2);
+
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+    expect(harness.state.generationQueue).toHaveLength(2);
+    expect((harness.state.pipelineStatus as { message: string }).message).toBe(
+      "Waiting for the GPU",
+    );
+    expect(mocks.createSubmissionErrorJob).not.toHaveBeenCalled();
   });
 
   it("creates an error job when queue capture fails or workflow is loading", async () => {

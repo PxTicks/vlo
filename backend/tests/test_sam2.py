@@ -1,5 +1,6 @@
 import sys
 import types
+from collections import OrderedDict
 from collections.abc import Callable
 from fractions import Fraction
 from io import BytesIO
@@ -630,6 +631,179 @@ def test_generate_single_frame_mask_reads_cached_frame_when_points_omitted(
     assert generated.png_bytes
 
 
+def _install_propagation_predictor(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    frames_marked: tuple[int, ...],
+) -> Any:
+    """A predictor that reports `frames_marked` as fully masked predictor frames."""
+
+    class FakePredictor:
+        def __init__(self) -> None:
+            self.reset_states: list[object] = []
+            self.init_state_calls = 0
+
+        def init_state(self, video_path: str) -> dict[str, str]:
+            self.init_state_calls += 1
+            return {"video_path": video_path, "id": f"state_{self.init_state_calls}"}
+
+        def reset_state(self, inference_state: object) -> None:
+            self.reset_states.append(inference_state)
+
+        def add_new_points_or_box(self, **kwargs):
+            del kwargs
+            return (None, [1], np.ones((1, 2, 2), dtype=np.float32))
+
+        def propagate_in_video(
+            self,
+            _inference_state: object,
+            start_frame_idx: int = 0,
+            max_frame_num_to_track: int | None = None,
+            reverse: bool = False,
+        ):
+            del start_frame_idx, max_frame_num_to_track
+            if reverse:
+                return
+            for frame_index in frames_marked:
+                yield (frame_index, [1], np.ones((1, 2, 2), dtype=np.float32))
+
+    fake_predictor = FakePredictor()
+    monkeypatch.setattr(sam2_service._runtime, "get_predictor", lambda: fake_predictor)
+    return fake_predictor
+
+
+def test_run_sam2_propagation_never_borrows_the_editor_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Propagation used to reset the same inference state the frame-preview
+    button drives, so the two SAM2 panel buttons corrupted each other."""
+
+    source_path = tmp_path / "source.mp4"
+    source_path.write_bytes(b"video")
+    source = Sam2SourceMetadata(
+        source_id="source_1",
+        source_hash="source_1",
+        path=source_path,
+        width=2,
+        height=2,
+        fps=24.0,
+        frame_count=4,
+        duration_sec=4 / 24.0,
+    )
+
+    fake_predictor = _install_propagation_predictor(monkeypatch, frames_marked=(2,))
+    editor_state = {"owner": "editor"}
+    session = sam2_service._Sam2EditorSession(
+        source_id=source.source_id,
+        mask_id="mask_1",
+        prepared_video_path=source_path,
+        inference_state=editor_state,
+        frame_index_offset=0,
+        frame_count=source.frame_count,
+    )
+    monkeypatch.setattr(
+        sam2_service,
+        "_EDITOR_SESSIONS",
+        {sam2_service._editor_session_key(source.source_id, "mask_1"): session},
+    )
+    monkeypatch.setattr(sam2_service, "_PROPAGATED_MASKS", OrderedDict())
+
+    sam2_service._run_sam2_propagation(
+        source,
+        {1: [{"x": 0.5, "y": 0.5, "label": 1, "timeTicks": 0}]},
+        mask_id="mask_1",
+    )
+
+    assert fake_predictor.init_state_calls == 1
+    assert editor_state not in fake_predictor.reset_states
+    assert session.inference_state is editor_state
+
+
+def test_get_cached_mask_frames_serves_the_last_propagation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "source.mp4"
+    source_path.write_bytes(b"video")
+    source = Sam2SourceMetadata(
+        source_id="source_1",
+        source_hash="source_1",
+        path=source_path,
+        width=2,
+        height=2,
+        fps=24.0,
+        frame_count=4,
+        duration_sec=4 / 24.0,
+    )
+
+    _install_propagation_predictor(monkeypatch, frames_marked=(2,))
+    monkeypatch.setattr(sam2_service, "get_source_metadata", lambda _source_id: source)
+    monkeypatch.setattr(sam2_service, "_PROPAGATED_MASKS", OrderedDict())
+
+    def _fail_to_create_session(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("cached frames must not initialise a predictor session")
+
+    sam2_service._run_sam2_propagation(
+        source,
+        {1: [{"x": 0.5, "y": 0.5, "label": 1, "timeTicks": 0}]},
+        mask_id="mask_1",
+    )
+    monkeypatch.setattr(sam2_service, "_get_or_create_editor_session", _fail_to_create_session)
+
+    cached = sam2_service.get_cached_mask_frames(
+        source_id="source_1",
+        mask_id="mask_1",
+        ticks_per_second=96_000,
+        visible_source_start_ticks=0,
+        visible_source_duration_ticks=16_000,  # frames 0..3 @ 24fps
+    )
+
+    assert cached.frames.shape == (4, 2, 2)
+    assert np.all(cached.frames[1] == 255)  # Seeded conditioning frame.
+    assert np.all(cached.frames[2] == 255)  # Propagated frame.
+    assert np.all(cached.frames[0] == 0)
+
+    sam2_service.clear_editor_session("source_1", "mask_1")
+    assert not sam2_service._PROPAGATED_MASKS
+
+
+def test_propagated_mask_cache_evicts_to_stay_within_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "source.mp4"
+    source_path.write_bytes(b"video")
+    source = Sam2SourceMetadata(
+        source_id="source_1",
+        source_hash="source_1",
+        path=source_path,
+        width=64,
+        height=64,
+        fps=24.0,
+        frame_count=8,
+        duration_sec=8 / 24.0,
+    )
+    frames = np.zeros((source.frame_count, source.height, source.width), dtype=np.uint8)
+
+    monkeypatch.setattr(sam2_service, "_PROPAGATED_MASKS", OrderedDict())
+    monkeypatch.setattr(sam2_service, "PROPAGATED_MASK_CACHE_MAX_BYTES", 1)
+
+    for mask_id in ("mask_1", "mask_2"):
+        sam2_service._store_propagated_mask(
+            source_id=source.source_id,
+            mask_id=mask_id,
+            source=source,
+            frames=frames,
+            window=(0, source.frame_count - 1),
+        )
+
+    # The newest entry always survives, even when it alone exceeds the budget.
+    assert list(sam2_service._PROPAGATED_MASKS) == [
+        sam2_service._editor_session_key(source.source_id, "mask_2")
+    ]
+
+
 def test_run_sam2_propagation_seeds_conditioning_frames_and_runs_bidirectional(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -800,15 +974,15 @@ def test_run_sam2_propagation_maps_source_frames_for_windowed_sessions(
         duration_sec=6 / 24.0,
     )
 
-    session = types.SimpleNamespace(
-        inference_state={"state": "ok"},
-        frame_index_offset=2,
-        frame_count=3,
-    )
     monkeypatch.setattr(
         sam2_service,
-        "_get_or_create_editor_session",
-        lambda _source, _mask_id, frame_window=None: session,
+        "_initialize_inference_state",
+        lambda predictor, source, frame_window=None: (
+            {"state": "ok"},
+            source.path,
+            2,
+            3,
+        ),
     )
 
     points_by_frame: dict[int, list[Sam2Point]] = {

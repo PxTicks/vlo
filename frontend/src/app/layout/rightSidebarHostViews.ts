@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { hostViewRegistry } from "../../core/shell/viewRegistry";
 import { GenerationPanel } from "../../features/generation";
+import { ModelWorkPanel } from "../../features/modelWork";
 import {
   EffectsPanel,
   TransformationPanel,
@@ -30,6 +31,10 @@ function renderEffectsPanel() {
 
 function renderMaskPanel() {
   return createElement(MaskPanel);
+}
+
+function renderModelWorkPanel() {
+  return createElement(ModelWorkPanel);
 }
 
 export function declareRightSidebarHostViews(): void {
@@ -72,6 +77,16 @@ export function declareRightSidebarHostViews(): void {
     order: 40,
     when: clipSelected,
     component: renderEffectsPanel,
+  });
+  hostViewRegistry.registerHostView({
+    // What the machine is doing, in one place: local model work and ComfyUI
+    // generations share one GPU, so their queues are one queue.
+    id: "host.queue",
+    title: "Queue",
+    defaultRegion: "right-sidebar",
+    order: 15,
+    keepMounted: true,
+    component: renderModelWorkPanel,
   });
   hostViewRegistry.registerHostView({
     id: "host.mask",

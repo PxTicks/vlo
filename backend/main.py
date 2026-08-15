@@ -1,5 +1,8 @@
+import asyncio
+import logging
+
 import httpx
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,18 +48,71 @@ from services.model_registry import (
     get_available_sam_audio_models,
     is_comfyui_model_downloads_enabled,
 )
+from services.generation_delivery import generation_holding_service
+from services.model_work import get_model_work_coordinator
 from services.sam2 import sam2_service
 from services.sam_audio import sam_audio_service
 from services.beats import beats_service
 
 
+MODEL_WORK_RESTORE_RETRY_BASE_SECONDS = 5.0
+MODEL_WORK_RESTORE_RETRY_MAX_SECONDS = 60.0
+
+
+async def _try_restore_model_work_state() -> bool:
+    """Rebuild GPU occupancy from persisted deliveries, then open admission.
+
+    Returns whether admission was opened. **Failure must not open it.** If the
+    persisted in-flight prompts cannot be rebuilt, vlo does not know what
+    ComfyUI is still executing, and admitting local inference on that guess is
+    exactly the collision this system exists to prevent.
+    """
+    try:
+        await generation_holding_service.restore_in_flight_work()
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to restore in-flight generation deliveries; GPU admission "
+            "stays closed (503) until this succeeds"
+        )
+        return False
+    get_model_work_coordinator().mark_ready()
+    return True
+
+
+async def _retry_model_work_restore_forever() -> None:
+    """Keep retrying a failed restore so a transient fault is not permanent.
+
+    The rest of the editor works while this runs; only GPU work answers 503.
+    """
+    delay = MODEL_WORK_RESTORE_RETRY_BASE_SECONDS
+    while True:
+        await asyncio.sleep(delay)
+        if await _try_restore_model_work_state():
+            logging.getLogger(__name__).info(
+                "Model-work restore succeeded on retry; GPU admission is open"
+            )
+            return
+        delay = min(delay * 2, MODEL_WORK_RESTORE_RETRY_MAX_SECONDS)
+
+
 @asynccontextmanager
 async def application_lifespan(application: FastAPI):
     runtime = get_extension_services().backend_runtime
+    restore_retry: asyncio.Task[None] | None = None
     try:
+        # The model-work coordinator starts *not ready* and refuses admission
+        # (503) until in-flight ComfyUI prompts have been rebuilt as occupancy.
+        # Without this a restart could admit local inference alongside prompts
+        # ComfyUI never stopped executing.
+        if not await _try_restore_model_work_state():
+            restore_retry = asyncio.create_task(_retry_model_work_restore_forever())
         await runtime.start(application)
         yield
     finally:
+        if restore_retry is not None:
+            restore_retry.cancel()
+            with suppress(asyncio.CancelledError):
+                await restore_retry
         try:
             await sam_audio_service.shutdown_jobs()
         finally:

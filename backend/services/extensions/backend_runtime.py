@@ -38,6 +38,10 @@ from services.extensions.host_version import VLO_APPLICATION_VERSION
 
 DEFAULT_BACKEND_EXTENSION_ACTIVATION_TIMEOUT_SECONDS = 10.0
 
+#: Interim mitigation while extension jobs stay outside the model-work
+#: coordinator: bound how much work one extension can have running at once.
+EXTENSION_MAX_CONCURRENT_JOBS_PER_OWNER = 2
+
 BackendActivationStatus = Literal["active", "failed"]
 BackendRuntimeStatus = Literal[
     "not_declared",
@@ -373,7 +377,16 @@ class BackendExtensionRuntime:
         self._job_artifacts = job_artifacts or ExtensionJobArtifactStore(
             artifacts.root.parent / "job-artifacts"
         )
-        self._jobs = BackendJobManager(self._job_artifacts)
+        self._jobs = BackendJobManager(
+            self._job_artifacts,
+            # Extension jobs do not participate in the model-work coordinator
+            # yet (see docs/unified-model-queue-plan.md §10 step 8), so a
+            # GPU-using extension bypasses admission entirely. This caps
+            # pile-up per extension; it is explicitly *not* cross-tenant GPU
+            # exclusion, and does not make the plan's exclusion claim cover
+            # extensions.
+            max_concurrent_jobs_per_owner=EXTENSION_MAX_CONCURRENT_JOBS_PER_OWNER,
+        )
         self._activation_timeout_seconds = activation_timeout_seconds
         self._start_lock = asyncio.Lock()
         self._started = False

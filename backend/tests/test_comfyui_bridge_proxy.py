@@ -245,6 +245,11 @@ async def test_unregistered_prompt_client_is_not_adopted(
     async def no_registered_project(_client_id: str) -> None:
         return None
 
+    watched: list[str] = []
+
+    async def fake_watch(prompt_id: str) -> None:
+        watched.append(prompt_id)
+
     monkeypatch.setattr(comfyui_compat, "proxy_http_request", fake_proxy)
     monkeypatch.setattr(
         comfyui_compat.generation_holding_service,
@@ -256,6 +261,11 @@ async def test_unregistered_prompt_client_is_not_adopted(
         "get_iframe_client_project",
         no_registered_project,
     )
+    monkeypatch.setattr(
+        comfyui_compat.generation_holding_service,
+        "watch_unadopted_prompt",
+        fake_watch,
+    )
     app = FastAPI()
     app.include_router(comfyui_compat.compat_router)
     async with httpx.AsyncClient(
@@ -266,9 +276,13 @@ async def test_unregistered_prompt_client_is_not_adopted(
             "/comfyui-frame/api/prompt",
             json={"prompt": {}, "client_id": "other"},
         )
+    await asyncio.sleep(0)
 
     assert response.status_code == 200
     assert adopted == []
+    # The prompt still holds GPU occupancy, so it gets its own watchdog even
+    # though no delivery monitor will ever own it.
+    assert watched == ["prompt-1"]
 
 
 def test_iframe_html_decoration_leaves_non_html_responses_untouched() -> None:

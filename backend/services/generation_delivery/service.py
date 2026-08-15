@@ -18,6 +18,14 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from config import RUNTIME_ROOT
 from services.comfyui.comfyui_client import get_comfyui_url, get_http_client
+from services.model_work import get_model_work_coordinator
+from services.model_work.comfyui_admission import (
+    COMFY_OWNER,
+    mark_prompt_suspected_stale,
+    report_prompt_progress,
+    settle_prompt,
+)
+from services.model_work.locality import comfy_resource_key
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +56,13 @@ MONITOR_BACKSTOP_MISS_THRESHOLD = 3
 # leaves a /history entry, so a queued prompt that disappears without one was
 # removed — only the sub-second queue→history transition can briefly read as
 # "missing", which two consecutive misses rule out.
+# Consecutive unreachable reconcile passes before a prompt's retained GPU
+# occupancy is surfaced as suspected-stale in the Queue panel.
+MONITOR_UNREACHABLE_STALE_THRESHOLD = 3
+# Consecutive empty-queue polls before an ambiguous submission's reservation is
+# released. More than one, because a prompt can sit between "accepted" and
+# "queued" for a moment.
+AMBIGUOUS_SUBMISSION_IDLE_THRESHOLD = 2
 MONITOR_BACKSTOP_QUEUED_INTERVAL_SECONDS = 2.0
 MONITOR_BACKSTOP_QUEUED_MISS_THRESHOLD = 2
 # Backstop-only monitors (adopted in-editor generations) have no websocket to
@@ -395,6 +410,10 @@ class GenerationHoldingService:
         self._lock = asyncio.Lock()
         self._adoption_lock = asyncio.Lock()
         self._loaded = False
+        # True only between reading manifests and finishing monitor attachment.
+        # `_loaded` deliberately stays false for that window: a partially
+        # restored ledger must not be mistaken for a restored one.
+        self._restoring = False
         self._deliveries: dict[str, dict[str, Any]] = {}
         self._project_index: dict[str, set[str]] = {}
         self._project_consumers: dict[str, list[_ProjectConsumer]] = {}
@@ -407,24 +426,84 @@ class GenerationHoldingService:
         async with self._lock:
             if self._loaded:
                 return
+            if self._restoring:
+                # Re-entrant call from `start_monitor` during the attach phase
+                # below. The manifests are already in memory; recursing would
+                # re-read them and re-attach every monitor.
+                return
 
             await self._sync_persisted_deliveries_locked(
                 inflight_out=reattach_manifests,
             )
-            self._loaded = True
+            self._restoring = True
 
-        # Re-attach monitors for deliveries that were in flight when the
-        # backend went down. ComfyUI keeps executing (and its history keeps
-        # the outputs), so the reconcile backstop can settle anything that
-        # completed or vanished during the downtime.
-        for manifest in reattach_manifests:
-            await self.start_monitor(
-                project_id=manifest["project_id"],
-                delivery_id=manifest["delivery_id"],
-                prompt_id=manifest["prompt_id"],
-                client_id=manifest["client_id"],
-                monitor_mode=manifest.get("monitor_mode", "full"),
+        try:
+            # 1. Rebuild GPU occupancy *before* any monitor runs. ComfyUI kept
+            #    executing while the backend was down, so admitting local
+            #    inference now would put two tenants on one card.
+            self._restore_model_work_occupancy(reattach_manifests)
+
+            # 2. Re-attach monitors for deliveries that were in flight when the
+            #    backend went down. ComfyUI keeps executing (and its history
+            #    keeps the outputs), so the reconcile backstop can settle
+            #    anything that completed or vanished during the downtime.
+            for manifest in reattach_manifests:
+                await self.start_monitor(
+                    project_id=manifest["project_id"],
+                    delivery_id=manifest["delivery_id"],
+                    prompt_id=manifest["prompt_id"],
+                    client_id=manifest["client_id"],
+                    monitor_mode=manifest.get("monitor_mode", "full"),
+                )
+        except BaseException:
+            # Leave `_loaded` false so the next attempt genuinely retries. A
+            # half-restored state that reports itself loaded is what would let
+            # local inference start alongside a prompt ComfyUI never stopped.
+            raise
+        else:
+            async with self._lock:
+                self._loaded = True
+        finally:
+            self._restoring = False
+
+    def _restore_model_work_occupancy(self, manifests: list[dict[str, Any]]) -> None:
+        """Recreate one ComfyUI occupancy per in-flight prompt, keyed by prompt id.
+
+        Monitor release is idempotent and prompt-scoped, so a restore/live-event
+        race cannot release another prompt's occupancy.
+        """
+
+        if comfy_resource_key() is None:
+            return  # Remote ComfyUI: observe-only, nothing to exclude.
+
+        from services.model_work import PersistedOccupancy, get_model_work_coordinator
+
+        coordinator = get_model_work_coordinator()
+        for manifest in manifests:
+            prompt_id = manifest.get("prompt_id")
+            if not isinstance(prompt_id, str) or not prompt_id:
+                continue
+            adopted = manifest.get("monitor_mode") == "backstop"
+            coordinator.restore_prompt_token(
+                PersistedOccupancy(
+                    prompt_id=prompt_id,
+                    source="comfyui-iframe" if adopted else "comfyui-vlo",
+                    owner=COMFY_OWNER,
+                    label=manifest.get("workflow_name") or "ComfyUI generation",
+                    job_status="queued" if manifest.get("status") == "queued" else "running",
+                    submitted_at=(manifest.get("submitted_at") or 0) / 1000 or None,
+                )
             )
+
+    async def restore_in_flight_work(self) -> None:
+        """Startup entry point: load manifests and rebuild occupancy.
+
+        Called from the application lifespan before routers can serve, so the
+        coordinator is only marked ready once every persisted manifest has been
+        attached or reconciled.
+        """
+
+        await self._ensure_loaded()
 
     def _has_live_monitor(self, delivery_id: str) -> bool:
         task = self._monitor_tasks.get(delivery_id)
@@ -994,6 +1073,11 @@ class GenerationHoldingService:
             manifest["updated_at"] = _now_ms()
             await self._persist_manifest(manifest)
             serialized = self._serialize_delivery(manifest)
+        report_prompt_progress(
+            manifest.get("prompt_id") or "",
+            progress=None if progress is None else progress / 100,
+            message=current_node,
+        )
         await self._broadcast_payload(manifest["project_id"], {"type": "delivery_update", "data": {"delivery": serialized}})
 
     async def mark_error(self, delivery_id: str, error_message: str) -> None:
@@ -1009,6 +1093,7 @@ class GenerationHoldingService:
             manifest["updated_at"] = manifest["completed_at"]
             await self._persist_manifest(manifest)
             serialized = self._serialize_delivery(manifest)
+        settle_prompt(manifest.get("prompt_id") or "", "failed")
         await self._broadcast_payload(manifest["project_id"], {"type": "delivery_update", "data": {"delivery": serialized}})
 
     async def mark_completed(
@@ -1029,6 +1114,7 @@ class GenerationHoldingService:
             manifest["updated_at"] = manifest["completed_at"]
             await self._persist_manifest(manifest)
             serialized = self._serialize_delivery(manifest)
+        settle_prompt(manifest.get("prompt_id") or "", "succeeded")
         await self._broadcast_payload(manifest["project_id"], {"type": "delivery_update", "data": {"delivery": serialized}})
 
     async def record_delivery_nack(
@@ -1546,6 +1632,103 @@ class GenerationHoldingService:
                 await self._persist_manifest(manifest)
         await self.mark_completed(delivery_id, outputs)
 
+    async def probe_comfyui_activity(self) -> str:
+        """Whether ComfyUI has anything running or pending.
+
+        Returns ``"busy"``, ``"idle"``, or ``"unknown"`` when ComfyUI could not
+        be queried. Used to reconcile a submission whose prompt id is unknown:
+        an empty queue is authoritative that nothing of ours is executing,
+        whoever's prompt it was.
+        """
+
+        try:
+            client = await get_http_client()
+            response = await client.get("/queue")
+            response.raise_for_status()
+            queue = response.json()
+        except Exception:
+            return "unknown"
+        return "busy" if _parse_queue_prompt_ids(queue) else "idle"
+
+    async def watch_ambiguous_submission(self, lease: Any) -> None:
+        """Own the GPU reservation of a submission whose fate is unknown.
+
+        A transport failure on the proxy path means ComfyUI may or may not have
+        queued the prompt, and the iframe's prompt id is only known from a
+        response that never arrived. Releasing on that guess is what would put
+        two tenants on one card, so the reservation is held until ComfyUI
+        reports an *empty* queue — which is authoritative that nothing is
+        executing — or an operator releases it explicitly.
+        """
+
+        idle_polls = 0
+        unreachable = 0
+        try:
+            await asyncio.sleep(MONITOR_BACKSTOP_ONLY_INITIAL_DELAY_SECONDS)
+            while lease.active:
+                activity = await self.probe_comfyui_activity()
+                if activity == "idle":
+                    idle_polls += 1
+                    unreachable = 0
+                    if idle_polls >= AMBIGUOUS_SUBMISSION_IDLE_THRESHOLD:
+                        lease.release("failed")
+                        return
+                elif activity == "busy":
+                    idle_polls = 0
+                    unreachable = 0
+                else:
+                    unreachable += 1
+                    if unreachable >= MONITOR_UNREACHABLE_STALE_THRESHOLD:
+                        get_model_work_coordinator().mark_entry_suspected_stale(
+                            lease.entry_id,
+                            "vlo lost contact with ComfyUI while submitting this "
+                            "generation and cannot confirm whether it is running",
+                        )
+                await asyncio.sleep(MONITOR_BACKSTOP_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            # Shutdown. The process is going away, so the GPU goes with it.
+            raise
+
+    async def watch_unadopted_prompt(self, prompt_id: str) -> None:
+        """Reconcile a prompt that holds GPU occupancy but has no delivery.
+
+        The iframe proxy reserves before forwarding, so a prompt from a tab
+        whose client id was never registered still holds a lease that nothing
+        else would ever release. This is that prompt's watchdog: it settles only
+        on an authoritative terminal/missing verdict from ComfyUI, and retains
+        the occupancy as suspected-stale while ComfyUI is unreachable.
+        """
+
+        from services.model_work import get_model_work_coordinator
+
+        coordinator = get_model_work_coordinator()
+        misses = 0
+        unreachable = 0
+        await asyncio.sleep(MONITOR_BACKSTOP_ONLY_INITIAL_DELAY_SECONDS)
+        while coordinator.token_for_prompt(prompt_id) is not None:
+            verdict, error_message = await self._reconcile_prompt_state(prompt_id)
+            if verdict == "completed":
+                settle_prompt(prompt_id, "failed" if error_message else "succeeded")
+                return
+            if verdict == "pending":
+                misses = 0
+                unreachable = 0
+            elif verdict == "missing":
+                unreachable = 0
+                misses += 1
+                if misses >= MONITOR_BACKSTOP_MISS_THRESHOLD:
+                    settle_prompt(prompt_id, "failed")
+                    return
+            else:
+                unreachable += 1
+                if unreachable >= MONITOR_UNREACHABLE_STALE_THRESHOLD:
+                    mark_prompt_suspected_stale(
+                        prompt_id,
+                        "ComfyUI is unreachable; this generation's GPU claim "
+                        "cannot be confirmed",
+                    )
+            await asyncio.sleep(MONITOR_BACKSTOP_INTERVAL_SECONDS)
+
     async def _reconcile_prompt_state(
         self,
         prompt_id: str,
@@ -1804,6 +1987,7 @@ class GenerationHoldingService:
                 else MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS
             )
             misses = 0
+            unreachable = 0
             while not settled:
                 verdict, error_message = await self._reconcile_prompt_state(
                     prompt_id
@@ -1823,8 +2007,10 @@ class GenerationHoldingService:
                         return
                 elif verdict == "pending":
                     misses = 0
+                    unreachable = 0
                 elif verdict == "missing":
                     misses += 1
+                    unreachable = 0
                     threshold = (
                         MONITOR_BACKSTOP_QUEUED_MISS_THRESHOLD
                         if pre_running
@@ -1835,7 +2021,18 @@ class GenerationHoldingService:
                             "Prompt is no longer known to ComfyUI"
                         )
                         return
-                # "unknown": ComfyUI unreachable — neither settle nor count.
+                else:
+                    # "unknown": ComfyUI unreachable — neither settle nor count.
+                    # The GPU occupancy is *retained* and flagged instead, so a
+                    # network blip can never silently break exclusion; releasing
+                    # it needs the Queue panel's explicit unsafe-release action.
+                    unreachable += 1
+                    if unreachable >= MONITOR_UNREACHABLE_STALE_THRESHOLD:
+                        mark_prompt_suspected_stale(
+                            prompt_id,
+                            "ComfyUI is unreachable; this generation's GPU claim "
+                            "cannot be confirmed",
+                        )
                 await asyncio.sleep(
                     MONITOR_BACKSTOP_QUEUED_INTERVAL_SECONDS
                     if pre_running

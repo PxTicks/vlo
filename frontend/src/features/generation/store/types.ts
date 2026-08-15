@@ -238,6 +238,12 @@ export interface GenerationExecutionState {
     bypassNodeIds?: string[],
   ) => Promise<void>;
   processGenerationQueue: () => Promise<void>;
+  /**
+   * Lift the hold taken when the backend refused GPU admission, and resume.
+   * Driven by the model-work ledger, which is owned by the editor lifecycle
+   * rather than by this store.
+   */
+  resumeGenerationQueueAfterGpuRelease: () => void;
   clearGenerationQueue: () => void;
   interruptCurrentGeneration: () => Promise<void>;
   cancelGeneration: () => Promise<void>;

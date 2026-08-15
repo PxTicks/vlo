@@ -6,6 +6,10 @@ import {
   useGenerationStore,
 } from "../../features/generation";
 import { flushAllBrushMaskCommits } from "../../features/masks/api";
+import {
+  selectIsLocalModelWorkHoldingGpu,
+  useModelWorkStore,
+} from "../../features/modelWork";
 import { useProjectStore } from "../../features/project";
 import {
   flushPendingTimelinePersistence,
@@ -50,6 +54,31 @@ export function useEditorOrchestration(): void {
     return () => {
       unregisterTimelineFlush();
       unregisterBrushMaskFlush();
+    };
+  }, []);
+
+  useEffect(() => {
+    // The model-work ledger is operational state, not panel state: the
+    // generation queue's admission gate reads it whether or not the Queue panel
+    // is open, and a hidden panel must not take the socket down with it.
+    const { connect, disconnect } = useModelWorkStore.getState();
+    connect();
+
+    // Resume the generation queue the moment vlo's own models hand the GPU
+    // back. Owned here rather than inside the generation store so it is
+    // disposed with the editor instead of outliving it.
+    const unsubscribe = useModelWorkStore.subscribe((state, previous) => {
+      if (
+        selectIsLocalModelWorkHoldingGpu(previous) &&
+        !selectIsLocalModelWorkHoldingGpu(state)
+      ) {
+        useGenerationStore.getState().resumeGenerationQueueAfterGpuRelease();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      disconnect();
     };
   }, []);
 

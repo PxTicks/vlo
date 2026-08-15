@@ -14,6 +14,7 @@ from config import (
     BEATTHIS_DEVICE,
 )
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
+from services.model_work.local_inference import run_local_inference
 
 
 class BeatThisConfigError(RuntimeError):
@@ -307,8 +308,19 @@ def detect_beats(
     source = get_source_metadata(source_id)
     checkpoint = (model or BEATTHIS_DEFAULT_MODEL).strip() or BEATTHIS_DEFAULT_MODEL
 
-    predictor = _runtime.get_predictor(checkpoint=checkpoint, dbn=dbn)
-    beats_sec, downbeats_sec = _detect_beats_with_predictor(predictor, source.path)
+    def _run() -> tuple[list[float], list[float]]:
+        # Model load and inference both live under the lease: File2Beats is a
+        # single opaque call with no cooperative checkpoints, so the lease is the
+        # only thing standing between it and a concurrent ComfyUI sampler.
+        predictor = _runtime.get_predictor(checkpoint=checkpoint, dbn=dbn)
+        return _detect_beats_with_predictor(predictor, source.path)
+
+    beats_sec, downbeats_sec = run_local_inference(
+        _run,
+        source="beats",
+        label="Beat detection",
+        owner="vlo.beats",
+    )
 
     downbeat_set = {round(t, 6) for t in downbeats_sec}
     beats_payload: list[dict[str, Any]] = []

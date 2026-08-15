@@ -156,6 +156,9 @@ describe("RightSidebarPanel", () => {
 
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       "Generate",
+      // The unified model-work queue sits beside Generate: they are two views
+      // of the same GPU.
+      "Queue",
       "Adjust",
       "Transform",
       "Mask",

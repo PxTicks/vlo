@@ -7,6 +7,8 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from services.model_work.http_errors import http_exception_for
+from services.model_work.leases import ModelWorkError
 from services.sam2 import sam2_service
 from services.sam2.sam2_service import (
     Sam2ConfigError,
@@ -102,6 +104,8 @@ async def init_sam2_editor_session(request: Sam2EditorSessionRequest) -> dict[st
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ModelWorkError as exc:
+        raise http_exception_for(exc) from exc
     except Sam2SourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Sam2ConfigError as exc:
@@ -147,6 +151,8 @@ async def generate_sam2_mask_video(request: Sam2GenerateMaskRequest) -> Response
             request.visibleSourceStartTicks,
             request.visibleSourceDurationTicks,
         )
+    except ModelWorkError as exc:
+        raise http_exception_for(exc) from exc
     except Sam2SourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Sam2ConfigError as exc:
@@ -194,6 +200,8 @@ async def generate_sam2_mask_frame(request: Sam2GenerateFrameRequest) -> Respons
             request.timeTicks,
             request.maskId,
         )
+    except ModelWorkError as exc:
+        raise http_exception_for(exc) from exc
     except Sam2SourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Sam2ConfigError as exc:

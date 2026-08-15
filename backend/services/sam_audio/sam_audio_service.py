@@ -33,6 +33,8 @@ from services.jobs import (
     BackendJobValidationError,
     JobArtifactStore,
 )
+from services.model_work.leases import Lease
+from services.model_work.local_inference import local_gpu_lease
 from services.sam_audio.sam_audio_discovery import (
     discover_sam_audio_models,
     get_local_sam_audio_model_path,
@@ -1203,6 +1205,22 @@ def _finite_predicted_spans(
 
 
 def _run_separation_job(context: BackendJobContext, value: object) -> object:
+    # The lease is taken by the physical worker callable, not by the job record:
+    # a timeout marks the job terminal while this thread is still inside torch,
+    # and the GPU must stay excluded for that whole window.
+    with local_gpu_lease(
+        source="sam-audio",
+        label="Audio separation",
+        owner=SAM_AUDIO_JOB_OWNER,
+    ) as lease:
+        return _run_separation_job_under_lease(context, value, lease)
+
+
+def _run_separation_job_under_lease(
+    context: BackendJobContext,
+    value: object,
+    lease: Lease | None,
+) -> object:
     payload = cast(dict[str, object], value)
     source_id = cast(str, payload["sourceId"])
     start_ticks = cast(int, payload["startTicks"])
@@ -1211,16 +1229,24 @@ def _run_separation_job(context: BackendJobContext, value: object) -> object:
     timings = _LiveTimings(context)
 
     logger.info("SAM-Audio job %s started", context.identity.job_id)
-    context.report_progress(0.05, "Preparing source audio window")
+
+    def report_progress(progress: float, message: str) -> None:
+        if lease is not None:
+            if context.cancelled:
+                # Publicly cancelled, physically still resident: the ledger says
+                # `stopping` until this callable actually returns.
+                lease.request_stop(message=message)
+            else:
+                lease.report(progress=progress, message=message)
+        context.report_progress(progress, message)
+
+    report_progress(0.05, "Preparing source audio window")
     window_audio = _extract_source_window(
         source_id,
         start_ticks,
         duration_ticks,
     )
-    context.report_progress(0.20, "Starting SAM-Audio separation")
-
-    def report_progress(progress: float, message: str) -> None:
-        context.report_progress(progress, message)
+    report_progress(0.20, "Starting SAM-Audio separation")
 
     result = run_separation(
         window_audio=window_audio,

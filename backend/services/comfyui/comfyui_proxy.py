@@ -13,6 +13,16 @@ from services.comfyui.comfyui_client import get_comfyui_url, get_http_client
 PROXY_HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 logger = logging.getLogger(__name__)
 
+#: Marks a 502 this proxy synthesised because the upstream request never
+#: completed, as opposed to a 502 ComfyUI itself returned. Callers that must
+#: distinguish "definitely not delivered" from "unknown" — GPU admission does —
+#: read this instead of pattern-matching the body.
+PROXY_TRANSPORT_ERROR_HEADER = "x-vlo-proxy-error"
+
+
+def is_proxy_transport_failure(response: Response) -> bool:
+    return response.headers.get(PROXY_TRANSPORT_ERROR_HEADER) == "transport"
+
 
 def _normalize_upstream_path(path: str) -> str:
     stripped = path.lstrip("/")
@@ -81,6 +91,7 @@ async def proxy_http_request(request: Request, upstream_path: str) -> Response:
             status_code=502,
             content=f"ComfyUI proxy request failed: {exc.__class__.__name__}",
             media_type="text/plain",
+            headers={PROXY_TRANSPORT_ERROR_HEADER: "transport"},
         )
 
     if "/api/vlo-memory/" in target_url and resp.status_code >= 400:

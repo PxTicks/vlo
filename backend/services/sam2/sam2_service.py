@@ -5,6 +5,7 @@ import os
 import av
 import sys
 import threading
+from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from contextlib import contextmanager
@@ -20,6 +21,7 @@ from config import (
     SAM2_DEVICE,
 )
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
+from services.model_work.local_inference import run_local_inference
 from services.sam2.sam2_encoding import Sam2EncodingError, encode_binary_masks_to_red_mp4
 from services.sam2.sam2_discovery import discover_sam2_models, Sam2ModelInfo
 
@@ -516,6 +518,7 @@ _SOURCE_METADATA_CACHE = JsonSourceCache[Sam2SourceMetadata](
 
 _PREPARE_VIDEO_LOCK = threading.Lock()
 _EDITOR_SESSIONS_LOCK = threading.Lock()
+_PROPAGATED_MASKS_LOCK = threading.Lock()
 
 
 @dataclass
@@ -528,8 +531,88 @@ class _Sam2EditorSession:
     frame_count: int
 
 
+@dataclass(frozen=True)
+class _Sam2PropagatedMask:
+    """Binary propagation output for one (source, mask), stored bit-packed.
+
+    Batch propagation owns a throwaway inference state, so its result is
+    published here rather than being read back out of an editor session's
+    predictor internals. Masks are binary, so packbits gives an 8x reduction
+    for free and keeps a full-length 1080p propagation in the tens of MB.
+    """
+
+    packed_frames: np.ndarray
+    window_start_frame: int
+    window_end_frame: int
+    width: int
+    height: int
+
+
 _EDITOR_SESSIONS: dict[str, _Sam2EditorSession] = {}
+_PROPAGATED_MASKS: OrderedDict[str, _Sam2PropagatedMask] = OrderedDict()
+PROPAGATED_MASK_CACHE_MAX_BYTES = 256 * 1024 * 1024
 FRAME_INDEX_EPSILON = 1e-6
+
+
+def _store_propagated_mask(
+    *,
+    source_id: str,
+    mask_id: str,
+    source: Sam2SourceMetadata,
+    frames: np.ndarray,
+    window: tuple[int, int],
+) -> None:
+    start_frame, end_frame = window
+    entry = _Sam2PropagatedMask(
+        packed_frames=np.packbits(frames[start_frame : end_frame + 1] > 0, axis=-1),
+        window_start_frame=start_frame,
+        window_end_frame=end_frame,
+        width=source.width,
+        height=source.height,
+    )
+    key = _editor_session_key(source_id, mask_id)
+    with _PROPAGATED_MASKS_LOCK:
+        _PROPAGATED_MASKS.pop(key, None)
+        _PROPAGATED_MASKS[key] = entry
+        total_bytes = sum(item.packed_frames.nbytes for item in _PROPAGATED_MASKS.values())
+        # Evict least-recently-used entries, but never the one just published:
+        # a single oversized propagation is still the result the user asked for.
+        while total_bytes > PROPAGATED_MASK_CACHE_MAX_BYTES and len(_PROPAGATED_MASKS) > 1:
+            _, evicted = _PROPAGATED_MASKS.popitem(last=False)
+            total_bytes -= evicted.packed_frames.nbytes
+
+
+def _load_propagated_mask(
+    *,
+    source_id: str,
+    mask_id: str,
+    source: Sam2SourceMetadata,
+    window: tuple[int, int],
+) -> np.ndarray | None:
+    requested_start, requested_end = window
+    key = _editor_session_key(source_id, mask_id)
+    with _PROPAGATED_MASKS_LOCK:
+        entry = _PROPAGATED_MASKS.get(key)
+        if entry is None:
+            return None
+        covers_window = (
+            entry.window_start_frame <= requested_start
+            and requested_end <= entry.window_end_frame
+        )
+        if not covers_window or entry.width != source.width or entry.height != source.height:
+            return None
+        _PROPAGATED_MASKS.move_to_end(key)
+        packed = entry.packed_frames
+        offset = requested_start - entry.window_start_frame
+
+    slice_end = offset + (requested_end - requested_start) + 1
+    unpacked = np.unpackbits(packed[offset:slice_end], axis=-1, count=entry.width)
+    return np.where(unpacked > 0, 255, 0).astype(np.uint8)
+
+
+def _discard_propagated_mask(source_id: str, mask_id: str) -> None:
+    with _PROPAGATED_MASKS_LOCK:
+        _PROPAGATED_MASKS.pop(_editor_session_key(source_id, mask_id), None)
 
 
 def _sanitize_source_hash(source_hash: str) -> str:
@@ -1007,14 +1090,24 @@ def init_editor_session(
             visible_source_duration_ticks=visible_source_duration_ticks,
         )
 
-    predictor = _runtime.get_predictor()
-    session = _create_editor_session(
-        source,
-        normalized_mask_id,
-        frame_window=frame_window,
+    def _initialize() -> None:
+        # Session init loads the predictor and builds an inference state: GPU
+        # and I/O heavy, so it is admission-controlled like any other work.
+        predictor = _runtime.get_predictor()
+        session = _create_editor_session(
+            source,
+            normalized_mask_id,
+            frame_window=frame_window,
+        )
+        if hasattr(predictor, "reset_state"):
+            predictor.reset_state(session.inference_state)
+
+    run_local_inference(
+        _initialize,
+        source="sam2",
+        label="SAM2 session",
+        owner="vlo.sam2",
     )
-    if hasattr(predictor, "reset_state"):
-        predictor.reset_state(session.inference_state)
 
     payload = {
         "sourceId": source.source_id,
@@ -1035,9 +1128,11 @@ def clear_editor_session(source_id: str, mask_id: str) -> dict[str, Any]:
     if not normalized_mask_id:
         raise ValueError("mask_id is required")
 
-    key = _editor_session_key(_sanitize_source_hash(source_id), normalized_mask_id)
+    sanitized_source_id = _sanitize_source_hash(source_id)
+    key = _editor_session_key(sanitized_source_id, normalized_mask_id)
     with _EDITOR_SESSIONS_LOCK:
         removed = _EDITOR_SESSIONS.pop(key, None)
+    _discard_propagated_mask(sanitized_source_id, normalized_mask_id)
     return {
         "sourceId": _sanitize_source_hash(source_id),
         "maskId": normalized_mask_id,
@@ -1334,28 +1429,20 @@ def _run_sam2_propagation(
     frame_window: tuple[int, int] | None = None,
 ) -> np.ndarray:
     predictor = _runtime.get_predictor()
-    frame_index_offset = 0
-    predictor_frame_count = source.frame_count
-    if mask_id:
-        session = _get_or_create_editor_session(
-            source,
-            mask_id,
-            frame_window=frame_window,
-        )
-        inference_state = session.inference_state
-        frame_index_offset = session.frame_index_offset
-        predictor_frame_count = session.frame_count
-    else:
-        (
-            inference_state,
-            _,
-            frame_index_offset,
-            predictor_frame_count,
-        ) = _initialize_inference_state(
-            predictor=predictor,
-            source=source,
-            frame_window=frame_window,
-        )
+    # Batch propagation always builds its own inference state. Borrowing the
+    # editor session shared it with the foreground frame-preview path, which
+    # propagation then wiped via reset_state(). Propagated masks are published
+    # to a dedicated cache instead of being read back out of predictor internals.
+    (
+        inference_state,
+        _,
+        frame_index_offset,
+        predictor_frame_count,
+    ) = _initialize_inference_state(
+        predictor=predictor,
+        source=source,
+        frame_window=frame_window,
+    )
 
     if hasattr(predictor, "reset_state"):
         predictor.reset_state(inference_state)
@@ -1457,6 +1544,15 @@ def _run_sam2_propagation(
     if not seen_frames:
         raise Sam2RuntimeError(
             "SAM2 propagation returned no frames in the clip's visible source-time range"
+        )
+
+    if mask_id:
+        _store_propagated_mask(
+            source_id=source.source_id,
+            mask_id=mask_id,
+            source=source,
+            frames=frames,
+            window=(active_start_frame, active_end_frame),
         )
 
     return frames
@@ -1561,11 +1657,16 @@ def generate_mask_video(
         visible_source_start_ticks=visible_source_start_ticks,
         visible_source_duration_ticks=visible_source_duration_ticks,
     )
-    frames = _run_sam2_propagation(
-        source,
-        points_by_frame,
-        mask_id=mask_id,
-        frame_window=frame_window,
+    frames = run_local_inference(
+        lambda: _run_sam2_propagation(
+            source,
+            points_by_frame,
+            mask_id=mask_id,
+            frame_window=frame_window,
+        ),
+        source="sam2",
+        label="SAM2 mask video",
+        owner="vlo.sam2",
     )
     try:
         video_bytes = encode_binary_masks_to_red_mp4(frames, source.fps)
@@ -1582,6 +1683,31 @@ def generate_mask_video(
 
 
 def generate_single_frame_mask(
+    source_id: str,
+    points: list[Sam2Point],
+    ticks_per_second: float,
+    time_ticks: float,
+    mask_id: str | None = None,
+) -> Sam2GeneratedMaskFrame:
+    # Foreground button click, so admission fails fast: a clear "GPU busy"
+    # beats an indefinite spinner. The lease is still held until the predictor
+    # call physically returns, even if the client disconnects.
+    return run_local_inference(
+        lambda: _generate_single_frame_mask(
+            source_id,
+            points,
+            ticks_per_second,
+            time_ticks,
+            mask_id,
+        ),
+        source="sam2",
+        label="SAM2 frame preview",
+        owner="vlo.sam2",
+        fail_fast=True,
+    )
+
+
+def _generate_single_frame_mask(
     source_id: str,
     points: list[Sam2Point],
     ticks_per_second: float,
@@ -1707,14 +1833,43 @@ def get_cached_mask_frames(
         visible_source_start_ticks=visible_source_start_ticks,
         visible_source_duration_ticks=visible_source_duration_ticks,
     )
-    session = _get_or_create_editor_session(
-        source,
-        normalized_mask_id,
-        frame_window=frame_window,
+    start_frame, end_frame = frame_window
+
+    # 1. Prefer the last propagation for this mask. It is the flow the error
+    #    message below asks for, and it avoids initialising a predictor session
+    #    just to read masks back.
+    propagated = _load_propagated_mask(
+        source_id=source.source_id,
+        mask_id=normalized_mask_id,
+        source=source,
+        window=frame_window,
+    )
+    if propagated is not None:
+        return Sam2CachedMaskFrames(
+            frames=propagated,
+            width=source.width,
+            height=source.height,
+            fps=source.fps,
+            frame_window_start_frame=start_frame,
+            frame_window_end_frame=end_frame,
+        )
+
+    # 2. Otherwise fall back to whatever the editor session accumulated from
+    #    foreground frame previews. Creating that session drives the predictor,
+    #    so it needs the lease — unless this thread already holds it, which is
+    #    the normal case when SAM-Audio calls in from its own job runner.
+    session = run_local_inference(
+        lambda: _get_or_create_editor_session(
+            source,
+            normalized_mask_id,
+            frame_window=frame_window,
+        ),
+        source="sam2",
+        label="SAM2 session",
+        owner="vlo.sam2",
     )
 
     frames: list[np.ndarray] = []
-    start_frame, end_frame = frame_window
     for source_frame_index in range(start_frame, end_frame + 1):
         predictor_frame_index = _source_frame_to_predictor_frame(
             source_frame_index,

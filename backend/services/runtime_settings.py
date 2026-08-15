@@ -17,10 +17,15 @@ logger = logging.getLogger(__name__)
 WorkflowMode = Literal["default", "high_vram"]
 HighVramPromptStatus = Literal["accepted", "declined"]
 ComfyuiInstallDirPromptStatus = Literal["accepted", "declined"]
+ComfyuiGpuLocality = Literal["local", "remote", "auto"]
 
 WORKFLOW_MODES: set[str] = {"default", "high_vram"}
 HIGH_VRAM_PROMPT_STATUSES: set[str] = {"accepted", "declined"}
 COMFYUI_INSTALL_DIR_PROMPT_STATUSES: set[str] = {"accepted", "declined"}
+COMFYUI_GPU_LOCALITIES: set[str] = {"local", "remote", "auto"}
+
+DEFAULT_MODEL_WORK_LEASE_WIDTH = 1
+MAX_MODEL_WORK_LEASE_WIDTH = 8
 
 SETTINGS_PATH = RUNTIME_ROOT / "app_settings.json"
 _UNSET = object()
@@ -31,6 +36,8 @@ class RuntimeSettings(TypedDict, total=False):
     high_vram_prompt_status: HighVramPromptStatus | None
     comfyui_install_dir: str | None
     comfyui_install_dir_prompt_status: ComfyuiInstallDirPromptStatus | None
+    comfyui_gpu_locality: ComfyuiGpuLocality
+    model_work_lease_width: int
 
 
 def _env_workflow_mode() -> WorkflowMode:
@@ -89,6 +96,24 @@ def _normalize_install_dir(value: Any) -> str | None:
     return str(Path(normalized).expanduser())
 
 
+def _normalize_comfyui_gpu_locality(value: Any) -> ComfyuiGpuLocality:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in COMFYUI_GPU_LOCALITIES:
+            return normalized  # type: ignore[return-value]
+    return "auto"
+
+
+def _normalize_lease_width(value: Any) -> int:
+    try:
+        width = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_MODEL_WORK_LEASE_WIDTH
+    if width < 1 or width > MAX_MODEL_WORK_LEASE_WIDTH:
+        return DEFAULT_MODEL_WORK_LEASE_WIDTH
+    return width
+
+
 def get_runtime_settings() -> RuntimeSettings:
     raw = _read_raw_settings()
     workflow_mode = _normalize_workflow_mode(
@@ -112,6 +137,12 @@ def get_runtime_settings() -> RuntimeSettings:
             raw.get("comfyui_install_dir_prompt_status"),
             COMFYUI_INSTALL_DIR_PROMPT_STATUSES,
         ),  # type: ignore[typeddict-item]
+        "comfyui_gpu_locality": _normalize_comfyui_gpu_locality(
+            raw.get("comfyui_gpu_locality")
+        ),
+        "model_work_lease_width": _normalize_lease_width(
+            raw.get("model_work_lease_width", DEFAULT_MODEL_WORK_LEASE_WIDTH)
+        ),
     }
 
 
@@ -121,6 +152,8 @@ def update_runtime_settings(
     high_vram_prompt_status: HighVramPromptStatus | None = None,
     comfyui_install_dir: str | None | object = _UNSET,
     comfyui_install_dir_prompt_status: ComfyuiInstallDirPromptStatus | None = None,
+    comfyui_gpu_locality: ComfyuiGpuLocality | None = None,
+    model_work_lease_width: int | None = None,
 ) -> RuntimeSettings:
     raw = _read_raw_settings()
 
@@ -149,12 +182,33 @@ def update_runtime_settings(
             raise ValueError("Invalid ComfyUI install directory prompt status")
         raw["comfyui_install_dir_prompt_status"] = comfyui_install_dir_prompt_status
 
+    if comfyui_gpu_locality is not None:
+        if comfyui_gpu_locality not in COMFYUI_GPU_LOCALITIES:
+            raise ValueError("Invalid ComfyUI GPU locality")
+        raw["comfyui_gpu_locality"] = comfyui_gpu_locality
+
+    if model_work_lease_width is not None:
+        width = int(model_work_lease_width)
+        if width < 1 or width > MAX_MODEL_WORK_LEASE_WIDTH:
+            raise ValueError(
+                f"Model work lease width must be between 1 and {MAX_MODEL_WORK_LEASE_WIDTH}"
+            )
+        raw["model_work_lease_width"] = width
+
     _write_raw_settings(raw)
     return get_runtime_settings()
 
 
 def get_workflow_mode() -> WorkflowMode:
     return get_runtime_settings()["workflow_mode"]
+
+
+def get_comfyui_gpu_locality() -> ComfyuiGpuLocality:
+    return get_runtime_settings()["comfyui_gpu_locality"]
+
+
+def get_model_work_lease_width() -> int:
+    return get_runtime_settings()["model_work_lease_width"]
 
 
 def get_comfyui_install_dir() -> Path | None:

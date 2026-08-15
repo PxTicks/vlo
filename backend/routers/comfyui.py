@@ -27,6 +27,11 @@ from services.comfyui.comfyui_generate import (
     execute_generation,
     parse_widget_form_key,
 )
+from services.model_work.comfyui_admission import (
+    ComfyGpuBusyError,
+    ComfyPromptAdmission,
+)
+from services.model_work.leases import CoordinatorNotReadyError
 from services.comfyui.comfyui_proxy import (
     PROXY_HTTP_METHODS,
     compose_upstream_path,
@@ -1252,6 +1257,52 @@ async def resolve_workflow_rules(request: Request):
     )
 
 
+async def _abandon_delivery(
+    project_id: str,
+    delivery_id: str,
+    ambiguous_prompt_id: str | None,
+) -> None:
+    """Tear down a delivery whose submission failed.
+
+    When the outcome is *ambiguous* — the reservation existed, so ComfyUI may
+    have accepted the prompt before the failure — the monitor is left running
+    instead. It owns the prompt's GPU occupancy, and cancelling it would strand
+    that occupancy with nothing left to release it.
+    """
+
+    if ambiguous_prompt_id is not None:
+        return
+    await generation_holding_service.cancel_monitor(delivery_id)
+    await generation_holding_service.acknowledge_delivery(project_id, delivery_id)
+
+
+def _accepted_prompt_id(
+    result: comfyui_generate_service.GenerationResult,
+    requested_prompt_id: str | None,
+) -> str | None:
+    """The prompt id ComfyUI accepted, or ``None`` when it rejected the prompt.
+
+    A rejected prompt never enters ComfyUI's queue, so its GPU child must be
+    released immediately rather than transferred to a monitor token.
+    """
+
+    if result.status_code >= 400:
+        return None
+    if result.media_type.lower().startswith("application/json"):
+        try:
+            payload = json.loads(result.content.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, dict):
+            node_errors = payload.get("node_errors")
+            if isinstance(node_errors, dict) and node_errors:
+                return None
+            prompt_id = payload.get("prompt_id")
+            if isinstance(prompt_id, str) and prompt_id.strip():
+                return prompt_id.strip()
+    return requested_prompt_id or None
+
+
 @router.post("/generate")
 async def generate(request: Request):
     try:
@@ -1675,11 +1726,84 @@ async def generate(request: Request):
         wait_for_connection=True,
     )
 
+    # The frontend queue's readiness check is advisory; this reservation is the
+    # authoritative one, and it happens before the prompt reaches ComfyUI.
+    admission = ComfyPromptAdmission(
+        source="comfyui-vlo",
+        label=delivery_context.get("workflow_name") or "ComfyUI generation",
+        cancel_endpoint="/comfy/generations/cancel",
+    )
+
+    async def _reserve_gpu() -> None:
+        admission.reserve()
+
+    # Set once the reservation exists, i.e. once a failure could mean "ComfyUI
+    # may already have this prompt" rather than "it definitely never arrived".
+    ambiguous_prompt_id: str | None = None
+
     try:
-        result = await execute_generation(gen_input, client)
+        with admission:
+            try:
+                result = await execute_generation(gen_input, client, _reserve_gpu)
+            except BaseException:
+                if admission.holds_reservation and gen_input.prompt_id:
+                    # The reservation existed, so ComfyUI may already have the
+                    # prompt. Hand it to the monitor, which is already running
+                    # and owns reconciliation, rather than letting the context
+                    # manager release a prompt whose fate is unknown. Erring
+                    # towards retaining is deliberate: a false retain is
+                    # reconciled from /queue within seconds, a false release
+                    # puts two tenants on one card.
+                    try:
+                        admission.accept(gen_input.prompt_id)
+                        ambiguous_prompt_id = gen_input.prompt_id
+                    except Exception:
+                        logger.exception(
+                            "Failed to hand prompt %s to its monitor after a "
+                            "failed dispatch",
+                            gen_input.prompt_id,
+                        )
+                raise
+            accepted_prompt_id = _accepted_prompt_id(result, gen_input.prompt_id)
+            if accepted_prompt_id is not None:
+                # Transfer before any fallible persistence: from here the
+                # occupancy is owned by the prompt-scoped monitor token, and a
+                # later failure leaves it occupied and reconciling rather than
+                # returning the GPU to the pool while ComfyUI still samples.
+                admission.accept(accepted_prompt_id)
+    except ComfyGpuBusyError as exc:
+        await _abandon_delivery(project_id, delivery_id, ambiguous_prompt_id)
+        return error_response(
+            409,
+            "gpu_busy",
+            str(exc),
+            retryable=True,
+            details={"occupied_by": exc.occupied_by},
+        )
+    except CoordinatorNotReadyError as exc:
+        await _abandon_delivery(project_id, delivery_id, ambiguous_prompt_id)
+        return error_response(
+            503,
+            "model_work_not_ready",
+            str(exc),
+            retryable=True,
+        )
     except httpx.RequestError as exc:
-        await generation_holding_service.cancel_monitor(delivery_id)
-        await generation_holding_service.acknowledge_delivery(project_id, delivery_id)
+        await _abandon_delivery(project_id, delivery_id, ambiguous_prompt_id)
+        if ambiguous_prompt_id is not None:
+            # The connection failed *after* the reservation, so ComfyUI may
+            # already have queued the prompt. Releasing here would be a guess,
+            # and the wrong guess puts two tenants on one card. The delivery and
+            # its monitor stay alive; the reconcile backstop settles this from
+            # /queue and /history within a few seconds either way.
+            return error_response(
+                503,
+                "comfyui_unreachable",
+                "Lost contact with ComfyUI while submitting. If the generation "
+                "did start it will still be delivered.",
+                retryable=True,
+                details={"reason": str(exc), "delivery_id": delivery_id},
+            )
         return error_response(
             503,
             "comfyui_unreachable",
@@ -1688,8 +1812,7 @@ async def generate(request: Request):
             details={"reason": str(exc)},
         )
     except ValueError as exc:
-        await generation_holding_service.cancel_monitor(delivery_id)
-        await generation_holding_service.acknowledge_delivery(project_id, delivery_id)
+        await _abandon_delivery(project_id, delivery_id, ambiguous_prompt_id)
         details = None
         if isinstance(exc, WorkflowValidationError) and exc.failures:
             details = {"validation_failures": exc.failures}
@@ -1701,8 +1824,7 @@ async def generate(request: Request):
             details=details,
         )
     except RuntimeError as exc:
-        await generation_holding_service.cancel_monitor(delivery_id)
-        await generation_holding_service.acknowledge_delivery(project_id, delivery_id)
+        await _abandon_delivery(project_id, delivery_id, ambiguous_prompt_id)
         return error_response(
             500,
             "generation_failed",

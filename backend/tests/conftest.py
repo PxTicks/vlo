@@ -16,6 +16,25 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def model_work_coordinator():
+    """Give each test a fresh, ready model-work coordinator.
+
+    Production starts the coordinator *not ready* and opens admission from the
+    application lifespan once in-flight ComfyUI prompts have been restored. A
+    test that calls a service directly never runs that lifespan, and a lease
+    left held by one test would refuse admission in the next, so the singleton
+    is rebuilt per test. Tests that need the not-ready gate construct their own
+    ``ModelWorkCoordinator``.
+    """
+    from services import model_work
+
+    coordinator = model_work.reset_model_work_coordinator()
+    coordinator.mark_ready()
+    yield coordinator
+    model_work.reset_model_work_coordinator()
+
+
 @pytest.fixture
 def fast_delivery_timings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Collapse the generation-delivery monitor's wall-clock waits to ~0.

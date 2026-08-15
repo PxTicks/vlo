@@ -1,19 +1,26 @@
+import asyncio
 import json
 import logging
 from pathlib import Path
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Request, Response, WebSocket
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from services.comfyui.comfyui_proxy import (
     PROXY_HTTP_METHODS,
     compose_upstream_path,
+    is_proxy_transport_failure,
     proxy_http_request,
     proxy_websocket,
     upstream_path_from_raw_request,
 )
 from services.generation_delivery import generation_holding_service
+from services.model_work.comfyui_admission import (
+    ComfyGpuBusyError,
+    ComfyPromptAdmission,
+)
+from services.model_work.leases import CoordinatorNotReadyError
 
 compat_router = APIRouter(tags=["comfyui-compat"])
 logger = logging.getLogger(__name__)
@@ -32,6 +39,7 @@ _BRIDGE_BOOTSTRAP_TAG = (
 )
 _IFRAME_EXTENSION_LIST_PATHS = {"api/extensions", "extensions"}
 _PROMPT_UPSTREAM_PATHS = {"/prompt", "/api/prompt"}
+_PROMPT_WATCHDOGS: set[asyncio.Task[None]] = set()
 
 
 def _is_installed_vlo_bridge(extension_url: str) -> bool:
@@ -121,32 +129,29 @@ def _iframe_submission_metadata(payload: object) -> dict[str, object]:
 
 async def _adopt_accepted_iframe_prompt(
     request_payload: object,
-    response: Response,
-) -> None:
-    if not isinstance(request_payload, dict) or not 200 <= response.status_code < 300:
-        return
+    prompt_id: str,
+) -> bool:
+    """Create a delivery for an accepted iframe prompt.
+
+    Returns whether a delivery monitor now owns this prompt. When it does not,
+    the caller must give the prompt's GPU occupancy its own watchdog.
+    """
+
+    if not isinstance(request_payload, dict):
+        return False
     client_id = request_payload.get("client_id")
     if not isinstance(client_id, str) or not client_id.strip():
-        return
+        return False
     normalized_client_id = client_id.strip()
     project_id = await generation_holding_service.get_iframe_client_project(
         normalized_client_id
     )
     if project_id is None:
-        return
-    try:
-        response_payload = json.loads(bytes(response.body))
-    except (AttributeError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
-        return
-    if not isinstance(response_payload, dict):
-        return
-    prompt_id = response_payload.get("prompt_id")
-    if not isinstance(prompt_id, str) or not prompt_id.strip():
-        return
+        return False
     try:
         await generation_holding_service.adopt_delivery(
             project_id=project_id,
-            prompt_id=prompt_id.strip(),
+            prompt_id=prompt_id,
             client_id=normalized_client_id,
             generation_metadata=_iframe_submission_metadata(request_payload),
         )
@@ -157,6 +162,23 @@ async def _adopt_accepted_iframe_prompt(
             "Failed to create holding delivery for iframe prompt %s",
             prompt_id,
         )
+        return False
+    return True
+
+
+def _accepted_iframe_prompt_id(response: Response) -> str | None:
+    if not 200 <= response.status_code < 300:
+        return None
+    try:
+        payload = json.loads(bytes(response.body))
+    except (AttributeError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    prompt_id = payload.get("prompt_id")
+    if not isinstance(prompt_id, str) or not prompt_id.strip():
+        return None
+    return prompt_id.strip()
 
 
 async def _proxy_with_prompt_adoption(
@@ -173,10 +195,92 @@ async def _proxy_with_prompt_adoption(
             request_payload = await request.json()
         except (UnicodeDecodeError, json.JSONDecodeError):
             pass
-    response = await proxy_http_request(request, upstream_path)
-    if is_prompt_submission:
-        await _adopt_accepted_iframe_prompt(request_payload, response)
+
+    if not is_prompt_submission:
+        return await proxy_http_request(request, upstream_path)
+
+    # Fail-fast admission, taken *before* forwarding. Observe-only admission
+    # cannot exclude anything: by the time adoption runs, ComfyUI already has
+    # the prompt. Reservation applies to every prompt on this proxy path even
+    # when adoption metadata is unavailable.
+    admission = ComfyPromptAdmission(
+        source="comfyui-iframe",
+        label="ComfyUI (in-editor)",
+    )
+    try:
+        admission.reserve()
+    except ComfyGpuBusyError as exc:
+        return _gpu_busy_response(exc)
+    except CoordinatorNotReadyError as exc:
+        return _not_ready_response(exc)
+
+    ambiguous_lease = None
+    with admission:
+        response = await proxy_http_request(request, upstream_path)
+        prompt_id = _accepted_iframe_prompt_id(response)
+        if prompt_id is not None:
+            admission.accept(prompt_id)
+        elif is_proxy_transport_failure(response):
+            # The request never completed, so ComfyUI may or may not have queued
+            # the prompt — and the prompt id only ever arrives in the response
+            # that failed. Letting the context release here would be a guess.
+            ambiguous_lease = admission.detach()
+
+    if prompt_id is not None:
+        adopted = await _adopt_accepted_iframe_prompt(request_payload, prompt_id)
+        if not adopted:
+            # A prompt from an unregistered client still holds the GPU, and no
+            # delivery monitor exists to release it. Give it its own watchdog
+            # rather than leaking the occupancy or freeing it on a guess.
+            _spawn_watchdog(
+                generation_holding_service.watch_unadopted_prompt(prompt_id)
+            )
+    elif ambiguous_lease is not None:
+        _spawn_watchdog(
+            generation_holding_service.watch_ambiguous_submission(ambiguous_lease)
+        )
     return response
+
+
+def _spawn_watchdog(coroutine) -> None:
+    task = asyncio.create_task(coroutine)
+    # Without a strong reference the loop may garbage-collect the task and the
+    # occupancy would never be reconciled.
+    _PROMPT_WATCHDOGS.add(task)
+    task.add_done_callback(_PROMPT_WATCHDOGS.discard)
+
+
+def _gpu_busy_response(exc: ComfyGpuBusyError) -> Response:
+    # ComfyUI's frontend surfaces the `error` field of a non-2xx /prompt
+    # response as a toast, so the message has to be self-explanatory there.
+    occupant = f" ({exc.occupied_by})" if exc.occupied_by else ""
+    return JSONResponse(
+        status_code=429,
+        headers={"Retry-After": "5"},
+        content={
+            "error": {
+                "type": "gpu_busy",
+                "message": f"vlo is using the GPU{occupant}. Try again shortly.",
+                "details": "vlo serialises GPU work between its own models and ComfyUI.",
+            },
+            "node_errors": {},
+        },
+    )
+
+
+def _not_ready_response(exc: CoordinatorNotReadyError) -> Response:
+    return JSONResponse(
+        status_code=503,
+        headers={"Retry-After": "5"},
+        content={
+            "error": {
+                "type": "model_work_not_ready",
+                "message": "vlo is still restoring in-flight generations. Try again shortly.",
+                "details": str(exc),
+            },
+            "node_errors": {},
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

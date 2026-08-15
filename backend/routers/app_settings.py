@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 
 from api_errors import error_response
@@ -16,6 +18,12 @@ from services.comfyui.local_runtime import (
     pick_directory,
     verify_comfyui_install,
 )
+from services.model_work import (
+    LEDGER_GAP,
+    LOCAL_GPU_RESOURCE,
+    get_model_work_coordinator,
+    is_comfyui_gpu_local,
+)
 from services.runtime_settings import (
     get_runtime_settings,
     should_prompt_for_comfyui_install_dir,
@@ -28,6 +36,8 @@ from services.menu_layouts import (
     get_menu_layout,
     put_menu_layout,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/app", tags=["app-settings"])
 
@@ -58,6 +68,14 @@ def build_public_settings_payload(
             "comfyuiInstallDirPromptStatus": settings.get(
                 "comfyui_install_dir_prompt_status",
             ),
+            # Whether ComfyUI shares this machine's GPU. "auto" keeps the
+            # hostname inference, which misclassifies LAN hosts, containers,
+            # WSL bridges, and tunnels — hence the explicit override.
+            "comfyuiGpuLocality": settings.get("comfyui_gpu_locality", "auto"),
+            "comfyuiGpuLocalityResolved": "local" if is_comfyui_gpu_local() else "remote",
+            # Expert override; unsafe without per-job VRAM estimates, because
+            # total VRAM cannot establish that two arbitrary workloads fit.
+            "modelWorkLeaseWidth": settings.get("model_work_lease_width", 1),
         },
         "hardware": {
             "vram": {
@@ -120,7 +138,18 @@ async def patch_app_settings(request: Request):
         "workflow_mode": workflow_mode,
         "high_vram_prompt_status": high_vram_prompt_status,
         "comfyui_install_dir_prompt_status": comfyui_install_dir_prompt_status,
+        "comfyui_gpu_locality": _optional_string(body, "comfyuiGpuLocality"),
     }
+    if "modelWorkLeaseWidth" in body:
+        raw_width = body.get("modelWorkLeaseWidth")
+        if not isinstance(raw_width, int) or isinstance(raw_width, bool):
+            return error_response(
+                400,
+                "invalid_model_work_lease_width",
+                "Model work lease width must be an integer",
+                retryable=False,
+            )
+        update_kwargs["model_work_lease_width"] = raw_width
     if "comfyuiInstallDir" in body:
         raw_dir = body.get("comfyuiInstallDir")
         if raw_dir is not None and not isinstance(raw_dir, str):
@@ -147,7 +176,7 @@ async def patch_app_settings(request: Request):
         update_kwargs["comfyui_install_dir"] = raw_dir
 
     try:
-        update_runtime_settings(**update_kwargs)  # type: ignore[arg-type]
+        updated = update_runtime_settings(**update_kwargs)  # type: ignore[arg-type]
     except ValueError as exc:
         return error_response(
             400,
@@ -156,7 +185,81 @@ async def patch_app_settings(request: Request):
             retryable=False,
         )
 
+    # The live coordinator must follow the persisted width, or the setting
+    # would only take effect after a restart.
+    get_model_work_coordinator().set_resource_width(
+        LOCAL_GPU_RESOURCE,
+        updated["model_work_lease_width"],
+    )
+
     return build_public_settings_payload()
+
+
+@router.get("/model-work")
+async def get_model_work_ledger():
+    """Full ledger snapshot. GPU activity is machine-global, so this is not
+    scoped to a project the way generation delivery is."""
+    return get_model_work_coordinator().snapshot().to_payload()
+
+
+@router.post("/model-work/{entry_id}/unsafe-release")
+async def unsafe_release_model_work(entry_id: str):
+    """Operator escape hatch for an occupancy ComfyUI can no longer confirm.
+
+    Deliberately explicit: a wall-clock timeout must never release a lease on
+    its own, because the work it was protecting may still be running.
+    """
+    released = get_model_work_coordinator().unsafe_release(entry_id)
+    if not released:
+        return error_response(
+            404,
+            "model_work_entry_not_found",
+            "No active model-work entry with that id",
+            retryable=False,
+        )
+    return {"released": True}
+
+
+@router.websocket("/model-work/ws")
+async def model_work_events(websocket: WebSocket):
+    await websocket.accept()
+    stream = get_model_work_coordinator().open_stream()
+
+    async def _push_events() -> None:
+        # The snapshot and the subscription were captured under one coordinator
+        # lock, so no event can fall between them. Every delta carries a
+        # monotonic revision; a client that sees a gap re-snapshots.
+        await websocket.send_json({"type": "snapshot", "data": stream.snapshot.to_payload()})
+        async for event in stream.events():
+            if event is LEDGER_GAP:
+                # This client fell far enough behind that its backlog was
+                # dropped. Re-snapshot rather than send deltas it cannot apply.
+                await websocket.send_json(
+                    {"type": "snapshot", "data": stream.resync().to_payload()}
+                )
+                continue
+            await websocket.send_json({"type": "event", "data": event.to_payload()})
+
+    async def _await_disconnect() -> None:
+        while True:
+            await websocket.receive()
+
+    sender = asyncio.create_task(_push_events())
+    receiver = asyncio.create_task(_await_disconnect())
+    try:
+        done, pending = await asyncio.wait(
+            {sender, receiver},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        for task in done:
+            exc = task.exception()
+            if exc is not None and not isinstance(exc, WebSocketDisconnect):
+                logger.warning("Model work event stream ended: %s", exc)
+    finally:
+        stream.close()
 
 
 async def _read_optional_json_object(request: Request) -> dict[str, Any]:

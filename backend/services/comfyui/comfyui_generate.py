@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -361,6 +362,7 @@ run_backend_postprocess = finalize_backend_response
 async def execute_generation(
     gen_input: GenerationInput,
     client: httpx.AsyncClient,
+    before_dispatch: Callable[[], Awaitable[None]] | None = None,
 ) -> GenerationResult:
     """Run the canonical backend phases for generation.
 
@@ -368,6 +370,11 @@ async def execute_generation(
     1. backend preprocess
     2. dispatch to ComfyUI
     3. backend postprocess
+
+    ``before_dispatch`` runs between preprocess and dispatch. GPU admission
+    belongs there: it must be atomic with respect to forwarding the prompt, but
+    holding the card through media upload and cropping would block local
+    inference for work that has not started sampling yet.
     """
     ctx = build_backend_context(gen_input, client)
     await run_backend_preprocess(ctx)
@@ -376,6 +383,9 @@ async def execute_generation(
     from services.gen_pipeline.processors.utils.prompt_logging import maybe_log_prompt
 
     maybe_log_prompt(ctx.workflow, label="pre_resolved")
+
+    if before_dispatch is not None:
+        await before_dispatch()
 
     await dispatch_to_comfyui(ctx)
     return finalize_backend_response(ctx)

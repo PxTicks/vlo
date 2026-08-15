@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -19,6 +20,7 @@ from services.extensions import (
     ExtensionManager,
 )
 from services.extensions.manifest import EXTENSION_SDK_VERSION
+from services.jobs import BackendJobDefinition
 
 
 def _create_runtime(
@@ -534,6 +536,67 @@ def test_changed_approved_package_is_not_activated(tmp_path: Path):
     changed = manager.scan()[0]
     assert changed.status == "changed"
     assert runtime.describe(changed).status == "inactive"
+
+
+def test_extension_jobs_are_capped_per_owner(tmp_path: Path) -> None:
+    """Interim mitigation while extension jobs stay outside the model-work
+    coordinator (docs/unified-model-queue-plan.md §10 step 8).
+
+    It bounds pile-up per extension. It is explicitly *not* cross-tenant GPU
+    exclusion — a GPU-using extension still bypasses admission entirely — so the
+    plan's exclusion claim does not cover extensions.
+    """
+    runtime, _manager, _artifacts, _root = _create_runtime(tmp_path)
+    cap = backend_runtime_module.EXTENSION_MAX_CONCURRENT_JOBS_PER_OWNER
+    running = threading.Semaphore(0)
+    release = threading.Event()
+    concurrent = 0
+    peak = 0
+    peak_lock = threading.Lock()
+
+    def run(_context, value: object) -> object:
+        nonlocal concurrent, peak
+        with peak_lock:
+            concurrent += 1
+            peak = max(peak, concurrent)
+        running.release()
+        release.wait(timeout=5)
+        with peak_lock:
+            concurrent -= 1
+        return {"value": value}
+
+    async def scenario() -> None:
+        runtime.jobs.register_extension(
+            "example.capped",
+            "1.0.0",
+            (BackendJobDefinition(id="work", label="Work", run=run),),
+        )
+        submitted = [
+            await runtime.jobs.submit("example.capped", "work", index)
+            for index in range(cap + 1)
+        ]
+
+        for _ in range(cap):
+            # Awaited, not blocking: the job manager schedules on this loop.
+            assert await asyncio.to_thread(running.acquire, True, 5)
+
+        # The extra job is held back rather than piling onto the same hardware.
+        assert peak == cap
+        statuses = [
+            runtime.jobs.get("example.capped", job.identity.job_id).status
+            for job in submitted
+        ]
+        assert statuses.count("queued") == 1
+
+        release.set()
+        await runtime.jobs.shutdown_all()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+
+    assert peak == cap
 
 
 def test_backend_artifact_store_must_live_outside_extension_tree(tmp_path: Path):

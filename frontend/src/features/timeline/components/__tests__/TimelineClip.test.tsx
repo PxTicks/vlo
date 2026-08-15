@@ -645,22 +645,21 @@ describe("TimelineClip Visual Geometry", () => {
 
     expect(extractionState.mockOpenSamAudioExtractDialog).toHaveBeenCalledWith(
       mockClip.id,
+      { initialView: "choose" },
     );
   });
 
-  it("does not show extract audio for audio clips", () => {
-    render(
-      <TimelineClipItem
-        clip={{ ...mockClip, type: "audio" }}
-        isOverlay={false}
-      />,
-    );
+  it("opens extract audio straight on the SAM-Audio view for audio clips", () => {
+    const audioClip: TimelineClipType = { ...mockClip, type: "audio" };
+    render(<TimelineClipItem clip={audioClip} isOverlay={false} />);
 
     fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Extract Audio" }));
 
-    expect(
-      screen.queryByRole("menuitem", { name: "Extract Audio" }),
-    ).not.toBeInTheDocument();
+    expect(extractionState.mockOpenSamAudioExtractDialog).toHaveBeenCalledWith(
+      audioClip.id,
+      { initialView: "configure" },
+    );
   });
 
   it("does not show extract audio for clips without audio-capable media", () => {

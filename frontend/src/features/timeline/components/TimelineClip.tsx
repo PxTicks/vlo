@@ -275,11 +275,14 @@ function TimelineClipComponent({
   const clipAsset = useAsset(
     isAssetBackedClip(timelineClip) ? timelineClip.assetId : undefined,
   );
+  // Audio-only clips have no "extract all" step to offer — the clip already is
+  // its audio — so they go straight to SAM-Audio separation.
+  const isAudioOnlyClip = timelineClip?.type === "audio";
   const canExtractAudio =
     timelineClip !== null &&
     track !== undefined &&
-    timelineClip.type === "video" &&
-    clipAsset?.hasAudio !== false;
+    (isAudioOnlyClip ||
+      (timelineClip.type === "video" && clipAsset?.hasAudio !== false));
   const canReverseClip =
     timelineClip !== null &&
     (timelineClip.type === "video" || timelineClip.type === "audio") &&
@@ -514,14 +517,16 @@ function TimelineClipComponent({
   const handleExtractAudio = () => {
     if (
       timelineClip === null ||
-      timelineClip.type !== "video"
+      (timelineClip.type !== "video" && timelineClip.type !== "audio")
     ) {
       closeContextMenu();
       return;
     }
 
     closeContextMenu();
-    useSamAudioExtractDialogStore.getState().openForClip(timelineClip.id);
+    useSamAudioExtractDialogStore.getState().openForClip(timelineClip.id, {
+      initialView: timelineClip.type === "audio" ? "configure" : "choose",
+    });
   };
 
   const handleOpenComposite = (event: React.MouseEvent<HTMLElement>) => {

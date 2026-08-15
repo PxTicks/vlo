@@ -10,6 +10,15 @@ export interface SamAudioExtractRange {
   endTick: number;
 }
 
+export interface SamAudioExtractOpenOptions {
+  /**
+   * Entry view for the dialog. Callers with nothing to choose between — an
+   * audio-only clip, where "extract all" would just copy the clip — open
+   * straight on "configure".
+   */
+  initialView?: Extract<SamAudioExtractDialogView, "choose" | "configure">;
+}
+
 export interface SamAudioExtractDialogState {
   open: boolean;
   view: SamAudioExtractDialogView;
@@ -21,7 +30,7 @@ export interface SamAudioExtractDialogState {
   progress: number;
   activeJobId: string | null;
   cancelRequested: boolean;
-  openForClip: (clipId: string) => void;
+  openForClip: (clipId: string, options?: SamAudioExtractOpenOptions) => void;
   reopenConfigure: () => void;
   hideForTimelineSelection: () => void;
   close: () => void;
@@ -47,10 +56,10 @@ export const useSamAudioExtractDialogStore =
     progress: 0,
     activeJobId: null,
     cancelRequested: false,
-    openForClip: (clipId) =>
+    openForClip: (clipId, options) =>
       set({
         open: true,
-        view: "choose",
+        view: options?.initialView ?? "choose",
         clipId,
         promptText: "",
         range: null,

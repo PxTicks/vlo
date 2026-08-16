@@ -747,17 +747,33 @@ describe("hosted iframe bridge runtime", () => {
     expect(harness.liveNode.widgets[0].value).toBe("live.png");
   });
 
-  it("fails closed when a graphToPrompt wrapper drops the temporary graph argument", async () => {
+  it("supports a Manager-style wrapper that drops the temporary graph argument", async () => {
     const harness = createHarness();
-    harness.app.graphToPrompt.mockImplementationOnce(async () => ({
-      output: {
-        "node-a": {
-          class_type: "LoadImage",
-          inputs: { image: "live.png" },
-        },
-      },
-      workflow: { extra: {} },
-    }));
+    const liveRootGraph = harness.app.rootGraph;
+    harness.app.graphToPrompt.mockImplementationOnce(async () => {
+      const graph = harness.app.rootGraph as unknown as {
+        extra: Record<string, unknown>;
+        getNodeById: (id: string) =>
+          | {
+              mode: number;
+              widgets: Array<{ value: string | undefined }>;
+            }
+          | null;
+      };
+      const node = graph.getNodeById("node-a");
+      return {
+        output:
+          node?.mode === 4
+            ? {}
+            : {
+                "node-a": {
+                  class_type: "LoadImage",
+                  inputs: { image: node?.widgets[0].value },
+                },
+              },
+        workflow: { extra: { ...graph.extra } },
+      };
+    });
     startVloBridge({
       app: harness.app,
       api: harness.api,
@@ -791,6 +807,61 @@ describe("hosted iframe bridge runtime", () => {
         (message) => message.requestId === "resolve-ignored-graph",
       ),
     ).toMatchObject({
+      ok: true,
+      result: { output: {} },
+    });
+    expect(harness.app.rootGraph).toBe(liveRootGraph);
+    expect(harness.liveNode.mode).toBe(0);
+  });
+
+  it("fails closed when a wrapper reads rootGraph after an asynchronous boundary", async () => {
+    const harness = createHarness();
+    const liveRootGraph = harness.app.rootGraph;
+    harness.app.graphToPrompt.mockImplementationOnce(async () => {
+      await Promise.resolve();
+      return {
+        output: {
+          "node-a": {
+            class_type: "LoadImage",
+            inputs: { image: "live.png" },
+          },
+        },
+        workflow: { extra: {} },
+      };
+    });
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "read-delayed-graph", "read-active");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "read-delayed-graph"),
+      ).toBe(true),
+    );
+    const snapshot = harness.posted.find(
+      (message) => message.requestId === "read-delayed-graph",
+    )?.result as Record<string, unknown>;
+
+    request(harness, "resolve-delayed-graph", "resolve-prompt", {
+      ...snapshot,
+      bypassNodeIds: ["node-a"],
+      widgetOverrides: [],
+    });
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some(
+          (message) => message.requestId === "resolve-delayed-graph",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find(
+        (message) => message.requestId === "resolve-delayed-graph",
+      ),
+    ).toMatchObject({
       ok: false,
       error: {
         code: "graph-argument-ignored",
@@ -799,7 +870,65 @@ describe("hosted iframe bridge runtime", () => {
         },
       },
     });
+    expect(harness.app.rootGraph).toBe(liveRootGraph);
     expect(harness.liveNode.mode).toBe(0);
+  });
+
+  it("restores rootGraph before an asynchronous graphToPrompt rejection", async () => {
+    const harness = createHarness();
+    const liveRootGraph = harness.app.rootGraph;
+    let rejectResolution!: (error: Error) => void;
+    harness.app.graphToPrompt.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          expect(harness.app.rootGraph).not.toBe(liveRootGraph);
+          rejectResolution = reject;
+        }),
+    );
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "read-rejected-graph", "read-active");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "read-rejected-graph"),
+      ).toBe(true),
+    );
+    const snapshot = harness.posted.find(
+      (message) => message.requestId === "read-rejected-graph",
+    )?.result as Record<string, unknown>;
+
+    request(harness, "resolve-rejected-graph", "resolve-prompt", {
+      ...snapshot,
+      bypassNodeIds: [],
+      widgetOverrides: [],
+    });
+    await vi.waitFor(() => expect(rejectResolution).toBeTypeOf("function"));
+    expect(harness.app.rootGraph).toBe(liveRootGraph);
+    rejectResolution(new Error("wrapper failed"));
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some(
+          (message) => message.requestId === "resolve-rejected-graph",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find(
+        (message) => message.requestId === "resolve-rejected-graph",
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        code: "graph-to-prompt-failed",
+        details: { reason: "wrapper failed" },
+      },
+    });
+    expect(harness.app.rootGraph).toBe(liveRootGraph);
   });
 
   it("fails closed when graphToPrompt returns an applied bypass node", async () => {

@@ -391,6 +391,37 @@ export function startVloBridge({ app, api, windowObject = window }) {
     return workflowRevisions.get(workflow) ?? 0;
   }
 
+  function invokeGraphToPrompt(tempGraph) {
+    const hadOwnRootGraph = Object.prototype.hasOwnProperty.call(app, "rootGraph");
+    const previousRootGraph = app.rootGraph;
+    let installedTemporaryRoot = false;
+
+    // ComfyUI-Manager versions with the broken wrapper call the original
+    // graphToPrompt synchronously but omit its argument. Exposing the clone as
+    // app.rootGraph for this call stack lets the original default parameter
+    // select it too. Restore before awaiting so UI events cannot observe the
+    // temporary root during asynchronous extension post-processing.
+    try {
+      app.rootGraph = tempGraph;
+      installedTemporaryRoot = app.rootGraph === tempGraph;
+    } catch {
+      // A future ComfyUI may make rootGraph read-only. Correct wrappers still
+      // receive tempGraph explicitly; the nonce check will reject a broken one.
+    }
+
+    try {
+      return app.graphToPrompt(tempGraph);
+    } finally {
+      if (installedTemporaryRoot && app.rootGraph === tempGraph) {
+        if (hadOwnRootGraph) {
+          app.rootGraph = previousRootGraph;
+        } else {
+          delete app.rootGraph;
+        }
+      }
+    }
+  }
+
   function incrementActiveRevision() {
     const active = getActiveWorkflow();
     if (!active) return;
@@ -640,7 +671,8 @@ export function startVloBridge({ app, api, windowObject = window }) {
 
     let resolved;
     try {
-      resolved = await app.graphToPrompt(tempGraph);
+      const pendingResolution = invokeGraphToPrompt(tempGraph);
+      resolved = await pendingResolution;
     } catch (error) {
       throw new BridgeRuntimeError(
         "graph-to-prompt-failed",

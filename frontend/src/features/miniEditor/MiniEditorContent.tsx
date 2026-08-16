@@ -213,7 +213,9 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
           src={source?.sourceUrl}
           alt={title}
           style={{
-            maxHeight: fillStage ? "100%" : 480,
+            // Must not exceed the container's own cap: the stage clips
+            // overflow, so a taller image loses its top and bottom bands.
+            maxHeight: fillStage ? "100%" : 360,
             maxWidth: "100%",
             objectFit: "contain",
           }}

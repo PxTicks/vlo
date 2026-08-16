@@ -2,32 +2,11 @@
   "version": 2,
   "nodes": [
     {
-      "id": "image",
-      "kind": "category",
-      "label": "Image",
-      "parent_id": null,
-      "order": 0
-    },
-    {
-      "id": "image.generate",
-      "kind": "folder",
-      "label": "Generate",
-      "parent_id": "image",
-      "order": 0
-    },
-    {
-      "id": "image.enhance",
-      "kind": "folder",
-      "label": "Enhance",
-      "parent_id": "image",
-      "order": 1
-    },
-    {
       "id": "video",
       "kind": "category",
       "label": "Video",
       "parent_id": null,
-      "order": 1
+      "order": 0
     },
     {
       "id": "video.generate",
@@ -56,19 +35,30 @@
       "label": "Enhance",
       "parent_id": "video",
       "order": 3
+    },
+    {
+      "id": "image",
+      "kind": "category",
+      "label": "Image",
+      "parent_id": null,
+      "order": 1
+    },
+    {
+      "id": "image.generate",
+      "kind": "folder",
+      "label": "Generate",
+      "parent_id": "image",
+      "order": 0
+    },
+    {
+      "id": "image.enhance",
+      "kind": "folder",
+      "label": "Enhance",
+      "parent_id": "image",
+      "order": 1
     }
   ],
   "leaf_placements": [
-    {
-      "workflow_id": "vlo_klein_multi.json",
-      "parent_id": "image.generate",
-      "order": 0
-    },
-    {
-      "workflow_id": "vlo_SeedVR2_image.json",
-      "parent_id": "image.enhance",
-      "order": 0
-    },
     {
       "workflow_id": "vlo_ltx2_3.json",
       "parent_id": "video.generate",
@@ -123,6 +113,16 @@
       "workflow_id": "vlo_gimm_vfi.json",
       "parent_id": "video.enhance",
       "order": 1
+    },
+    {
+      "workflow_id": "vlo_klein_multi.json",
+      "parent_id": "image.generate",
+      "order": 0
+    },
+    {
+      "workflow_id": "vlo_SeedVR2_image.json",
+      "parent_id": "image.enhance",
+      "order": 0
     }
   ]
 }

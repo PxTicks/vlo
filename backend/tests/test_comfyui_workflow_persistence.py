@@ -269,14 +269,18 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
     tree = comfyui._parse_workflow_menu_tree(comfyui.WORKFLOW_MENU_CONFIG_PATH)
 
     assert [(node["id"], node["kind"], node["label"]) for node in tree["nodes"]] == [
-        ("image", "category", "Image"),
-        ("image.generate", "folder", "Generate"),
-        ("image.enhance", "folder", "Enhance"),
         ("video", "category", "Video"),
         ("video.generate", "folder", "Generate"),
         ("video.edit", "folder", "Edit"),
         ("video.control", "folder", "Control"),
         ("video.enhance", "folder", "Enhance"),
+        ("image", "category", "Image"),
+        ("image.generate", "folder", "Generate"),
+        ("image.enhance", "folder", "Enhance"),
+    ]
+    assert [(node["id"], node["order"]) for node in tree["nodes"] if node["parentId"] is None] == [
+        ("video", 0),
+        ("image", 1),
     ]
     assert {
         placement["leafId"]: placement["parentId"]

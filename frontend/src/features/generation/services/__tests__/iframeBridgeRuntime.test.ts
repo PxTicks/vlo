@@ -747,9 +747,19 @@ describe("hosted iframe bridge runtime", () => {
     expect(harness.liveNode.widgets[0].value).toBe("live.png");
   });
 
-  it("supports a Manager-style wrapper that drops the temporary graph argument", async () => {
+  it("supports a Manager-style wrapper with ComfyUI's getter-only rootGraph", async () => {
     const harness = createHarness();
     const liveRootGraph = harness.app.rootGraph;
+    const appPrototype = Object.create(Object.getPrototypeOf(harness.app), {
+      rootGraph: {
+        configurable: true,
+        get: () => liveRootGraph,
+      },
+    });
+    delete (harness.app as Partial<typeof harness.app>).rootGraph;
+    Object.setPrototypeOf(harness.app, appPrototype);
+    expect(Object.getOwnPropertyDescriptor(harness.app, "rootGraph")).toBeUndefined();
+
     harness.app.graphToPrompt.mockImplementationOnce(async () => {
       const graph = harness.app.rootGraph as unknown as {
         extra: Record<string, unknown>;
@@ -811,6 +821,7 @@ describe("hosted iframe bridge runtime", () => {
       result: { output: {} },
     });
     expect(harness.app.rootGraph).toBe(liveRootGraph);
+    expect(Object.getOwnPropertyDescriptor(harness.app, "rootGraph")).toBeUndefined();
     expect(harness.liveNode.mode).toBe(0);
   });
 

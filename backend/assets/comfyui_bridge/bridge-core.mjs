@@ -392,8 +392,10 @@ export function startVloBridge({ app, api, windowObject = window }) {
   }
 
   function invokeGraphToPrompt(tempGraph) {
-    const hadOwnRootGraph = Object.prototype.hasOwnProperty.call(app, "rootGraph");
-    const previousRootGraph = app.rootGraph;
+    const previousRootGraphDescriptor = Object.getOwnPropertyDescriptor(
+      app,
+      "rootGraph",
+    );
     let installedTemporaryRoot = false;
 
     // ComfyUI-Manager versions with the broken wrapper call the original
@@ -402,19 +404,40 @@ export function startVloBridge({ app, api, windowObject = window }) {
     // select it too. Restore before awaiting so UI events cannot observe the
     // temporary root during asynchronous extension post-processing.
     try {
-      app.rootGraph = tempGraph;
+      if (
+        previousRootGraphDescriptor &&
+        previousRootGraphDescriptor.configurable === false
+      ) {
+        // A non-configurable writable data property can change value without
+        // changing its descriptor flags.
+        Object.defineProperty(app, "rootGraph", { value: tempGraph });
+      } else {
+        // Current ComfyUI exposes rootGraph as a getter-only prototype
+        // property. An own data property safely shadows that getter for the
+        // synchronous wrapper call without touching rootGraphInternal.
+        Object.defineProperty(app, "rootGraph", {
+          configurable: true,
+          enumerable: previousRootGraphDescriptor?.enumerable ?? false,
+          writable: true,
+          value: tempGraph,
+        });
+      }
       installedTemporaryRoot = app.rootGraph === tempGraph;
     } catch {
-      // A future ComfyUI may make rootGraph read-only. Correct wrappers still
-      // receive tempGraph explicitly; the nonce check will reject a broken one.
+      // A non-extensible or otherwise locked future app still receives the
+      // explicit argument; the nonce check will reject a broken wrapper.
     }
 
     try {
       return app.graphToPrompt(tempGraph);
     } finally {
-      if (installedTemporaryRoot && app.rootGraph === tempGraph) {
-        if (hadOwnRootGraph) {
-          app.rootGraph = previousRootGraph;
+      if (installedTemporaryRoot) {
+        if (previousRootGraphDescriptor) {
+          Object.defineProperty(
+            app,
+            "rootGraph",
+            previousRootGraphDescriptor,
+          );
         } else {
           delete app.rootGraph;
         }

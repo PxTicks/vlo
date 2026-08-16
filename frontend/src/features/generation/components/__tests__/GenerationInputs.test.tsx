@@ -184,6 +184,57 @@ describe("GenerationInputs", () => {
     );
   });
 
+  it("renders string widgets as a committed multiline prompt box", () => {
+    const handleWidgetChange = vi.fn();
+
+    render(
+      <GenerationInputs
+        inputs={[]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[
+          {
+            nodeId: "136",
+            param: "prompt",
+            currentValue: "existing prompt",
+            config: {
+              label: "Prompt",
+              controlAfterGenerate: false,
+              valueType: "string",
+              sectionId: "prompt",
+              groupId: "prompt",
+              groupTitle: "Prompt",
+            },
+          },
+        ]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={handleWidgetChange}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    const promptInput = screen.getByPlaceholderText("Enter prompt...");
+    expect(promptInput.tagName).toBe("TEXTAREA");
+    expect(promptInput).toHaveValue("existing prompt");
+
+    fireEvent.change(promptInput, { target: { value: "rewritten prompt" } });
+    expect(handleWidgetChange).not.toHaveBeenCalled();
+
+    fireEvent.blur(promptInput);
+    expect(handleWidgetChange).toHaveBeenCalledWith(
+      "136",
+      "prompt",
+      "rewritten prompt",
+    );
+  });
+
   it("groups sidecar-managed media inputs into one section with sublabels", () => {
     render(
       <GenerationInputs

@@ -210,6 +210,18 @@ function isSliderWidget(widget: WorkflowWidgetInput): boolean {
   return widget.config.control === "slider";
 }
 
+/**
+ * String widgets are prompts in practice, so they get the same full-width
+ * multiline box the presented text inputs use instead of an inline row field.
+ */
+function isTextAreaWidget(widget: WorkflowWidgetInput): boolean {
+  return (
+    widget.config.valueType === "string" &&
+    !widget.config.options?.length &&
+    widget.config.control !== "slider"
+  );
+}
+
 function formatSliderPercent(value: number): string {
   const percentage = value * 100;
   if (Math.abs(percentage - Math.round(percentage)) < 0.0001) {
@@ -763,8 +775,8 @@ function TextInputSection({
         initialValue={value}
         onCommit={(nextValue) => onCommit(commitInputId, nextValue)}
         multiline={true}
-        minRows={2}
-        maxRows={6}
+        minRows={6}
+        maxRows={20}
         placeholder={`Enter ${input.label.toLowerCase()}...`}
         sx={{
           "& .MuiOutlinedInput-root": {
@@ -1055,6 +1067,7 @@ function WidgetRow({
   const useSelectInput =
     !isRandomized && (isEnumWidget(widget) || isBooleanWidget(widget));
   const isSlider = isSliderWidget(widget);
+  const isTextArea = !isRandomized && !useSelectInput && isTextAreaWidget(widget);
   const showInlineExactAspectRatioControl =
     showExactAspectRatioControl &&
     typeof onExactAspectRatioChange === "function";
@@ -1122,6 +1135,51 @@ function WidgetRow({
             sx={{ color: "primary.light" }}
           />
         </Box>
+        {widget.config.description ? (
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
+          >
+            {widget.config.description}
+          </Typography>
+        ) : null}
+      </Box>
+    );
+  }
+
+  if (isTextArea) {
+    // The group heading already carries the name when they match (e.g. a
+    // "Prompt" widget alone in a "Prompt" group), so skip the repeat.
+    const showLabel =
+      widget.config.label.trim().toLowerCase() !==
+      (widget.config.groupTitle ?? "").trim().toLowerCase();
+
+    return (
+      <Box sx={{ mb: 1 }}>
+        {showLabel ? (
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block", mb: 0.5 }}
+          >
+            {widget.config.label}
+          </Typography>
+        ) : null}
+        <CommittedTextInput
+          initialValue={displayValue}
+          onCommit={(nextValue) => {
+            onWidgetChange(widget.nodeId, widget.param, nextValue);
+          }}
+          multiline={true}
+          minRows={6}
+          maxRows={20}
+          placeholder={`Enter ${widget.config.label.toLowerCase()}...`}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              bgcolor: "#1a1a1a",
+              fontSize: "0.875rem",
+            },
+          }}
+        />
         {widget.config.description ? (
           <Typography
             variant="caption"

@@ -6,8 +6,8 @@ import { evaluateRewrites, type RewriteRule } from "../evaluateRewrites";
 
 /**
  * Both keyframes may be left empty here (as in vlo_ltx2_3), so an unfilled
- * input has to drop its loader out of the prompt on its own — otherwise the
- * loader executes and pulls whatever its filename widget resolved to.
+ * input has to drop its loader and resize branch out of the prompt — otherwise
+ * the loader executes and pulls whatever its filename widget resolved to.
  */
 const RULES_PATH = resolve(
   __dirname,
@@ -27,16 +27,16 @@ function bypassFor(provided: string[]): string[] {
 }
 
 describe("vlo_minimax_h3_i2v rewrites", () => {
-  it("bypasses both loaders when neither frame is set", () => {
-    expect(bypassFor([])).toEqual(["141", "142"]);
+  it("bypasses both frame branches when neither frame is set", () => {
+    expect(bypassFor([])).toEqual(["141", "142", "143", "144"]);
   });
 
-  it("keeps only the start-frame loader when just the start frame is set", () => {
-    expect(bypassFor(["141"])).toEqual(["142"]);
+  it("keeps only the start-frame branch when just the start frame is set", () => {
+    expect(bypassFor(["141"])).toEqual(["142", "144"]);
   });
 
-  it("keeps only the end-frame loader when just the end frame is set", () => {
-    expect(bypassFor(["142"])).toEqual(["141"]);
+  it("keeps only the end-frame branch when just the end frame is set", () => {
+    expect(bypassFor(["142"])).toEqual(["141", "143"]);
   });
 
   it("bypasses nothing when both frames are set", () => {

@@ -1,4 +1,8 @@
-import { TICKS_PER_SECOND } from "../../../core/time/constants";
+import { frameIndexFromTick } from "../../../core/time/frameGrid";
+import {
+  mediaSecondsToTick,
+  tickToMediaSeconds,
+} from "../../../core/time/mediaTime";
 import { getTicksPerFrame } from "../../../core/time/ticksPerFrame";
 
 /**
@@ -20,6 +24,9 @@ const MIN_LABEL_SPACING_PX = 64;
 
 /** The steps at or above one second, in seconds. */
 const SECOND_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+
+/** One second on the tick grid — the boundary between frame and timecode labels. */
+const ONE_SECOND_TICKS = mediaSecondsToTick(1);
 
 export interface RulerScale {
   /** Tick distance between gradations (the fine, mostly unlabelled marks). */
@@ -46,7 +53,10 @@ function isMultipleOf(value: number, step: number): boolean {
  */
 function frameStepsInTicks(fps: number): number[] {
   const ticksPerFrameValue = getTicksPerFrame(fps);
-  const framesPerSecond = Math.round(TICKS_PER_SECOND / ticksPerFrameValue);
+  const framesPerSecond = frameIndexFromTick(
+    ONE_SECOND_TICKS,
+    ticksPerFrameValue,
+  );
   const steps: number[] = [];
   for (let frames = 1; frames < framesPerSecond; frames++) {
     if (framesPerSecond % frames === 0) steps.push(frames * ticksPerFrameValue);
@@ -67,10 +77,10 @@ export function chooseRulerScale(
 ): RulerScale {
   const steps = [
     ...frameStepsInTicks(fps),
-    ...SECOND_STEPS.map((seconds) => seconds * TICKS_PER_SECOND),
+    ...SECOND_STEPS.map((seconds) => mediaSecondsToTick(seconds)),
   ];
   const scale = Math.max(pixelsPerSecond, Number.EPSILON);
-  const spacingPx = (ticks: number) => (ticks / TICKS_PER_SECOND) * scale;
+  const spacingPx = (ticks: number) => tickToMediaSeconds(ticks) * scale;
 
   const gradationTicks =
     steps.find((step) => spacingPx(step) >= MIN_GRADATION_SPACING_PX) ??
@@ -86,7 +96,7 @@ export function chooseRulerScale(
   return {
     gradationTicks,
     labelTicks,
-    frameLabels: labelTicks < TICKS_PER_SECOND,
+    frameLabels: labelTicks < ONE_SECOND_TICKS,
   };
 }
 
@@ -108,10 +118,10 @@ export function formatRulerLabel(
   fps: number,
   frameLabels: boolean,
 ): string {
-  const seconds = tick / TICKS_PER_SECOND;
-  const onWholeSecond = isMultipleOf(tick, TICKS_PER_SECOND);
+  const seconds = tickToMediaSeconds(tick);
+  const onWholeSecond = isMultipleOf(tick, ONE_SECOND_TICKS);
   if (!frameLabels || onWholeSecond) return formatTimecode(seconds);
 
-  const intoSecond = tick - Math.floor(seconds) * TICKS_PER_SECOND;
-  return `${Math.round(intoSecond / getTicksPerFrame(fps))}f`;
+  const intoSecond = tick - mediaSecondsToTick(Math.floor(seconds));
+  return `${frameIndexFromTick(intoSecond, getTicksPerFrame(fps))}f`;
 }

@@ -78,7 +78,20 @@ def test_minimax_h3_reference_workflow_uses_vlo_batch_inputs():
 def test_minimax_h3_reference_rules_expose_vlo_controls():
     rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
 
-    assert rules["nodes"]["136"]["present"] == {"enabled": False}
+    # The prompt is presented as a text input (not a string widget) so it picks
+    # up prompt carryover between workflows and the extension generation API.
+    # It stays in the built-in prompts section: a custom section would wrap the
+    # prompt panel in a second panel of the same name.
+    assert rules["nodes"]["136"]["present"] == {
+        "label": "Prompt",
+        "input_type": "text",
+        "param": "prompt",
+    }
+    assert "prompt" not in rules["nodes"]["136"]["widgets"]
+    assert [section["id"] for section in rules["sections"]] == [
+        "references",
+        "video_generation",
+    ]
     length_widget = rules["nodes"]["136"]["widgets"]["length"]
     # H3 requires 17k+5 frames, so 22 frames is the closest valid point to 1s.
     assert length_widget["min"] == 22

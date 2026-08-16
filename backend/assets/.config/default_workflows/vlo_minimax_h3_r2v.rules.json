@@ -9,12 +9,6 @@
       "default_open": true
     },
     {
-      "id": "prompt",
-      "title": "Prompt",
-      "order": 1,
-      "default_open": true
-    },
-    {
       "id": "video_generation",
       "title": "Video Generation",
       "order": 2,
@@ -37,17 +31,11 @@
     },
     "136": {
       "present": {
-        "enabled": false
+        "label": "Prompt",
+        "input_type": "text",
+        "param": "prompt"
       },
       "widgets": {
-        "prompt": {
-          "label": "Prompt",
-          "value_type": "string",
-          "section_id": "prompt",
-          "group_id": "prompt",
-          "group_title": "Prompt",
-          "group_order": 0
-        },
         "width": {
           "label": "Width",
           "value_type": "int",

@@ -1002,6 +1002,7 @@ export function createGenerationPlan(
           : {}),
       },
     },
+    effects: null,
   };
 }
 

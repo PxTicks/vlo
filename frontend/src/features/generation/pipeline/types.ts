@@ -202,6 +202,77 @@ export interface GenerationPostprocessPlan {
   config: WorkflowPostprocessingConfig;
 }
 
+// ---------------------------------------------------------------------------
+// Normalized graph effects — the closed union defined in
+// docs/generation-native-extension-seams-plan.md §3.3. Native rule rewrites
+// and any later contributor converge on this model before prompt conversion.
+// Do not generalize it to arbitrary graph patches: every new effect kind must
+// name its invariant, conflict rule, validation owner, and queue
+// serialization.
+// ---------------------------------------------------------------------------
+
+export type GenerationEffectJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | GenerationEffectJsonValue[]
+  | { [key: string]: GenerationEffectJsonValue };
+
+export interface GenerationWidgetTarget {
+  readonly nodeId: string;
+  readonly widget: string;
+}
+
+/** Where a normalized effect originated, for diagnostics and attribution. */
+export type GenerationEffectSource =
+  | "panel-bypass"
+  | "rule-default-override"
+  | "rule-rewrite"
+  | "rule-effect-switch";
+
+export type GenerationGraphEffect =
+  | {
+      readonly kind: "bypass-nodes";
+      readonly nodeIds: readonly string[];
+      readonly source: GenerationEffectSource;
+    }
+  | {
+      readonly kind: "set-widget";
+      readonly target: GenerationWidgetTarget;
+      readonly value: GenerationEffectJsonValue;
+      readonly source: GenerationEffectSource;
+    };
+
+export interface GenerationEffectDiagnostic {
+  readonly severity: "error" | "warning";
+  readonly code: "invalid-target" | "invalid-value" | "widget-collision";
+  readonly source: GenerationEffectSource;
+  readonly message: string;
+}
+
+/** Bridge identity a capture was resolved against (see BridgeWorkflowExpectation). */
+export interface GenerationWorkflowExpectation {
+  readonly workflowInstanceId: string;
+  readonly revision: number;
+}
+
+/**
+ * The effect record a prompt was resolved from. Prompt conversion consumes
+ * only such a record, and it is evaluated from detached plan data plus the
+ * dispatch's prepared request — never from live execution or editor state.
+ *
+ * The expectation pins the workflow the effects were resolved against so the
+ * bridge rejects a switched or reloaded workflow before any GPU-bound work
+ * starts.
+ */
+export interface GenerationCapturedEffects {
+  readonly schemaVersion: 1;
+  readonly expectation: GenerationWorkflowExpectation | null;
+  readonly effects: readonly GenerationGraphEffect[];
+  readonly diagnostics: readonly GenerationEffectDiagnostic[];
+}
+
 export interface GenerationPlan {
   id: string;
   createdAt: number;
@@ -210,6 +281,14 @@ export interface GenerationPlan {
   submission: GenerationSubmissionPlan;
   metadata: GenerationMetadataPlan;
   postprocess: GenerationPostprocessPlan;
+  /**
+   * Normalized graph effects for this plan. `null` until captured. Queued
+   * generations capture at enqueue time — which pins the workflow identity a
+   * deferred dispatch must resolve against — and dispatch re-evaluates the
+   * effects themselves once preprocessing has run; immediate submissions
+   * capture during dispatch, before prompt conversion.
+   */
+  effects: GenerationCapturedEffects | null;
 }
 
 export interface FrontendPreprocessContext {

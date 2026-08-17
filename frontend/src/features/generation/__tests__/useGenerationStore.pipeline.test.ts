@@ -1643,6 +1643,98 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockPreResolvePrompt.mock.calls[0]?.[1]).not.toContain("693");
   });
 
+  it("re-resolves a queued generation once preprocess uploads a derived mask", async () => {
+    makeReadyStoreState();
+
+    useGenerationStore.setState({
+      syncedWorkflow: {
+        "644": {
+          class_type: "VHS_LoadVideoFFmpeg",
+          inputs: {},
+        },
+        "689": {
+          class_type: "LoadVideo",
+          inputs: {},
+        },
+      },
+      workflowInputs: [
+        {
+          nodeId: "644",
+          classType: "VHS_LoadVideoFFmpeg",
+          inputType: "video",
+          param: "video",
+          label: "Source video",
+          currentValue: null,
+          origin: "rule",
+        },
+      ],
+      activeWorkflowRules: makeWorkflowRules({
+        rewrites: [
+          {
+            when: {
+              kind: "input_presence",
+              inputs: ["689"],
+              match: "all_missing",
+            },
+            bypass: ["689", "693", "694", "703", "708"],
+          },
+        ],
+      }),
+      derivedMaskMappings: [
+        {
+          sourceNodeId: "644",
+          maskNodeId: "689",
+          maskParam: "file",
+          maskType: "binary",
+          optional: true,
+        },
+      ],
+      editorRef: {} as HTMLIFrameElement,
+      preResolvedPromptEnabled: true,
+    });
+
+    mockFrontendPreprocess.mockResolvedValueOnce({
+      workflow: {
+        "644": {
+          class_type: "VHS_LoadVideoFFmpeg",
+          inputs: {},
+        },
+      },
+      workflowId: "wf.json",
+      targetAspectRatio: "16:9",
+      exactAspectRatio: false,
+      targetResolution: 1080,
+      textInputs: {},
+      imageInputs: {},
+      audioInputs: {},
+      videoInputs: {
+        "644": new File(["video"], "selection.mp4", { type: "video/mp4" }),
+        "689": new File(["mask"], "selection-mask.mp4", {
+          type: "video/mp4",
+        }),
+      },
+      clientId: "client-id",
+    });
+
+    await useGenerationStore.getState().queueGeneration({
+      "644": {
+        type: "video",
+        file: new File(["video"], "source.mp4", { type: "video/mp4" }),
+      },
+    });
+
+    // The enqueue-time capture cannot know the mask preprocessing will
+    // render, so it bypasses node 689; the dispatch capture must correct that
+    // rather than submit the stale prompt.
+    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(2);
+    expect(mockPreResolvePrompt.mock.calls[0]?.[1]).toContain("689");
+    const lastBypass = mockPreResolvePrompt.mock.calls[1]?.[1];
+    expect(lastBypass).not.toContain("689");
+    expect(lastBypass).not.toContain("693");
+    expect(mockGenerate).toHaveBeenCalledTimes(1);
+    expect(mockGenerate.mock.calls[0]?.[0]?.promptIsPreResolved).toBe(true);
+  });
+
   it("refuses to submit when the bridge reports workflow revision drift", async () => {
     makeReadyStoreState();
 
@@ -2203,6 +2295,7 @@ describe("useGenerationStore pipeline phases", () => {
               on_failure: "fallback_raw",
             },
           },
+          effects: null,
         },
       ],
     });
@@ -2270,6 +2363,7 @@ describe("useGenerationStore pipeline phases", () => {
               on_failure: "fallback_raw",
             },
           },
+          effects: null,
         },
       ],
     });
@@ -2335,6 +2429,7 @@ describe("useGenerationStore pipeline phases", () => {
               on_failure: "fallback_raw",
             },
           },
+          effects: null,
         },
       ],
     });

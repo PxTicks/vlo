@@ -24,6 +24,9 @@ const mocks = vi.hoisted(() => ({
   pruneRulesForSubmittedWorkflow: vi.fn(),
   getWorkflowPostprocessingConfig: vi.fn(),
   getMaskCropModeDefault: vi.fn(),
+  evaluateRewrites: vi.fn(),
+  evaluateEffectSwitchesForState: vi.fn(),
+  evaluateWidgetDefaultOverrides: vi.fn(),
   projectState: {
     config: { aspectRatio: "16:9", fps: 30 },
     project: { id: "project-1" },
@@ -56,12 +59,9 @@ vi.mock("../../pipeline/generationPlan", () => ({
 }));
 
 vi.mock("../../services/evaluateRewrites", () => ({
-  evaluateEffectSwitchesForState: vi.fn(() => ({
-    bypass: [],
-    widgetOverrides: [],
-  })),
-  evaluateRewrites: vi.fn(() => ({ bypass: [], widgetOverrides: [] })),
-  evaluateWidgetDefaultOverrides: vi.fn(() => []),
+  evaluateEffectSwitchesForState: mocks.evaluateEffectSwitchesForState,
+  evaluateRewrites: mocks.evaluateRewrites,
+  evaluateWidgetDefaultOverrides: mocks.evaluateWidgetDefaultOverrides,
 }));
 
 vi.mock("../../services/iframeBridgeClient", () => ({
@@ -271,7 +271,14 @@ describe("buildExecutionStoreState", () => {
     mocks.createGenerationPlan.mockReturnValue(plan);
     mocks.prepareGenerationPlan.mockResolvedValue({
       plan,
-      request: { workflow: { fallback: true } },
+      request: {
+        workflow: { fallback: true },
+        textInputs: {},
+        imageInputs: {},
+        videoInputs: {},
+        audioInputs: {},
+        cachedMediaInputs: {},
+      },
     });
     mocks.buildGenerationPreprocessCacheKey.mockReturnValue("cache-key");
     mocks.buildGenerationPreprocessCacheEntry.mockReturnValue({
@@ -306,6 +313,12 @@ describe("buildExecutionStoreState", () => {
     mocks.pruneRulesForSubmittedWorkflow.mockImplementation((rules) => rules);
     mocks.getWorkflowPostprocessingConfig.mockReturnValue(null);
     mocks.getMaskCropModeDefault.mockReturnValue("full");
+    mocks.evaluateRewrites.mockReturnValue({ bypass: [], widgetOverrides: [] });
+    mocks.evaluateEffectSwitchesForState.mockReturnValue({
+      bypass: [],
+      widgetOverrides: [],
+    });
+    mocks.evaluateWidgetDefaultOverrides.mockReturnValue([]);
     mocks.createSubmissionErrorJob.mockImplementation((error: unknown) => ({
       id: "error-job",
       status: "error",
@@ -723,6 +736,290 @@ describe("buildExecutionStoreState", () => {
       "Waiting for the GPU",
     );
     expect(mocks.createSubmissionErrorJob).not.toHaveBeenCalled();
+  });
+
+  it("keeps the enqueue-time capture when preprocessing leaves the effects unchanged", async () => {
+    const plan = makePlan({
+      workflow: {
+        ...makePlan().workflow,
+        submittedWorkflow: null,
+        promptIsPreResolved: false,
+        workflowRules: { version: 1 },
+      },
+      submission: {
+        frontendStateWidgetValues: {},
+        inputMetadata: {},
+        bypassNodeIds: ["9"],
+      },
+    });
+    mocks.createGenerationPlan.mockReturnValue(plan);
+    // Keyed on the rules argument: the queued plan carries its own detached
+    // rules, so a later edit to the live rules must not reach it.
+    mocks.evaluateRewrites.mockImplementation((rules: unknown) =>
+      (rules as { version?: number } | null)?.version === 99
+        ? { bypass: ["999"], widgetOverrides: [] }
+        : {
+            bypass: ["7"],
+            widgetOverrides: [{ node_id: "5", widget: "seed", value: 1 }],
+          },
+    );
+    // Keep the plan queued so live state can change before dispatch.
+    holdGpuWith("backend-process");
+    const harness = createHarness({ editorRef: {} as HTMLIFrameElement });
+
+    await harness.actions.queueGeneration({});
+
+    expect(mocks.preResolvePrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.preResolvePrompt).toHaveBeenCalledWith(
+      { workflowInstanceId: "workflow-instance", revision: 0 },
+      ["7", "9"],
+      [{ node_id: "5", widget: "seed", value: 1 }],
+    );
+    const queue = harness.state.generationQueue as Array<{
+      effects: Record<string, unknown>;
+      workflow: { submittedWorkflow: unknown };
+    }>;
+    expect(queue[0].effects).toMatchObject({
+      schemaVersion: 1,
+      expectation: { workflowInstanceId: "workflow-instance", revision: 0 },
+    });
+    expect(queue[0].workflow.submittedWorkflow).toEqual({
+      "1": { class_type: "SaveImage", inputs: {} },
+    });
+
+    // Later rule changes, a workflow switch, and editor disposal must not
+    // alter the already queued item: nothing is resolved a second time and
+    // the frozen capture is what reaches the backend.
+    (
+      harness.set as unknown as (update: Record<string, unknown>) => void
+    )({
+      iframeWorkflowInstanceId: "different-instance",
+      iframeWorkflowRevision: 42,
+      activeWorkflowRules: { version: 99 },
+      editorRef: null,
+    });
+    holdGpuWith(null);
+    await harness.actions.processGenerationQueue();
+
+    expect(mocks.preResolvePrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+    expect(mocks.generate.mock.calls[0]?.[0]).toMatchObject({
+      workflow: { "1": { class_type: "SaveImage", inputs: {} } },
+      promptIsPreResolved: true,
+    });
+  });
+
+  it("re-resolves against the pinned expectation when preprocessing derives a new input", async () => {
+    const plan = makePlan({
+      workflow: {
+        ...makePlan().workflow,
+        submittedWorkflow: null,
+        promptIsPreResolved: false,
+      },
+    });
+    mocks.createGenerationPlan.mockReturnValue(plan);
+    // The queued slot values have no mask; preprocessing renders one, so the
+    // `all_missing` bypass that held at enqueue no longer applies.
+    mocks.evaluateRewrites.mockImplementation(
+      (_rules: unknown, providedInputIds: ReadonlySet<string>) =>
+        providedInputIds.has("689")
+          ? { bypass: [], widgetOverrides: [] }
+          : { bypass: ["689"], widgetOverrides: [] },
+    );
+    mocks.prepareGenerationPlan.mockResolvedValue({
+      plan,
+      request: {
+        workflow: { fallback: true },
+        textInputs: {},
+        imageInputs: {},
+        videoInputs: { "689": new File(["mask"], "mask.mp4") },
+        audioInputs: {},
+        cachedMediaInputs: {},
+      },
+    });
+    mocks.preResolvePrompt.mockResolvedValueOnce({
+      output: { "1": { class_type: "StaleCapture", inputs: {} } },
+    });
+    holdGpuWith("backend-process");
+    const harness = createHarness({ editorRef: {} as HTMLIFrameElement });
+
+    await harness.actions.queueGeneration({});
+    expect(mocks.preResolvePrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.preResolvePrompt.mock.calls[0]?.[1]).toEqual(["689"]);
+
+    // The live identity moved on; the queued item must still resolve against
+    // the workflow it was enqueued against, not the one loaded now.
+    (
+      harness.set as unknown as (update: Record<string, unknown>) => void
+    )({
+      iframeWorkflowInstanceId: "different-instance",
+      iframeWorkflowRevision: 42,
+    });
+    holdGpuWith(null);
+    await harness.actions.processGenerationQueue();
+
+    expect(mocks.preResolvePrompt).toHaveBeenCalledTimes(2);
+    expect(mocks.preResolvePrompt).toHaveBeenLastCalledWith(
+      { workflowInstanceId: "workflow-instance", revision: 0 },
+      [],
+      [],
+    );
+    expect(mocks.generate.mock.calls[0]?.[0]).toMatchObject({
+      workflow: { "1": { class_type: "SaveImage", inputs: {} } },
+      promptIsPreResolved: true,
+    });
+  });
+
+  it("fails the dispatch when a stale queued capture cannot be resolved again", async () => {
+    const plan = makePlan({
+      workflow: {
+        ...makePlan().workflow,
+        submittedWorkflow: null,
+        promptIsPreResolved: false,
+      },
+    });
+    mocks.createGenerationPlan.mockReturnValue(plan);
+    mocks.evaluateRewrites.mockImplementation(
+      (_rules: unknown, providedInputIds: ReadonlySet<string>) =>
+        providedInputIds.has("689")
+          ? { bypass: [], widgetOverrides: [] }
+          : { bypass: ["689"], widgetOverrides: [] },
+    );
+    mocks.prepareGenerationPlan.mockResolvedValue({
+      plan,
+      request: {
+        workflow: { fallback: true },
+        textInputs: {},
+        imageInputs: {},
+        videoInputs: { "689": new File(["mask"], "mask.mp4") },
+        audioInputs: {},
+        cachedMediaInputs: {},
+      },
+    });
+    holdGpuWith("backend-process");
+    const harness = createHarness({ editorRef: {} as HTMLIFrameElement });
+
+    await harness.actions.queueGeneration({});
+
+    // The user edited the graph in the meantime: the bridge rejects the
+    // pinned expectation, and nothing is submitted with the stale capture.
+    mocks.preResolvePrompt.mockRejectedValueOnce(
+      new Error("The workflow in the editor changed"),
+    );
+    holdGpuWith(null);
+    await harness.actions.processGenerationQueue();
+
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(harness.state.activeJobId).toBe("error-job");
+  });
+
+  it("falls back to the live workflow identity when the editor was closed at enqueue", async () => {
+    const plan = makePlan({
+      workflow: {
+        ...makePlan().workflow,
+        submittedWorkflow: null,
+        promptIsPreResolved: false,
+      },
+    });
+    mocks.createGenerationPlan.mockReturnValue(plan);
+    holdGpuWith("backend-process");
+    // Unmounting the editor clears its bridge identity too
+    // (`unregisterEditor`), so there is nothing to pin.
+    const harness = createHarness({
+      editorRef: null,
+      iframeWorkflowInstanceId: null,
+      iframeWorkflowRevision: null,
+    });
+
+    await harness.actions.queueGeneration({});
+    expect(mocks.preResolvePrompt).not.toHaveBeenCalled();
+    const queue = harness.state.generationQueue as Array<{
+      effects: { expectation: unknown };
+    }>;
+    expect(queue[0].effects.expectation).toBeNull();
+
+    // The editor comes back: the queued item resolves against the identity it
+    // now reports, exactly as an immediate submission would.
+    (
+      harness.set as unknown as (update: Record<string, unknown>) => void
+    )({
+      editorRef: {} as HTMLIFrameElement,
+      iframeWorkflowInstanceId: "new-instance",
+      iframeWorkflowRevision: 9,
+    });
+    holdGpuWith(null);
+    await harness.actions.processGenerationQueue();
+
+    expect(mocks.preResolvePrompt).toHaveBeenCalledWith(
+      { workflowInstanceId: "new-instance", revision: 9 },
+      [],
+      [],
+    );
+    expect(mocks.generate.mock.calls[0]?.[0]).toMatchObject({
+      workflow: { "1": { class_type: "SaveImage", inputs: {} } },
+      promptIsPreResolved: true,
+    });
+  });
+
+  it("rejects invalid queued effect targets at enqueue, before any submission work", async () => {
+    const plan = makePlan({
+      workflow: { ...makePlan().workflow, submittedWorkflow: null },
+      submission: {
+        frontendStateWidgetValues: {},
+        inputMetadata: {},
+        bypassNodeIds: ["  "],
+      },
+    });
+    mocks.createGenerationPlan.mockReturnValue(plan);
+    const harness = createHarness({ editorRef: {} as HTMLIFrameElement });
+
+    await harness.actions.queueGeneration({});
+
+    expect(harness.state.activeJobId).toBe("error-job");
+    expect(harness.state.generationQueue).toEqual([]);
+    expect(mocks.preResolvePrompt).not.toHaveBeenCalled();
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(
+      (harness.state.jobs as Map<string, { error: string }>).get("error-job")
+        ?.error,
+    ).toMatch(/not a valid node id/);
+  });
+
+  it("normalizes colliding widget writes into a last-write-wins payload with a diagnostic", async () => {
+    mocks.evaluateWidgetDefaultOverrides.mockReturnValue([
+      { node_id: "5", widget: "seed", value: 1 },
+    ]);
+    mocks.evaluateRewrites.mockReturnValue({
+      bypass: [],
+      widgetOverrides: [{ node_id: "5", widget: "seed", value: 2 }],
+    });
+    const plan = makePlan({
+      workflow: {
+        ...makePlan().workflow,
+        submittedWorkflow: null,
+        promptIsPreResolved: false,
+      },
+    });
+    mocks.createGenerationPlan.mockReturnValue(plan);
+    holdGpuWith("backend-process");
+    const harness = createHarness({ editorRef: {} as HTMLIFrameElement });
+
+    await harness.actions.queueGeneration({});
+
+    expect(mocks.preResolvePrompt).toHaveBeenCalledWith(
+      { workflowInstanceId: "workflow-instance", revision: 0 },
+      [],
+      [{ node_id: "5", widget: "seed", value: 2 }],
+    );
+    const queue = harness.state.generationQueue as Array<{
+      effects: { diagnostics: unknown[] };
+    }>;
+    expect(queue[0].effects.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "widget-collision",
+        severity: "warning",
+      }),
+    ]);
   });
 
   it("creates an error job when queue capture fails or workflow is loading", async () => {

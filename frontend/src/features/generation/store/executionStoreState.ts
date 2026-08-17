@@ -17,17 +17,19 @@ import {
   type GenerationPreprocessCacheEntry,
 } from "../pipeline/generationPlan";
 import type {
+  GenerationCapturedEffects,
   GenerationDeliveryContext,
   GenerationPlan,
   GenerationRequest,
+  GenerationWorkflowExpectation,
   SlotValue,
 } from "../pipeline/types";
 import {
-  evaluateEffectSwitchesForState,
-  evaluateRewrites,
-  evaluateWidgetDefaultOverrides,
-  type RewriteRule,
-} from "../services/evaluateRewrites";
+  bridgeEffectPayloadsMatch,
+  buildBridgeEffectPayload,
+  captureGenerationEffectsForPlan,
+  collectGenerationEffectErrors,
+} from "../pipeline/generationGraphEffects";
 import { iframeBridge } from "../services/iframeBridgeClient";
 import {
   getMaskCropModeDefault,
@@ -449,6 +451,30 @@ interface CapturedSubmittedWorkflow {
   promptIsPreResolved: boolean;
 }
 
+function readWorkflowExpectation(
+  state: ReturnType<GenerationStoreGet>,
+): GenerationWorkflowExpectation | null {
+  return typeof state.iframeWorkflowInstanceId === "string" &&
+    typeof state.iframeWorkflowRevision === "number"
+    ? {
+        workflowInstanceId: state.iframeWorkflowInstanceId,
+        revision: state.iframeWorkflowRevision,
+      }
+    : null;
+}
+
+/** Invalid effect targets must fail before any work that can consume GPU time. */
+function throwOnGenerationEffectErrors(
+  effects: GenerationCapturedEffects,
+): void {
+  const errors = collectGenerationEffectErrors(effects);
+  if (errors.length > 0) {
+    throw new Error(
+      `Generation rejected before submission: ${errors.join("; ")}`,
+    );
+  }
+}
+
 export class WorkflowOutOfSyncError extends Error {
   readonly expectedWorkflowId: string | null;
   readonly iframeFilename: string | null;
@@ -470,68 +496,23 @@ export class WorkflowOutOfSyncError extends Error {
 // buildWorkflowFromGraphData. The hosted bridge applies frontend graph
 // effects to a temporary clone and lets ComfyUI's graphToPrompt prune it.
 async function captureSubmittedWorkflow(
-  plan: GenerationPlan,
   state: ReturnType<GenerationStoreGet>,
-  providedInputIdsOverride?: ReadonlySet<string>,
-): Promise<CapturedSubmittedWorkflow | null> {
-  if (!state.preResolvedPromptEnabled) {
-    return null;
-  }
-
-  const iframe = state.editorRef;
-  if (!iframe) {
+  effects: GenerationCapturedEffects,
+): Promise<CapturedSubmittedWorkflow> {
+  if (!state.editorRef) {
     throw new Error(
       "ComfyUI editor is not mounted; submission requires graphToPrompt and therefore an open editor iframe",
     );
   }
-
-  if (
-    typeof state.iframeWorkflowInstanceId !== "string" ||
-    typeof state.iframeWorkflowRevision !== "number"
-  ) {
+  if (!effects.expectation) {
     throw new WorkflowOutOfSyncError(state.selectedWorkflowId, null);
   }
 
-  const rewrites: RewriteRule[] =
-    (plan.workflow.workflowRules?.rewrites as RewriteRule[] | undefined) ?? [];
-  const providedInputIds =
-    providedInputIdsOverride ?? collectProvidedInputIds(plan);
-  const defaultWidgetOverrides = evaluateWidgetDefaultOverrides(
-    plan.workflow.workflowRules,
-    providedInputIds,
-    plan.submission.frontendStateWidgetValues,
-    plan.submission.inputMetadata,
+  const { bypassNodeIds, widgetOverrides } = buildBridgeEffectPayload(
+    effects.effects,
   );
-  const { bypass, widgetOverrides: rewriteWidgetOverrides } = evaluateRewrites(
-    rewrites,
-    providedInputIds,
-    plan.submission.frontendStateWidgetValues,
-    plan.submission.inputMetadata,
-  );
-  const effectSwitchEffects = evaluateEffectSwitchesForState(
-    plan.workflow.workflowRules?.effect_switches ?? [],
-    providedInputIds,
-    plan.submission.frontendStateWidgetValues,
-    plan.submission.inputMetadata,
-  );
-  const bypassNodeIds = Array.from(
-    new Set([
-      ...bypass,
-      ...effectSwitchEffects.bypass,
-      ...plan.submission.bypassNodeIds,
-    ]),
-  );
-  const widgetOverrides = [
-    ...defaultWidgetOverrides,
-    ...rewriteWidgetOverrides,
-    ...effectSwitchEffects.widgetOverrides,
-  ];
-
   const resolved = await iframeBridge.resolvePrompt(
-    {
-      workflowInstanceId: state.iframeWorkflowInstanceId,
-      revision: state.iframeWorkflowRevision,
-    },
+    effects.expectation,
     bypassNodeIds,
     widgetOverrides,
   );
@@ -540,6 +521,33 @@ async function captureSubmittedWorkflow(
     workflow: cloneSubmittedWorkflow(resolved.output),
     promptIsPreResolved: true,
   };
+}
+
+/**
+ * Evaluate the effects this dispatch must resolve the prompt from.
+ *
+ * Runs after preprocessing on purpose: `input_presence` rules have to see the
+ * inputs preprocessing derived (a rendered mask an optional derived-mask node
+ * needs, say), not just the slot values the plan was built from. Everything
+ * read here is detached plan data plus this run's prepared request, so a
+ * queued plan still evaluates against the state it was enqueued with.
+ *
+ * The workflow expectation is the one thing that stays pinned: a queued plan
+ * replays the identity captured at enqueue so the bridge rejects a graph that
+ * was edited or switched since. A `null` frozen expectation pins nothing (the
+ * editor was closed at enqueue), so fall back to the identity that is loaded
+ * now — exactly what an immediate submission would resolve against.
+ */
+function captureDispatchEffects(
+  plan: GenerationPlan,
+  state: ReturnType<GenerationStoreGet>,
+  preparedRequest: GenerationRequest,
+): GenerationCapturedEffects {
+  return captureGenerationEffectsForPlan(
+    plan,
+    collectProvidedInputIds(plan, preparedRequest),
+    plan.effects?.expectation ?? readWorkflowExpectation(state),
+  );
 }
 
 async function buildQueuedGenerationPlansFromState(
@@ -569,16 +577,36 @@ async function captureQueuedSubmittedWorkflows(
   plans: GenerationPlan[],
   state: ReturnType<GenerationStoreGet>,
 ): Promise<GenerationPlan[]> {
-  if (!state.preResolvedPromptEnabled || !state.editorRef || plans.length === 0) {
+  if (plans.length === 0) {
     return plans;
   }
 
-  const captured = await captureSubmittedWorkflow(plans[0], state);
-  if (!captured) {
-    return plans;
+  // Freeze the workflow identity on every queued item at enqueue time — even
+  // when the submitted workflow cannot be captured yet — so a deferred
+  // dispatch resolves against the graph as it was when the user queued, not
+  // whatever is loaded later. Invalid targets fail the whole enqueue, before
+  // anything reaches the GPU.
+  //
+  // The effects themselves are only provisional: they are evaluated from the
+  // queued slot values, and preprocessing may still derive inputs that change
+  // them (see `captureDispatchEffects`). Dispatch re-evaluates and re-resolves
+  // when that happens; the eager capture below is what lets the common,
+  // unchanged case run without an open editor.
+  const effects = captureGenerationEffectsForPlan(
+    plans[0],
+    collectProvidedInputIds(plans[0]),
+    readWorkflowExpectation(state),
+  );
+  throwOnGenerationEffectErrors(effects);
+  const plansWithEffects = plans.map((plan) => ({ ...plan, effects }));
+
+  if (!state.preResolvedPromptEnabled || !state.editorRef) {
+    return plansWithEffects;
   }
 
-  return plans.map((plan) => ({
+  const captured = await captureSubmittedWorkflow(state, effects);
+
+  return plansWithEffects.map((plan) => ({
     ...plan,
     workflow: {
       ...plan.workflow,
@@ -723,18 +751,38 @@ export function buildExecutionStoreState(
       if (get().pipelineRunToken !== pipelineRunToken) {
         return null;
       }
+      // Read live state again: preprocessing can take minutes, and the editor
+      // this capture needs may have come or gone in the meantime.
+      const captureState = get();
+      const frozenEffects = resolvedPlan.effects;
       if (
-        resolvedPlan.workflow.submittedWorkflow == null &&
-        state.preResolvedPromptEnabled
+        captureState.preResolvedPromptEnabled &&
+        (resolvedPlan.workflow.submittedWorkflow == null ||
+          frozenEffects != null)
       ) {
-        const captured = await captureSubmittedWorkflow(
+        const effects = captureDispatchEffects(
           resolvedPlan,
-          state,
-          collectProvidedInputIds(resolvedPlan, prepared.request),
+          captureState,
+          prepared.request,
         );
-        if (captured) {
+        throwOnGenerationEffectErrors(effects);
+        // An eagerly captured prompt only stays usable while the effects it
+        // was resolved from still hold. When preprocessing changed them the
+        // capture is stale, so resolve again against the pinned expectation —
+        // failing loudly if the editor is gone beats submitting a prompt that
+        // bypasses a node preprocessing just produced the input for.
+        const needsCapture =
+          resolvedPlan.workflow.submittedWorkflow == null ||
+          !frozenEffects ||
+          !bridgeEffectPayloadsMatch(frozenEffects, effects);
+        if (needsCapture) {
+          const captured = await captureSubmittedWorkflow(
+            captureState,
+            effects,
+          );
           resolvedPlan = {
             ...resolvedPlan,
+            effects,
             workflow: {
               ...resolvedPlan.workflow,
               submittedWorkflow: cloneSubmittedWorkflow(captured.workflow),

@@ -94,6 +94,7 @@ function makePlan(classType: string): GenerationPlan {
         on_failure: "fallback_raw",
       },
     },
+    effects: null,
   };
 }
 

@@ -249,6 +249,32 @@ function findNodeWidget(node, widgetName) {
   return node.widgets.find((widget) => widget?.name === widgetName) ?? null;
 }
 
+/**
+ * Whether an input slot of this name carries a link, in which case the node's
+ * own widget value is not what executes and writing it changes nothing.
+ *
+ * `graphToPrompt` fills `inputs[name]` from the widget list first, then
+ * overwrites it with `ExecutableNodeDTO.resolveInput` for every *connected*
+ * input. Two shapes end up here:
+ *
+ * - A plain upstream connection, which wins over the widget.
+ * - A promoted widget inside a subgraph: the inner input is wired to the
+ *   definition's input node, and `resolveInput` returns the value held by the
+ *   *enclosing instance's* widget — the same rule `resolveGraphWidgetValue`
+ *   follows on the vlo side.
+ *
+ * Either way the requested value would never reach the prompt, so the write is
+ * rejected instead of reported as applied. Routing such a write to the
+ * enclosing instance is the decision-gated follow-on in
+ * docs/generation-native-extension-seams-plan.md §7.
+ */
+function isLinkedNodeInput(node, name) {
+  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+  return inputs.some(
+    (input) => isRecord(input) && input.name === name && input.link != null,
+  );
+}
+
 function getNodeByExternalId(graph, rawId) {
   let node = graph.getNodeById(rawId);
   if (!node && typeof rawId === "string" && /^-?\d+$/.test(rawId)) {
@@ -257,7 +283,134 @@ function getNodeByExternalId(graph, rawId) {
   return node;
 }
 
+// Effect targets are addressed by the execution ids `graphToPrompt` emits:
+// `<id>` at the root and `<instanceId>:<innerId>` (nested `<a>:<b>:<c>`) inside
+// a subgraph instance. The root graph has never heard of a scoped id, so
+// resolution walks the instance chain instead of asking it.
+const EXECUTION_ID_SEPARATOR = ":";
+// Bounds the expansion walk below on a pathological graph. Reaching it fails
+// scoped targets closed rather than guessing at their isolation.
+const MAX_GRAPH_WALK_NODES = 50_000;
+
+/** Duck-typed subgraph instance: a node whose `subgraph` is itself a graph. */
+function getInstanceSubgraph(node) {
+  const subgraph = node?.subgraph;
+  return isRecord(subgraph) && typeof subgraph.getNodeById === "function"
+    ? subgraph
+    : null;
+}
+
+/**
+ * How many execution ids each node object answers to once every subgraph
+ * instance is expanded.
+ *
+ * litegraph hands every instance of a subgraph definition the *same* inner node
+ * objects — `SubgraphNode.getInnerNodes` wraps `this.subgraph.nodes` in
+ * per-instance DTOs, but `mode` and `widgets` still read through to the one
+ * shared node. A node reached by more than one path therefore cannot be written
+ * without its sibling instances inheriting the change, which is exactly what
+ * scoped targeting must not do.
+ *
+ * Modes are ignored on purpose: a bypassed sibling still counts, because effect
+ * application order would otherwise decide whether a write is isolated.
+ */
+function countNodeExecutionPaths(rootGraph) {
+  const counts = new Map();
+  let budget = MAX_GRAPH_WALK_NODES;
+  let overflowed = false;
+
+  const walk = (graph, openSubgraphs) => {
+    const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+    for (const node of nodes) {
+      if (budget <= 0) {
+        overflowed = true;
+        return;
+      }
+      budget -= 1;
+      counts.set(node, (counts.get(node) ?? 0) + 1);
+
+      const subgraph = getInstanceSubgraph(node);
+      // A definition that (illegally) contains itself would otherwise recurse
+      // forever; litegraph rejects such graphs at execution time too.
+      if (!subgraph || openSubgraphs.has(subgraph)) continue;
+      openSubgraphs.add(subgraph);
+      walk(subgraph, openSubgraphs);
+      openSubgraphs.delete(subgraph);
+    }
+  };
+  walk(rootGraph, new Set());
+
+  return { counts, overflowed };
+}
+
+/**
+ * Resolve one execution id against the temporary graph.
+ *
+ * Returns `{ node, executionId }` for a target that can be written in
+ * isolation, otherwise `{ reason }`. `executionId` is rebuilt from the resolved
+ * nodes so it matches what `graphToPrompt` will emit, even when the request
+ * used a numeric-vs-string spelling of an id.
+ */
+function resolveEffectTarget(rootGraph, rawId, executionPathCounts) {
+  const segments = String(rawId).split(EXECUTION_ID_SEPARATOR);
+  const scoped = segments.length > 1;
+  if (scoped && executionPathCounts?.overflowed) {
+    return { reason: "graph-too-large" };
+  }
+
+  let graph = rootGraph;
+  const resolvedSegments = [];
+  for (const [index, segment] of segments.entries()) {
+    if (!graph || typeof graph.getNodeById !== "function") {
+      return { reason: "node-not-found" };
+    }
+    const node = getNodeByExternalId(graph, segment);
+    if (!node) return { reason: "node-not-found" };
+    resolvedSegments.push(String(node.id));
+
+    if (index < segments.length - 1) {
+      const subgraph = getInstanceSubgraph(node);
+      if (!subgraph) return { reason: "not-a-subgraph-instance" };
+      graph = subgraph;
+      continue;
+    }
+
+    if ((executionPathCounts?.counts.get(node) ?? 1) > 1) {
+      return { reason: "shared-subgraph-instance" };
+    }
+    return {
+      node,
+      executionId: resolvedSegments.join(EXECUTION_ID_SEPARATOR),
+    };
+  }
+  return { reason: "node-not-found" };
+}
+
+function describeUnresolvedTargets(bypassNodeIds, widgetOverrides) {
+  return [
+    ...bypassNodeIds.map(({ nodeId, reason }) => `${nodeId} (${reason})`),
+    ...widgetOverrides.map(
+      ({ nodeId, widget, reason }) => `${nodeId}.${widget} (${reason})`,
+    ),
+  ].join(", ");
+}
+
 function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
+  const addressesSubgraph = [
+    ...bypassNodeIds,
+    ...widgetOverrides.map((override) =>
+      isRecord(override) ? override.node_id : null,
+    ),
+  ].some(
+    (nodeId) =>
+      typeof nodeId === "string" && nodeId.includes(EXECUTION_ID_SEPARATOR),
+  );
+  // Only pay for the expansion walk when something is actually addressed inside
+  // a subgraph; root-only effects resolve exactly as they always have.
+  const executionPathCounts = addressesSubgraph
+    ? countNodeExecutionPaths(graph)
+    : null;
+
   const bypassTargets = [];
   const unresolvedBypassNodeIds = [];
   const seenBypassNodeIds = new Set();
@@ -266,11 +419,14 @@ function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
     if (seenBypassNodeIds.has(externalNodeId)) continue;
     seenBypassNodeIds.add(externalNodeId);
 
-    const node = getNodeByExternalId(graph, nodeId);
-    if (node) {
-      bypassTargets.push(node);
+    const resolved = resolveEffectTarget(graph, nodeId, executionPathCounts);
+    if (resolved.node) {
+      bypassTargets.push(resolved);
     } else {
-      unresolvedBypassNodeIds.push(externalNodeId);
+      unresolvedBypassNodeIds.push({
+        nodeId: externalNodeId,
+        reason: resolved.reason,
+      });
     }
   }
 
@@ -294,17 +450,21 @@ function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
       continue;
     }
 
-    const node = getNodeByExternalId(graph, override.node_id);
-    if (!node) {
+    const resolved = resolveEffectTarget(
+      graph,
+      override.node_id,
+      executionPathCounts,
+    );
+    if (!resolved.node) {
       unresolvedWidgetOverrides.push({
         index,
         nodeId: String(override.node_id),
         widget: override.widget,
-        reason: "node-not-found",
+        reason: resolved.reason,
       });
       continue;
     }
-    const widget = findNodeWidget(node, override.widget);
+    const widget = findNodeWidget(resolved.node, override.widget);
     if (!widget) {
       unresolvedWidgetOverrides.push({
         index,
@@ -314,13 +474,26 @@ function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
       });
       continue;
     }
+    if (isLinkedNodeInput(resolved.node, override.widget)) {
+      unresolvedWidgetOverrides.push({
+        index,
+        nodeId: String(override.node_id),
+        widget: override.widget,
+        reason: "widget-not-executed",
+      });
+      continue;
+    }
     widgetTargets.push({ override, widget });
   }
 
   if (unresolvedBypassNodeIds.length > 0 || unresolvedWidgetOverrides.length > 0) {
     throw new BridgeRuntimeError(
       "graph-override-target-missing",
-      "Could not resolve every bypass or widget override against the temporary ComfyUI graph",
+      "Could not resolve every bypass or widget override against the temporary " +
+        `ComfyUI graph: ${describeUnresolvedTargets(
+          unresolvedBypassNodeIds,
+          unresolvedWidgetOverrides,
+        )}`,
       {
         bypassNodeIds: unresolvedBypassNodeIds,
         widgetOverrides: unresolvedWidgetOverrides,
@@ -328,15 +501,63 @@ function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
     );
   }
 
-  const appliedBypassNodeIds = [];
-  for (const node of bypassTargets) {
+  const appliedBypassExecutionIds = [];
+  for (const { node, executionId } of bypassTargets) {
     node.mode = 4;
-    appliedBypassNodeIds.push(String(node.id));
+    appliedBypassExecutionIds.push(executionId);
   }
-  for (const { override, widget } of widgetTargets) {
-    widget.value = override.value;
+  // Node objects are recreated by `configure`, so `mode` is private to the
+  // clone. Widget *values* are not: current ComfyUI keys widget state by
+  // (root graph id, node id, widget name) in a store, and the clone inherits
+  // the live graph's id, so an override can land on the live editor's widget.
+  // Remembering the previous value lets prompt resolution put it back.
+  const widgetRestores = [];
+  try {
+    for (const { override, widget } of widgetTargets) {
+      // Recorded before the write: a setter that throws may already have
+      // changed the value, and the caller never sees this list if we throw.
+      const restore = { widget, previousValue: widget.value, applied: false };
+      widgetRestores.push(restore);
+      widget.value = override.value;
+      // What the widget actually holds, which a coercing setter may have
+      // normalized away from the requested value.
+      restore.appliedValue = widget.value;
+      restore.applied = true;
+    }
+  } catch (error) {
+    // Custom widgets can install arbitrary setters. Leaving the earlier writes
+    // installed would strand them on the live editor, and the throw means the
+    // caller never receives the list it would restore them from.
+    restoreWidgetValues(widgetRestores);
+    throw new BridgeRuntimeError(
+      "graph-override-apply-failed",
+      "A ComfyUI widget rejected an override value",
+      { reason: error instanceof Error ? error.message : String(error) },
+    );
   }
-  return appliedBypassNodeIds;
+  return { appliedBypassExecutionIds, widgetRestores };
+}
+
+function restoreWidgetValues(widgetRestores) {
+  for (const restore of widgetRestores) {
+    try {
+      // Compare-and-restore. The live editor reads the very widget state this
+      // resolution wrote, and `graphToPrompt` is awaited, so the user can edit
+      // that widget while a resolution is in flight. Putting the old value
+      // back unconditionally would erase their edit. Only restore while the
+      // widget still holds exactly what this resolution installed; anything
+      // else means someone took ownership of it and their value stands.
+      if (
+        restore.applied &&
+        !Object.is(restore.widget.value, restore.appliedValue)
+      ) {
+        continue;
+      }
+      restore.widget.value = restore.previousValue;
+    } catch (error) {
+      console.warn("[vlo-bridge] could not restore widget value:", error);
+    }
+  }
 }
 
 function isSameOriginEmbedded(windowObject) {
@@ -647,7 +868,7 @@ export function startVloBridge({ app, api, windowObject = window }) {
     return snapshot;
   }
 
-  async function resolvePrompt(payload) {
+  async function resolvePromptExclusive(payload) {
     const before = assertExpectedWorkflow(payload);
     const LGraphCtor = windowObject.LGraph ?? windowObject.LiteGraph?.LGraph;
     if (typeof LGraphCtor !== "function") {
@@ -674,7 +895,7 @@ export function startVloBridge({ app, api, windowObject = window }) {
       );
     }
 
-    const appliedBypassNodeIds = applyOverridesToGraph(
+    const { appliedBypassExecutionIds, widgetRestores } = applyOverridesToGraph(
       tempGraph,
       Array.isArray(payload?.bypassNodeIds) ? payload.bypassNodeIds : [],
       Array.isArray(payload?.widgetOverrides) ? payload.widgetOverrides : [],
@@ -702,6 +923,8 @@ export function startVloBridge({ app, api, windowObject = window }) {
         "ComfyUI could not resolve the temporary graph",
         { reason: error instanceof Error ? error.message : String(error) },
       );
+    } finally {
+      restoreWidgetValues(widgetRestores);
     }
     const after = assertExpectedWorkflow(payload);
     if (
@@ -733,8 +956,19 @@ export function startVloBridge({ app, api, windowObject = window }) {
         },
       );
     }
-    const leakedBypassNodeIds = appliedBypassNodeIds.filter((nodeId) =>
-      Object.prototype.hasOwnProperty.call(resolved.output, nodeId),
+    // A bypassed subgraph instance is never itself a prompt node, so its
+    // verification is the absence of anything it expands to. `graphToPrompt`
+    // skips expansion for a bypassed *root* instance, but its inner-node walk
+    // does not re-check mode further down, so a nested bypassed instance can
+    // still emit `a:b:…` nodes. Failing closed there beats running work the
+    // user asked to skip.
+    const promptNodeIds = Object.keys(resolved.output);
+    const leakedBypassNodeIds = appliedBypassExecutionIds.filter(
+      (executionId) =>
+        Object.prototype.hasOwnProperty.call(resolved.output, executionId) ||
+        promptNodeIds.some((promptNodeId) =>
+          promptNodeId.startsWith(`${executionId}${EXECUTION_ID_SEPARATOR}`),
+        ),
     );
     if (leakedBypassNodeIds.length > 0) {
       throw new BridgeRuntimeError(
@@ -756,6 +990,28 @@ export function startVloBridge({ app, api, windowObject = window }) {
         extra: workflowExtra,
       },
     };
+  }
+
+  // Prompt resolution is a critical section over shared ComfyUI state, not a
+  // pure function of its temporary graph: it shadows `app.rootGraph` for the
+  // synchronous `graphToPrompt` call, and its widget overrides land in the
+  // widget store the live editor reads. Nesting two of those save/restore pairs
+  // leaves the loser's value installed — an override stranded on the editor's
+  // widget, or `app.rootGraph` still pointing at a discarded clone. Requests
+  // arrive concurrently (each `handleMessage` runs its handler immediately), so
+  // resolutions are queued rather than assumed to be serial upstream.
+  let promptResolutionLock = Promise.resolve();
+
+  function resolvePrompt(payload) {
+    const run = promptResolutionLock.then(
+      () => resolvePromptExclusive(payload),
+      () => resolvePromptExclusive(payload),
+    );
+    promptResolutionLock = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   function toGraphPosition(clientX, clientY) {

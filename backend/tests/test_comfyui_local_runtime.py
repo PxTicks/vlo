@@ -255,6 +255,42 @@ def test_environment_setup_skips_clone_for_existing_checkout(
     assert manager.get_install_status()["message"] == "Environment ready."
 
 
+def test_requested_sageattention_targets_the_managed_comfyui_python(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checkout = tmp_path / "ComfyUI"
+    _write_comfyui_checkout(checkout)
+    manager = ComfyuiLocalRuntime()
+    targets: list[tuple[Path, Path]] = []
+
+    def fake_run(command: list[str], cwd: Path | None = None) -> None:
+        del cwd
+        if command[1:3] == ["-m", "venv"]:
+            python = checkout / ".venv" / "bin" / "python"
+            python.parent.mkdir(parents=True)
+            python.write_text("", encoding="utf-8")
+        if command[:4] == ["git", "clone", "--depth", "1"]:
+            Path(command[-1]).mkdir(parents=True)
+
+    monkeypatch.setattr(manager, "_run_install_command", fake_run)
+    monkeypatch.setattr(
+        manager,
+        "_install_sageattention",
+        lambda target, python: targets.append((target, python)) or None,
+    )
+    monkeypatch.setattr(runtime_settings, "update_runtime_settings", lambda **_kwargs: None)
+
+    manager._install_worker(
+        checkout,
+        clone_checkout=False,
+        install_sageattention=True,
+    )
+
+    assert targets == [(checkout, checkout / ".venv" / "bin" / "python")]
+    assert manager.get_install_status()["phase"] == "complete"
+
+
 def _install_with_stubbed_commands(
     manager: ComfyuiLocalRuntime,
     target: Path,

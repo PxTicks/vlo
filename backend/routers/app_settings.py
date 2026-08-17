@@ -362,7 +362,10 @@ async def install_comfyui(request: Request):
             retryable=False,
         )
     try:
-        return comfyui_local_runtime.start_install(parent_path)
+        return comfyui_local_runtime.start_install(
+            parent_path,
+            install_sageattention=body.get("installSageAttention") is True,
+        )
     except (ValueError, RuntimeError) as exc:
         return error_response(
             409,
@@ -378,7 +381,16 @@ async def get_comfyui_install_status():
 
 
 @router.post("/comfyui/environment")
-async def prepare_comfyui_environment():
+async def prepare_comfyui_environment(request: Request):
+    try:
+        body = await _read_optional_json_object(request)
+    except ValueError as exc:
+        return error_response(
+            400,
+            "invalid_comfyui_environment_payload",
+            str(exc),
+            retryable=False,
+        )
     settings = get_runtime_settings()
     install_dir = settings.get("comfyui_install_dir")
     if not install_dir:
@@ -389,7 +401,10 @@ async def prepare_comfyui_environment():
             retryable=False,
         )
     try:
-        return comfyui_local_runtime.start_environment_setup(install_dir)
+        return comfyui_local_runtime.start_environment_setup(
+            install_dir,
+            install_sageattention=body.get("installSageAttention") is True,
+        )
     except (ValueError, RuntimeError) as exc:
         return error_response(
             409,

@@ -26,6 +26,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Checkbox,
+  FormControlLabel,
 } from "@mui/material";
 import { AppMenu } from "../../core/shell/AppMenu";
 import type { HostMenuItemDescriptor } from "../../core/shell/menuDescriptors";
@@ -293,6 +295,7 @@ export function GenerationPanel() {
   >(null);
   const [pythonChoiceOpen, setPythonChoiceOpen] = useState(false);
   const [pythonPath, setPythonPath] = useState("");
+  const [installSageAttention, setInstallSageAttention] = useState(false);
   const [environmentSetupStatus, setEnvironmentSetupStatus] =
     useState<ComfyuiInstallStatus | null>(null);
   const [newWorkflowNamePromptOpen, setNewWorkflowNamePromptOpen] =
@@ -479,7 +482,9 @@ export function GenerationPanel() {
     setIsLaunchingComfyui(true);
     setComfyuiLaunchError(null);
     try {
-      const status = await prepareComfyuiEnvironment();
+      const status = await prepareComfyuiEnvironment({
+        installSageAttention,
+      });
       setEnvironmentSetupStatus(status);
       setPythonChoiceOpen(false);
       setComfyuiLaunchMessage(
@@ -1832,6 +1837,17 @@ export function GenerationPanel() {
                 ? "C:\\path\\to\\venv\\Scripts\\python.exe"
                 : "/path/to/venv/bin/python"
             }
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={installSageAttention}
+                onChange={(event) =>
+                  setInstallSageAttention(event.target.checked)
+                }
+              />
+            }
+            label="Build SageAttention in this managed ComfyUI environment"
           />
         </DialogContent>
         <DialogActions sx={{ flexWrap: "wrap" }}>

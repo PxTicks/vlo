@@ -25,6 +25,17 @@ class _EmptyBodyRequest:
         raise AssertionError("json() should not be called for an empty body")
 
 
+class _BodyRequest:
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+
+    async def body(self) -> bytes:
+        return json.dumps(self._payload).encode()
+
+    async def json(self):
+        return self._payload
+
+
 def test_runtime_settings_persist_workflow_mode_and_prompt_status(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -183,3 +194,32 @@ def test_new_post_routes_handle_empty_bodies_without_500(
     assert verify_response.status_code == 400
     assert install_response.status_code == 400
     assert launch_response.status_code == 409
+
+
+def test_environment_route_forwards_sageattention_opt_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[tuple[str, bool]] = []
+    monkeypatch.setattr(
+        app_settings,
+        "get_runtime_settings",
+        lambda: {"comfyui_install_dir": str(tmp_path)},
+    )
+    monkeypatch.setattr(
+        app_settings.comfyui_local_runtime,
+        "start_environment_setup",
+        lambda path, *, install_sageattention: captured.append(
+            (path, install_sageattention)
+        )
+        or {"phase": "creating_environment"},
+    )
+
+    response = asyncio.run(
+        app_settings.prepare_comfyui_environment(
+            _BodyRequest({"installSageAttention": True})
+        )
+    )
+
+    assert response == {"phase": "creating_environment"}
+    assert captured == [(str(tmp_path), True)]

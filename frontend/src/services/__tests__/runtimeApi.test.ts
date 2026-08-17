@@ -96,11 +96,13 @@ describe("getRuntimeStatus", () => {
     };
     const fetchMock = stubFetch(createMockResponse({ json: status }));
 
-    await expect(prepareComfyuiEnvironment()).resolves.toEqual(status);
+    await expect(
+      prepareComfyuiEnvironment({ installSageAttention: true }),
+    ).resolves.toEqual(status);
     expect(fetchMock).toHaveBeenCalledWith("/app/comfyui/environment", {
       method: "POST",
-      headers: undefined,
-      body: undefined,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ installSageAttention: true }),
     });
   });
 

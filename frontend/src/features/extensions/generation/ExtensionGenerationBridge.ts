@@ -1,3 +1,9 @@
+import { generationSessionService } from "../../generation/services/GenerationSessionService";
+import { serializeFiniteJson } from "../../generation/utils/finiteJson";
+import type {
+  GenerationTransactionResult,
+  GenerationTransactionFailureCode,
+} from "../../generation/services/generationSessionTypes";
 import type {
   ExtensionApiScope,
   ExtensionGenerationApi,
@@ -6,49 +12,78 @@ import type {
   ExtensionGenerationTransactionResult,
 } from "../types";
 
+/**
+ * The extension adapter over the generation session
+ * (docs/generation-native-extension-seams-plan.md §4).
+ *
+ * Everything owner-specific lives here: activation scope, SDK size limits,
+ * finite-JSON checks on untrusted input, defensive cloning, and translation of
+ * the host's failure codes into the public ones. The staging, validation, and
+ * atomic commit are the generation feature's, shared with the native panel.
+ */
+
 const MAX_LABEL_LENGTH = 120;
 const MAX_TEXT_VALUE_LENGTH = 1_000_000;
 
-export interface ExtensionGenerationHostAdapter {
-  listInputs(): readonly ExtensionGenerationInputSnapshot[];
-  commitTextInputs(updates: ReadonlyMap<string, string>): void;
-}
+type PublicFailureCode = Exclude<
+  ExtensionGenerationTransactionResult,
+  { readonly ok: true }
+>["code"];
 
-class ExtensionGenerationBridge {
-  private adapter: ExtensionGenerationHostAdapter | null = null;
-
-  mount(adapter: ExtensionGenerationHostAdapter): () => void {
-    this.adapter = adapter;
-    return () => {
-      if (this.adapter === adapter) this.adapter = null;
-    };
-  }
-
-  getAdapter(): ExtensionGenerationHostAdapter | null {
-    return this.adapter;
-  }
-}
-
-export const extensionGenerationBridge = new ExtensionGenerationBridge();
+// Failure codes the SDK does not publish yet (widget writes are not part of
+// the extension surface) collapse onto `invalid_command`, so an adapter-side
+// bug can never leak an unmodelled code to an extension.
+const PUBLIC_FAILURE_CODES: Record<
+  GenerationTransactionFailureCode,
+  PublicFailureCode
+> = {
+  invalid_label: "invalid_label",
+  unavailable: "unavailable",
+  // A workflow switch under the callback leaves the session the extension
+  // addressed unreachable, which is what `unavailable` means publicly.
+  workflow_changed: "unavailable",
+  invalid_command: "invalid_command",
+  callback_failed: "callback_failed",
+  input_not_found: "input_not_found",
+  input_type_mismatch: "input_type_mismatch",
+  widget_not_found: "invalid_command",
+  widget_not_editable: "invalid_command",
+  widget_value_invalid: "invalid_command",
+};
 
 function failure(
   label: string,
-  code: Exclude<
-    ExtensionGenerationTransactionResult,
-    { readonly ok: true }
-  >["code"],
+  code: PublicFailureCode,
   message: string,
 ): ExtensionGenerationTransactionResult {
   return { ok: false, code, message, label };
 }
 
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "then" in value &&
-    typeof value.then === "function"
+function toPublicResult(
+  result: GenerationTransactionResult,
+): ExtensionGenerationTransactionResult {
+  if (result.ok) {
+    return { ok: true, changed: result.changed, label: result.label };
+  }
+  return failure(
+    result.label,
+    PUBLIC_FAILURE_CODES[result.code],
+    result.message,
   );
+}
+
+function listInputSnapshots(): readonly ExtensionGenerationInputSnapshot[] {
+  const snapshot = generationSessionService.getSnapshot();
+  if (!snapshot) return [];
+  return snapshot.inputs.map((input) => ({
+    id: input.id,
+    nodeId: input.nodeId,
+    param: input.param,
+    label: input.label,
+    ...(input.description ? { description: input.description } : {}),
+    inputType: input.inputType,
+    ...(input.value !== undefined ? { value: input.value } : {}),
+  }));
 }
 
 export function createExtensionGenerationApi(
@@ -57,8 +92,11 @@ export function createExtensionGenerationApi(
   const api: ExtensionGenerationApi = {
     listInputs: () => {
       if (scope.signal.aborted) return [];
-      const inputs = extensionGenerationBridge.getAdapter()?.listInputs() ?? [];
-      return Object.freeze(inputs.map((input) => Object.freeze(structuredClone(input))));
+      return Object.freeze(
+        listInputSnapshots().map((input) =>
+          Object.freeze(structuredClone(input)),
+        ),
+      );
     },
     transaction: (label, callback) => {
       if (typeof label !== "string") {
@@ -82,8 +120,7 @@ export function createExtensionGenerationApi(
           "The extension activation has ended.",
         );
       }
-      const adapter = extensionGenerationBridge.getAdapter();
-      if (!adapter) {
+      if (!generationSessionService.getSnapshot()) {
         return failure(
           normalizedLabel,
           "unavailable",
@@ -91,65 +128,32 @@ export function createExtensionGenerationApi(
         );
       }
 
-      const updates = new Map<string, string>();
-      let isOpen = true;
-      const transaction: ExtensionGenerationTransaction = {
-        setTextInput: (inputId, value) => {
-          if (!isOpen) throw new Error("The generation transaction is closed.");
-          if (typeof inputId !== "string" || inputId.trim().length === 0) {
-            throw new Error("Generation input IDs must be non-empty strings.");
-          }
-          if (typeof value !== "string" || value.length > MAX_TEXT_VALUE_LENGTH) {
-            throw new Error(
-              `Generation text values must contain at most ${MAX_TEXT_VALUE_LENGTH} characters.`,
-            );
-          }
-          updates.set(inputId.trim(), value);
-        },
-      };
-
-      try {
-        const callbackResult = callback(transaction);
-        if (isPromiseLike(callbackResult)) {
-          return failure(
-            normalizedLabel,
-            "invalid_command",
-            "Generation transactions must be synchronous.",
-          );
-        }
-      } catch (error) {
-        return failure(
-          normalizedLabel,
-          "callback_failed",
-          error instanceof Error ? error.message : String(error),
-        );
-      } finally {
-        isOpen = false;
-      }
-
-      const inputs = new Map(adapter.listInputs().map((input) => [input.id, input]));
-      for (const inputId of updates.keys()) {
-        const input = inputs.get(inputId);
-        if (!input) {
-          return failure(
-            normalizedLabel,
-            "input_not_found",
-            `Generation input '${inputId}' was not found.`,
-          );
-        }
-        if (input.inputType !== "text") {
-          return failure(
-            normalizedLabel,
-            "input_type_mismatch",
-            `Generation input '${inputId}' is not a text input.`,
-          );
-        }
-      }
-      const changed = [...updates].some(
-        ([inputId, value]) => inputs.get(inputId)?.value !== value,
+      return toPublicResult(
+        generationSessionService.transaction(normalizedLabel, (session) => {
+          const transaction: ExtensionGenerationTransaction = {
+            setTextInput: (inputId, value) => {
+              if (typeof inputId !== "string" || inputId.trim().length === 0) {
+                throw new Error(
+                  "Generation input IDs must be non-empty strings.",
+                );
+              }
+              if (
+                typeof value !== "string" ||
+                value.length > MAX_TEXT_VALUE_LENGTH ||
+                serializeFiniteJson(value) === null
+              ) {
+                throw new Error(
+                  `Generation text values must contain at most ${MAX_TEXT_VALUE_LENGTH} characters.`,
+                );
+              }
+              session.setTextInput(inputId, value);
+            },
+          };
+          // Returned so the session still sees an async callback and refuses
+          // it; the SDK contract is synchronous.
+          return callback(transaction);
+        }),
       );
-      if (changed) adapter.commitTextInputs(updates);
-      return { ok: true, changed, label: normalizedLabel };
     },
   };
   return Object.freeze(api);

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ExtensionApiScope, ExtensionResource } from "../..";
 import { createVloExtensionApi } from "../../services/FrontendExtensionRuntime";
-import { extensionGenerationBridge } from "../../generation/ExtensionGenerationBridge";
+import { mountGenerationSession } from "../../../../testUtils/generationSession";
 import { ExtensionModalHost } from "../ExtensionModalHost";
 import { ExtensionUiSlot } from "../ExtensionUiSlot";
 import { activate } from "../../../../../../extension-fixtures/layout-prompt/frontend/src/index";
@@ -19,9 +19,8 @@ describe("layout prompt UI conformance fixture", () => {
       },
       report: vi.fn(),
     };
-    const commitTextInputs = vi.fn();
-    const unmountGeneration = extensionGenerationBridge.mount({
-      listInputs: () => [
+    const session = mountGenerationSession({
+      inputs: [
         {
           id: "6:text",
           nodeId: "6",
@@ -31,7 +30,6 @@ describe("layout prompt UI conformance fixture", () => {
           value: "old prompt",
         },
       ],
-      commitTextInputs,
     });
     const api = createVloExtensionApi(scope);
     await activate({
@@ -74,8 +72,8 @@ describe("layout prompt UI conformance fixture", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Apply JSON prompt" }));
 
-    expect(commitTextInputs).toHaveBeenCalledOnce();
-    const updates = commitTextInputs.mock.calls[0][0] as ReadonlyMap<
+    expect(session.commit).toHaveBeenCalledOnce();
+    const updates = session.commit.mock.calls[0][0].textInputs as ReadonlyMap<
       string,
       string
     >;
@@ -113,13 +111,13 @@ describe("layout prompt UI conformance fixture", () => {
     // throwing, closing, or issuing a stale write.
     fireEvent.click(screen.getByRole("button", { name: "Layout prompt" }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    unmountGeneration();
+    session.unmount();
     fireEvent.click(screen.getByRole("button", { name: "Apply JSON prompt" }));
     expect(screen.getByRole("status")).toHaveTextContent(
       "The generation panel is not mounted.",
     );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(commitTextInputs).toHaveBeenCalledOnce();
+    expect(session.commit).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     for (const resource of resources.reverse()) {

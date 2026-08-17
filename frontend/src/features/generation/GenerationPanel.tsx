@@ -68,13 +68,8 @@ import {
 import { resolveNodeDisplayTitle } from "./services/nodeTitles";
 import { isAspectRatioWidget } from "./utils/aspectRatioWidgets";
 import { WorkflowDependencyResolver } from "./components/WorkflowDependencyResolver";
-import {
-  buildWorkflowInputLookup,
-  getWorkflowInputId,
-  getWorkflowInputValue,
-} from "./utils/workflowInputs";
 import { ExtensionUiSlot } from "../extensions/ui/publicApi";
-import { extensionGenerationBridge } from "../extensions/generation/ExtensionGenerationBridge";
+import { useGenerationSessionMount } from "./hooks/useGenerationSessionMount";
 import { NestedMenuTree } from "../panelUI";
 import { useMenuTreeLayout } from "../../core/shell/useMenuTreeLayout";
 import { resolveMenuTreeLayout } from "../../core/shell/menuTree";
@@ -313,7 +308,6 @@ export function GenerationPanel() {
     urlInput,
     setUrlInput,
     textValues,
-    handleTextValueCommit,
     handleTextValuesCommit,
     mediaInputs,
 
@@ -595,46 +589,6 @@ export function GenerationPanel() {
     () => [...pipelineWidgetInputs, ...widgetInputs],
     [pipelineWidgetInputs, widgetInputs],
   );
-  const extensionGenerationInputLookup = useMemo(
-    () => buildWorkflowInputLookup(workflowInputs),
-    [workflowInputs],
-  );
-  const extensionGenerationInputs = useMemo(
-    () =>
-      workflowInputs.map((input) => {
-        const id = getWorkflowInputId(input);
-        const textValue =
-          input.inputType === "text"
-            ? (getWorkflowInputValue(
-                textValues,
-                input,
-                extensionGenerationInputLookup,
-              ) ??
-              (typeof input.currentValue === "string"
-                ? input.currentValue
-                : ""))
-            : undefined;
-        return Object.freeze({
-          id,
-          nodeId: input.nodeId,
-          param: input.param,
-          label: input.label,
-          ...(input.description ? { description: input.description } : {}),
-          inputType: input.inputType,
-          ...(textValue !== undefined ? { value: textValue } : {}),
-        });
-      }),
-    [extensionGenerationInputLookup, textValues, workflowInputs],
-  );
-
-  useEffect(
-    () =>
-      extensionGenerationBridge.mount({
-        listInputs: () => extensionGenerationInputs,
-        commitTextInputs: handleTextValuesCommit,
-      }),
-    [extensionGenerationInputs, handleTextValuesCommit],
-  );
   const exactAspectRatioWidgetKey = useMemo(() => {
     if (!showRulesResolutionSelector) {
       return null;
@@ -708,7 +662,10 @@ export function GenerationPanel() {
   const hasVisibleGenerationControls =
     workflowInputs.length > 0 || displayWidgetInputs.length > 0;
 
-  const handleDisplayedWidgetChange = useCallback(
+  // The session's commit side: a validated widget write that has already been
+  // through `generationSessionService.transaction`. Panel controls call
+  // `handleDisplayedWidgetChange` below, never this.
+  const applyDisplayedWidgetValue = useCallback(
     (nodeId: string, param: string, value: unknown) => {
       if (!isPipelineWidgetNodeId(nodeId)) {
         handleWidgetChange(nodeId, param, value);
@@ -735,6 +692,30 @@ export function GenerationPanel() {
       setMaskCropMode,
       setTargetResolution,
     ],
+  );
+
+  const { commitTextValue, commitWidgetValue } = useGenerationSessionMount({
+    workflowInputs,
+    textValues,
+    widgetInputs: displayWidgetInputs,
+    widgetValues,
+    selectedWorkflowId,
+    commitTextInputs: handleTextValuesCommit,
+    applyWidgetValue: applyDisplayedWidgetValue,
+  });
+
+  const handleDisplayedWidgetChange = useCallback(
+    (nodeId: string, param: string, value: unknown) => {
+      commitWidgetValue(nodeId, param, value);
+    },
+    [commitWidgetValue],
+  );
+
+  const handleSessionTextValueCommit = useCallback(
+    (inputId: string, value: string) => {
+      commitTextValue(inputId, value);
+    },
+    [commitTextValue],
   );
 
   useEffect(() => {
@@ -1421,7 +1402,7 @@ export function GenerationPanel() {
                     inputs={workflowInputs}
                     sections={activeWorkflowRules?.sections ?? []}
                     textValues={textValues}
-                    onTextValueCommit={handleTextValueCommit}
+                    onTextValueCommit={handleSessionTextValueCommit}
                     mediaInputs={mediaInputs}
                     onInputDrop={handleInputDrop}
                     onExternalInputDrop={handleExternalInputDrop}

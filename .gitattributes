@@ -26,6 +26,7 @@
 /extension-fixtures/** extension-surface=fixture
 # Shared stub of the timeline transaction contract; grows with every new command.
 /frontend/src/testUtils/extensionTimeline.ts extension-surface=fixture
+/frontend/src/testUtils/generationSession.ts extension-surface=fixture
 /backend/tests/test_extension*.py extension-surface=fixture
 /backend/tests/test_backend_extension_runtime.py extension-surface=fixture
 
@@ -115,6 +116,14 @@
 /frontend/src/features/userAssets/api.ts extension-surface=adapter
 /frontend/src/features/userAssets/useAssetBrowserSelectionStore.ts extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
+# The owner-neutral generation session seam. Native panel controls and the
+# extension generation adapter share this transaction path, so a change here
+# changes both (docs/generation-native-extension-seams-plan.md §3.2, §4).
+/frontend/src/features/generation/services/GenerationSessionService.ts extension-surface=adapter
+/frontend/src/features/generation/services/generationSessionTypes.ts extension-surface=adapter
+/frontend/src/features/generation/services/generationSessionValidation.ts extension-surface=adapter
+/frontend/src/features/generation/services/workflowNodeCatalogue.ts extension-surface=adapter
+/frontend/src/features/generation/hooks/useGenerationSessionMount.ts extension-surface=adapter
 /frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
 /frontend/src/features/project/constants.ts extension-surface=adapter
 /frontend/src/features/project/services/ProjectPersistenceService.ts extension-surface=adapter

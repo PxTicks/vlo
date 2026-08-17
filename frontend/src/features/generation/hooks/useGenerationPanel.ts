@@ -1321,13 +1321,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     [clearPendingReplayPanelState, workflowInputById],
   );
 
-  const handleTextValueCommit = useCallback(
-    (inputId: string, value: string) => {
-      handleTextValuesCommit(new Map([[inputId, value]]));
-    },
-    [handleTextValuesCommit],
-  );
-
   const handleWidgetChange = useCallback(
     (nodeId: string, param: string, value: unknown) => {
       clearPendingReplayPanelState();
@@ -1459,7 +1452,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     urlInput,
     setUrlInput,
     textValues,
-    handleTextValueCommit,
     handleTextValuesCommit,
     mediaInputs,
 

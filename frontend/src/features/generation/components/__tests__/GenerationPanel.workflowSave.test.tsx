@@ -103,7 +103,6 @@ function makeHookState(
     urlInput: "",
     setUrlInput: vi.fn(),
     textValues: {},
-    handleTextValueCommit: vi.fn(),
     handleTextValuesCommit: vi.fn(),
     mediaInputs: {},
     latestPreviewUrl: null,

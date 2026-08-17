@@ -112,14 +112,7 @@ run.bat
 - installs the npm and Python dependencies and builds the frontend;
 - offers to install SAM2 for segmentation and masking, along with PyTorch with
   CUDA 13.0. Answer yes if you have an Nvidia GPU and want masking. To add it
-  afterwards, rerun the installer;
-- when vlo creates a managed ComfyUI environment, its setup dialog can also
-  install SageAttention into that same environment. SageAttention is compiled
-  from source and needs a supported Nvidia GPU (compute capability 8.0, 8.6,
-  8.9, 9.0 or 12.0), matching CUDA PyTorch and CUDA Toolkit (`nvcc`) major
-  versions, and a compatible C++ compiler. Unsupported systems are skipped
-  without affecting the rest of the ComfyUI installation. See
-  [docs/sageattention-install-policy.md](docs/sageattention-install-policy.md).
+  afterwards, rerun the installer.
 
 `run.sh` / `run.bat` starts vlo and opens `http://127.0.0.1:6332`. Pass
 `--no-browser` to skip opening the browser.

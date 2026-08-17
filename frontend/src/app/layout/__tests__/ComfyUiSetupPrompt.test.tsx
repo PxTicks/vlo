@@ -45,11 +45,6 @@ describe("ComfyUiSetupPrompt", () => {
     expect(
       screen.getByRole("button", { name: "Install ComfyUI" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("checkbox", {
-        name: /Build SageAttention in the managed ComfyUI environment/,
-      }),
-    ).toBeInTheDocument();
   });
 
   it("persists a declined generative AI choice and closes", async () => {

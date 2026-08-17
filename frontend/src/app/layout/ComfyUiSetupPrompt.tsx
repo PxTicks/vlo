@@ -4,13 +4,11 @@ import {
   Box,
   Button,
   CircularProgress,
-  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   LinearProgress,
-  FormControlLabel,
   TextField,
   Typography,
 } from "@mui/material";
@@ -29,7 +27,6 @@ export function ComfyUiSetupPrompt() {
   const [manualPath, setManualPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [installSageAttention, setInstallSageAttention] = useState(false);
   const [installStatus, setInstallStatus] =
     useState<ComfyuiInstallStatus | null>(null);
 
@@ -127,9 +124,7 @@ export function ComfyUiSetupPrompt() {
     try {
       const result = await pickComfyuiDirectory("install");
       if (result.cancelled || !result.path) return;
-      const status = await installComfyui(result.path, {
-        installSageAttention,
-      });
+      const status = await installComfyui(result.path);
       setInstallStatus(status);
     } catch (err) {
       setError(
@@ -220,18 +215,6 @@ export function ComfyUiSetupPrompt() {
                 </Button>
                 {busy ? <CircularProgress size={24} /> : null}
               </Box>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={installSageAttention}
-                    onChange={(event) =>
-                      setInstallSageAttention(event.target.checked)
-                    }
-                    disabled={busy}
-                  />
-                }
-                label="Build SageAttention in the managed ComfyUI environment (supported NVIDIA/CUDA systems only)"
-              />
               <Box sx={{ display: "flex", gap: 1 }}>
                 <TextField
                   size="small"

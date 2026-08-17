@@ -77,7 +77,6 @@ InstallPhase = Literal[
     "cloning",
     "creating_environment",
     "installing_requirements",
-    "installing_sageattention",
     "complete",
     "failed",
 ]
@@ -365,12 +364,7 @@ class ComfyuiLocalRuntime:
                 "error": error,
             }
 
-    def start_install(
-        self,
-        parent_path: str | Path,
-        *,
-        install_sageattention: bool = False,
-    ) -> ComfyuiInstallStatus:
+    def start_install(self, parent_path: str | Path) -> ComfyuiInstallStatus:
         _require_git()
         parent = Path(parent_path).expanduser().resolve()
         if not parent.is_dir():
@@ -400,12 +394,7 @@ class ComfyuiLocalRuntime:
 
         thread = threading.Thread(
             target=self._install_worker,
-            args=(
-                target,
-                True,
-                "ComfyUI is installed and ready to launch.",
-                install_sageattention,
-            ),
+            args=(target,),
             name="vlo-comfyui-installer",
             daemon=True,
         )
@@ -415,8 +404,6 @@ class ComfyuiLocalRuntime:
     def start_environment_setup(
         self,
         install_path: str | Path,
-        *,
-        install_sageattention: bool = False,
     ) -> ComfyuiInstallStatus:
         _require_git()
         verification = verify_comfyui_install(install_path)
@@ -437,12 +424,7 @@ class ComfyuiLocalRuntime:
 
         thread = threading.Thread(
             target=self._install_worker,
-            args=(
-                target,
-                False,
-                "The managed ComfyUI environment is ready.",
-                install_sageattention,
-            ),
+            args=(target, False, "The managed ComfyUI environment is ready."),
             name="vlo-comfyui-environment-installer",
             daemon=True,
         )
@@ -523,52 +505,11 @@ class ComfyuiLocalRuntime:
                     cwd=node_dir,
                 )
 
-    def _install_sageattention(self, target: Path, python: Path) -> str | None:
-        """Install into ComfyUI's interpreter; incompatibility stays non-fatal."""
-
-        self._set_install_status(
-            phase="installing_sageattention",
-            running=True,
-            target_path=target,
-            message="Checking and building SageAttention…",
-        )
-        installer = Path(__file__).parents[3] / "scripts" / "install_sageattention.py"
-        try:
-            result = subprocess.run(
-                [sys.executable, str(installer), "--python", str(python)],
-                cwd=Path(__file__).parents[3],
-                check=False,
-                stdin=subprocess.DEVNULL,
-                text=True,
-                capture_output=True,
-            )
-        except OSError as exc:
-            logger.warning("SageAttention installer could not start: %s", exc)
-            return f"SageAttention was skipped: {exc}"
-
-        if result.stdout:
-            logger.info("SageAttention installer output:\n%s", result.stdout.rstrip())
-        if result.stderr:
-            logger.warning("SageAttention installer diagnostics:\n%s", result.stderr.rstrip())
-        if result.returncode == 0:
-            return None
-
-        detail = "compatibility checks or the source build failed"
-        for line in reversed(result.stdout.splitlines()):
-            if line.startswith(("FAIL:", "SKIP:")):
-                detail = line.partition(":")[2].strip()
-                break
-            if line.startswith("REASON="):
-                detail = line.partition("=")[2].strip()
-                break
-        return f"SageAttention was skipped: {detail}"
-
     def _install_worker(
         self,
         target: Path,
         clone_checkout: bool = True,
         completion_message: str = "ComfyUI is installed and ready to launch.",
-        install_sageattention: bool = False,
     ) -> None:
         try:
             if clone_checkout:
@@ -623,12 +564,6 @@ class ComfyuiLocalRuntime:
             )
             self._install_custom_nodes(target, python)
 
-            sageattention_warning = (
-                self._install_sageattention(target, python)
-                if install_sageattention
-                else None
-            )
-
             verification = verify_comfyui_install(target)
             if not verification["valid"]:
                 raise RuntimeError("The installed checkout did not pass ComfyUI verification")
@@ -644,15 +579,9 @@ class ComfyuiLocalRuntime:
                 running=False,
                 target_path=target,
                 message=(
-                    " ".join(
-                        part
-                        for part in (
-                            completion_message,
-                            cuda_torch_warning,
-                            sageattention_warning,
-                        )
-                        if part
-                    )
+                    f"{completion_message} {cuda_torch_warning}"
+                    if cuda_torch_warning
+                    else completion_message
                 ),
             )
         except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as exc:

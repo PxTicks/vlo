@@ -13,7 +13,6 @@ export type ComfyuiInstallPhase =
   | "cloning"
   | "creating_environment"
   | "installing_requirements"
-  | "installing_sageattention"
   | "complete"
   | "failed";
 
@@ -168,20 +167,12 @@ export function verifyComfyuiInstall(
 
 export function installComfyui(
   parentPath: string,
-  options: { installSageAttention?: boolean } = {},
 ): Promise<ComfyuiInstallStatus> {
-  return postRuntimeAction("/comfyui/install", {
-    parentPath,
-    installSageAttention: options.installSageAttention === true,
-  });
+  return postRuntimeAction("/comfyui/install", { parentPath });
 }
 
-export function prepareComfyuiEnvironment(
-  options: { installSageAttention?: boolean } = {},
-): Promise<ComfyuiInstallStatus> {
-  return postRuntimeAction("/comfyui/environment", {
-    installSageAttention: options.installSageAttention === true,
-  });
+export function prepareComfyuiEnvironment(): Promise<ComfyuiInstallStatus> {
+  return postRuntimeAction("/comfyui/environment");
 }
 
 export async function getComfyuiInstallStatus(): Promise<ComfyuiInstallStatus> {

@@ -124,6 +124,15 @@
 /frontend/src/features/generation/services/generationSessionValidation.ts extension-surface=adapter
 /frontend/src/features/generation/services/workflowNodeCatalogue.ts extension-surface=adapter
 /frontend/src/features/generation/hooks/useGenerationSessionMount.ts extension-surface=adapter
+# The normalized graph-effect path (§3.3): the closed effect union, its source
+# attribution, and the queued-plan capture a future SDK effect surface would
+# have to project. Certified by N1.
+/frontend/src/features/generation/pipeline/generationGraphEffects.ts extension-surface=adapter
+/frontend/src/features/generation/pipeline/types.ts extension-surface=adapter
+# Clone-time effect application (§N2b). The bridge decides which node ids are
+# addressable and which writes fail closed, so it defines what the effect union
+# above can actually promise.
+/backend/assets/comfyui_bridge/bridge-core.mjs extension-surface=adapter
 /frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
 /frontend/src/features/project/constants.ts extension-surface=adapter
 /frontend/src/features/project/services/ProjectPersistenceService.ts extension-surface=adapter

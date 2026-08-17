@@ -119,6 +119,19 @@ import type {
 } from "features/generation";
 ```
 
+### The owner-neutral session seam
+
+`GenerationSessionService` is a second, deliberately owner-neutral surface: the
+panel mounts it and publishes the snapshot, and both native controls and the
+trusted extension adapter write through the same `transaction`. Read
+[docs/generation-native-extension-seams-plan.md](../../../../docs/generation-native-extension-seams-plan.md)
+before changing it — §N3 documents the adapter boundary (availability, size
+limits, attribution, failure-code translation), and a change here changes the
+extension surface too. Two gates enforce it: `sessionSeamOwnership.test.ts`
+fails on any import of `features/extensions` into the seam's import closure, and
+`useGenerationSessionMount.test.tsx` pins native/extension behavioural
+agreement and the published failure-code mapping.
+
 ## Testing
 
 Primary test areas:

@@ -30,10 +30,20 @@ type PublicFailureCode = Exclude<
   { readonly ok: true }
 >["code"];
 
-// Failure codes the SDK does not publish yet (widget writes are not part of
-// the extension surface) collapse onto `invalid_command`, so an adapter-side
-// bug can never leak an unmodelled code to an extension.
-const PUBLIC_FAILURE_CODES: Record<
+/**
+ * Host failure code → published failure code.
+ *
+ * Failure codes the SDK does not publish yet (widget writes are not part of the
+ * extension surface) collapse onto `invalid_command`, so an adapter-side bug can
+ * never leak an unmodelled code to an extension. `Record` over the host union
+ * makes a newly added host code a compile error here rather than a runtime
+ * `undefined` on the wire.
+ *
+ * Exported for the N3 boundary test, which pins every entry — the translation
+ * is a published contract, not an implementation detail
+ * (docs/generation-native-extension-seams-plan.md §5, N3).
+ */
+export const PUBLIC_FAILURE_CODES: Record<
   GenerationTransactionFailureCode,
   PublicFailureCode
 > = {

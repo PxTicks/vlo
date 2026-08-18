@@ -62,6 +62,10 @@ import { GenerationPanel } from "../../GenerationPanel";
 import { createDefaultWorkflowRules } from "../../services/workflowRules";
 import type { GenerationJob } from "../../types";
 import { useGenerationStore } from "../../useGenerationStore";
+import {
+  LORA_BYPASS_CHOICE,
+  LORA_LOADERS_SECTION_ID,
+} from "../../utils/loraLoaderWidgets";
 
 function makeHookState(overrides: Record<string, unknown> = {}) {
   return {
@@ -117,9 +121,12 @@ function makeHookState(overrides: Record<string, unknown> = {}) {
     handleInputClear: vi.fn(),
     handleClickSelect: vi.fn(),
     widgetInputs: [],
+    generationNodes: [],
     widgetValues: {},
+    bypassedWidgetTargets: new Set(),
     randomizeToggles: {},
     handleWidgetChange: vi.fn(),
+    handleWidgetBypassChoice: vi.fn(() => false),
     handleToggleRandomize: vi.fn(),
     connectionStatus: "connected",
     runtimeStatus: {
@@ -192,6 +199,66 @@ describe("GenerationPanel workflow rule hints", () => {
       exactAspectRatio: false,
       setExactAspectRatio: vi.fn(),
     });
+  });
+
+  it("renders autodiscovered LoRA widgets through the standard input panel", () => {
+    const handleWidgetBypassChoice = vi.fn(() => true);
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        handleWidgetBypassChoice,
+        widgetInputs: [
+          {
+            nodeId: "4",
+            param: "lora_name",
+            currentValue: "base.safetensors",
+            config: {
+              label: "Model",
+              controlAfterGenerate: false,
+              valueType: "enum",
+              options: ["base.safetensors", "detail.safetensors"],
+              sectionId: LORA_LOADERS_SECTION_ID,
+              groupTitle: "Portrait detail",
+              nodeBypassOption: {
+                value: LORA_BYPASS_CHOICE,
+                label: "None (bypass)",
+              },
+            },
+          },
+        ],
+      }),
+    );
+    useGenerationStore.setState({
+      syncedWorkflow: {
+        "4": {
+          class_type: "LoraLoaderModelOnly",
+          inputs: { lora_name: "base.safetensors" },
+        },
+      },
+      rawObjectInfo: {
+        LoraLoaderModelOnly: {
+          input: {
+            required: {
+              lora_name: [["base.safetensors", "detail.safetensors"], {}],
+            },
+          },
+          input_order: { required: ["lora_name"] },
+        },
+      },
+    });
+
+    render(<GenerationPanel />);
+
+    expect(
+      screen.getByRole("heading", { name: "LoRA loaders" }),
+    ).toBeInTheDocument();
+    const modelSelect = screen.getByText("base.safetensors");
+    fireEvent.mouseDown(modelSelect);
+    fireEvent.click(screen.getByRole("option", { name: "None (bypass)" }));
+    expect(handleWidgetBypassChoice).toHaveBeenCalledWith(
+      "4",
+      "lora_name",
+      LORA_BYPASS_CHOICE,
+    );
   });
 
   it("loads an unplaced workflow from the nested menu Other section", () => {

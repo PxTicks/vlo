@@ -310,9 +310,12 @@ export function GenerationPanel() {
 
     // Widget state
     widgetInputs,
+    generationNodes,
     widgetValues,
+    bypassedWidgetTargets,
     randomizeToggles,
     handleWidgetChange,
+    handleWidgetBypassChoice,
     handleToggleRandomize,
 
     // Derived
@@ -690,6 +693,7 @@ export function GenerationPanel() {
   );
 
   const { commitTextValue, commitWidgetValue } = useGenerationSessionMount({
+    nodes: generationNodes,
     workflowInputs,
     textValues,
     widgetInputs: displayWidgetInputs,
@@ -705,9 +709,13 @@ export function GenerationPanel() {
 
   const handleDisplayedWidgetChange = useCallback(
     (nodeId: string, param: string, value: unknown) => {
+      // The bypass choice is panel state, not a value ComfyUI's enum accepts.
+      if (handleWidgetBypassChoice(nodeId, param, value)) {
+        return;
+      }
       commitWidgetValue(nodeId, param, value);
     },
-    [commitWidgetValue],
+    [commitWidgetValue, handleWidgetBypassChoice],
   );
 
   const handleSessionTextValueCommit = useCallback(
@@ -1411,6 +1419,7 @@ export function GenerationPanel() {
                     onEditMedia={handleEditMedia}
                     widgetInputs={displayWidgetInputs}
                     widgetValues={widgetValues}
+                    bypassedWidgetTargets={bypassedWidgetTargets}
                     randomizeToggles={randomizeToggles}
                     onWidgetChange={handleDisplayedWidgetChange}
                     onToggleRandomize={handleToggleRandomize}

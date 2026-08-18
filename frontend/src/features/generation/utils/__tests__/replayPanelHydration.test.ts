@@ -5,9 +5,11 @@ import {
   areWidgetValueMapsEqual,
   hydrateReplayRandomizeToggles,
   hydrateReplayTextValues,
+  resolveReplayNodeBypassWidgetTargets,
   resolveReplayWidgetValues,
   shouldWaitForReplayPanelHydration,
 } from "../replayPanelHydration";
+import { getNodeBypassWidgetKey } from "../nodeBypassWidgets";
 
 const EMPTY_REPLAY_STATE: WorkflowReplayPanelState = {
   textValues: {},
@@ -39,6 +41,24 @@ function makeSeedWidget(): WorkflowWidgetInput {
       valueType: "int",
     },
     currentValue: 11,
+  };
+}
+
+function makeLoraWidget(): WorkflowWidgetInput {
+  return {
+    nodeId: "12:6",
+    param: "lora_name",
+    config: {
+      label: "Model",
+      controlAfterGenerate: false,
+      valueType: "enum",
+      options: ["base.safetensors"],
+      nodeBypassOption: {
+        value: "vlo.lora-loader:none",
+        label: "None (bypass)",
+      },
+    },
+    currentValue: "base.safetensors",
   };
 }
 
@@ -94,6 +114,24 @@ describe("replayPanelHydration", () => {
       value: { "145:seed": true },
       changed: true,
     });
+  });
+
+  it("restores and clears native node bypasses from replay state", () => {
+    const replayState: WorkflowReplayPanelState = {
+      ...EMPTY_REPLAY_STATE,
+      bypassNodeIds: ["12:6"],
+    };
+    const widget = makeLoraWidget();
+
+    expect(
+      shouldWaitForReplayPanelHydration(replayState, [], [], true),
+    ).toBe(true);
+    expect(resolveReplayNodeBypassWidgetTargets(replayState, [widget])).toEqual(
+      new Set([getNodeBypassWidgetKey("12:6", "lora_name")]),
+    );
+    expect(
+      resolveReplayNodeBypassWidgetTargets(EMPTY_REPLAY_STATE, [widget]),
+    ).toEqual(new Set());
   });
 
   it("keeps text state identity when replayed text is already applied", () => {

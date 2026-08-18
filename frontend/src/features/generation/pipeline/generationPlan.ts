@@ -993,6 +993,7 @@ export function createGenerationPlan(
             frontendStateWidgetValues: options.frontendStateWidgetValues,
             widgetModes: options.widgetModes,
             derivedWidgetInputs: options.derivedWidgetInputs,
+            bypassNodeIds: options.bypassNodeIds,
           },
         ),
       ),

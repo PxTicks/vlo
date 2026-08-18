@@ -244,6 +244,12 @@ export interface WidgetDisplayUnit {
   precision?: number;
 }
 
+export interface WidgetNodeBypassOption {
+  /** Internal panel value. It must not collide with a real widget option. */
+  value: string;
+  label: string;
+}
+
 export interface WidgetInputConfig {
   label: string;
   description?: string;
@@ -268,6 +274,11 @@ export interface WidgetInputConfig {
   options?: Array<string | number | boolean>;
   trueValue?: unknown;
   falseValue?: unknown;
+  /**
+   * Optional panel-only choice that bypasses this widget's node at submission
+   * instead of writing the choice into the underlying widget.
+   */
+  nodeBypassOption?: WidgetNodeBypassOption;
 }
 
 export interface WorkflowParamReference {

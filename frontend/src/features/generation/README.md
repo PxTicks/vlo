@@ -94,6 +94,17 @@ Presented inputs come from:
 
 - inferred inputs parsed from workflow graph nodes
 - rule-defined overrides (`workflowRules`)
+- active `LoraLoader*` nodes discovered from the node/widget catalogue; their
+  `lora_name` enum is merged into the ordinary widget-input model, including a
+  panel-only `None (bypass)` choice
+
+Autodiscovered LoRA controls deliberately use the normal generation paths:
+model choices are captured as widget overrides, while `None` adds the loader's
+root or scoped node id to the existing `panel-bypass` effects and replay
+metadata. Explicit
+sidecar presentation metadata wins when it already exposes the same widget;
+the native bypass choice remains available as built-in loader behaviour.
+Muted, bypassed, and link-fed loaders are not auto-presented.
 
 Selection/media extraction helpers live in:
 

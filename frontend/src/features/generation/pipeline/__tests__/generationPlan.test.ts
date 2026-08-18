@@ -705,6 +705,9 @@ describe("generationPlan cache media extraction", () => {
       stitch_fps: 24,
       attach_generation_mask: false,
     });
+    expect(plan.metadata.generationMetadata.replayState?.bypassNodeIds).toEqual(
+      ["1"],
+    );
   });
 
   it("builds submitted mask/aspect metadata and decoded mask files", () => {

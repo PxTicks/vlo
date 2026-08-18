@@ -70,6 +70,8 @@ export interface GeneratedCreationReplayState {
   widgetValues?: Record<string, string>;
   widgetModes?: Record<string, "fixed" | "randomize">;
   derivedWidgetValues?: Record<string, string>;
+  /** Native panel node bypasses that must be restored when replaying. */
+  bypassNodeIds?: string[];
   exactAspectRatio?: boolean;
   pipelineInputs?: Record<string, Record<string, unknown>>;
   maskCropMode?: "crop" | "full";

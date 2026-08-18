@@ -119,6 +119,11 @@
 /frontend/src/features/userAssets/api.ts extension-surface=adapter
 /frontend/src/features/userAssets/useAssetBrowserSelectionStore.ts extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
+/frontend/src/features/generation/components/GenerationInputs.tsx extension-surface=adapter
+/frontend/src/features/generation/hooks/useGenerationPanel.ts extension-surface=adapter
+/frontend/src/features/generation/types.ts extension-surface=adapter
+/frontend/src/features/generation/utils/loraLoaderWidgets.ts extension-surface=adapter
+/frontend/src/features/generation/utils/nodeBypassWidgets.ts extension-surface=adapter
 # The owner-neutral generation session seam. Native panel controls and the
 # extension generation adapter share this transaction path, so a change here
 # changes both (docs/generation-native-extension-seams-plan.md §3.2, §4).

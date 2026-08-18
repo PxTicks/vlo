@@ -136,6 +136,7 @@ describe("generation metadata replay helpers", () => {
       derivedWidgetInputs: {
         derived_widget_dual_sampler_denoise: "0.4",
       },
+      bypassNodeIds: ["12:6"],
     });
 
     expect(metadata).toEqual({
@@ -189,6 +190,7 @@ describe("generation metadata replay helpers", () => {
         derivedWidgetValues: {
           derived_widget_dual_sampler_denoise: "0.4",
         },
+        bypassNodeIds: ["12:6"],
         exactAspectRatio: true,
         pipelineInputs: {
           aspect_ratio: {
@@ -304,6 +306,7 @@ describe("generation metadata replay helpers", () => {
       derivedWidgetValues: {
         derived_widget_dual_sampler_denoise: "0.4",
       },
+      bypassNodeIds: ["12:6"],
       exactAspectRatio: true,
       maskCropMode: "full" as const,
       maskCropDilation: 0.2,
@@ -343,6 +346,7 @@ describe("generation metadata replay helpers", () => {
       derivedWidgetValues: {
         derived_widget_dual_sampler_denoise: "0.4",
       },
+      bypassNodeIds: ["12:6"],
     });
   });
 

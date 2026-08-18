@@ -7,6 +7,7 @@ import {
 import type {
   GenerationEditableWidgetSnapshot,
   GenerationInputSnapshot,
+  GenerationNodeSnapshot,
   GenerationSessionCommit,
   GenerationSessionJsonValue,
   GenerationTransactionResult,
@@ -32,6 +33,8 @@ import type { WidgetValueMap } from "../utils/widgetValueReconciliation";
  */
 
 export interface GenerationSessionMountOptions {
+  /** Shared catalogue used by native autodiscovery and session publication. */
+  readonly nodes?: readonly GenerationNodeSnapshot[];
   /** Panel input slots, in display order. */
   readonly workflowInputs: readonly WorkflowInput[];
   readonly textValues: Record<string, string>;
@@ -104,6 +107,7 @@ export function useGenerationSessionMount(
 ): GenerationSessionMountResult {
   const {
     workflowInputs,
+    nodes: providedNodes,
     textValues,
     widgetInputs,
     widgetValues,
@@ -139,12 +143,13 @@ export function useGenerationSessionMount(
 
   const nodes = useMemo(
     () =>
+      providedNodes ??
       buildGenerationNodeCatalogue(
         syncedWorkflow,
         rawObjectInfo,
         syncedGraphData,
       ),
-    [rawObjectInfo, syncedGraphData, syncedWorkflow],
+    [providedNodes, rawObjectInfo, syncedGraphData, syncedWorkflow],
   );
   const fingerprint = useMemo(
     () => computeGenerationCatalogueFingerprint(nodes),

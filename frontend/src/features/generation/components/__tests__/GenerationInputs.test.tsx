@@ -4,6 +4,94 @@ import { describe, expect, it, vi } from "vitest";
 import { GenerationInputs } from "../GenerationInputs";
 
 describe("GenerationInputs", () => {
+  it("renders a node-bypass choice through the standard enum widget row", () => {
+    const onWidgetChange = vi.fn();
+    render(
+      <GenerationInputs
+        inputs={[]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[
+          {
+            nodeId: "4",
+            param: "lora_name",
+            currentValue: "base.safetensors",
+            config: {
+              label: "Model",
+              controlAfterGenerate: false,
+              valueType: "enum",
+              options: ["base.safetensors", "detail.safetensors"],
+              groupTitle: "Portrait detail",
+              nodeBypassOption: {
+                value: "native:none",
+                label: "None (bypass)",
+              },
+            },
+          },
+        ]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={onWidgetChange}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByRole("option", { name: "None (bypass)" }));
+
+    expect(onWidgetChange).toHaveBeenCalledWith(
+      "4",
+      "lora_name",
+      "native:none",
+    );
+  });
+
+  it("shows an out-of-range enum value without replacing it", () => {
+    render(
+      <GenerationInputs
+        inputs={[]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[
+          {
+            nodeId: "4",
+            param: "lora_name",
+            currentValue: "missing.safetensors",
+            config: {
+              label: "Model",
+              controlAfterGenerate: false,
+              valueType: "enum",
+              options: ["base.safetensors"],
+            },
+          },
+        ]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    expect(
+      screen.getByRole("option", {
+        name: "missing.safetensors (unavailable)",
+      }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+
   it("spawns repeatable media slots as preceding slots fill, up to the sidecar maximum", () => {
     const input = {
       id: "141:images",

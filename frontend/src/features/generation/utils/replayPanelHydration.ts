@@ -7,6 +7,7 @@ import {
 import { getWorkflowInputId } from "./workflowInputs";
 import { parseStoredWidgetValue } from "./storedWidgetValues";
 import type { WidgetValueMap } from "./widgetValueReconciliation";
+import { getNodeBypassWidgetKey } from "./nodeBypassWidgets";
 
 interface HydrationResult<T> {
   value: T;
@@ -43,11 +44,26 @@ export function shouldWaitForReplayPanelHydration(
   const needsWidgetInputs =
     hasEntries(replayState.widgetValues) ||
     hasEntries(replayState.derivedWidgetValues) ||
-    hasEntries(replayState.widgetModes);
+    hasEntries(replayState.widgetModes) ||
+    (replayState.bypassNodeIds?.length ?? 0) > 0;
 
   return (
     (needsWorkflowInputs && workflowInputs.length === 0) ||
     (needsWidgetInputs && widgetInputs.length === 0)
+  );
+}
+
+export function resolveReplayNodeBypassWidgetTargets(
+  replayState: WorkflowReplayPanelState,
+  widgetInputs: readonly WorkflowWidgetInput[],
+): ReadonlySet<string> {
+  const bypassedNodes = new Set(replayState.bypassNodeIds ?? []);
+  return new Set(
+    widgetInputs.flatMap((widget) =>
+      widget.config.nodeBypassOption && bypassedNodes.has(widget.nodeId)
+        ? [getNodeBypassWidgetKey(widget.nodeId, widget.param)]
+        : [],
+    ),
   );
 }
 

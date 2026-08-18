@@ -429,6 +429,7 @@ export function buildGeneratedCreationMetadata(
     frontendStateWidgetValues: Record<string, unknown>;
     widgetModes: Record<string, "fixed" | "randomize">;
     derivedWidgetInputs: Record<string, string>;
+    bypassNodeIds?: readonly string[];
   },
 ): GeneratedCreationMetadata {
   const inputs: GeneratedCreationMetadata["inputs"] = [];
@@ -491,6 +492,7 @@ export function buildGeneratedCreationMetadata(
     frontendStateWidgetValues: options.frontendStateWidgetValues,
     widgetModes: options.widgetModes,
     derivedWidgetInputs: options.derivedWidgetInputs,
+    bypassNodeIds: options.bypassNodeIds,
     exactAspectRatio: options.exactAspectRatio,
     targetResolution: options.targetResolution,
     maskCropMode: options.maskCropMode,
@@ -634,12 +636,16 @@ export function extractReplayPanelState(
   const derivedWidgetValues = isStringRecord(replayState.derivedWidgetValues)
     ? replayState.derivedWidgetValues
     : {};
+  const bypassNodeIds = isStringArray(replayState.bypassNodeIds)
+    ? replayState.bypassNodeIds
+    : [];
 
   if (
     Object.keys(textValues).length === 0 &&
     Object.keys(widgetValues).length === 0 &&
     Object.keys(widgetModes).length === 0 &&
-    Object.keys(derivedWidgetValues).length === 0
+    Object.keys(derivedWidgetValues).length === 0 &&
+    bypassNodeIds.length === 0
   ) {
     return null;
   }
@@ -649,6 +655,9 @@ export function extractReplayPanelState(
     widgetValues: { ...widgetValues },
     widgetModes: { ...widgetModes },
     derivedWidgetValues: { ...derivedWidgetValues },
+    ...(bypassNodeIds.length > 0
+      ? { bypassNodeIds: [...new Set(bypassNodeIds)] }
+      : {}),
   };
 }
 
@@ -775,6 +784,7 @@ function buildGeneratedCreationReplayState(options: {
   frontendStateWidgetValues: Record<string, unknown>;
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetInputs: Record<string, string>;
+  bypassNodeIds?: readonly string[];
   exactAspectRatio: boolean;
   targetResolution: number;
   maskCropMode: WorkflowMaskCroppingMode;
@@ -827,6 +837,9 @@ function buildGeneratedCreationReplayState(options: {
   }
   if (Object.keys(options.derivedWidgetInputs).length > 0) {
     replayState.derivedWidgetValues = { ...options.derivedWidgetInputs };
+  }
+  if ((options.bypassNodeIds?.length ?? 0) > 0) {
+    replayState.bypassNodeIds = [...new Set(options.bypassNodeIds)];
   }
 
   return replayState;
@@ -911,6 +924,10 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   return Object.entries(value).every(
     ([key, entryValue]) => typeof key === "string" && typeof entryValue === "string",
   );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 function isWidgetModesRecord(

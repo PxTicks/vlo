@@ -6,6 +6,12 @@ the generation extension surface
 trusted policy extension can be written entirely out of tree: no host store, no
 iframe object, no backend module, and no generation-specific panel API.
 
+VLO also ships a native autodiscovered analogue through its ordinary
+`WorkflowWidgetInput` and `panel-bypass` paths. This fixture is deliberately
+retained: the native feature proves the owner-neutral catalogue is useful,
+while this package continues to prove SDK projection, packaging, approval,
+activation ownership, and unload behavior.
+
 What it does, and why each part is shaped that way:
 
 - **Discovery is class *and* widget.** A loader is a node whose `classType`

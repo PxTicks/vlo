@@ -87,6 +87,13 @@ function mergeReplayState(
           },
         }
       : {}),
+    ...(fromManifest.bypassNodeIds || existing.bypassNodeIds
+      ? {
+          bypassNodeIds: [
+            ...(existing.bypassNodeIds ?? fromManifest.bypassNodeIds ?? []),
+          ],
+        }
+      : {}),
     ...(fromManifest.pipelineInputs || existing.pipelineInputs
       ? {
           pipelineInputs: {

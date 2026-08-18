@@ -62,6 +62,7 @@ export interface WorkflowReplayPanelState {
   widgetValues: Record<string, string>;
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetValues: Record<string, string>;
+  bypassNodeIds?: string[];
 }
 
 export interface GenerationWorkflowState {

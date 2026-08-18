@@ -626,6 +626,7 @@ describe("deliveryEvents", () => {
         widgetValues: { seed: "2" },
         widgetModes: { seed: "fixed" },
         derivedWidgetValues: { denoise: "0.5" },
+        bypassNodeIds: ["local-lora"],
         pipelineInputs: { mask: { value: "frontend" } },
       },
     };
@@ -651,6 +652,7 @@ describe("deliveryEvents", () => {
               widgetValues: { seed: "1", steps: "20" },
               widgetModes: { seed: "randomize", steps: "fixed" },
               derivedWidgetValues: { denoise: "1", cfg: "7" },
+              bypassNodeIds: ["backend-lora"],
               pipelineInputs: {
                 mask: { value: "backend" },
                 crop: { value: "true" },
@@ -671,6 +673,7 @@ describe("deliveryEvents", () => {
     expect(replay?.widgetValues).toEqual({ seed: "2", steps: "20" });
     expect(replay?.widgetModes).toEqual({ seed: "fixed", steps: "fixed" });
     expect(replay?.derivedWidgetValues).toEqual({ denoise: "0.5", cfg: "7" });
+    expect(replay?.bypassNodeIds).toEqual(["local-lora"]);
     expect(replay?.pipelineInputs).toEqual({
       mask: { value: "frontend" },
       crop: { value: "true" },

@@ -27,6 +27,7 @@ import {
   getWorkflowInputValue,
 } from "../utils/workflowInputs";
 import { isAspectRatioWidget } from "../utils/aspectRatioWidgets";
+import { getNodeBypassWidgetKey } from "../utils/nodeBypassWidgets";
 
 interface GenerationInputsProps {
   inputs: WorkflowInput[];
@@ -42,6 +43,7 @@ interface GenerationInputsProps {
   widgetInputs: WorkflowWidgetInput[];
   sections?: WorkflowSection[];
   widgetValues: Record<string, Record<string, unknown>>;
+  bypassedWidgetTargets?: ReadonlySet<string>;
   randomizeToggles: Record<string, boolean>;
   onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
   onToggleRandomize: (nodeId: string, param: string) => void;
@@ -66,6 +68,11 @@ const DEFAULT_SECTION_METADATA = {
   settings: {
     title: "Settings",
     order: 2,
+    defaultOpen: true,
+  },
+  lora_loaders: {
+    title: "LoRA loaders",
+    order: 3,
     defaultOpen: true,
   },
 } as const;
@@ -1077,6 +1084,13 @@ function WidgetRow({
         ? "randomized"
         : ""
       : String(value);
+  const hasOutOfRangeEnumValue =
+    isEnumWidget(widget) &&
+    displayValue.length > 0 &&
+    displayValue !== widget.config.nodeBypassOption?.value &&
+    !(widget.config.options ?? []).some(
+      (option) => String(option) === displayValue,
+    );
   const parsedSliderValue =
     typeof value === "string" ? Number(value) : value;
   const sliderValue =
@@ -1244,11 +1258,34 @@ function WidgetRow({
                     false
                   </MenuItem>,
                 ]
-              : (widget.config.options ?? []).map((option) => (
-                  <MenuItem key={String(option)} value={String(option)}>
-                    {String(option)}
-                  </MenuItem>
-                )))}
+              : [
+                  ...(widget.config.nodeBypassOption
+                    ? [
+                        <MenuItem
+                          key="node-bypass-option"
+                          value={widget.config.nodeBypassOption.value}
+                        >
+                          {widget.config.nodeBypassOption.label}
+                        </MenuItem>,
+                      ]
+                    : []),
+                  ...(widget.config.options ?? []).map((option) => (
+                    <MenuItem key={String(option)} value={String(option)}>
+                      {String(option)}
+                    </MenuItem>
+                  )),
+                  ...(hasOutOfRangeEnumValue
+                    ? [
+                        <MenuItem
+                          key="out-of-range-enum-value"
+                          value={displayValue}
+                          disabled={true}
+                        >
+                          {displayValue} (unavailable)
+                        </MenuItem>,
+                      ]
+                    : []),
+                ])}
         </TextField>
 
         {widget.config.controlAfterGenerate && (
@@ -1340,6 +1377,7 @@ const MemoizedWidgetRow = memo(WidgetRow);
 interface WidgetGroupSectionProps {
   group: WidgetGroup;
   widgetValues: Record<string, Record<string, unknown>>;
+  bypassedWidgetTargets: ReadonlySet<string>;
   randomizeToggles: Record<string, boolean>;
   onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
   onToggleRandomize: (nodeId: string, param: string) => void;
@@ -1354,6 +1392,7 @@ interface WidgetGroupSectionProps {
 function WidgetGroupSection({
   group,
   widgetValues,
+  bypassedWidgetTargets,
   randomizeToggles,
   onWidgetChange,
   onToggleRandomize,
@@ -1380,7 +1419,11 @@ function WidgetGroupSection({
       {group.widgets.map((widget) => {
         const key = `${widget.nodeId}:${widget.param}`;
         const nodeValues = widgetValues[widget.nodeId] ?? {};
-        const value = nodeValues[widget.param] ?? widget.currentValue;
+        const value = bypassedWidgetTargets.has(
+          getNodeBypassWidgetKey(widget.nodeId, widget.param),
+        )
+          ? widget.config.nodeBypassOption?.value
+          : (nodeValues[widget.param] ?? widget.currentValue);
         const isRandomized = randomizeToggles[key] ?? false;
 
         return (
@@ -1406,6 +1449,8 @@ function WidgetGroupSection({
 }
 
 const MemoizedWidgetGroupSection = memo(WidgetGroupSection);
+
+const EMPTY_BYPASSED_WIDGET_TARGETS: ReadonlySet<string> = new Set();
 
 function getRenderableInputBlockKey(block: RenderableInputBlock): string {
   switch (block.kind) {
@@ -1434,6 +1479,7 @@ export const GenerationInputs = memo(function GenerationInputs({
   widgetInputs,
   sections = [],
   widgetValues,
+  bypassedWidgetTargets = EMPTY_BYPASSED_WIDGET_TARGETS,
   randomizeToggles,
   onWidgetChange,
   onToggleRandomize,
@@ -1597,6 +1643,7 @@ export const GenerationInputs = memo(function GenerationInputs({
                   key={`section-group:${item.section.id}:${group.id}`}
                   group={group}
                   widgetValues={widgetValues}
+                  bypassedWidgetTargets={bypassedWidgetTargets}
                   randomizeToggles={randomizeToggles}
                   onWidgetChange={onWidgetChange}
                   onToggleRandomize={onToggleRandomize}

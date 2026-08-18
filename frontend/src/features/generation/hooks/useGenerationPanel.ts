@@ -19,6 +19,7 @@ import type {
   GenerationMediaInputValue,
   WorkflowSelectionConfig,
   WorkflowInput,
+  WorkflowWidgetInput,
 } from "../types";
 import type { SlotValue } from "../utils/pipeline";
 import {
@@ -76,6 +77,7 @@ import { buildWorkflowInputMetadataMap } from "../utils/inputMetadata";
 import { carryOverTextValues } from "../utils/workflowInputCarryover";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
 import { resolveManualWidgetInputs } from "../services/manualWorkflowWidgets";
+import { buildGenerationNodeCatalogue } from "../services/workflowNodeCatalogue";
 import {
   buildFrontendStateDerivedWidgetKey,
   buildFrontendStateValueKey,
@@ -85,10 +87,20 @@ import {
   areWidgetValueMapsEqual,
   hydrateReplayRandomizeToggles,
   hydrateReplayTextValues,
+  resolveReplayNodeBypassWidgetTargets,
   resolveReplayWidgetValues,
   shouldWaitForReplayPanelHydration,
 } from "../utils/replayPanelHydration";
 import { parseStoredWidgetValue } from "../utils/storedWidgetValues";
+import {
+  mergeAutodiscoveredLoraWidgetInputs,
+  resolveAutodiscoveredLoraWidgetInputs,
+} from "../utils/loraLoaderWidgets";
+import {
+  getNodeBypassWidgetKey,
+  isNodeBypassWidgetValue,
+  partitionNodeBypassWidgetInputs,
+} from "../utils/nodeBypassWidgets";
 
 function applySelectionConfigDefaults(
   selection: ReturnType<typeof createTimelineSelection>,
@@ -250,10 +262,16 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   // Widget state
   const [widgetValues, setWidgetValues] = useState<WidgetValueMap>({});
   const widgetValuesRef = useRef<WidgetValueMap>({});
+  const widgetInputsRef = useRef<readonly WorkflowWidgetInput[]>([]);
   const widgetCurrentValuesRef = useRef<WidgetCurrentValueMap>({});
   const [randomizeToggles, setRandomizeToggles] = useState<
     Record<string, boolean>
   >({});
+  const [bypassedWidgetTargets, setBypassedWidgetTargets] = useState<
+    ReadonlySet<string>
+  >(new Set());
+  const bypassedWidgetTargetsRef = useRef<ReadonlySet<string>>(new Set());
+  const bypassWorkflowSourceRef = useRef<string | null>(null);
 
   const connectionStatus = useGenerationStore((s) => s.connectionStatus);
   const runtimeStatus = useGenerationStore((s) => s.runtimeStatus);
@@ -444,8 +462,64 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       resolveManualWidgetInputs(syncedWorkflow, rawObjectInfo, syncedGraphData),
     [rawObjectInfo, syncedGraphData, syncedWorkflow],
   );
-  const widgetInputs =
+  const baseWidgetInputs =
     mode === "manual" ? manualWidgetInputs : rulesWidgetInputs;
+  const generationNodes = useMemo(
+    () =>
+      buildGenerationNodeCatalogue(
+        syncedWorkflow,
+        rawObjectInfo,
+        syncedGraphData,
+      ),
+    [rawObjectInfo, syncedGraphData, syncedWorkflow],
+  );
+  const autodiscoveredLoraWidgetInputs = useMemo(
+    () => resolveAutodiscoveredLoraWidgetInputs(generationNodes),
+    [generationNodes],
+  );
+  const widgetInputs = useMemo(
+    () =>
+      mergeAutodiscoveredLoraWidgetInputs(
+        baseWidgetInputs,
+        autodiscoveredLoraWidgetInputs,
+      ),
+    [autodiscoveredLoraWidgetInputs, baseWidgetInputs],
+  );
+
+  useEffect(() => {
+    widgetInputsRef.current = widgetInputs;
+  }, [widgetInputs]);
+
+  useEffect(() => {
+    if (bypassWorkflowSourceRef.current === selectedWorkflowId) return;
+    bypassWorkflowSourceRef.current = selectedWorkflowId;
+    const next = new Set<string>();
+    bypassedWidgetTargetsRef.current = next;
+    setBypassedWidgetTargets(next);
+  }, [selectedWorkflowId]);
+
+  useEffect(() => {
+    const validTargets = new Set(
+      widgetInputs.flatMap((widget) =>
+        widget.config.nodeBypassOption
+          ? [getNodeBypassWidgetKey(widget.nodeId, widget.param)]
+          : [],
+      ),
+    );
+    const next = new Set(
+      [...bypassedWidgetTargetsRef.current].filter((target) =>
+        validTargets.has(target),
+      ),
+    );
+    if (
+      next.size === bypassedWidgetTargetsRef.current.size &&
+      [...next].every((target) => bypassedWidgetTargetsRef.current.has(target))
+    ) {
+      return;
+    }
+    bypassedWidgetTargetsRef.current = next;
+    setBypassedWidgetTargets(next);
+  }, [widgetInputs]);
 
   useEffect(() => {
     widgetValuesRef.current = widgetValues;
@@ -567,6 +641,13 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       widgetValuesRef.current = nextWidgetValues;
       setWidgetValues(nextWidgetValues);
     }
+
+    const nextBypassedWidgetTargets = resolveReplayNodeBypassWidgetTargets(
+      pendingReplayPanelState,
+      widgetInputs,
+    );
+    bypassedWidgetTargetsRef.current = nextBypassedWidgetTargets;
+    setBypassedWidgetTargets(nextBypassedWidgetTargets);
 
     setRandomizeToggles(
       (prev) =>
@@ -741,7 +822,14 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       const frontendStateWidgetValues: Record<string, unknown> = {};
       const derivedWidgetInputs: Record<string, string> = {};
       const widgetModes: Record<string, "fixed" | "randomize"> = {};
-      for (const w of widgetInputs) {
+      const widgetSubmission = partitionNodeBypassWidgetInputs(
+        widgetInputsRef.current,
+        bypassedWidgetTargetsRef.current,
+      );
+      for (const nodeId of widgetSubmission.bypassNodeIds) {
+        bypassNodeIds.add(nodeId);
+      }
+      for (const w of widgetSubmission.activeWidgetInputs) {
         const value =
           currentWidgetValues[w.nodeId]?.[w.param] ?? w.currentValue;
         if (w.kind === "derived") {
@@ -814,7 +902,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       workflowInputById,
       workflowInputs,
       textValues,
-      widgetInputs,
       randomizeToggles,
     ],
   );
@@ -1324,6 +1411,13 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const handleWidgetChange = useCallback(
     (nodeId: string, param: string, value: unknown) => {
       clearPendingReplayPanelState();
+      const key = getNodeBypassWidgetKey(nodeId, param);
+      if (bypassedWidgetTargetsRef.current.has(key)) {
+        const next = new Set(bypassedWidgetTargetsRef.current);
+        next.delete(key);
+        bypassedWidgetTargetsRef.current = next;
+        setBypassedWidgetTargets(next);
+      }
       widgetValuesRef.current = setNodeParamValue(
         widgetValuesRef.current,
         nodeId,
@@ -1336,6 +1430,26 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         }
         return setNodeParamValue(prev, nodeId, param, value);
       });
+    },
+    [clearPendingReplayPanelState],
+  );
+
+  const handleWidgetBypassChoice = useCallback(
+    (nodeId: string, param: string, value: unknown): boolean => {
+      const widget = widgetInputsRef.current.find(
+        (candidate) =>
+          candidate.nodeId === nodeId && candidate.param === param,
+      );
+      if (!widget || !isNodeBypassWidgetValue(widget, value)) {
+        return false;
+      }
+
+      clearPendingReplayPanelState();
+      const next = new Set(bypassedWidgetTargetsRef.current);
+      next.add(getNodeBypassWidgetKey(nodeId, param));
+      bypassedWidgetTargetsRef.current = next;
+      setBypassedWidgetTargets(next);
+      return true;
     },
     [clearPendingReplayPanelState],
   );
@@ -1457,9 +1571,12 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
     // Widget state
     widgetInputs,
+    generationNodes,
     widgetValues,
+    bypassedWidgetTargets,
     randomizeToggles,
     handleWidgetChange,
+    handleWidgetBypassChoice,
     handleToggleRandomize,
 
     // Derived

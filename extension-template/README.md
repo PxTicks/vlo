@@ -50,11 +50,16 @@ it. The fallback is expected trusted-alpha behaviour, but it is version-coupled.
   React content such as HTML/SVG/WebGL canvases while the host retains tab placement,
   navigation, error isolation, and teardown. User visibility choices take
   precedence: `openView` returns `false` for a hidden view.
-- Generation tools can inspect the active workflow through
-  `context.api.generation.listInputs()`. Put one or more prompt changes in a labelled,
-  synchronous `generation.transaction(...)`; the host validates the complete batch
-  and applies it as one panel-state update. The API deliberately targets workflow
-  inputs rather than ComfyUI DOM nodes.
+- Generation tools read the mounted workflow through `context.api.generation`:
+  `listInputs()` for the panel's input slots, or `getSession()` with
+  `subscribe()`/`getRevision()` for the node and widget catalogue, reactively. Put
+  one or more input and widget changes in a labelled, synchronous
+  `generation.transaction(...)`; the host validates the complete batch and applies
+  it as one panel-state update. To reach a widget the panel renders no control for,
+  register a submission contributor and return `bypass-nodes`/`set-widget` effects,
+  which the host validates and captures into the queued plan. The API deliberately
+  targets workflow nodes, widgets, and inputs rather than ComfyUI DOM nodes; see
+  `extension-fixtures/lora-policy` for the worked example.
 - Pixi factories return `{ object, update, destroy? }`. The host validates and
   attaches `object`, calls `update` with resolved parameters, detaches it, and owns
   final Pixi destruction. `destroy` is only for additional extension-owned

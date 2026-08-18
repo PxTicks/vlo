@@ -447,6 +447,16 @@ used everywhere conditions appear: widget visibility (`when`), widget default
 overrides (`default_overrides`), node `ignore_overrides`, `rewrites`, and
 `effect_switches`.
 
+> **The state a condition can see depends on where it appears.** `rewrites`,
+> `effect_switches`, and `default_overrides` are evaluated at submission with
+> the full frontend-control state, so a `compare` against a `frontend_control`
+> works there. Widget **visibility** (`when` on a widget entry) is evaluated
+> while the panel resolves its inputs, and that path is given no
+> frontend-control state — a `frontend_control` comparison there never matches,
+> which hides the widget permanently rather than conditionally. Gate widget
+> visibility on `input_presence` or a `workflow_param`, and use a `rewrite` when
+> you want a frontend control to change what gets submitted.
+
 Leaf conditions:
 
 - `always` — matches unless `value` is explicitly `false`.

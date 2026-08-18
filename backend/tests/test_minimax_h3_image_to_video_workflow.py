@@ -20,6 +20,19 @@ def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _input_index(node: dict[str, Any], name: str) -> int:
+    """Slot index of a node input by name.
+
+    Addressed by name rather than position: refreshing a node from an upstream
+    template can add inputs ahead of the ones under test, which shifts every
+    later index without changing any wiring.
+    """
+    for index, spec in enumerate(node["inputs"]):
+        if spec["name"] == name:
+            return index
+    raise AssertionError(f"node {node['id']} has no input named {name!r}")
+
+
 def test_minimax_h3_image_to_video_workflow_is_packaged_in_both_modes():
     default_workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
     high_vram_workflow = _load_json(WORKFLOW_DIRS[1] / WORKFLOW_NAME)
@@ -64,8 +77,14 @@ def test_minimax_h3_image_to_video_keyframes_are_optional_connections():
     # start frame -> resize -> first_frame, end frame -> resize -> last_frame
     assert links[inputs["first_frame"]["link"]][:2] == (143, 0)
     assert links[inputs["last_frame"]["link"]][:2] == (144, 0)
-    assert links[nodes[143]["inputs"][0]["link"]][:2] == (141, 0)
-    assert links[nodes[144]["inputs"][0]["link"]][:2] == (142, 0)
+    assert links[nodes[143]["inputs"][_input_index(nodes[143], "input")]["link"]][:2] == (
+        141,
+        0,
+    )
+    assert links[nodes[144]["inputs"][_input_index(nodes[144], "input")]["link"]][:2] == (
+        142,
+        0,
+    )
 
     # Both keyframes stretch to the generation canvas, so neither is cropped.
     for resize_id in (143, 144):
@@ -76,14 +95,14 @@ def test_minimax_h3_image_to_video_keyframes_are_optional_connections():
     assert nodes[145]["title"] == "Width"
     assert nodes[146]["title"] == "Height"
     assert {links[link_id] for link_id in nodes[145]["outputs"][0]["links"]} == {
-        (145, 0, 136, 4),
-        (145, 0, 143, 1),
-        (145, 0, 144, 1),
+        (145, 0, 136, _input_index(nodes[136], "width")),
+        (145, 0, 143, _input_index(nodes[143], "resize_type.width")),
+        (145, 0, 144, _input_index(nodes[144], "resize_type.width")),
     }
     assert {links[link_id] for link_id in nodes[146]["outputs"][0]["links"]} == {
-        (146, 0, 136, 5),
-        (146, 0, 143, 2),
-        (146, 0, 144, 2),
+        (146, 0, 136, _input_index(nodes[136], "height")),
+        (146, 0, 143, _input_index(nodes[143], "resize_type.height")),
+        (146, 0, 144, _input_index(nodes[144], "resize_type.height")),
     }
 
 
@@ -109,17 +128,17 @@ def test_minimax_h3_image_to_video_rules_require_neither_frame():
 
     # A missing frame bypasses its loader together with its resize node, so the
     # generator's optional slot is left unconnected instead of dangling.
-    assert rules["rewrites"] == [
-        {
+    # Membership, not equality: the advanced-settings toggles add their own
+    # rewrites and are asserted separately.
+    for loader_id, resize_id in (("141", "143"), ("142", "144")):
+        assert {
             "when": {
                 "kind": "input_presence",
                 "inputs": [loader_id],
                 "match": "all_missing",
             },
             "bypass": [loader_id, resize_id],
-        }
-        for loader_id, resize_id in (("141", "143"), ("142", "144"))
-    ]
+        } in rules["rewrites"]
 
 
 def test_minimax_h3_image_to_video_rules_expose_length_and_aspect_ratio():
@@ -149,3 +168,111 @@ def test_minimax_h3_image_to_video_rules_expose_length_and_aspect_ratio():
     # The aspect-ratio targets are the widgets the panel hides, not edits.
     assert rules["nodes"]["145"]["widgets"]["value"]["hidden"] is True
     assert rules["nodes"]["146"]["widgets"]["value"]["hidden"] is True
+
+
+def test_minimax_h3_image_to_video_exposes_sampler_steps_in_settings():
+    rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
+
+    steps = rules["nodes"]["124"]["widgets"]["steps"]
+    # No section_id, so the panel files it under its built-in Settings section
+    # next to the other Video Generation controls.
+    assert "section_id" not in steps
+    assert steps["group_id"] == "video_generation"
+    assert steps["default"] == 20
+    assert steps["min"] >= 1
+    assert steps["max"] >= steps["default"]
+
+    workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
+    scheduler = next(node for node in workflow["nodes"] if node["id"] == 124)
+    assert scheduler["type"] == "BasicScheduler"
+    # The exposed default must match what the shipped graph already runs.
+    assert scheduler["widgets_values_named"]["steps"] == steps["default"]
+
+
+def test_minimax_h3_image_to_video_lora_loader_defaults_to_none():
+    rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
+
+    lora = rules["nodes"]["150"]["widgets"]["lora_name"]
+    assert lora["default_node_bypass"] is True
+    # The installed LoRA files are runtime data, so the sidecar must not pin an
+    # option list; autodiscovery lends the enum and the None (bypass) choice.
+    assert "options" not in lora
+    assert lora["section_id"] == "lora_loaders"
+
+    workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
+    loader = next(node for node in workflow["nodes"] if node["id"] == 150)
+    # Autodiscovery only surfaces active loaders, so the node itself must ship
+    # enabled; the panel is what starts it bypassed.
+    assert loader["type"] == "LoraLoaderModelOnly"
+    assert loader["mode"] == 0
+
+
+def test_minimax_h3_image_to_video_advanced_settings_toggle_model_patches():
+    rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
+
+    sections = {section["id"]: section for section in rules["sections"]}
+    assert sections["advanced_settings"]["title"] == "Advanced Settings"
+    # Advanced controls stay collapsed, and must sort after the LoRA section
+    # rather than colliding with it.
+    assert sections["advanced_settings"]["default_open"] is False
+    assert sections["advanced_settings"]["order"] > sections["lora_loaders"]["order"]
+
+    # Spectrum is the only togglable patch. The attention node is always
+    # applied and is configured by its dropdown alone, so it has no on/off
+    # control and nothing ever bypasses node 151.
+    controls = rules["frontend_controls"]
+    assert set(controls) == {"spectrum_enabled"}
+    assert controls["spectrum_enabled"]["value_type"] == "boolean"
+    # Spectrum is active in the shipped graph, so on is the default.
+    assert controls["spectrum_enabled"]["default"] is True
+    assert controls["spectrum_enabled"]["section_id"] == "advanced_settings"
+    assert {
+        "when": {
+            "kind": "compare",
+            "ref": {"kind": "frontend_control", "control_id": "spectrum_enabled"},
+            "operator": "eq",
+            "value": False,
+        },
+        "bypass": ["148"],
+    } in rules["rewrites"]
+    assert not any("151" in rule.get("bypass", []) for rule in rules["rewrites"])
+
+    attention = rules["nodes"]["151"]["widgets"]["attention"]
+    assert attention["section_id"] == "advanced_settings"
+    # object_info owns the backend list.
+    assert "options" not in attention
+    # Deliberately ungated. A `when` on a frontend_control reads plausible here,
+    # but the panel resolves widget visibility without any frontend-control
+    # state (resolveWidgetInputs is called with no frontendStateWidgetValues),
+    # so such a condition never matches and the selector would be invisible for
+    # good. Rewrites are a different path and *do* get that state, which is why
+    # the toggles above work. Leaving the selector shown while the override is
+    # off is harmless: node 151 is bypassed, so its widget value is ignored.
+    assert "when" not in attention
+
+
+def test_minimax_h3_image_to_video_model_chain_passes_through_bypasses():
+    workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
+    nodes = {node["id"]: node for node in workflow["nodes"]}
+    links = {link[0]: tuple(link[1:5]) for link in workflow["links"]}
+
+    assert nodes[150]["type"] == "LoraLoaderModelOnly"
+    assert nodes[151]["type"] == "ModelAttentionBackend"
+    assert nodes[148]["type"] == "SpectrumApplyMiniMaxH3"
+
+    # UNETLoader -> LoRA -> attention -> spectrum, then on to guider/scheduler.
+    for source_id, target_id in ((127, 150), (150, 151), (151, 148)):
+        assert any(
+            link[0] == source_id and link[2] == target_id for link in links.values()
+        ), f"no link {source_id} -> {target_id}"
+    assert {links[link_id][2] for link_id in nodes[148]["outputs"][0]["links"]} == {
+        124,
+        126,
+    }
+
+    # Every optional patch is MODEL in / MODEL out, which is what lets ComfyUI
+    # pass the model straight through when the panel bypasses one of them.
+    for node_id in (150, 151, 148):
+        node = nodes[node_id]
+        assert node["inputs"][_input_index(node, "model")]["type"] == "MODEL"
+        assert node["outputs"][0]["type"] == "MODEL"

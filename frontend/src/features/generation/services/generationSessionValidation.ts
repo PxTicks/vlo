@@ -6,6 +6,7 @@ import type {
   GenerationTransactionFailureCode,
   GenerationWidgetTarget,
 } from "./generationSessionTypes";
+import type { WidgetValueType } from "../types";
 
 /**
  * Deterministic validation for session transactions
@@ -75,7 +76,7 @@ const RANGE_EPSILON = 1e-9;
 
 function withinRange(
   value: number,
-  widget: GenerationEditableWidgetSnapshot,
+  widget: Pick<GenerationWidgetConstraints, "min" | "max">,
 ): boolean {
   if (widget.min !== null && value < widget.min - RANGE_EPSILON) return false;
   if (widget.max !== null && value > widget.max + RANGE_EPSILON) return false;
@@ -94,7 +95,23 @@ function matchesOption(
 }
 
 /**
- * Is `value` acceptable for one editable binding?
+ * The constraints a value is judged against, shared by the two callers that
+ * have them from different places: a panel binding (the transaction path) and
+ * the node catalogue (a submission effect, which addresses the graph and so
+ * cannot be limited to widgets the panel renders a control for).
+ */
+export interface GenerationWidgetConstraints {
+  readonly valueType: WidgetValueType;
+  readonly options: readonly (string | number | boolean)[] | null;
+  readonly min: number | null;
+  readonly max: number | null;
+  /** Panel bindings only; the catalogue has no boolean serialization. */
+  readonly trueValue?: GenerationSessionJsonValue | null;
+  readonly falseValue?: GenerationSessionJsonValue | null;
+}
+
+/**
+ * Is `value` acceptable for one set of constraints?
  *
  * Numeric widgets also accept text, because that is what the panel's own
  * numeric fields emit: an in-progress or cleared field is the raw string, and
@@ -102,12 +119,11 @@ function matchesOption(
  * precision survives the round trip. Text that parses to a number is still
  * range-checked; text that does not parse at all is rejected.
  */
-function acceptsValue(
-  widget: GenerationEditableWidgetSnapshot,
+export function checkWidgetValue(
+  widget: GenerationWidgetConstraints,
   value: GenerationSessionJsonValue,
+  describe: string,
 ): ValidationFailure | null {
-  const describe = describeWidgetTarget(widget.target);
-
   switch (widget.valueType) {
     case "enum": {
       if (!widget.options || widget.options.length === 0) {
@@ -130,8 +146,8 @@ function acceptsValue(
     case "boolean": {
       if (typeof value === "boolean") return null;
       if (value === "true" || value === "false") return null;
-      if (widget.trueValue !== null && value === widget.trueValue) return null;
-      if (widget.falseValue !== null && value === widget.falseValue) {
+      if (widget.trueValue != null && value === widget.trueValue) return null;
+      if (widget.falseValue != null && value === widget.falseValue) {
         return null;
       }
       return {
@@ -170,14 +186,26 @@ function acceptsValue(
           };
         }
         const parsed = Number(trimmed);
-        return Number.isFinite(parsed) && !withinRange(parsed, widget)
-          ? {
+        // Text that overflows to an infinity is not a large number the widget
+        // can hold, it is an unrepresentable one: `1e9999` would otherwise
+        // skip the range check entirely, since an infinity is neither inside
+        // nor outside a finite bound.
+        if (!Number.isFinite(parsed)) {
+          return {
+            code: "widget_value_invalid",
+            message: `Widget '${describe}' takes a finite ${
+              isInt ? "whole number" : "number"
+            }.`,
+          };
+        }
+        return withinRange(parsed, widget)
+          ? null
+          : {
               code: "widget_value_invalid",
               message: `Widget '${describe}' takes values between ${
                 widget.min ?? "-∞"
               } and ${widget.max ?? "∞"}.`,
-            }
-          : null;
+            };
       }
       return {
         code: "widget_value_invalid",
@@ -276,7 +304,11 @@ export function validateWidgetCommand(
   // otherwise, so the message names a real constraint.
   let firstFailure: ValidationFailure | null = null;
   for (const binding of bindings) {
-    const rejection = acceptsValue(binding, normalized);
+    const rejection = checkWidgetValue(
+      binding,
+      normalized,
+      describeWidgetTarget(binding.target),
+    );
     if (!rejection) {
       return { ok: true, value: normalized };
     }

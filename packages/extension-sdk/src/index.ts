@@ -3044,6 +3044,51 @@ export type ExtensionGenerationTransactionResult =
       readonly label: string;
     };
 
+/**
+ * One host-supported change to the graph a submission is built from. The union
+ * is closed: it is not a general graph patch, and every kind names its own
+ * invariant, conflict rule, and validation owner.
+ */
+export type ExtensionGenerationGraphEffect =
+  | { readonly kind: "bypass-nodes"; readonly nodeIds: readonly string[] }
+  | {
+      readonly kind: "set-widget";
+      readonly target: ExtensionGenerationWidgetTarget;
+      readonly value: JsonValue;
+    };
+
+export interface ExtensionGenerationSubmissionContext {
+  /** The session the submission is planned from, detached and frozen. */
+  readonly session: ExtensionGenerationSessionSnapshot;
+}
+
+/**
+ * A contributor plans graph effects for a submission.
+ *
+ * `contribute` runs once per submission, synchronously, and must be
+ * deterministic for the context it is given: the host stores what it returns
+ * in the queued plan and replays that, so it is never asked again — a queued
+ * generation is unaffected by later UI changes, a workflow switch, or this
+ * package being disabled.
+ *
+ * Effects address the *graph*, not the panel, so they can reach a widget with
+ * no panel control — which `transaction().setWidget` cannot. A throw, an
+ * unknown target, or a value the widget does not accept fails the submission
+ * before any GPU work, attributed to this contribution.
+ */
+export interface ExtensionGenerationSubmissionContributorDefinition {
+  /** Package-local; the host qualifies it as `<extensionId>/<id>`. */
+  readonly id: string;
+  readonly apiVersion: 1;
+  contribute(
+    context: ExtensionGenerationSubmissionContext,
+  ): readonly ExtensionGenerationGraphEffect[];
+}
+
+export interface ExtensionGenerationRegistration extends ExtensionDisposable {
+  readonly id: string;
+}
+
 /** User-event API for the currently mounted generation/workflow panel. */
 export interface ExtensionGenerationApi {
   listInputs(): readonly ExtensionGenerationInputSnapshot[];
@@ -3057,6 +3102,10 @@ export interface ExtensionGenerationApi {
     label: string,
     callback: (transaction: ExtensionGenerationTransaction) => void,
   ): ExtensionGenerationTransactionResult;
+  /** Contribute graph effects to every generation submitted from this panel. */
+  registerSubmissionContributor(
+    definition: ExtensionGenerationSubmissionContributorDefinition,
+  ): ExtensionGenerationRegistration;
 }
 
 // === Color ===

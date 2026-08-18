@@ -18,6 +18,7 @@ import {
 } from "../pipeline/generationPlan";
 import type {
   GenerationCapturedEffects,
+  GenerationContributedEffectGroup,
   GenerationDeliveryContext,
   GenerationPlan,
   GenerationRequest,
@@ -31,6 +32,8 @@ import {
   collectGenerationEffectErrors,
 } from "../pipeline/generationGraphEffects";
 import { iframeBridge } from "../services/iframeBridgeClient";
+import { generationSessionService } from "../services/GenerationSessionService";
+import { generationSubmissionContributors } from "../services/generationSubmissionContributors";
 import {
   getMaskCropModeDefault,
   getWorkflowPostprocessingConfig,
@@ -369,6 +372,7 @@ function buildGenerationPlanFromState(
   derivedWidgetInputs: Record<string, string>,
   frontendStateWidgetValues: Record<string, unknown>,
   bypassNodeIds: string[] = [],
+  contributedEffects: readonly GenerationContributedEffectGroup[] = [],
 ): GenerationPlan {
   const workflowId =
     state.rulesWorkflowSourceId ??
@@ -434,10 +438,77 @@ function buildGenerationPlanFromState(
     widgetModes,
     derivedWidgetInputs,
     bypassNodeIds,
+    contributedEffects,
     postprocessConfig,
     workflowWarnings: state.activeRulesWarnings,
     projectConfig,
   });
+}
+
+/**
+ * Run the registered submission contributors once for this submission.
+ *
+ * Once is the whole point: the result becomes plan data, so a queued
+ * generation resolves from the contribution it was queued with even after the
+ * extension changes its mind, the user switches workflow, or the package is
+ * disabled. Dispatch replays it (see `captureGenerationEffectsForPlan`)
+ * instead of asking again.
+ */
+function collectSubmissionContributions(
+  state: ReturnType<GenerationStoreGet>,
+): readonly GenerationContributedEffectGroup[] {
+  return generationSubmissionContributors.collect(
+    generationSessionService.getSnapshot(),
+    // Pinned to the state this plan is being built from. The panel publishes
+    // the session from an effect, so a snapshot describing the workflow that
+    // was open a moment ago is an ordinary race, not a corner case.
+    {
+      sourceId: state.selectedWorkflowId,
+      instanceId: state.iframeWorkflowInstanceId ?? null,
+    },
+  );
+}
+
+/**
+ * Fail a submission carrying contributions that cannot be honoured — before
+ * preprocessing, which is where the GPU-bound work starts.
+ *
+ * Two ways that happens. A contribution that failed validation is an error the
+ * enqueue path already refuses, but an immediate submission would otherwise
+ * only discover it after preprocessing, deep inside the capture branch. And
+ * with pre-resolved prompt capture switched off, nothing applies graph effects
+ * at all: native rules still reach the backend with the workflow rules, but a
+ * contribution has no other path, so generating anyway would quietly drop the
+ * policy the user set up.
+ */
+function assertContributionsApplicable(
+  plan: GenerationPlan,
+  state: ReturnType<GenerationStoreGet>,
+): void {
+  const groups = plan.submission.contributedEffects;
+  if (groups.length === 0) return;
+
+  const errors = groups.flatMap((group) =>
+    group.diagnostics
+      .filter((diagnostic) => diagnostic.severity === "error")
+      .map((diagnostic) => diagnostic.message),
+  );
+  if (errors.length > 0) {
+    throw new Error(
+      `Generation rejected before submission: ${errors.join("; ")}`,
+    );
+  }
+
+  const hasEffects = groups.some(
+    (group) =>
+      group.bypassNodeIds.length > 0 || group.widgetOverrides.length > 0,
+  );
+  if (hasEffects && !state.preResolvedPromptEnabled) {
+    throw new Error(
+      "Generation rejected before submission: an extension contributed graph effects, " +
+        "but pre-resolved prompt capture is disabled, so they cannot be applied.",
+    );
+  }
 }
 
 function cloneSubmittedWorkflow(
@@ -560,6 +631,11 @@ async function buildQueuedGenerationPlansFromState(
   count: number,
   bypassNodeIds: string[] = [],
 ): Promise<GenerationPlan[]> {
+  // One collection for the batch: every plan in it is the same submission
+  // repeated, and the enqueue capture below already shares one effect record
+  // across them. Collecting per plan would let a stateful contributor make
+  // the copies differ, which nothing downstream could reconcile.
+  const contributedEffects = collectSubmissionContributions(state);
   return Array.from({ length: count }, () =>
     buildGenerationPlanFromState(
       state,
@@ -569,6 +645,7 @@ async function buildQueuedGenerationPlansFromState(
       derivedWidgetInputs,
       frontendStateWidgetValues,
       bypassNodeIds,
+      contributedEffects,
     ),
   );
 }
@@ -592,6 +669,7 @@ async function captureQueuedSubmittedWorkflows(
   // them (see `captureDispatchEffects`). Dispatch re-evaluates and re-resolves
   // when that happens; the eager capture below is what lets the common,
   // unchanged case run without an open editor.
+  assertContributionsApplicable(plans[0], state);
   const effects = captureGenerationEffectsForPlan(
     plans[0],
     collectProvidedInputIds(plans[0]),
@@ -704,6 +782,11 @@ export function buildExecutionStoreState(
             "ComfyUI is unavailable",
         );
       }
+
+      // Contributed policy is judged before anything that can consume GPU
+      // time. An immediate submission has no enqueue step to fail in, and the
+      // capture that would notice sits after preprocessing.
+      assertContributionsApplicable(plan, state);
 
       // The submission payload MUST come from app.graphToPrompt() — never
       // from buildWorkflowFromGraphData (which is a UI-only helper that
@@ -1213,6 +1296,7 @@ export function buildExecutionStoreState(
         derivedWidgetInputs,
         frontendStateWidgetValues,
         bypassNodeIds,
+        collectSubmissionContributions(currentState),
       );
       return dispatchGenerationPlan(plan);
     },

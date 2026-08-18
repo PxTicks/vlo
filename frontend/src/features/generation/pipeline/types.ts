@@ -191,6 +191,8 @@ export interface GenerationSubmissionPlan {
   derivedWidgetInputs: Record<string, string>;
   widgetModes: Record<string, "fixed" | "randomize">;
   bypassNodeIds: string[];
+  /** Contributions captured once, at submission time. Never re-invoked. */
+  contributedEffects: readonly GenerationContributedEffectGroup[];
 }
 
 export interface GenerationMetadataPlan {
@@ -224,12 +226,23 @@ export interface GenerationWidgetTarget {
   readonly widget: string;
 }
 
+/**
+ * Attribution for one contributor, carried inside the source string itself.
+ *
+ * A separate field would be droppable — a producer could appear with a source
+ * and no attribution — and the string form keeps every existing diagnostic
+ * message correct without a second interpolation branch. The id is the
+ * registry's canonical `<extensionId>/<contributionId>`.
+ */
+export type GenerationExtensionEffectSource = `extension:${string}`;
+
 /** Where a normalized effect originated, for diagnostics and attribution. */
 export type GenerationEffectSource =
   | "panel-bypass"
   | "rule-default-override"
   | "rule-rewrite"
-  | "rule-effect-switch";
+  | "rule-effect-switch"
+  | GenerationExtensionEffectSource;
 
 export type GenerationGraphEffect =
   | {
@@ -246,9 +259,53 @@ export type GenerationGraphEffect =
 
 export interface GenerationEffectDiagnostic {
   readonly severity: "error" | "warning";
-  readonly code: "invalid-target" | "invalid-value" | "widget-collision";
+  readonly code:
+    | "invalid-target"
+    | "invalid-value"
+    | "widget-collision"
+    /** A submission contributor threw, or could not be run at all. */
+    | "contributor-failed";
   readonly source: GenerationEffectSource;
   readonly message: string;
+}
+
+/**
+ * One contributor's validated contribution, captured into the plan at
+ * submission time (docs/generation-extension-surface-plan.md E2).
+ *
+ * Plan data, not a live call: dispatch replays this instead of asking the
+ * contributor again, so a queued generation is unaffected by later UI
+ * changes, a workflow switch, or the extension being disabled. Diagnostics
+ * travel with it for the same reason — a contribution that failed validation
+ * must keep failing the submission on replay.
+ */
+export interface GenerationContributedWidgetOverride {
+  readonly node_id: string;
+  readonly widget: string;
+  readonly value: GenerationEffectJsonValue;
+}
+
+/**
+ * The workflow a contribution was planned and validated against.
+ *
+ * Without it a contribution is just a set of node ids, and node ids are only
+ * unique within one workflow: a session publication arriving late, or a
+ * workflow switched between collection and plan build, could otherwise place
+ * effects validated against workflow A into a plan for workflow B and have the
+ * bridge apply them because the ids happen to exist there too.
+ */
+export interface GenerationContributionWorkflowIdentity {
+  readonly sourceId: string | null;
+  readonly instanceId: string | null;
+  readonly fingerprint: string;
+}
+
+export interface GenerationContributedEffectGroup {
+  readonly source: GenerationExtensionEffectSource;
+  readonly workflow: GenerationContributionWorkflowIdentity;
+  readonly bypassNodeIds: readonly string[];
+  readonly widgetOverrides: readonly GenerationContributedWidgetOverride[];
+  readonly diagnostics: readonly GenerationEffectDiagnostic[];
 }
 
 /** Bridge identity a capture was resolved against (see BridgeWorkflowExpectation). */

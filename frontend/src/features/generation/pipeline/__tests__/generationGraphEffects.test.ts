@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  bridgeEffectPayloadsMatch,
   buildBridgeEffectPayload,
   captureGenerationEffectsForPlan,
   collectGenerationEffectErrors,
   normalizeGenerationGraphEffects,
 } from "../generationGraphEffects";
-import type { GenerationPlan } from "../types";
+import type {
+  GenerationContributedEffectGroup,
+  GenerationPlan,
+} from "../types";
 import type { WorkflowRules } from "../../services/workflowRules";
 
 function makePlan(options: {
   workflowRules?: unknown;
   bypassNodeIds?: string[];
   frontendStateWidgetValues?: Record<string, unknown>;
+  contributedEffects?: readonly GenerationContributedEffectGroup[];
 } = {}): GenerationPlan {
   return {
     id: "plan-1",
@@ -42,6 +47,7 @@ function makePlan(options: {
       widgetModes: {},
       derivedWidgetInputs: {},
       bypassNodeIds: options.bypassNodeIds ?? [],
+      contributedEffects: options.contributedEffects ?? [],
     },
     metadata: {
       generationMetadata: {} as GenerationPlan["metadata"]["generationMetadata"],
@@ -346,5 +352,140 @@ describe("buildBridgeEffectPayload", () => {
       bypassNodeIds: ["7", "8", "9"],
       widgetOverrides: [{ node_id: "5", widget: "seed", value: 2 }],
     });
+  });
+});
+
+describe("captureGenerationEffectsForPlan with contributions", () => {
+  const contribution = (
+    overrides: Partial<GenerationContributedEffectGroup> = {},
+  ): GenerationContributedEffectGroup => ({
+    source: "extension:example.lora/policy",
+    workflow: {
+      sourceId: "workflow.json",
+      instanceId: "instance-1",
+      fingerprint: "fingerprint-1",
+    },
+    bypassNodeIds: [],
+    widgetOverrides: [],
+    diagnostics: [],
+    ...overrides,
+  });
+
+  it("carries a contribution's attribution into the captured effects", () => {
+    const plan = makePlan({
+      contributedEffects: [
+        contribution({
+          bypassNodeIds: ["7"],
+          widgetOverrides: [
+            { node_id: "5", widget: "lora_name", value: "soft.safetensors" },
+          ],
+        }),
+      ],
+    });
+
+    const captured = captureGenerationEffectsForPlan(plan, new Set(), null);
+
+    expect(captured.effects).toEqual([
+      {
+        kind: "bypass-nodes",
+        nodeIds: ["7"],
+        source: "extension:example.lora/policy",
+      },
+      {
+        kind: "set-widget",
+        target: { nodeId: "5", widget: "lora_name" },
+        value: "soft.safetensors",
+        source: "extension:example.lora/policy",
+      },
+    ]);
+    expect(captured.diagnostics).toEqual([]);
+  });
+
+  it("lets a contribution win a widget a rule also writes, and says so", () => {
+    const plan = makePlan({
+      workflowRules: {
+        rewrites: [
+          {
+            when: { kind: "always" },
+            set_widgets: [{ node_id: "5", widget: "steps", value: 20 }],
+          },
+        ],
+      },
+      contributedEffects: [
+        contribution({
+          widgetOverrides: [{ node_id: "5", widget: "steps", value: 35 }],
+        }),
+      ],
+    });
+
+    const captured = captureGenerationEffectsForPlan(plan, new Set(), null);
+
+    // The contribution stands for a choice the user just made in the
+    // extension's UI; the rule is the workflow author's standing default.
+    expect(captured.effects).toEqual([
+      {
+        kind: "set-widget",
+        target: { nodeId: "5", widget: "steps" },
+        value: 35,
+        source: "extension:example.lora/policy",
+      },
+    ]);
+    expect(captured.diagnostics).toEqual([
+      {
+        severity: "warning",
+        code: "widget-collision",
+        source: "extension:example.lora/policy",
+        message: expect.stringContaining("rule-rewrite"),
+      },
+    ]);
+  });
+
+  it("replays a failed contribution on every capture of the same plan", () => {
+    const plan = makePlan({
+      contributedEffects: [
+        contribution({
+          diagnostics: [
+            {
+              severity: "error",
+              code: "contributor-failed",
+              source: "extension:example.lora/policy",
+              message: "Contributor 'example.lora/policy' failed: boom",
+            },
+          ],
+        }),
+      ],
+    });
+
+    // Capture is pure over plan data, so the enqueue capture and every later
+    // dispatch capture agree — including about the failure. Nothing re-invokes
+    // the contributor, which is what makes a queued plan immune to the
+    // extension being disabled after the fact.
+    const first = captureGenerationEffectsForPlan(plan, new Set(), null);
+    const second = captureGenerationEffectsForPlan(plan, new Set(), null);
+
+    expect(first.diagnostics).toEqual(second.diagnostics);
+    expect(collectGenerationEffectErrors(first)).toEqual([
+      "Contributor 'example.lora/policy' failed: boom",
+    ]);
+  });
+
+  it("keeps contributions out of the bridge payload's identity comparison only when they match", () => {
+    const withContribution = captureGenerationEffectsForPlan(
+      makePlan({
+        contributedEffects: [contribution({ bypassNodeIds: ["7"] })],
+      }),
+      new Set(),
+      null,
+    );
+    const without = captureGenerationEffectsForPlan(
+      makePlan(),
+      new Set(),
+      null,
+    );
+
+    expect(bridgeEffectPayloadsMatch(withContribution, without)).toBe(false);
+    expect(bridgeEffectPayloadsMatch(withContribution, withContribution)).toBe(
+      true,
+    );
   });
 });

@@ -78,6 +78,7 @@ function makePlan(classType: string): GenerationPlan {
       derivedWidgetInputs: {},
       widgetModes: {},
       bypassNodeIds: [],
+      contributedEffects: [],
     },
     metadata: {
       generationMetadata: {
@@ -681,6 +682,7 @@ describe("generationPlan cache media extraction", () => {
       widgetModes: {},
       derivedWidgetInputs: {},
       bypassNodeIds: ["1"],
+      contributedEffects: [],
       postprocessConfig: {
         mode: "stitch_frames_with_audio",
         panel_preview: "replace_outputs",

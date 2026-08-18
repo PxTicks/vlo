@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   generate: vi.fn(),
@@ -132,6 +132,8 @@ vi.mock("../../services/warnings", () => ({
 }));
 
 import { useModelWorkStore } from "../../../modelWork";
+import { generationSubmissionContributors } from "../../services/generationSubmissionContributors";
+import { mountGenerationSession } from "../../../../testUtils/generationSession";
 import {
   WorkflowOutOfSyncError,
   buildExecutionStoreState,
@@ -163,6 +165,7 @@ function makePlan(overrides: Record<string, unknown> = {}) {
       frontendStateWidgetValues: {},
       inputMetadata: {},
       bypassNodeIds: [],
+      contributedEffects: [],
     },
     metadata: {
       generationMetadata: {
@@ -750,6 +753,7 @@ describe("buildExecutionStoreState", () => {
         frontendStateWidgetValues: {},
         inputMetadata: {},
         bypassNodeIds: ["9"],
+        contributedEffects: [],
       },
     });
     mocks.createGenerationPlan.mockReturnValue(plan);
@@ -968,6 +972,7 @@ describe("buildExecutionStoreState", () => {
         frontendStateWidgetValues: {},
         inputMetadata: {},
         bypassNodeIds: ["  "],
+        contributedEffects: [],
       },
     });
     mocks.createGenerationPlan.mockReturnValue(plan);
@@ -1110,5 +1115,215 @@ describe("buildExecutionStoreState", () => {
     });
     await harness.actions.interruptCurrentGeneration();
     expect(mocks.interrupt).not.toHaveBeenCalled();
+  });
+});
+
+describe("submission contributors", () => {
+  const nodes = [
+    {
+      id: "10",
+      classType: "LoraLoader",
+      title: "Load LoRA",
+      mode: 0,
+      widgets: [
+        {
+          nodeId: "10",
+          param: "lora_name",
+          valueType: "enum" as const,
+          value: "sharp.safetensors",
+          defaultValue: "sharp.safetensors",
+          options: ["sharp.safetensors", "soft.safetensors"],
+          min: null,
+          max: null,
+          step: null,
+          linked: false,
+          controlAfterGenerate: false,
+        },
+      ],
+    },
+  ];
+
+  /**
+   * The harness state and the mounted session must describe the same workflow,
+   * because that agreement is exactly what the store now requires before a
+   * contribution may be filed under a plan.
+   */
+  function mountedWorkflow(overrides: Record<string, unknown> = {}) {
+    return {
+      sourceId: "workflow.json",
+      instanceId: "workflow-instance",
+      ...overrides,
+    };
+  }
+
+  /**
+   * The plan factory is mocked for the rest of this file, so a test about what
+   * the plan *carries* has to let the contribution through it.
+   */
+  function passContributionsThroughPlans(): void {
+    mocks.createGenerationPlan.mockImplementation(
+      (options: { contributedEffects?: unknown }) => {
+        const plan = makePlan();
+        return {
+          ...plan,
+          submission: {
+            ...(plan.submission as Record<string, unknown>),
+            contributedEffects: options.contributedEffects ?? [],
+          },
+        };
+      },
+    );
+  }
+
+  let mounted: ReturnType<typeof mountGenerationSession> | null = null;
+  let unregister: (() => void) | null = null;
+
+  afterEach(() => {
+    unregister?.();
+    unregister = null;
+    mounted?.unmount();
+    mounted = null;
+  });
+
+  it("runs contributors once per submission and gives every plan the same contribution", async () => {
+    mounted = mountGenerationSession(mountedWorkflow({ nodes }));
+    const contribute = vi.fn(() => [
+      {
+        kind: "set-widget" as const,
+        target: { nodeId: "10", widget: "lora_name" },
+        value: "soft.safetensors",
+      },
+    ]);
+    unregister = generationSubmissionContributors.register({
+      id: "example.lora/policy",
+      contribute,
+    });
+
+    const harness = createHarness({
+      wsClient: null,
+      runtimeStatus: { comfyui: { status: "error" } },
+      connectionStatus: "error",
+    });
+    await harness.actions.queueGeneration({}, {}, {}, {}, 3);
+
+    // A stateful contributor asked once per plan could make the copies of one
+    // submission differ, and nothing downstream could reconcile that.
+    expect(contribute).toHaveBeenCalledTimes(1);
+    const contributions = mocks.createGenerationPlan.mock.calls.map(
+      (call) => (call[0] as { contributedEffects: unknown }).contributedEffects,
+    );
+    expect(contributions).toHaveLength(3);
+    expect(contributions[0]).toEqual([
+      {
+        source: "extension:example.lora/policy",
+        workflow: {
+          sourceId: "workflow.json",
+          instanceId: "workflow-instance",
+          fingerprint: "fingerprint-1",
+        },
+        bypassNodeIds: [],
+        widgetOverrides: [
+          { node_id: "10", widget: "lora_name", value: "soft.safetensors" },
+        ],
+        diagnostics: [],
+      },
+    ]);
+    expect(contributions[1]).toBe(contributions[0]);
+  });
+
+  it("does not ask a contributor again once its plans are queued", async () => {
+    mounted = mountGenerationSession(mountedWorkflow({ nodes }));
+    const contribute = vi.fn(() => []);
+    unregister = generationSubmissionContributors.register({
+      id: "example.lora/policy",
+      contribute,
+    });
+
+    const harness = createHarness({
+      wsClient: null,
+      runtimeStatus: { comfyui: { status: "error" } },
+      connectionStatus: "error",
+    });
+    await harness.actions.queueGeneration({}, {}, {}, {}, 1);
+    expect(contribute).toHaveBeenCalledTimes(1);
+
+    // Everything an already queued plan depends on can go away — this is what
+    // "disabling the extension does not reinterpret a queued plan" means.
+    unregister();
+    unregister = null;
+    mounted.unmount();
+    mounted = null;
+    expect(harness.state.generationQueue).toHaveLength(1);
+    expect(contribute).toHaveBeenCalledTimes(1);
+  });
+  it("refuses a contribution planned against another workflow", async () => {
+    // The panel publishes the session from an effect, so this is a race, not a
+    // corner case: the ids in that contribution mean something else here.
+    mounted = mountGenerationSession({
+      nodes,
+      sourceId: "previous.json",
+      instanceId: "previous-instance",
+    });
+    unregister = generationSubmissionContributors.register({
+      id: "example.lora/policy",
+      contribute: () => [{ kind: "bypass-nodes" as const, nodeIds: ["10"] }],
+    });
+
+    passContributionsThroughPlans();
+    const harness = createHarness({ editorRef: {} as HTMLIFrameElement });
+    await harness.actions.queueGeneration({});
+
+    expect(harness.state.activeJobId).toBe("error-job");
+    expect(harness.state.generationQueue).toEqual([]);
+    expect(
+      (harness.state.jobs as Map<string, { error: string }>).get("error-job")
+        ?.error,
+    ).toMatch(/different workflow/);
+  });
+
+  it("fails an immediate submission before preprocessing, not after", async () => {
+    mounted = mountGenerationSession(mountedWorkflow({ nodes }));
+    unregister = generationSubmissionContributors.register({
+      id: "example.lora/policy",
+      contribute: () => {
+        throw new Error("policy exploded");
+      },
+    });
+
+    passContributionsThroughPlans();
+    const harness = createHarness({ editorRef: {} as HTMLIFrameElement });
+    await harness.actions.submitGeneration({});
+
+    // Preprocessing is where the GPU-bound work starts; an immediate
+    // submission has no enqueue step to fail in.
+    expect(mocks.prepareGenerationPlan).not.toHaveBeenCalled();
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(
+      (harness.state.jobs as Map<string, { error: string }>).get("error-job")
+        ?.error,
+    ).toMatch(/policy exploded/);
+  });
+
+  it("refuses contributed effects when nothing can apply them", async () => {
+    mounted = mountGenerationSession(mountedWorkflow({ nodes }));
+    unregister = generationSubmissionContributors.register({
+      id: "example.lora/policy",
+      contribute: () => [{ kind: "bypass-nodes" as const, nodeIds: ["10"] }],
+    });
+
+    // With pre-resolved prompt capture off, no graph effect reaches the
+    // prompt. Native rules still travel to the backend with the workflow
+    // rules; a contribution has no such path, so generating anyway would drop
+    // the user's policy silently.
+    passContributionsThroughPlans();
+    const harness = createHarness({ preResolvedPromptEnabled: false });
+    await harness.actions.queueGeneration({});
+
+    expect(harness.state.generationQueue).toEqual([]);
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(
+      (harness.state.jobs as Map<string, { error: string }>).get("error-job")
+        ?.error,
+    ).toMatch(/cannot be applied/);
   });
 });

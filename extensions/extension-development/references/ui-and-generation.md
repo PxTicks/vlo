@@ -300,6 +300,71 @@ branching on:
 Write a widget when the user is choosing a value in your UI. Do not write on a
 timer, on every keystroke, or to enforce policy at submission time.
 
+## Contribute graph effects to a submission
+
+Policy that must hold for the *submitted* graph belongs in a contributor, not in
+a widget write:
+
+```ts
+context.api.generation.registerSubmissionContributor({
+  id: "loader-policy",
+  apiVersion: 1,
+  contribute: ({ session }) => {
+    const loaders = session.workflow.nodes.filter(
+      (node) => node.classType === "LoraLoader",
+    );
+    return loaders.flatMap((node) =>
+      selection[node.id] === "none"
+        ? [{ kind: "bypass-nodes" as const, nodeIds: [node.id] }]
+        : [
+            {
+              kind: "set-widget" as const,
+              target: { nodeId: node.id, widget: "lora_name" },
+              value: selection[node.id],
+            },
+          ],
+    );
+  },
+});
+```
+
+`contribute` runs **once per submission**, synchronously, against the session
+that submission is planned from. What it returns is stored in the queued plan
+and replayed from there, so it is never asked again: a queued generation keeps
+the policy it was queued with even after your UI state changes, the user
+switches workflow, or your package is disabled. Do not read the clock, a random
+source, or live state you have not been handed — the same context must produce
+the same effects.
+
+Plan only from `context.session`, never from a snapshot you captured earlier.
+The host pins a contribution to the workflow it was planned against and refuses
+it if that is not the workflow being submitted, because a node id means
+something different in a different workflow.
+
+Effects address the graph rather than the panel, which is what makes them
+different from `setWidget`: they can reach a widget with no panel control, and
+`bypass-nodes` has no transaction equivalent at all. Node ids are the execution
+ids the snapshot publishes, including `<instanceId>:<innerId>` inside a
+subgraph instance. A target inside a subgraph definition that is instantiated
+more than once, or a widget promoted to the enclosing instance, fails closed —
+write the enclosing instance instead.
+
+A contribution is all-or-nothing. If your callback throws, returns something
+that is not an array of effects, exceeds a bound (64 effects, 256 bypass
+targets per effect, 512 characters per node id or widget name, 100,000
+serialized characters per value), names a node the workflow does not contain,
+or writes a value the widget's own metadata rejects, the whole contribution is
+refused and the submission fails before preprocessing — ahead of any GPU-bound
+work — attributed to your contribution. That is deliberate: generating without the
+policy the user set up would produce a result they did not ask for. Validate
+against the snapshot you were given, and prefer contributing nothing to
+contributing something you are unsure of.
+
+Where your effect and a workflow rule write the same widget, yours wins and the
+host records a collision diagnostic naming both. The registration is
+owner-scoped: it disappears on deactivation, and disposing it removes the
+policy from later submissions, never from queued ones.
+
 ## Compose AI UI with other domains
 
 Use `assets.readBlob` and backend artifact/job APIs for model work. Use timeline

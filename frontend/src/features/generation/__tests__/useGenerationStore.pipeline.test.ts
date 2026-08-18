@@ -2278,6 +2278,7 @@ describe("useGenerationStore pipeline phases", () => {
             widgetModes: {},
             derivedWidgetInputs: {},
             bypassNodeIds: [],
+            contributedEffects: [],
           },
           metadata: {
             generationMetadata: {
@@ -2346,6 +2347,7 @@ describe("useGenerationStore pipeline phases", () => {
             widgetModes: {},
             derivedWidgetInputs: {},
             bypassNodeIds: [],
+            contributedEffects: [],
           },
           metadata: {
             generationMetadata: {
@@ -2412,6 +2414,7 @@ describe("useGenerationStore pipeline phases", () => {
             widgetModes: {},
             derivedWidgetInputs: {},
             bypassNodeIds: [],
+            contributedEffects: [],
           },
           metadata: {
             generationMetadata: {

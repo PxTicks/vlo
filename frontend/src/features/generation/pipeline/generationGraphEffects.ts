@@ -8,6 +8,7 @@ import {
 import { serializeFiniteJson } from "../utils/finiteJson";
 import type {
   GenerationCapturedEffects,
+  GenerationContributedEffectGroup,
   GenerationEffectDiagnostic,
   GenerationEffectJsonValue,
   GenerationEffectSource,
@@ -164,6 +165,46 @@ export function normalizeGenerationGraphEffects(
 }
 
 /**
+ * Split contributions into the ones this capture may apply and diagnostics for
+ * the ones it may not.
+ *
+ * The comparison is the ComfyUI workflow instance, which is what the bridge
+ * itself pins and what the plan's expectation carries. Either side being
+ * unknown means there is nothing to compare — a session mounted before the
+ * bridge reported identity, or a plan queued with no editor open — and the
+ * collection-time check has already refused the case where the two were both
+ * known and disagreed.
+ */
+function partitionContributions(
+  groups: readonly GenerationContributedEffectGroup[],
+  expectation: GenerationWorkflowExpectation | null,
+): {
+  applicable: readonly GenerationContributedEffectGroup[];
+  mismatched: readonly GenerationEffectDiagnostic[];
+} {
+  const applicable: GenerationContributedEffectGroup[] = [];
+  const mismatched: GenerationEffectDiagnostic[] = [];
+  for (const group of groups) {
+    const planned = group.workflow.instanceId;
+    if (
+      expectation === null ||
+      planned === null ||
+      planned === expectation.workflowInstanceId
+    ) {
+      applicable.push(group);
+      continue;
+    }
+    mismatched.push({
+      severity: "error",
+      code: "invalid-target",
+      source: group.source,
+      message: `Effects from ${group.source} were planned against workflow instance ${planned}, but this submission resolves against ${expectation.workflowInstanceId}`,
+    });
+  }
+  return { applicable, mismatched };
+}
+
+/**
  * Evaluate every native effect source for a plan and freeze the normalized
  * result. Reads only detached plan data plus the caller-supplied provided
  * inputs and workflow expectation — never live store or editor state.
@@ -196,6 +237,11 @@ export function captureGenerationEffectsForPlan(
     inputMetadata,
   );
 
+  const { applicable, mismatched } = partitionContributions(
+    plan.submission.contributedEffects,
+    expectation,
+  );
+
   // Widget-write order must stay defaults → rewrites → effect switches so the
   // last-write-wins collision rule matches the bridge's historical apply
   // order. Bypass ordering is set-like and does not matter.
@@ -220,9 +266,37 @@ export function captureGenerationEffectsForPlan(
       bypassNodeIds: plan.submission.bypassNodeIds,
       widgetOverrides: [],
     },
+    // Contributors last, so a widget an extension and a rule both write keeps
+    // the extension's value: the contribution stands for a choice the user
+    // just made in that extension's UI, while a rule is the workflow author's
+    // standing default. The collision is still reported, naming both.
+    //
+    // Only contributions planned against the workflow this capture resolves
+    // against are applied. Node ids are unique within a workflow, not across
+    // them, so a mismatch here would otherwise hand the bridge ids that mean
+    // something else entirely.
+    ...applicable.map((group) => ({
+      source: group.source,
+      bypassNodeIds: group.bypassNodeIds,
+      widgetOverrides: group.widgetOverrides,
+    })),
   ]);
 
-  return { schemaVersion: 1, expectation, effects, diagnostics };
+  // Validation diagnostics were produced when the contribution was captured,
+  // against the session it was planned from. They are replayed rather than
+  // recomputed, so a contribution that failed at submission keeps failing on
+  // every later dispatch of the same plan.
+  const contributedDiagnostics = [
+    ...plan.submission.contributedEffects.flatMap((group) => group.diagnostics),
+    ...mismatched,
+  ];
+
+  return {
+    schemaVersion: 1,
+    expectation,
+    effects,
+    diagnostics: [...diagnostics, ...contributedDiagnostics],
+  };
 }
 
 /** Flatten normalized effects into the bridge's resolve-prompt arguments. */

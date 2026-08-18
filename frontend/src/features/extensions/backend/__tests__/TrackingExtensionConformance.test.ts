@@ -176,6 +176,10 @@ function createConformanceApi() {
       getRevision: () => 0,
       subscribe: () => () => undefined,
       transaction: (label) => ({ ok: true, changed: false, label }),
+      registerSubmissionContributor: (definition) => ({
+        id: definition.id,
+        dispose: () => undefined,
+      }),
     },
     animation: {
       scalarSources: {

@@ -6,6 +6,7 @@ import type {
   GenerationTransactionFailureCode,
 } from "../../generation/services/generationSessionTypes";
 import { bindOwnerScopedSubscribe } from "../utils/ownerScopedSubscribe";
+import { extensionGenerationSubmissionContributors } from "./ExtensionGenerationSubmissionContributors";
 import { projectGenerationSession } from "./generationSessionProjection";
 import type {
   ExtensionApiScope,
@@ -151,6 +152,9 @@ export function createExtensionGenerationApi(
     return session;
   };
 
+  const registerSubmissionContributor =
+    extensionGenerationSubmissionContributors.bind(scope);
+
   const api: ExtensionGenerationApi = {
     listInputs: () => {
       if (scope.signal.aborted) return [];
@@ -171,6 +175,7 @@ export function createExtensionGenerationApi(
       generationSessionSignal,
       "Generation session",
     ),
+    registerSubmissionContributor,
     transaction: (label, callback) => {
       if (typeof label !== "string") {
         return failure("", "invalid_label", "Generation labels must be strings.");

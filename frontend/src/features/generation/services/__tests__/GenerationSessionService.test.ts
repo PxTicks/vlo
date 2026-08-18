@@ -418,6 +418,16 @@ describe("GenerationSessionService transactions", () => {
         transaction.setWidget({ nodeId: "3", widget: "seed" }, "12abc");
       }),
     ).toMatchObject({ ok: false, code: "widget_value_invalid" });
+
+    // Text that overflows to an infinity is not a large seed, it is an
+    // unrepresentable one — and an infinity is neither inside nor outside a
+    // finite bound, so it would otherwise skip the range check entirely.
+    expect(
+      service.transaction("Overflowing", (transaction) => {
+        transaction.setWidget({ nodeId: "3", widget: "seed" }, "1e9999");
+      }),
+    ).toMatchObject({ ok: false, code: "widget_value_invalid" });
+    expect(commit).toHaveBeenCalledTimes(3);
   });
 
   it("keeps the last write to a target and reports a no-op text write", () => {

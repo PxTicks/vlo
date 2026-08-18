@@ -30,6 +30,7 @@ import { throwIfAborted } from "./utils/abort";
 import { isMemoryLoaderClassType } from "../utils/workflowClassTypes";
 import type {
   DerivedMaskMapping,
+  GenerationContributedEffectGroup,
   GenerationPlan,
   GenerationRequest,
   PreparedGeneration,
@@ -57,6 +58,8 @@ interface CreateGenerationPlanOptions {
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetInputs: Record<string, string>;
   bypassNodeIds?: string[];
+  /** Submission contributions, already validated against the mounted session. */
+  contributedEffects?: readonly GenerationContributedEffectGroup[];
   postprocessConfig: import("../types").WorkflowPostprocessingConfig;
   workflowWarnings: WorkflowRuleWarning[];
   projectConfig: ProjectConfig;
@@ -966,6 +969,12 @@ export function createGenerationPlan(
       widgetModes: { ...options.widgetModes },
       derivedWidgetInputs: { ...options.derivedWidgetInputs },
       bypassNodeIds: [...(options.bypassNodeIds ?? [])],
+      // Detached like everything else in the plan: the contribution is
+      // finished data by now, and a queued plan must not share structure with
+      // whatever the contributing extension still holds.
+      contributedEffects: cloneSerializableValue(
+        options.contributedEffects ?? [],
+      ),
     },
     metadata: {
       generationMetadata: cloneSerializableValue(

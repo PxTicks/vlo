@@ -129,6 +129,12 @@
 # have to project. Certified by N1.
 /frontend/src/features/generation/pipeline/generationGraphEffects.ts extension-surface=adapter
 /frontend/src/features/generation/pipeline/types.ts extension-surface=adapter
+# Submission contributors (generation-extension-surface-plan.md E2): the
+# owner-neutral registry, and the store that runs it once per submission and
+# freezes the result into the queued plan. Extension-owned behaviour enters the
+# generation pipeline here.
+/frontend/src/features/generation/services/generationSubmissionContributors.ts extension-surface=adapter
+/frontend/src/features/generation/store/executionStoreState.ts extension-surface=adapter
 # Clone-time effect application (§N2b). The bridge decides which node ids are
 # addressable and which writes fail closed, so it defines what the effect union
 # above can actually promise.

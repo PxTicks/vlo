@@ -93,7 +93,9 @@ Choose the nearest fixture:
 - `layout-prompt` for generation slots, modal canvas-like editing, and atomic input
   writes;
 - `tracking` for asset upload, backend jobs, progress/cancellation, preview, mapping,
-  and one timeline commit.
+  and one timeline commit;
+- `lora-policy` for reactive generation-session reads, a validated widget write, and
+  a submission contributor whose graph effects reach the queued plan.
 
 Add focused unit tests for validation and lifecycle, then an approval-path test for
 new portable seams. Verify no code executes before approval, failed activation rolls

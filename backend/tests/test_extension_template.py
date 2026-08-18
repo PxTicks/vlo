@@ -50,6 +50,123 @@ NAVIGATION_FIXTURE_ROOT = (
 EXPORT_REPORT_FIXTURE_ROOT = (
     REPOSITORY_ROOT / "extension-fixtures" / "export-report"
 )
+LORA_POLICY_FIXTURE_ROOT = (
+    REPOSITORY_ROOT / "extension-fixtures" / "lora-policy"
+)
+# One loader with a panel control and one without, which is what makes the
+# fixture pick between writing a widget now and planning a graph effect.
+_LORA_POLICY_ACTIVATION_SMOKE = """
+const models = ["forest.safetensors", "city.safetensors"];
+const widget = (nodeId, editable) => ({
+  nodeId,
+  param: "lora_name",
+  valueType: "enum",
+  value: models[0],
+  defaultValue: models[0],
+  options: models,
+  min: null,
+  max: null,
+  step: null,
+  linked: false,
+  editable,
+});
+const session = {
+  workflow: {
+    sourceId: "workflow.json",
+    instanceId: "workflow-instance",
+    revision: 1,
+    fingerprint: "fingerprint",
+    mode: "catalogue",
+    nodes: [
+      { id: "4", classType: "LoraLoader", title: "Root", mode: 0,
+        widgets: [widget("4", true)] },
+      { id: "12:6", classType: "LoraLoaderModelOnly", title: "Scoped", mode: 0,
+        widgets: [widget("12:6", false)] },
+    ],
+  },
+  status: "ready",
+  inputs: [],
+  canSubmit: true,
+  busy: false,
+};
+const writes = [];
+const contributors = [];
+const components = [];
+const react = {
+  createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
+  useState: (initial) => [initial, () => {}],
+  useSyncExternalStore: (subscribe, getSnapshot) => { subscribe(() => {}); return getSnapshot(); },
+};
+const api = {
+  runtime: { react },
+  ui: {
+    registerComponent: (definition) => {
+      components.push(definition);
+      return { id: definition.id, dispose() {} };
+    },
+  },
+  generation: {
+    listInputs: () => [],
+    getSession: () => session,
+    getRevision: () => 1,
+    subscribe: () => () => {},
+    transaction: (label, callback) => {
+      callback({
+        setTextInput() {},
+        setWidget: (target, value) => writes.push({ target, value }),
+      });
+      return { ok: true, changed: true, label };
+    },
+    registerSubmissionContributor: (definition) => {
+      contributors.push(definition);
+      return { id: definition.id, dispose() {} };
+    },
+  },
+};
+const controller = new AbortController();
+await extension.activate({
+  extension: { id: "example.lora-policy", version: "1.0.0" },
+  sdkVersion: "1.15.0",
+  signal: controller.signal,
+  api,
+  logger: { debug() {}, info() {}, warn() {}, error() {} },
+  onDispose() {},
+});
+
+if (components.length !== 1) throw new Error("panel registration missing");
+if (components[0].slot !== "generation.inputs.after") {
+  throw new Error("panel registered in the wrong slot: " + components[0].slot);
+}
+if (contributors.length !== 1) throw new Error("submission contributor missing");
+
+const rendered = components[0].component({ slot: components[0].slot });
+const selects = [];
+const walk = (node) => {
+  if (Array.isArray(node)) { node.forEach(walk); return; }
+  if (!node || typeof node !== "object") return;
+  const label = node.props?.["aria-label"];
+  if (typeof label === "string" && label.startsWith("LoRA for")) selects.push(node);
+  walk(node.children);
+};
+walk(rendered);
+if (selects.length !== 2) throw new Error("expected one control per loader");
+
+// A model for the loader the panel controls, and the extension-local "none"
+// for the one it does not: the two plans the fixture exists to produce.
+selects[0].props.onChange({ target: { value: models[1] } });
+selects[1].props.onChange({ target: { value: extension.BYPASS_CHOICE } });
+
+if (writes.length !== 1 || writes[0].value !== models[1]) {
+  throw new Error("editable choice did not reach the transaction");
+}
+const effects = contributors[0].contribute({ session });
+const planned = JSON.stringify(effects);
+const expected = JSON.stringify([
+  { kind: "bypass-nodes", nodeIds: ["12:6"] },
+  { kind: "set-widget", target: { nodeId: "4", widget: "lora_name" }, value: models[1] },
+]);
+if (planned !== expected) throw new Error("unexpected submission plan: " + planned);
+"""
 SDK_ROOT = REPOSITORY_ROOT / "packages" / "extension-sdk"
 NODE_EXECUTABLE = shutil.which("node")
 TYPESCRIPT_CLI = (
@@ -153,6 +270,16 @@ def _copy_export_report_fixture_workspace(tmp_path: Path) -> Path:
     fixture = workspace / "extension-fixtures" / "export-report"
     fixture.parent.mkdir(parents=True)
     shutil.copytree(EXPORT_REPORT_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
+
+
+def _copy_lora_policy_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "lora-policy"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(LORA_POLICY_FIXTURE_ROOT, fixture)
     shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
     shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
     return fixture
@@ -911,3 +1038,60 @@ def test_layout_prompt_fixture_builds_and_stages_through_approval(
     )
     assert b"Visual layout prompt" in bundle
     assert b"Apply JSON prompt" in bundle
+
+
+def test_lora_policy_fixture_builds_and_stages_through_approval(
+    tmp_path: Path,
+):
+    fixture = _copy_lora_policy_fixture_workspace(tmp_path)
+    _build_template(fixture)
+    built_entry = fixture / "frontend" / "dist" / "index.js"
+    assert built_entry.is_file()
+    assert b"generation.inputs.after" in built_entry.read_bytes()
+
+    extensions_root = tmp_path / "extensions"
+    extensions_root.mkdir()
+    shutil.copytree(fixture, extensions_root / "example.lora-policy")
+    state_root = tmp_path / "state"
+    manager = ExtensionManager(
+        extensions_root,
+        ExtensionApprovalStore(state_root / "approvals.json"),
+    )
+    artifacts = FrontendArtifactStore(
+        state_root / "frontend-artifacts",
+        extensions_root,
+    )
+    pending = manager.scan(force_digest=True)[0]
+    assert pending.extension_id == "example.lora-policy"
+    assert pending.status == "pending_approval"
+    assert pending.digest is not None
+    artifacts.stage(pending, pending.digest)
+    manager.approve(pending.extension_id, pending.digest)
+    assert (
+        manager.get_item(pending.extension_id, force_digest=True).status
+        == "approved"
+    )
+
+    bundle = artifacts.read(pending.extension_id, pending.digest, "index.js")
+    staged_entry = tmp_path / "staged-index.js"
+    staged_entry.write_bytes(bundle)
+
+    # Run the *approved artifact*, not the TypeScript source the frontend suite
+    # imports: a bundling, export, or module-loading fault would otherwise pass
+    # both halves of this fixture's coverage. The stub API is the smallest thing
+    # the fixture's activation touches, and the assertions are the two
+    # submission plans it exists to produce.
+    activation_smoke = _run_node(
+        [
+            "--input-type=module",
+            "--eval",
+            (
+                "const extension = await import("
+                + json.dumps(staged_entry.as_uri())
+                + ");"
+                + _LORA_POLICY_ACTIVATION_SMOKE
+            ),
+        ],
+        cwd=fixture,
+    )
+    _assert_command_succeeded(activation_smoke)

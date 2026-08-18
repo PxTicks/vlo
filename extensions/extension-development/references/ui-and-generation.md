@@ -204,6 +204,22 @@ React), a `placement` (`endpoint` or source-time), optional `onClick`/`onContext
 and optional `drag` handlers that receive source/visual/presentation tick maths. `clip`
 is a detached snapshot; the registration is owner-scoped and removed on deactivation.
 
+## Choose the generation rung before writing code
+
+Three rungs, in the order to try them:
+
+1. **A workflow rule sidecar.** Policy for *one* workflow is a `.rules.json`
+   next to it. No extension, no code, no lifecycle to get wrong.
+2. **A trusted extension: reactive UI plus submission effects.** Custom policy
+   the user drives — read the session, render a control in a generation slot,
+   write the widgets the panel exposes, and contribute graph effects for the
+   rest. `extension-fixtures/lora-policy/` is the worked example, from
+   discovery through the queued plan.
+3. **A rule provider or backend stage.** Neither exists. Each is gated on a
+   named consumer and its own design (see
+   `docs/generation-extension-surface-plan.md` §5); do not approximate one by
+   writing on a timer or mutating state at submission.
+
 ## Read and write generation inputs
 
 Call `context.api.generation.listInputs()` during user-driven UI work to obtain

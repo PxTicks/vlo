@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "example.lora-policy",
+  "name": "LoRA Loader Policy Conformance Fixture",
+  "version": "1.0.0",
+  "sdk": ">=1.15.0 <2.0.0",
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "capabilities": ["generation.read", "generation.write", "ui.custom"]
+}

@@ -155,6 +155,91 @@ describe("autodiscovered LoRA widget inputs", () => {
     });
   });
 
+  it("lends the runtime enum to a sidecar that only labels the widget", () => {
+    // `options` is the user's installed LoRA files, which no sidecar author can
+    // state. Without inheritance a minimal entry renders as a text box.
+    const explicit: WorkflowWidgetInput = {
+      nodeId: "4",
+      param: "lora_name",
+      currentValue: "base.safetensors",
+      config: { label: "Style adapter", controlAfterGenerate: false },
+    };
+    const discovered = discoverLoraWidgets(
+      {
+        "4": {
+          class_type: "LoraLoaderModelOnly",
+          inputs: { lora_name: "base.safetensors" },
+        },
+      },
+      LORA_OBJECT_INFO,
+      null,
+    );
+
+    const [merged] = mergeAutodiscoveredLoraWidgetInputs([explicit], discovered);
+    expect(merged?.config.valueType).toBe("enum");
+    expect(merged?.config.options).toEqual([
+      "base.safetensors",
+      "detail.safetensors",
+    ]);
+    expect(merged?.config.label).toBe("Style adapter");
+  });
+
+  it("lets a sidecar that states its own enum win", () => {
+    const explicit: WorkflowWidgetInput = {
+      nodeId: "4",
+      param: "lora_name",
+      currentValue: "base.safetensors",
+      config: {
+        label: "Style adapter",
+        controlAfterGenerate: false,
+        valueType: "enum",
+        options: ["base.safetensors"],
+      },
+    };
+    const discovered = discoverLoraWidgets(
+      {
+        "4": {
+          class_type: "LoraLoaderModelOnly",
+          inputs: { lora_name: "base.safetensors" },
+        },
+      },
+      LORA_OBJECT_INFO,
+      null,
+    );
+
+    const [merged] = mergeAutodiscoveredLoraWidgetInputs([explicit], discovered);
+    expect(merged?.config.options).toEqual(["base.safetensors"]);
+  });
+
+  it("keeps a sidecar's default_node_bypass alongside the injected choice", () => {
+    const explicit: WorkflowWidgetInput = {
+      nodeId: "4",
+      param: "lora_name",
+      currentValue: "base.safetensors",
+      config: {
+        label: "Style adapter",
+        controlAfterGenerate: false,
+        valueType: "enum",
+        options: ["base.safetensors", "detail.safetensors"],
+        defaultNodeBypass: true,
+      },
+    };
+    const discovered = discoverLoraWidgets(
+      {
+        "4": {
+          class_type: "LoraLoaderModelOnly",
+          inputs: { lora_name: "base.safetensors" },
+        },
+      },
+      LORA_OBJECT_INFO,
+      null,
+    );
+
+    const [merged] = mergeAutodiscoveredLoraWidgetInputs([explicit], discovered);
+    expect(merged?.config.defaultNodeBypass).toBe(true);
+    expect(merged?.config.nodeBypassOption?.value).toBe(LORA_BYPASS_CHOICE);
+  });
+
   it("enhances an explicitly presented widget without replacing its metadata", () => {
     const explicit: WorkflowWidgetInput = {
       nodeId: "4",

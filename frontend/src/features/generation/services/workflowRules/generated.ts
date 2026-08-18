@@ -182,6 +182,7 @@ export interface WorkflowFrontendControl {
   when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
   control_after_generate?: boolean;
   default_randomize?: boolean | null;
+  default_node_bypass?: boolean | null;
   frontend_only?: boolean | null;
   hidden?: boolean | null;
   control?: "slider" | null;
@@ -341,6 +342,7 @@ export interface WorkflowRuleWidgetEntry {
   when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
   control_after_generate?: boolean;
   default_randomize?: boolean | null;
+  default_node_bypass?: boolean | null;
   frontend_only?: boolean | null;
   hidden?: boolean | null;
   control?: "slider" | null;

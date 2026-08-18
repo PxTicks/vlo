@@ -1431,6 +1431,18 @@
           "default": null,
           "title": "Default"
         },
+        "default_node_bypass": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Node Bypass"
+        },
         "default_overrides": {
           "anyOf": [
             {
@@ -2710,6 +2722,18 @@
           ],
           "default": null,
           "title": "Default"
+        },
+        "default_node_bypass": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Node Bypass"
         },
         "default_overrides": {
           "anyOf": [

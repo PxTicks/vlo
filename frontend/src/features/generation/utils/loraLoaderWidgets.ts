@@ -94,10 +94,18 @@ export function mergeAutodiscoveredLoraWidgetInputs(
     byTarget.delete(key);
     // Sidecars own presentation, but cannot remove the native safety choice:
     // every autodiscovered LoRA loader remains bypassable in the panel.
+    //
+    // The enum itself is inherited rather than owned: the installed LoRA files
+    // are runtime data from object_info, so an author cannot state `options`
+    // correctly and a sidecar that declares the widget only to label it — or
+    // to set `default_node_bypass` — must not downgrade the dropdown to a
+    // free-text box. A sidecar that does state them still wins.
     return {
       ...widget,
       config: {
         ...widget.config,
+        valueType: widget.config.valueType ?? discovered.config.valueType,
+        options: widget.config.options ?? discovered.config.options,
         nodeBypassOption: discovered.config.nodeBypassOption,
       },
     };

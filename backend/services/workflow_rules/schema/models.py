@@ -247,6 +247,10 @@ class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     when: ConditionExpression | None = None
     control_after_generate: bool = False
     default_randomize: bool | None = None
+    # Starts the panel with this widget's node bypassed. Only meaningful for a
+    # widget the panel gives a node-bypass choice to (autodiscovered LoRA
+    # loaders today); inert everywhere else.
+    default_node_bypass: bool | None = None
     frontend_only: bool | None = None
     hidden: bool | None = None
     control: WidgetControl | None = None

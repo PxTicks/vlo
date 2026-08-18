@@ -97,9 +97,11 @@ import {
   resolveAutodiscoveredLoraWidgetInputs,
 } from "../utils/loraLoaderWidgets";
 import {
+  collectDefaultNodeBypassWidgetTargets,
   getNodeBypassWidgetKey,
   isNodeBypassWidgetValue,
   partitionNodeBypassWidgetInputs,
+  reconcileNodeBypassWidgetTargets,
 } from "../utils/nodeBypassWidgets";
 
 function applySelectionConfigDefaults(
@@ -272,6 +274,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   >(new Set());
   const bypassedWidgetTargetsRef = useRef<ReadonlySet<string>>(new Set());
   const bypassWorkflowSourceRef = useRef<string | null>(null);
+  const appliedBypassDefaultsRef = useRef<ReadonlySet<string>>(new Set());
 
   const connectionStatus = useGenerationStore((s) => s.connectionStatus);
   const runtimeStatus = useGenerationStore((s) => s.runtimeStatus);
@@ -493,32 +496,23 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   useEffect(() => {
     if (bypassWorkflowSourceRef.current === selectedWorkflowId) return;
     bypassWorkflowSourceRef.current = selectedWorkflowId;
+    // A new workflow gets its rule defaults applied afresh.
+    appliedBypassDefaultsRef.current = new Set();
     const next = new Set<string>();
     bypassedWidgetTargetsRef.current = next;
     setBypassedWidgetTargets(next);
   }, [selectedWorkflowId]);
 
   useEffect(() => {
-    const validTargets = new Set(
-      widgetInputs.flatMap((widget) =>
-        widget.config.nodeBypassOption
-          ? [getNodeBypassWidgetKey(widget.nodeId, widget.param)]
-          : [],
-      ),
-    );
-    const next = new Set(
-      [...bypassedWidgetTargetsRef.current].filter((target) =>
-        validTargets.has(target),
-      ),
-    );
-    if (
-      next.size === bypassedWidgetTargetsRef.current.size &&
-      [...next].every((target) => bypassedWidgetTargetsRef.current.has(target))
-    ) {
-      return;
-    }
-    bypassedWidgetTargetsRef.current = next;
-    setBypassedWidgetTargets(next);
+    const reconciliation = reconcileNodeBypassWidgetTargets({
+      widgetInputs,
+      previousTargets: bypassedWidgetTargetsRef.current,
+      appliedDefaults: appliedBypassDefaultsRef.current,
+    });
+    appliedBypassDefaultsRef.current = reconciliation.appliedDefaults;
+    if (!reconciliation.changed) return;
+    bypassedWidgetTargetsRef.current = reconciliation.targets;
+    setBypassedWidgetTargets(reconciliation.targets);
   }, [widgetInputs]);
 
   useEffect(() => {
@@ -644,6 +638,11 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
     const nextBypassedWidgetTargets = resolveReplayNodeBypassWidgetTargets(
       pendingReplayPanelState,
+      widgetInputs,
+    );
+    // The replayed generation is an explicit choice about every loader, so
+    // rule defaults must not be layered back on top of it afterwards.
+    appliedBypassDefaultsRef.current = collectDefaultNodeBypassWidgetTargets(
       widgetInputs,
     );
     bypassedWidgetTargetsRef.current = nextBypassedWidgetTargets;

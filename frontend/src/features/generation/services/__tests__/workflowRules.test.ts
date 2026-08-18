@@ -613,6 +613,39 @@ describe("resolvePresentedInputs", () => {
     expect(sampler?.config.options).toEqual(["euler", "heun"]);
   });
 
+  it("carries a rule's default_node_bypass onto the widget config", () => {
+    const widgets = resolveWidgetInputs(
+      {
+        "12": {
+          class_type: "LoraLoaderModelOnly",
+          inputs: { lora_name: "detail.safetensors" },
+        },
+      },
+      {
+        version: 1,
+        nodes: {
+          "12": {
+            widgets: {
+              lora_name: {
+                label: "Detail LoRA",
+                value_type: "enum",
+                options: ["base.safetensors", "detail.safetensors"],
+                default_node_bypass: true,
+              },
+            },
+          },
+        },
+        slots: {},
+      },
+    );
+
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]?.config.defaultNodeBypass).toBe(true);
+    // The rule states an initial panel state; it never rewrites the value the
+    // workflow carries, so turning the loader back on restores this model.
+    expect(widgets[0]?.currentValue).toBe("detail.safetensors");
+  });
+
   it("falls back to object_info display_name for widget node titles", () => {
     const widgets = resolveWidgetInputs(
       {

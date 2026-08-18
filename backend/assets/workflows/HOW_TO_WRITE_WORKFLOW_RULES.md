@@ -386,6 +386,7 @@ you want "basically all controls, minus a few internal ones".
 | `when`                                                 | `ConditionExpression` that gates widget visibility (see [Conditional Display](#conditional-display))                                                              |
 | `control_after_generate`                               | Expose for adjustment after generation                                                                                                                            |
 | `default_randomize`                                    | Randomize by default (requires `min`/`max`)                                                                                                                       |
+| `default_node_bypass`                                  | Start the panel with this widget's node bypassed (LoRA loaders — see [Bypassing a LoRA loader by default](#bypassing-a-lora-loader-by-default))                    |
 | `hidden`                                               | Unconditionally hidden from UI; value stays in the workflow                                                                                                       |
 | `frontend_only`                                        | Rendered in UI, value not sent to backend                                                                                                                         |
 | `section_id`                                           | Move the widget into a specific top-level section                                                                                                                 |
@@ -397,6 +398,45 @@ you want "basically all controls, minus a few internal ones".
 | `control` / `slider_display` / `unit` / `display_unit` | Presentation hints (e.g. `"slider"`; `display_unit` applies a linear `scale + offset` transform with optional `unit` and `precision` for slider value formatting) |
 | `true_value` / `false_value`                           | Custom booleans (e.g. mapping to enum strings)                                                                                                                    |
 | `default_overrides`                                    | Conditional defaults driven by `ConditionExpression`                                                                                                              |
+
+### Bypassing a LoRA loader by default
+
+The panel autodiscovers active `LoraLoader*` nodes and gives each one's
+`lora_name` widget a panel-only `None (bypass)` choice, which bypasses the
+loader at submission instead of writing a value into it. Loaders start on. To
+ship a workflow with one off until the user turns it on, declare the widget and
+set `default_node_bypass`:
+
+```json
+{
+  "nodes": {
+    "12": {
+      "widgets": {
+        "lora_name": {
+          "label": "Detail LoRA",
+          "default_node_bypass": true
+        }
+      }
+    }
+  }
+}
+```
+
+Notes:
+
+- You only need to declare the fields you want to change. The dropdown and its
+  option list are inherited from autodiscovery, because the installed LoRA
+  files are runtime data — do not try to state `options` yourself.
+- The flag sets the panel's *initial* state only. The user can turn the loader
+  on, and the workflow's own `lora_name` value is what it turns on to — the
+  rule never rewrites that value.
+- It is applied once per mounted workflow, so it will not fight a user who
+  turns the loader back on, and it does not override state restored by
+  replaying a previous generation.
+- It is inert on any widget the panel gives no bypass choice to, which today
+  means anything that is not an autodiscovered LoRA loader.
+- Shipping the node already bypassed in the workflow JSON does *not* work as a
+  substitute: an inactive node is not autodiscovered, so it gets no control.
 
 ---
 

@@ -106,6 +106,13 @@ sidecar presentation metadata wins when it already exposes the same widget;
 the native bypass choice remains available as built-in loader behaviour.
 Muted, bypassed, and link-fed loaders are not auto-presented.
 
+Loaders start on. A sidecar can start one bypassed with
+`widgets.<param>.default_node_bypass`, which seeds the panel's bypass state
+once per mounted workflow (`reconcileNodeBypassWidgetTargets` in
+`utils/nodeBypassWidgets.ts`). It seeds initial state only: it never rewrites
+the widget value, never re-applies itself over a user who turned the loader
+back on, and yields to state restored from a replayed generation.
+
 Selection/media extraction helpers live in:
 
 - `utils/inputSelection.ts`

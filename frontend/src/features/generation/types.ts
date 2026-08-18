@@ -279,6 +279,11 @@ export interface WidgetInputConfig {
    * instead of writing the choice into the underlying widget.
    */
   nodeBypassOption?: WidgetNodeBypassOption;
+  /**
+   * Start the panel with `nodeBypassOption` selected, so a workflow can ship
+   * with a loader off until the user turns it on. Inert without that option.
+   */
+  defaultNodeBypass?: boolean;
 }
 
 export interface WorkflowParamReference {

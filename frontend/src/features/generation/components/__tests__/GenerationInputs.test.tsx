@@ -2,8 +2,106 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { GenerationInputs } from "../GenerationInputs";
+import { buildGenerationNodeCatalogue } from "../../services/workflowNodeCatalogue";
+import { resolveWidgetInputs } from "../../services/workflowRules";
+import {
+  mergeAutodiscoveredLoraWidgetInputs,
+  resolveAutodiscoveredLoraWidgetInputs,
+} from "../../utils/loraLoaderWidgets";
+import { reconcileNodeBypassWidgetTargets } from "../../utils/nodeBypassWidgets";
+
+const LORA_WORKFLOW = {
+  "12": {
+    class_type: "LoraLoaderModelOnly",
+    inputs: { model: ["1", 0], lora_name: "detail.safetensors" },
+    _meta: { title: "Detail LoRA" },
+  },
+};
+const LORA_OBJECT_INFO = {
+  LoraLoaderModelOnly: {
+    input: {
+      required: {
+        model: ["MODEL"],
+        lora_name: [["base.safetensors", "detail.safetensors"], {}],
+      },
+    },
+    input_order: { required: ["model", "lora_name"] },
+  },
+};
+
+/**
+ * The panel's real widget chain for a LoRA loader: rule presentation, then the
+ * autodiscovery merge, then bypass-target reconciliation.
+ */
+function buildLoraPanelState(rules: Record<string, unknown> | null) {
+  const widgetInputs = mergeAutodiscoveredLoraWidgetInputs(
+    rules
+      ? resolveWidgetInputs(LORA_WORKFLOW, rules as never, {
+          objectInfo: LORA_OBJECT_INFO,
+        })
+      : [],
+    resolveAutodiscoveredLoraWidgetInputs(
+      buildGenerationNodeCatalogue(LORA_WORKFLOW, LORA_OBJECT_INFO, null),
+    ),
+  );
+  const { targets } = reconcileNodeBypassWidgetTargets({
+    widgetInputs,
+    previousTargets: new Set(),
+    appliedDefaults: new Set(),
+  });
+  return { widgetInputs, targets };
+}
+
+function renderLoraPanel(rules: Record<string, unknown> | null) {
+  const { widgetInputs, targets } = buildLoraPanelState(rules);
+  render(
+    <GenerationInputs
+      inputs={[]}
+      textValues={{}}
+      onTextValueCommit={vi.fn()}
+      mediaInputs={{}}
+      onInputDrop={vi.fn()}
+      onExternalInputDrop={vi.fn()}
+      onInputClear={vi.fn()}
+      onSwapMediaInputs={vi.fn()}
+      onClickSelect={vi.fn()}
+      widgetInputs={[...widgetInputs]}
+      widgetValues={{}}
+      bypassedWidgetTargets={targets}
+      randomizeToggles={{}}
+      onWidgetChange={vi.fn()}
+      onToggleRandomize={vi.fn()}
+    />,
+  );
+}
 
 describe("GenerationInputs", () => {
+  it("shows an autodiscovered loader as a dropdown on its workflow model", () => {
+    renderLoraPanel(null);
+    expect(screen.getByRole("combobox")).toHaveTextContent("detail.safetensors");
+  });
+
+  it("starts a rule-defaulted loader on None, still as a dropdown", () => {
+    // A minimal rule entry must not downgrade the enum to a text box showing
+    // the raw bypass sentinel.
+    renderLoraPanel({
+      version: 1,
+      nodes: {
+        "12": {
+          widgets: { lora_name: { label: "Detail LoRA", default_node_bypass: true } },
+        },
+      },
+      slots: {},
+    });
+
+    const select = screen.getByRole("combobox");
+    expect(select).toHaveTextContent("None (bypass)");
+    fireEvent.mouseDown(select);
+    expect(
+      screen.getByRole("option", { name: "detail.safetensors" }),
+    ).toBeInTheDocument();
+  });
+
   it("renders a node-bypass choice through the standard enum widget row", () => {
     const onWidgetChange = vi.fn();
     render(

@@ -1,0 +1,7 @@
+# Ignore everything in this folder...
+*
+# ...except the scaffolding that ships with the repo
+!.gitignore
+!HOW_TO_WRITE_WORKFLOW_RULES.md
+!workflow_menu.json.example
+!place_workflows_here

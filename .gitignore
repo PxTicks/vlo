@@ -70,7 +70,6 @@ backend/assets/models/sam_audio/
 backend/.checkpoints/
 backend/assets/.config/object_info.json
 ComfyUI-vlo
-backend/assets/workflows/Invert_Image.json
 backend/sam2
 .claude
 backend/runtime/

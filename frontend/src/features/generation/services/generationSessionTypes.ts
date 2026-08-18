@@ -96,11 +96,23 @@ export interface GenerationEditableWidgetSnapshot {
 export interface GenerationSessionReadiness {
   readonly isLoading: boolean;
   readonly isReady: boolean;
+  /**
+   * The mounted workflow failed to load. Distinct from "not ready yet": no
+   * further readiness arrives without the user retrying or picking another
+   * workflow, which a consumer waiting on the session has to be able to tell.
+   */
+  readonly hasError: boolean;
 }
 
 export interface GenerationSessionSubmission {
   readonly isBusy: boolean;
   readonly queuedCount: number;
+  /**
+   * The panel would accept a submission right now. Wider than readiness: it
+   * also covers the ComfyUI connection and the workflow's required inputs, so
+   * a consumer must not derive it from `readiness` alone.
+   */
+  readonly canSubmit: boolean;
 }
 
 export interface GenerationSessionSnapshot {

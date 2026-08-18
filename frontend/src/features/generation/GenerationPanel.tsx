@@ -695,6 +695,10 @@ export function GenerationPanel() {
     widgetInputs: displayWidgetInputs,
     widgetValues,
     selectedWorkflowId,
+    hasWorkflowError: workflowLoadError !== null,
+    // The panel's own submit gate, so a session consumer sees what the
+    // Generate button sees rather than a narrower readiness-only guess.
+    canSubmit: canGenerate,
     commitTextInputs: handleTextValuesCommit,
     applyWidgetValue: applyDisplayedWidgetValue,
   });

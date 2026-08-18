@@ -2936,8 +2936,94 @@ export interface ExtensionGenerationInputSnapshot {
   readonly value?: JsonValue;
 }
 
+/** One widget-backed parameter of one node in the mounted workflow. */
+export interface ExtensionGenerationWidgetTarget {
+  /**
+   * Execution id: `<id>` at the root, `<instanceId>:<innerId>` for a node
+   * inside a subgraph instance — the same ids the submitted prompt uses.
+   */
+  readonly nodeId: string;
+  readonly widget: string;
+}
+
+export type ExtensionGenerationWidgetValueType =
+  | "int"
+  | "float"
+  | "string"
+  | "boolean"
+  | "enum"
+  | "unknown";
+
+export interface ExtensionGenerationWidgetSnapshot {
+  readonly nodeId: string;
+  readonly param: string;
+  /** `unknown` when the host has no `object_info` entry describing it. */
+  readonly valueType: ExtensionGenerationWidgetValueType;
+  /** `null` when the graph carries nothing representable as finite JSON. */
+  readonly value: JsonValue | null;
+  readonly defaultValue: JsonValue | null;
+  /** Enum options where the host knows them; `null` otherwise. */
+  readonly options: readonly (string | number | boolean)[] | null;
+  readonly min: number | null;
+  readonly max: number | null;
+  readonly step: number | null;
+  /** Fed by a node connection, so it carries no editable widget value. */
+  readonly linked: boolean;
+  /**
+   * The panel renders a control for this widget, so `setWidget` can write it.
+   * Every other widget is readable but fails `widget_not_editable`; reach those
+   * through a submission effect instead of guessing.
+   */
+  readonly editable: boolean;
+}
+
+export interface ExtensionGenerationNodeSnapshot {
+  readonly id: string;
+  readonly classType: string;
+  readonly title: string;
+  /** LiteGraph node mode: 0 = always, 2 = muted, 4 = bypassed. */
+  readonly mode: number;
+  readonly widgets: readonly ExtensionGenerationWidgetSnapshot[];
+}
+
+/**
+ * The mounted workflow's node and widget catalogue.
+ *
+ * Deliberately class-and-widget only: there are no inputs, ports, links, raw
+ * ComfyUI metadata, or LiteGraph objects here, so a consumer can match node
+ * classes and inspect their widgets but cannot infer what a node is wired to.
+ */
+export interface ExtensionGenerationWorkflowSnapshot {
+  readonly sourceId: string | null;
+  /** `null` before the ComfyUI bridge has reported the instance identity. */
+  readonly instanceId: string | null;
+  /** Bumps when workflow identity or the node catalogue changes. */
+  readonly revision: number;
+  readonly fingerprint: string;
+  readonly mode: "catalogue" | "temporary" | "manual";
+  readonly nodes: readonly ExtensionGenerationNodeSnapshot[];
+}
+
+/**
+ * A detached, deeply frozen projection of the mounted generation session. The
+ * same object is returned until something changes, so it is safe to pass
+ * straight to `useSyncExternalStore`.
+ */
+export interface ExtensionGenerationSessionSnapshot {
+  readonly workflow: ExtensionGenerationWorkflowSnapshot;
+  /** `error` means the workflow failed to load, not that a run failed. */
+  readonly status: "loading" | "ready" | "error";
+  readonly inputs: readonly ExtensionGenerationInputSnapshot[];
+  /** The panel would accept a submission now: connection, readiness, inputs. */
+  readonly canSubmit: boolean;
+  /** A generation is queued, running, or being pre/post-processed. */
+  readonly busy: boolean;
+}
+
 export interface ExtensionGenerationTransaction {
   setTextInput(inputId: string, value: string): void;
+  /** Write one widget the active snapshot marks `editable`. */
+  setWidget(target: ExtensionGenerationWidgetTarget, value: JsonValue): void;
 }
 
 export type ExtensionGenerationTransactionResult =
@@ -2950,6 +3036,9 @@ export type ExtensionGenerationTransactionResult =
         | "invalid_command"
         | "input_not_found"
         | "input_type_mismatch"
+        | "widget_not_found"
+        | "widget_not_editable"
+        | "widget_value_invalid"
         | "callback_failed";
       readonly message: string;
       readonly label: string;
@@ -2958,6 +3047,12 @@ export type ExtensionGenerationTransactionResult =
 /** User-event API for the currently mounted generation/workflow panel. */
 export interface ExtensionGenerationApi {
   listInputs(): readonly ExtensionGenerationInputSnapshot[];
+  /** The mounted session, or `null` when no generation panel is mounted. */
+  getSession(): ExtensionGenerationSessionSnapshot | null;
+  /** Monotonic while the panel stays mounted; pairs with `subscribe`. */
+  getRevision(): number;
+  /** Payload-free change notification; disposed with the activation. */
+  subscribe(listener: () => void): () => void;
   transaction(
     label: string,
     callback: (transaction: ExtensionGenerationTransaction) => void,

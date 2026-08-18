@@ -39,6 +39,10 @@ export interface GenerationSessionMountOptions {
   readonly widgetInputs: readonly WorkflowWidgetInput[];
   readonly widgetValues: WidgetValueMap;
   readonly selectedWorkflowId: string | null;
+  /** The workflow failed to load; readiness will not arrive on its own. */
+  readonly hasWorkflowError: boolean;
+  /** The panel's own submit gate, connection and input validation included. */
+  readonly canSubmit: boolean;
   readonly commitTextInputs: (updates: ReadonlyMap<string, string>) => void;
   readonly applyWidgetValue: (
     nodeId: string,
@@ -104,6 +108,8 @@ export function useGenerationSessionMount(
     widgetInputs,
     widgetValues,
     selectedWorkflowId,
+    hasWorkflowError,
+    canSubmit,
     commitTextInputs,
     applyWidgetValue,
   } = options;
@@ -232,12 +238,18 @@ export function useGenerationSessionMount(
       nodes,
       inputs,
       editableWidgets,
-      readiness: { isLoading: isWorkflowLoading, isReady: isWorkflowReady },
-      submission: { isBusy, queuedCount },
+      readiness: {
+        isLoading: isWorkflowLoading,
+        isReady: isWorkflowReady,
+        hasError: hasWorkflowError,
+      },
+      submission: { isBusy, queuedCount, canSubmit },
     });
   }, [
+    canSubmit,
     editableWidgets,
     fingerprint,
+    hasWorkflowError,
     inputs,
     instanceId,
     isBusy,

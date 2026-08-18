@@ -53,8 +53,8 @@ function publication(
     nodes: EMPTY_NODES,
     inputs: [textInput()],
     editableWidgets: [editableWidget()],
-    readiness: { isLoading: false, isReady: true },
-    submission: { isBusy: false, queuedCount: 0 },
+    readiness: { isLoading: false, isReady: true, hasError: false },
+    submission: { isBusy: false, queuedCount: 0, canSubmit: true },
     ...overrides,
   };
 }

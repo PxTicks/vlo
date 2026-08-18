@@ -86,6 +86,8 @@ function mountPanelSession(
       widgetInputs,
       widgetValues: {},
       selectedWorkflowId: "wf.json",
+      hasWorkflowError: false,
+      canSubmit: true,
       commitTextInputs,
       applyWidgetValue,
       ...overrides,
@@ -251,7 +253,7 @@ describe("useGenerationSessionMount", () => {
  * part that drifts silently — a host code added without a mapping entry would
  * otherwise reach an extension as `undefined`.
  */
-describe("native and extension text-input entry points agree", () => {
+describe("native and extension entry points agree", () => {
   it("produces the same host commit and outcome for the same write", () => {
     const native = mountPanelSession();
     let nativeOutcome: GenerationTransactionResult | null = null;
@@ -315,11 +317,12 @@ describe("native and extension text-input entry points agree", () => {
       callback_failed: "callback_failed",
       input_not_found: "input_not_found",
       input_type_mismatch: "input_type_mismatch",
-      // Widget writes are not part of the published surface, so their codes
-      // must not leak a vocabulary the SDK does not document.
-      widget_not_found: "invalid_command",
-      widget_not_editable: "invalid_command",
-      widget_value_invalid: "invalid_command",
+      // Published as themselves since E1: with `setWidget` on the surface, an
+      // extension has to be able to tell "no such widget" from "no control for
+      // it" from "bad value" to decide whether to fall back.
+      widget_not_found: "widget_not_found",
+      widget_not_editable: "widget_not_editable",
+      widget_value_invalid: "widget_value_invalid",
     };
     expect(PUBLIC_FAILURE_CODES).toEqual(expected);
   });
@@ -369,5 +372,87 @@ describe("native and extension text-input entry points agree", () => {
     });
     expect(outcome).toMatchObject({ code: "unavailable" });
     expect(commitTextInputs).not.toHaveBeenCalled();
+  });
+  it("produces the same host write for a native and an extension widget edit", () => {
+    const native = mountPanelSession();
+    let nativeOutcome: GenerationTransactionResult | null = null;
+    act(() => {
+      nativeOutcome = native.result.current.commitWidgetValue("3", "steps", 35);
+    });
+    const nativeCall = native.applyWidgetValue.mock.calls[0];
+    native.unmount();
+
+    const viaExtension = mountPanelSession();
+    const api = createExtensionGenerationApi(createScope());
+    const extensionOutcome = api.transaction("Set steps", (transaction) => {
+      transaction.setWidget({ nodeId: "3", widget: "steps" }, 35);
+    });
+
+    expect(viaExtension.applyWidgetValue.mock.calls[0]).toEqual(nativeCall);
+    expect(nativeOutcome).toMatchObject({ ok: true, changed: true });
+    expect(extensionOutcome).toMatchObject({ ok: true, changed: true });
+  });
+
+  it("refuses the same out-of-range widget write on both paths", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const native = mountPanelSession();
+    let nativeOutcome: GenerationTransactionResult | null = null;
+    act(() => {
+      nativeOutcome = native.result.current.commitWidgetValue("3", "steps", 500);
+    });
+    native.unmount();
+
+    const viaExtension = mountPanelSession();
+    const api = createExtensionGenerationApi(createScope());
+    const extensionOutcome = api.transaction("Too many steps", (transaction) => {
+      transaction.setWidget({ nodeId: "3", widget: "steps" }, 500);
+    });
+
+    expect(nativeOutcome).toMatchObject({
+      ok: false,
+      code: "widget_value_invalid",
+    });
+    expect(extensionOutcome).toMatchObject({
+      ok: false,
+      code: PUBLIC_FAILURE_CODES.widget_value_invalid,
+    });
+    expect(viaExtension.applyWidgetValue).not.toHaveBeenCalled();
+  });
+
+  it("projects the panel's own session state to the extension surface", () => {
+    useGenerationStore.setState({ isWorkflowReady: true });
+    mountPanelSession();
+    const api = createExtensionGenerationApi(createScope());
+
+    const session = api.getSession();
+    expect(session).toMatchObject({ status: "ready", canSubmit: true });
+    expect(session?.workflow).toMatchObject({
+      sourceId: "wf.json",
+      instanceId: "instance-1",
+      mode: "catalogue",
+    });
+    // The catalogue the panel built, with the panel's binding marking which of
+    // it is writable.
+    const steps = session?.workflow.nodes
+      .find((node) => node.id === "3")
+      ?.widgets.find((widget) => widget.param === "steps");
+    expect(steps).toMatchObject({
+      valueType: "int",
+      min: 1,
+      max: 100,
+      editable: true,
+    });
+  });
+
+  it("says the panel cannot submit when the panel's own gate is closed", () => {
+    mountPanelSession({ canSubmit: false });
+    const api = createExtensionGenerationApi(createScope());
+    expect(api.getSession()?.canSubmit).toBe(false);
+  });
+
+  it("reports a failed workflow load as an error rather than as loading", () => {
+    mountPanelSession({ hasWorkflowError: true });
+    const api = createExtensionGenerationApi(createScope());
+    expect(api.getSession()?.status).toBe("error");
   });
 });

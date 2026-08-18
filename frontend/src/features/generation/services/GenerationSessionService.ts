@@ -133,8 +133,10 @@ function samePublication(
     sameEditableWidgets(snapshot.editableWidgets, next.editableWidgets) &&
     snapshot.readiness.isLoading === next.readiness.isLoading &&
     snapshot.readiness.isReady === next.readiness.isReady &&
+    snapshot.readiness.hasError === next.readiness.hasError &&
     snapshot.submission.isBusy === next.submission.isBusy &&
-    snapshot.submission.queuedCount === next.submission.queuedCount
+    snapshot.submission.queuedCount === next.submission.queuedCount &&
+    snapshot.submission.canSubmit === next.submission.canSubmit
   );
 }
 

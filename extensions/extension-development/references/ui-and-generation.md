@@ -225,6 +225,81 @@ message, and allow retry or cancellation rather than throwing or closing blindly
 Keep vendor-specific prompt dialects in extensions. Prefer a versioned internal
 layout model and translate it to the chosen model's JSON only at commit time.
 
+## Read the mounted workflow reactively
+
+`generation.getSession()` returns a detached snapshot of the mounted workflow, or
+`null` when no generation panel is mounted. It carries the workflow's identity
+(`sourceId`, `instanceId`, `revision`, `fingerprint`, `mode`), a `status` of
+`loading`/`ready`/`error`, the panel inputs, `canSubmit`, `busy`, and the node
+catalogue: each node's `id`, `classType`, `title`, `mode`, and widgets.
+
+`instanceId` is `null` until the ComfyUI bridge reports identity, and a node `id`
+is an execution ID — `<id>` at the root, `<instanceId>:<innerId>` inside a
+subgraph instance. Match nodes by `classType` and widget metadata. There are no
+inputs, ports, or links in the snapshot, so you cannot tell how a node is wired;
+do not infer it from ordering or titles.
+
+Each widget reports `valueType`, `value`, `defaultValue`, `options`, `min`,
+`max`, `step`, `linked`, and `editable`. Only an `editable` widget has a panel
+control behind it and can be written with `setWidget`; the rest are readable
+metadata. For an editable widget the published constraints are the ones a write
+is judged against, and `null` options or bounds mean unrestricted, not unknown.
+Where more than one control is bound to the same widget the constraints are
+their union — the host accepts a value if any of those controls accepts it — so
+a published range can be wider than any single control's.
+
+Snapshots are bounded in every dimension, including totals across the whole
+snapshot. A very large catalogue is truncated, an oversized value is published
+as `null`, and an oversized prompt input is published without its `value`
+rather than shortened; each comes with a diagnostic saying so. Do not treat the
+absence of a node or an option as proof the workflow lacks it without checking
+your diagnostics.
+
+`subscribe(listener)` is payload-free and pairs with `getRevision()`, so the pair
+goes straight into `useSyncExternalStore`. The same snapshot object is returned
+until something changes, and the subscription is removed on deactivation:
+
+```tsx
+function useGenerationSession(api: ExtensionGenerationApi) {
+  return React.useSyncExternalStore(api.subscribe, api.getSession);
+}
+
+function LoaderPicker({ api }: { api: ExtensionGenerationApi }) {
+  const session = useGenerationSession(api);
+  const loaders = React.useMemo(
+    () =>
+      (session?.workflow.nodes ?? []).filter(
+        (node) => node.classType === "LoraLoader",
+      ),
+    [session?.workflow],
+  );
+  if (!session) return null;
+  // …render `loaders`, and write with api.transaction(...)
+}
+```
+
+Register that component through `context.api.ui.registerComponent()` in the
+`generation.inputs.after` slot and close over `context.api.generation`; there is
+no separate generation panel API.
+
+## Write a workflow widget
+
+`setWidget({ nodeId, widget }, value)` sits alongside `setTextInput` in the same
+labelled transaction and follows the same rule: every command validates before
+any applies. Values are finite JSON and bounded, and the host validates them
+against the widget's own type, enum, and range. Three refusals are worth
+branching on:
+
+- `widget_not_found` — the mounted workflow has no such widget; re-read the
+  session rather than retrying;
+- `widget_not_editable` — the widget exists but the panel exposes no control for
+  it, so this write cannot reach the prompt;
+- `widget_value_invalid` — wrong type, or outside the enum or range the snapshot
+  publishes.
+
+Write a widget when the user is choosing a value in your UI. Do not write on a
+timer, on every keystroke, or to enforce policy at submission time.
+
 ## Compose AI UI with other domains
 
 Use `assets.readBlob` and backend artifact/job APIs for model work. Use timeline

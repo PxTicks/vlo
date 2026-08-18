@@ -172,6 +172,9 @@ function createConformanceApi() {
     },
     generation: {
       listInputs: () => [],
+      getSession: () => null,
+      getRevision: () => 0,
+      subscribe: () => () => undefined,
       transaction: (label) => ({ ok: true, changed: false, label }),
     },
     animation: {

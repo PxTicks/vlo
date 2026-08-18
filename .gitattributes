@@ -230,6 +230,7 @@
 /docs/grading-extension-surface-plan.md extension-surface=governance
 /docs/generation-native-extension-seams-plan.md extension-surface=governance
 /docs/generation-extension-surface-plan.md extension-surface=governance
+/docs/extension-ui-surface-plan.md extension-surface=governance
 /docs/skills/** extension-surface=governance
 /frontend/src/features/transformations/HOW_TO_ADD_TRANSFORMATION.md extension-surface=governance
 /frontend/src/core/shell/HOW_TO_ADD_A_MENU.md extension-surface=governance

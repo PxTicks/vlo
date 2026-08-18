@@ -148,6 +148,18 @@ export const DOCK_REGION_CONSTRAINTS: Readonly<
   }),
 } satisfies Record<DockRegion, DockRegionConstraints>);
 
+/**
+ * A panel's effective visibility: the user's recorded intent when they have
+ * one, the registration's default otherwise. Every reader goes through this so
+ * "absent means visible" cannot drift from "absent means the default".
+ */
+export function isPanelVisible(
+  descriptor: Pick<ShellPanelDescriptor, "defaultVisible"> | undefined,
+  placement: Pick<PersistedPanelPlacement, "visible"> | undefined,
+): boolean {
+  return placement?.visible ?? descriptor?.defaultVisible ?? true;
+}
+
 export interface ShellViewport {
   readonly widthPx: number;
   readonly heightPx: number;
@@ -171,6 +183,14 @@ export interface ShellPanelDescriptor {
   readonly defaultOrder: number;
   /** Result of evaluating the panel's declarative availability condition. */
   readonly available: boolean;
+  /**
+   * Whether the panel is shown before the user has an opinion. Absent means
+   * visible, which is what every panel that does not opt out gets. A panel
+   * registered with `false` starts off the tab strip and is turned on from
+   * "Manage panels"; the user's choice is then an explicit placement and
+   * outlives the default.
+   */
+  readonly defaultVisible?: boolean;
   readonly source: "host" | "extension";
   readonly preferredSizePx?: number;
   readonly minimumSizePx?: number;
@@ -274,7 +294,7 @@ export type EditorStageSurfaces = Readonly<
  */
 export interface PersistedPanelPlacement {
   readonly region?: DockRegion;
-  /** Absent means visible. */
+  /** Absent means "use the panel's registered default visibility". */
   readonly visible?: boolean;
   /** Absent means "use the registration order". */
   readonly order?: number;

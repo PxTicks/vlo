@@ -177,6 +177,28 @@ describe("player-aside and bottom-dock regions", () => {
     ).toThrow(/non-empty array/);
   });
 
+  it("carries a panel's default visibility and confines it to the dock", () => {
+    const registry = new HostViewRegistry(new HostContextKeyService(), null);
+    registry.registerHostView({
+      ...view("host.queue", 10),
+      defaultVisible: false,
+    });
+    registry.registerHostView(view("host.assets", 20));
+
+    expect(registry.get("host.queue")?.defaultVisible).toBe(false);
+    expect(registry.get("host.assets")?.defaultVisible).toBe(true);
+
+    // Outside the dock the layout kernel is not the owner of visibility, so
+    // there is nothing to honour the default.
+    expect(() =>
+      registry.registerHostView({
+        ...view("host.recent", 10),
+        defaultRegion: "projects-page.main",
+        defaultVisible: false,
+      }),
+    ).toThrow(/cannot start hidden outside a dock region/);
+  });
+
   it("opens and closes the dock through selection alone", () => {
     const registry = new HostViewRegistry(new HostContextKeyService(), null);
     registry.registerHostView({

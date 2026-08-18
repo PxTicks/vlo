@@ -176,6 +176,24 @@ describe("visibility and availability", () => {
     ]);
     expect(resolved.orderedViewIds).toEqual(["host.a"]);
   });
+
+  it("keeps a panel that registered hidden off the tab strip until it is asked for", () => {
+    const panels = [
+      panel("host.a", { defaultOrder: 10 }),
+      panel("host.opt-in", { defaultOrder: 20, defaultVisible: false }),
+    ];
+
+    const untouched = region(panels, document());
+    expect(untouched.placedViewIds).toEqual(["host.a", "host.opt-in"]);
+    expect(untouched.orderedViewIds).toEqual(["host.a"]);
+
+    // An explicit placement is the user's intent and outranks the default.
+    const revealed = region(
+      panels,
+      document({ panels: { "host.opt-in": { visible: true } } }),
+    );
+    expect(revealed.orderedViewIds).toEqual(["host.a", "host.opt-in"]);
+  });
 });
 
 describe("selection fallback", () => {

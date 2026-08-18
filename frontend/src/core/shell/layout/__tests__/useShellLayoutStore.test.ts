@@ -210,6 +210,35 @@ describe("placement actions", () => {
     ).toBe("example.a/tool");
   });
 
+  it("reveals a panel that registered hidden when it moves it", () => {
+    const { store } = createStore();
+    store.getState().setPanelDescriptors([
+      ...PANELS,
+      panel("host.opt-in", {
+        defaultOrder: 40,
+        defaultVisible: false,
+        allowedRegions: ["left-sidebar", "right-sidebar"],
+      }),
+    ]);
+
+    expect(store.getState().movePanel("host.opt-in", "right-sidebar")).toBe(
+      true,
+    );
+
+    // Dropping the flag would mean "follow the default" here, which is hidden:
+    // the move would leave the panel selected in a region it cannot appear in.
+    expect(store.getState().document.panels["host.opt-in"]).toEqual({
+      region: "right-sidebar",
+      visible: true,
+    });
+    expect(
+      store.getState().resolved.regions["right-sidebar"].orderedViewIds,
+    ).toContain("host.opt-in");
+    expect(
+      store.getState().resolved.regions["right-sidebar"].selectedViewId,
+    ).toBe("host.opt-in");
+  });
+
   it("opens the destination overlay when a move lands in a narrow sidebar", () => {
     const { store } = createStore();
     store.getState().setViewport({ widthPx: 720, heightPx: 800 });
@@ -281,6 +310,33 @@ describe("visibility and selection actions", () => {
 
     store.getState().setPanelVisible("host.a", true);
     expect(store.getState().document.panels["host.a"]).toBeUndefined();
+  });
+
+  it("records visibility only where it departs from the registered default", () => {
+    const { store } = createStore();
+    store
+      .getState()
+      .setPanelDescriptors([
+        ...PANELS,
+        panel("host.opt-in", { defaultOrder: 40, defaultVisible: false }),
+      ]);
+
+    expect(
+      store.getState().resolved.regions["left-sidebar"].orderedViewIds,
+    ).not.toContain("host.opt-in");
+
+    store.getState().setPanelVisible("host.opt-in", true);
+    // Showing a default-hidden panel has to be written down: dropping the flag
+    // the way a default-visible panel does would put it straight back.
+    expect(store.getState().document.panels["host.opt-in"]).toEqual({
+      visible: true,
+    });
+    expect(
+      store.getState().resolved.regions["left-sidebar"].orderedViewIds,
+    ).toContain("host.opt-in");
+
+    store.getState().setPanelVisible("host.opt-in", false);
+    expect(store.getState().document.panels["host.opt-in"]).toBeUndefined();
   });
 
   it("gives up the selection when the selected panel is hidden", () => {

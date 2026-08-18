@@ -32,6 +32,7 @@ import type {
 import {
   DOCK_REGION_CONSTRAINTS,
   EDITOR_STAGES,
+  isPanelVisible,
   LOWER_STAGE_CONSTRAINTS,
   RESPONSIVE_SIDEBAR_BREAKPOINT_PX,
   type DockRegion,
@@ -134,6 +135,21 @@ interface DraftRegionState {
   selectedViewId?: string | null;
   collapsed?: boolean;
   sizePx?: number;
+}
+
+/**
+ * Records visibility only where it departs from the registration's default, so
+ * a panel the user never disagreed with keeps following its default and a
+ * reset that drops the placement lands back on it. Every writer goes through
+ * this: deleting the flag is not "show it" for a panel that registered hidden.
+ */
+function draftVisibility(
+  placement: DraftPlacement,
+  descriptor: ShellPanelDescriptor | undefined,
+  visible: boolean,
+): void {
+  if (visible === (descriptor?.defaultVisible ?? true)) delete placement.visible;
+  else placement.visible = visible;
 }
 
 function withPlacement(
@@ -476,6 +492,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
           resolved: state.resolved,
           baselineDocument,
           baselineResolved,
+          panels: state.panels,
         });
         const document = {
           ...state.document,
@@ -539,7 +556,7 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
         // Naming a panel and choosing where to put it is a request to see it
         // there. Carrying an older hide across the move would land it out of
         // sight, with nothing selected and no way to toggle it back on.
-        delete placement.visible;
+        draftVisibility(placement, descriptor, true);
         if (region === descriptor.defaultRegion) delete placement.region;
         else placement.region = region;
         // A move is one transaction: the panel changes region, is revealed
@@ -600,12 +617,12 @@ export function createShellLayoutStore(options: ShellLayoutStoreOptions = {}) {
       setPanelVisible: (viewId, visible) => {
         const state = get();
         const current = currentLayoutDocument(state);
-        if ((current.panels[viewId]?.visible !== false) === visible) {
+        const descriptor = findDescriptor(viewId);
+        if (isPanelVisible(descriptor, current.panels[viewId]) === visible) {
           return;
         }
         const placement: DraftPlacement = { ...current.panels[viewId] };
-        if (visible) delete placement.visible;
-        else placement.visible = false;
+        draftVisibility(placement, descriptor, visible);
         const document = withPlacement(current, viewId, placement);
         if (visible) {
           commit(document, "now");

@@ -154,11 +154,10 @@ describe("RightSidebarPanel", () => {
 
     const tabs = screen.getAllByRole("tab");
 
+    // The unified model-work queue registers here too, but starts hidden: it
+    // is diagnostic, and is turned on from "Manage panels".
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       "Generate",
-      // The unified model-work queue sits beside Generate: they are two views
-      // of the same GPU.
-      "Queue",
       "Adjust",
       "Transform",
       "Mask",

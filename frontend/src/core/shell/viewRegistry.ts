@@ -50,6 +50,14 @@ export interface HostViewDefinition {
    */
   readonly allowedRegions?: readonly DockRegion[];
   readonly order?: number;
+  /**
+   * Whether the panel shows before the user has an opinion. Default true;
+   * `false` registers a panel that is off until the user turns it on from
+   * "Manage panels". Only a dock region may opt out, because dock visibility
+   * is owned by the layout kernel — the registry's own hidden list is the
+   * legacy owner for `projects-page.main` alone.
+   */
+  readonly defaultVisible?: boolean;
   readonly when?: ExtensionContextKeyExpression;
   readonly keepMounted?: boolean;
   /** Mount even before the first activation (for stateful built-in defaults). */
@@ -59,6 +67,7 @@ export interface HostViewDefinition {
 
 export interface ShellViewEntry extends HostViewDefinition {
   readonly order: number;
+  readonly defaultVisible: boolean;
   readonly keepMounted: boolean;
   readonly eager: boolean;
   /**
@@ -257,10 +266,17 @@ export class HostViewRegistry {
     if (!Number.isFinite(order)) {
       throw new Error(`View '${id}' order must be finite.`);
     }
+    const defaultVisible = definition.defaultVisible ?? true;
+    if (!defaultVisible && !isDockRegion(definition.defaultRegion)) {
+      throw new Error(
+        `View '${id}' cannot start hidden outside a dock region.`,
+      );
+    }
     const entry: ShellViewEntry = Object.freeze({
       ...definition,
       title: assertTitle(definition.title, id),
       order,
+      defaultVisible,
       keepMounted: definition.keepMounted ?? source === "extension",
       eager: definition.eager ?? false,
       allowedRegions: normalizeAllowedRegions(definition, id),

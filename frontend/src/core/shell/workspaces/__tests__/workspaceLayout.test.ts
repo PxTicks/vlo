@@ -166,6 +166,7 @@ describe("workspace layout layers", () => {
         resolved: composedResolved,
         baselineDocument: composed,
         baselineResolved: composedResolved,
+        panels: PANELS,
       }),
     ).toEqual({ panels: {}, regions: {} });
 
@@ -191,6 +192,7 @@ describe("workspace layout layers", () => {
         resolved: resolveShellLayout({ panels: PANELS, document: changed }),
         baselineDocument: BASE,
         baselineResolved,
+        panels: PANELS,
       }),
     ).toEqual({
       panels: {

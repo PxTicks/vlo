@@ -38,6 +38,7 @@ describe("describeShellPanels", () => {
         allowedRegions: ["left-sidebar"],
         defaultOrder: 15,
         available: true,
+        defaultVisible: true,
         source: "extension",
       },
       {
@@ -46,6 +47,7 @@ describe("describeShellPanels", () => {
         allowedRegions: ["left-sidebar"],
         defaultOrder: 20,
         available: true,
+        defaultVisible: true,
         source: "host",
       },
       {
@@ -54,6 +56,7 @@ describe("describeShellPanels", () => {
         allowedRegions: ["bottom-dock"],
         defaultOrder: 10,
         available: true,
+        defaultVisible: true,
         source: "host",
       },
     ]);

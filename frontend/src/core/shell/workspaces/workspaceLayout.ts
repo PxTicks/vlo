@@ -1,5 +1,6 @@
 import {
   DOCK_REGIONS,
+  isPanelVisible,
   type DockRegion,
   type EditorStageSurfaces,
   type PersistedPanelPlacement,
@@ -167,6 +168,7 @@ export function captureWorkspaceLayoutOverride(input: {
   readonly resolved: ResolvedShellLayout;
   readonly baselineDocument: ShellLayoutDocumentV2;
   readonly baselineResolved: ResolvedShellLayout;
+  readonly panels: readonly ShellPanelDescriptor[];
 }): WorkspaceLayoutOverride {
   const panels: Record<string, PersistedPanelPlacement> = {};
   const viewIds = new Set([
@@ -183,9 +185,14 @@ export function captureWorkspaceLayoutOverride(input: {
       order?: number;
     } = {};
     if (currentRegion !== baselineRegion) placement.region = currentRegion;
-    const visible = input.document.panels[viewId]?.visible !== false;
-    const baselineVisible =
-      input.baselineDocument.panels[viewId]?.visible !== false;
+    const descriptor = input.panels.find(
+      (candidate) => candidate.id === viewId,
+    );
+    const visible = isPanelVisible(descriptor, input.document.panels[viewId]);
+    const baselineVisible = isPanelVisible(
+      descriptor,
+      input.baselineDocument.panels[viewId],
+    );
     if (visible !== baselineVisible) placement.visible = visible;
     const order = panelOrder(input.resolved, viewId, currentRegion);
     const baselineOrder = panelOrder(

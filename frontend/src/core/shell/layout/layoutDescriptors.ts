@@ -51,6 +51,7 @@ export function describeShellPanels(
         allowedRegions: entry.allowedRegions,
         defaultOrder: entry.order,
         available: available.has(entry.id),
+        defaultVisible: entry.defaultVisible,
         source: entry.source,
       });
     }
@@ -156,6 +157,7 @@ export function arePanelDescriptorsEqual(
       descriptor.defaultRegion === other.defaultRegion &&
       descriptor.defaultOrder === other.defaultOrder &&
       descriptor.available === other.available &&
+      descriptor.defaultVisible === other.defaultVisible &&
       descriptor.source === other.source &&
       descriptor.preferredSizePx === other.preferredSizePx &&
       descriptor.minimumSizePx === other.minimumSizePx &&

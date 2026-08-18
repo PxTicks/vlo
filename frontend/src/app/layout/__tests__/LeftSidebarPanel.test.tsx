@@ -8,6 +8,7 @@ const views = ["assets", "text", "composite"].map((id, order) => ({
   defaultRegion: "left-sidebar" as const,
   allowedRegions: ["left-sidebar"] as const,
   order,
+  defaultVisible: true,
   keepMounted: false,
   eager: false,
   source: "host" as const,

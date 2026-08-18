@@ -13,6 +13,7 @@ import {
   EDITOR_STAGES,
   LOWER_STAGE_CONSTRAINTS,
   RESPONSIVE_SIDEBAR_BREAKPOINT_PX,
+  isPanelVisible,
   type DockRegion,
   type DockRegionConstraints,
   type EditorStage,
@@ -322,7 +323,8 @@ export function resolveShellLayout(
     const orderedViewIds = placed
       .filter(
         (descriptor) =>
-          descriptor.available && placements[descriptor.id]?.visible !== false,
+          descriptor.available &&
+          isPanelVisible(descriptor, placements[descriptor.id]),
       )
       .map((descriptor) => descriptor.id);
 

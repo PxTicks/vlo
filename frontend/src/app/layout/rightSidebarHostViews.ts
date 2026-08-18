@@ -80,11 +80,14 @@ export function declareRightSidebarHostViews(): void {
   });
   hostViewRegistry.registerHostView({
     // What the machine is doing, in one place: local model work and ComfyUI
-    // generations share one GPU, so their queues are one queue.
+    // generations share one GPU, so their queues are one queue. Off by
+    // default — the queue is diagnostic, and the admission gate it reports on
+    // runs from the editor's orchestration whether or not this panel exists.
     id: "host.queue",
     title: "Queue",
     defaultRegion: "right-sidebar",
     order: 15,
+    defaultVisible: false,
     keepMounted: true,
     component: renderModelWorkPanel,
   });

@@ -1,5 +1,6 @@
 import type { GenerationMediaInputValue, WorkflowInput } from "../types";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
+import { canAudioSlotHoldAsset } from "../utils/audioSlotAssets";
 import {
   buildWorkflowInputLookup,
   resolveWorkflowInputForSlot,
@@ -31,7 +32,7 @@ function isCompatibleMediaInput(
 
   if (inputType === "audio") {
     return (
-      (value.kind === "asset" && assetMatchesType(value.asset, "audio")) ||
+      (value.kind === "asset" && canAudioSlotHoldAsset(value.asset)) ||
       (value.kind === "timelineSelection" && value.mediaType === "audio")
     );
   }

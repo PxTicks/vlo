@@ -136,6 +136,29 @@ export function resolveWorkflowInputKeys(
   return [canonicalInputId];
 }
 
+/**
+ * Reads the value a slot id currently holds, following the same canonical-key
+ * resolution the store writes through, so callers holding a raw slot id (a
+ * repeatable slot, or a node id used as an alias) see the value the store
+ * actually stored.
+ */
+export function readWorkflowInputSlotValue<T>(
+  values: Record<string, T | null>,
+  inputId: string,
+  inputLookup: ReadonlyMap<
+    string,
+    Pick<WorkflowInput, "id" | "nodeId" | "param">
+  >,
+): T | null {
+  for (const key of resolveWorkflowInputKeys(inputId, inputLookup)) {
+    if (Object.prototype.hasOwnProperty.call(values, key)) {
+      return values[key] ?? null;
+    }
+  }
+
+  return null;
+}
+
 export function buildNodeInputRequestKey(nodeId: string, param: string): string {
   return `${nodeId}_${param}`;
 }

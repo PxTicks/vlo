@@ -22,12 +22,17 @@ import {
   extractAudioFromSelection,
 } from "../utils/manualSlotMedia";
 import {
+  fillAudioSlotWithAsset,
+  isAssetSlotExtractionCurrent,
+} from "../utils/audioSlotExtraction";
+import {
   buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
   getWorkflowInputId,
   getWorkflowInputSlotValue,
   getWorkflowInputValue,
   parseRepeatableInputSlotId,
+  readWorkflowInputSlotValue,
   resolveWorkflowInputForSlot,
 } from "../utils/workflowInputs";
 import { haveMatchingWorkflowNodes } from "../utils/workflowNodeSignature";
@@ -189,6 +194,8 @@ export async function resolveMetadataWorkflowMatch(
   }
 }
 
+export const REPLAY_EXTRACTION_REQUEST_ID = 1;
+
 export async function restoreMediaInputsFromMetadata(
   metadata: GeneratedCreationMetadata,
   workflowInputs: WorkflowInput[],
@@ -199,6 +206,14 @@ export async function restoreMediaInputsFromMetadata(
     | "setMediaInputFrameWithSelection"
     | "setMediaInputTimelineSelection"
   >,
+  options: {
+    /**
+     * Reads the store's live media inputs. Restoration hands control back as
+     * soon as the slots are seeded, so background extractions must re-check
+     * that the user has not replaced, cleared, or moved a slot meanwhile.
+     */
+    getMediaInputs?: () => Record<string, GenerationMediaInputValue | null>;
+  } = {},
 ): Promise<void> {
   const timelineClips = getTimelineClips();
   const workflowInputById = buildWorkflowInputLookup(workflowInputs);
@@ -236,7 +251,32 @@ export async function restoreMediaInputsFromMetadata(
         );
       }
 
-      actions.setMediaInputAsset(inputId, asset);
+      if (workflowInput.inputType !== "audio") {
+        actions.setMediaInputAsset(inputId, asset);
+        continue;
+      }
+
+      // Extraction runs in the background — the panel observes completion via
+      // the slot's `isExtracting` flag, exactly as timeline selections do.
+      const { getMediaInputs } = options;
+      void fillAudioSlotWithAsset({
+        inputId,
+        asset,
+        extractionRequestId: REPLAY_EXTRACTION_REQUEST_ID,
+        setMediaInputAsset: actions.setMediaInputAsset,
+        isCurrentRequest: getMediaInputs
+          ? () =>
+              isAssetSlotExtractionCurrent(
+                readWorkflowInputSlotValue(
+                  getMediaInputs(),
+                  inputId,
+                  workflowInputById,
+                ),
+                asset.id,
+                REPLAY_EXTRACTION_REQUEST_ID,
+              )
+          : undefined,
+      });
       continue;
     }
 

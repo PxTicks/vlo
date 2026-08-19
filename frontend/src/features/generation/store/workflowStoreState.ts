@@ -1144,6 +1144,7 @@ export function buildWorkflowStoreState(
               setMediaInputTimelineSelection:
                 loadedState.setMediaInputTimelineSelection,
             },
+            { getMediaInputs: () => get().mediaInputs },
           );
 
           set((currentState) => ({

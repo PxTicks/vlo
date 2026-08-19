@@ -144,4 +144,67 @@ describe("mediaInputAssets", () => {
     expect(file.name).toBe("frame.webp");
     expect(file.type).toBe("image/webp");
   });
+  it("treats a video in an audio slot as provided only once its audio is extracted", () => {
+    const videoAsset = {
+      id: "asset-video",
+      hash: "hash",
+      name: "clip.mp4",
+      type: "video" as const,
+      src: "assets/clip.mp4",
+      hasAudio: true,
+      createdAt: Date.now(),
+    };
+
+    expect(
+      hasProvidedMediaInputValue("audio", {
+        kind: "asset",
+        asset: videoAsset,
+        isExtracting: true,
+        extractedAudioFile: null,
+      }),
+    ).toBe(false);
+
+    expect(
+      hasProvidedMediaInputValue("audio", {
+        kind: "asset",
+        asset: videoAsset,
+        isExtracting: false,
+        extractedAudioFile: null,
+        extractionError: "No audio track was found in this video",
+      }),
+    ).toBe(false);
+
+    expect(
+      hasProvidedMediaInputValue("audio", {
+        kind: "asset",
+        asset: videoAsset,
+        isExtracting: false,
+        extractedAudioFile: new File(["wav"], "audio.wav", {
+          type: "audio/wav",
+        }),
+      }),
+    ).toBe(true);
+  });
+
+  it("never treats a silent video as a provided audio input", () => {
+    // A video the probe found silent cannot produce an extracted track, so the
+    // slot carries the error instead and never counts as filled.
+    expect(
+      hasProvidedMediaInputValue("audio", {
+        kind: "asset",
+        asset: {
+          id: "asset-silent",
+          hash: "hash",
+          name: "silent.mp4",
+          type: "video",
+          src: "assets/silent.mp4",
+          hasAudio: false,
+          createdAt: Date.now(),
+        },
+        isExtracting: false,
+        extractedAudioFile: null,
+        extractionError: "No audio track was found in this video",
+      }),
+    ).toBe(false);
+  });
 });

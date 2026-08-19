@@ -59,10 +59,17 @@ import {
   getWorkflowInputSlotValue,
   getWorkflowInputValue,
   parseRepeatableInputSlotId,
+  readWorkflowInputSlotValue,
   resolveWorkflowInputKeys,
   resolveWorkflowInputForSlot,
 } from "../utils/workflowInputs";
 import { resolveExistingAssetForExternalDrop } from "../utils/externalDropAsset";
+import {
+  collectStalledAudioExtractions,
+  fillAudioSlotWithAsset,
+  isAssetSlotExtractionCurrent,
+} from "../utils/audioSlotExtraction";
+import { isAudioSlotVideoAsset } from "../utils/audioSlotAssets";
 import { resolveSelectionConfigFps } from "../utils/selectionFps";
 import {
   hasProvidedMediaInputValue,
@@ -760,6 +767,18 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
             if (input.inputType === "audio") {
               if (value.kind === "asset") {
+                if (isAudioSlotVideoAsset(value.asset)) {
+                  // A video dropped on an audio slot submits the audio track
+                  // extracted when it was dropped, never the video itself.
+                  if (!value.extractedAudioFile) {
+                    continue;
+                  }
+                  slotValues[slotInputId] = {
+                    type: "audio",
+                    file: value.extractedAudioFile,
+                  };
+                  continue;
+                }
                 if (!assetMatchesType(value.asset, "audio")) {
                   continue;
                 }
@@ -971,13 +990,49 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     setEditorOpen(true);
   }, [clearWorkflowWarning, setEditorOpen]);
 
-  const handleInputDrop = useCallback(
+  const assignAssetToInput = useCallback(
     (inputId: string, asset: Asset) => {
-      selectionExtractionRequestIdsRef.current[inputId] =
+      const requestId =
         (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
+      selectionExtractionRequestIdsRef.current[inputId] = requestId;
+
+      if (
+        resolveWorkflowInputForSlot(inputId, workflowInputById)?.inputType ===
+        "audio"
+      ) {
+        void fillAudioSlotWithAsset({
+          inputId,
+          asset,
+          extractionRequestId: requestId,
+          setMediaInputAsset,
+          // The slot id alone is not enough: a value can also be moved to
+          // another slot by a reorder, which leaves this request writing into
+          // a slot it no longer owns.
+          isCurrentRequest: () =>
+            selectionExtractionRequestIdsRef.current[inputId] === requestId &&
+            isAssetSlotExtractionCurrent(
+              readWorkflowInputSlotValue(
+                useGenerationStore.getState().mediaInputs,
+                inputId,
+                workflowInputById,
+              ),
+              asset.id,
+              requestId,
+            ),
+        });
+        return;
+      }
+
       setMediaInputAsset(inputId, asset);
     },
-    [setMediaInputAsset],
+    [setMediaInputAsset, workflowInputById],
+  );
+
+  const handleInputDrop = useCallback(
+    (inputId: string, asset: Asset) => {
+      assignAssetToInput(inputId, asset);
+    },
+    [assignAssetToInput],
   );
 
   const handleExternalInputDrop = useCallback(
@@ -1000,9 +1055,43 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         return;
       }
 
-      setMediaInputAsset(inputId, asset);
+      assignAssetToInput(inputId, asset);
     },
-    [setMediaInputAsset],
+    [assignAssetToInput],
+  );
+
+  /**
+   * Moving a value between slots orphans any extraction still running for it:
+   * the in-flight request belongs to the slot it started in, so its result is
+   * discarded, and the value would sit at its destination marked extracting
+   * forever. Restart extraction wherever a pending value came to rest.
+   */
+  const restartPendingAudioExtractions = useCallback(
+    (inputIds: readonly string[]) => {
+      const { mediaInputs } = useGenerationStore.getState();
+      const stalled = collectStalledAudioExtractions(inputIds, (inputId) =>
+        readWorkflowInputSlotValue(mediaInputs, inputId, workflowInputById),
+      );
+      for (const { inputId, asset } of stalled) {
+        assignAssetToInput(inputId, asset);
+      }
+    },
+    [assignAssetToInput, workflowInputById],
+  );
+
+  /** Every slot id a repeatable input can occupy, including its base slot. */
+  const resolveSiblingSlotIds = useCallback(
+    (inputId: string) => {
+      const input = resolveWorkflowInputForSlot(inputId, workflowInputById);
+      const repeatableMax = input?.presentation?.repeatable?.max;
+      if (!input || !repeatableMax) {
+        return [inputId];
+      }
+      return Array.from({ length: repeatableMax }, (_, index) =>
+        buildRepeatableInputSlotId(input, index),
+      );
+    },
+    [workflowInputById],
   );
 
   const handleInputClear = useCallback(
@@ -1010,8 +1099,11 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       selectionExtractionRequestIdsRef.current[inputId] =
         (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
       clearMediaInput(inputId);
+      // Clearing a repeatable slot shifts the later ones down, moving any
+      // pending value out from under its extraction.
+      restartPendingAudioExtractions(resolveSiblingSlotIds(inputId));
     },
-    [clearMediaInput],
+    [clearMediaInput, resolveSiblingSlotIds, restartPendingAudioExtractions],
   );
 
   const handleSwapMediaInputs = useCallback(
@@ -1025,8 +1117,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       selectionExtractionRequestIdsRef.current[targetInputId] =
         (selectionExtractionRequestIdsRef.current[targetInputId] ?? 0) + 1;
       reassignMediaInput(sourceInputId, targetInputId);
+      restartPendingAudioExtractions([sourceInputId, targetInputId]);
     },
-    [reassignMediaInput],
+    [reassignMediaInput, restartPendingAudioExtractions],
   );
 
   const handleClickSelect = useCallback(

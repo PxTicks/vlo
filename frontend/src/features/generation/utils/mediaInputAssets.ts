@@ -2,6 +2,7 @@ import type { Asset } from "../../../types/Asset";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
 import type { GenerationMediaInputValue } from "../types";
 import { ensureAssetFileLoaded } from "../../userAssets";
+import { isAudioSlotVideoAsset } from "./audioSlotAssets";
 
 function fallbackMimeTypeForAssetType(assetType: Asset["type"]): string {
   if (assetType === "image") {
@@ -23,7 +24,11 @@ export function hasProvidedMediaInputValue(
   if (!value) return false;
 
   if (value.kind === "asset") {
-    return assetMatchesType(value.asset, inputType);
+    if (assetMatchesType(value.asset, inputType)) return true;
+    if (inputType === "audio" && isAudioSlotVideoAsset(value.asset)) {
+      return !value.isExtracting && value.extractedAudioFile != null;
+    }
+    return false;
   }
 
   if (inputType === "image") {

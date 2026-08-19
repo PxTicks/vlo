@@ -118,7 +118,16 @@ export interface GenerationWorkflowState {
   clearWorkflowWarning: () => void;
   clearWorkflowLoadError: () => void;
   clearWorkflowSelection: () => void;
-  setMediaInputAsset: (inputId: string, asset: Asset) => void;
+  setMediaInputAsset: (
+    inputId: string,
+    asset: Asset,
+    options?: {
+      isExtracting?: boolean;
+      extractionRequestId?: number;
+      extractedAudioFile?: File | null;
+      extractionError?: string | null;
+    },
+  ) => void;
   setMediaInputFrame: (inputId: string, file: File) => void;
   setMediaInputFrameWithSelection: (
     inputId: string,

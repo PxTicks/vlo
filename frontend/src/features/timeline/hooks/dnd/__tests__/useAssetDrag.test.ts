@@ -55,4 +55,74 @@ describe("useAssetDrag", () => {
     });
     expect(mockHandleEnd).not.toHaveBeenCalled();
   });
+  it("lets a slot admit an asset its accept list rejects, via acceptAsset", () => {
+    const onDrop = vi.fn();
+    const videoAsset = {
+      id: "asset-video",
+      hash: "hash",
+      name: "clip.mp4",
+      type: "video",
+      src: "assets/clip.mp4",
+      hasAudio: true,
+      createdAt: 0,
+    };
+    const { result } = renderHook(() => useAssetDrag());
+
+    act(() => {
+      result.current.handleAssetDragEnd({
+        active: { data: { current: { type: "asset", asset: videoAsset } } },
+        over: {
+          data: {
+            current: {
+              type: "asset-slot",
+              accept: ["audio"],
+              acceptAsset: (candidate: { type: string }) =>
+                candidate.type === "video",
+              onDrop,
+            },
+          },
+        },
+      } as unknown as DragEndEvent);
+    });
+
+    expect(onDrop).toHaveBeenCalledWith(videoAsset, null);
+  });
+
+  it("still rejects an asset that neither accept nor acceptAsset admits", () => {
+    const onDrop = vi.fn();
+    const { result } = renderHook(() => useAssetDrag());
+
+    act(() => {
+      result.current.handleAssetDragEnd({
+        active: {
+          data: {
+            current: {
+              type: "asset",
+              asset: {
+                id: "asset-image",
+                hash: "hash",
+                name: "frame.png",
+                type: "image",
+                src: "assets/frame.png",
+                createdAt: 0,
+              },
+            },
+          },
+        },
+        over: {
+          data: {
+            current: {
+              type: "asset-slot",
+              accept: ["audio"],
+              acceptAsset: (candidate: { type: string }) =>
+                candidate.type === "video",
+              onDrop,
+            },
+          },
+        },
+      } as unknown as DragEndEvent);
+    });
+
+    expect(onDrop).not.toHaveBeenCalled();
+  });
 });

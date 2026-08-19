@@ -1,9 +1,10 @@
 import React from "react";
-import { Box, Typography, IconButton } from "@mui/material";
+import { Box, Typography, IconButton, CircularProgress } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useDroppable, useDndContext, useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import CloseIcon from "@mui/icons-material/Close";
 import EditIcon from "@mui/icons-material/Edit";
 import type { Asset, AssetType } from "../../../types/Asset";
@@ -90,6 +91,8 @@ function formatAcceptLabel(accept: AssetType[]): string {
 function AssetDropSlotComponent({
   id,
   accept,
+  acceptAsset,
+  acceptExternal,
   value,
   onClear,
   onEdit,
@@ -109,7 +112,7 @@ function AssetDropSlotComponent({
 
   const { setNodeRef: setDroppableNodeRef, isOver } = useDroppable({
     id: `asset-slot-${id}`,
-    data: { type: "asset-slot", accept, onDrop, onReorderDrop },
+    data: { type: "asset-slot", accept, acceptAsset, onDrop, onReorderDrop },
   });
   const {
     listeners,
@@ -135,7 +138,9 @@ function AssetDropSlotComponent({
   if (isOver && active?.data.current?.type === "asset") {
     const draggedAsset = active.data.current.asset as Asset | undefined;
     highlight =
-      draggedAsset && accept.some((acceptedType) => assetMatchesType(draggedAsset, acceptedType))
+      draggedAsset &&
+      (accept.some((acceptedType) => assetMatchesType(draggedAsset, acceptedType)) ||
+        acceptAsset?.(draggedAsset) === true)
         ? "compatible"
         : "incompatible";
   }
@@ -151,7 +156,9 @@ function AssetDropSlotComponent({
     highlight = externalHighlight;
   }
 
+  const externalAccept = acceptExternal ?? accept;
   const thumbnail = value?.thumbnail ?? null;
+  const status = value?.status ?? null;
 
   return (
     <SlotContainer
@@ -201,7 +208,7 @@ function AssetDropSlotComponent({
           event.preventDefault();
           externalDragDepthRef.current += 1;
           setExternalHighlight(
-            getExternalFileDragHighlight(event.dataTransfer, accept),
+            getExternalFileDragHighlight(event.dataTransfer, externalAccept),
           );
         }}
         onDragOver={(event) => {
@@ -212,7 +219,7 @@ function AssetDropSlotComponent({
           event.preventDefault();
           const nextHighlight = getExternalFileDragHighlight(
             event.dataTransfer,
-            accept,
+            externalAccept,
           );
           event.dataTransfer.dropEffect =
             nextHighlight === "incompatible" ? "none" : "copy";
@@ -242,7 +249,7 @@ function AssetDropSlotComponent({
           setExternalHighlight(null);
           const acceptedFile = getFirstAcceptedFile(
             Array.from(event.dataTransfer.files),
-            accept,
+            externalAccept,
           );
           if (!acceptedFile) {
             return;
@@ -259,7 +266,11 @@ function AssetDropSlotComponent({
       >
         {filled ? (
           <>
-            {value!.type === "audio" ? (
+            {status === "preparing" ? (
+              <CircularProgress size={24} sx={{ color: "#90caf9" }} />
+            ) : status === "error" ? (
+              <ErrorOutlineIcon sx={{ fontSize: 32, color: "#f44336" }} />
+            ) : value!.type === "audio" ? (
               <MusicNoteIcon sx={{ fontSize: 32, color: "#888" }} />
             ) : thumbnail ? (
               <img
@@ -337,13 +348,13 @@ function AssetDropSlotComponent({
           variant="caption"
           noWrap
           sx={{
-            color: "text.secondary",
+            color: status === "error" ? "error.main" : "text.secondary",
             fontSize: "0.6rem",
             maxWidth: SLOT_SIZE,
           }}
-          title={value!.name}
+          title={value!.statusMessage ?? value!.name}
         >
-          {value!.name}
+          {value!.statusMessage ?? value!.name}
         </Typography>
       )}
     </SlotContainer>

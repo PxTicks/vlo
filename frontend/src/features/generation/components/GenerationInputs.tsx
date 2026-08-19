@@ -11,8 +11,12 @@ import {
 } from "@mui/material";
 import { Casino, InfoOutlined } from "@mui/icons-material";
 import { PanelSection, AssetDropSlot, CommittedTextInput } from "../../panelUI";
-import type { Asset } from "../../../types/Asset";
+import type { Asset, AssetType } from "../../../types/Asset";
 import { resolveAssetType } from "../../../shared/utils/assetTypeDetection";
+import {
+  canDropAssetOnAudioSlot,
+  isAudioSlotVideoAsset,
+} from "../utils/audioSlotAssets";
 import type {
   GenerationMediaInputValue,
   WorkflowInput,
@@ -103,17 +107,34 @@ function formatSectionTitle(sectionId: string): string {
 
 function toSlotValue(
   value: GenerationMediaInputValue | null | undefined,
+  inputType?: WorkflowInput["inputType"],
 ): AssetDropSlotValue | null {
   if (!value) return null;
 
   if (value.kind === "asset") {
     const assetType = resolveAssetType(value.asset) ?? value.asset.type;
+    // A video filling an audio slot presents as the audio it will contribute.
+    const isExtractedAudio =
+      inputType === "audio" && isAudioSlotVideoAsset(value.asset);
+    const status = value.isExtracting
+      ? ("preparing" as const)
+      : value.extractionError
+        ? ("error" as const)
+        : undefined;
     return {
-      type: assetType,
+      type: isExtractedAudio ? "audio" : assetType,
       name: value.asset.name,
       thumbnail:
-        value.asset.thumbnail ||
-        (assetType === "image" ? value.asset.src : undefined),
+        isExtractedAudio || status
+          ? undefined
+          : value.asset.thumbnail ||
+            (assetType === "image" ? value.asset.src : undefined),
+      ...(status ? { status } : {}),
+      ...(status === "preparing"
+        ? { statusMessage: "Extracting audio…" }
+        : status === "error"
+          ? { statusMessage: value.extractionError ?? "Extraction failed" }
+          : {}),
     };
   }
 
@@ -132,6 +153,28 @@ function toSlotValue(
       ? { thumbnail: value.thumbnailUrl }
       : {}),
   };
+}
+
+/**
+ * Audio slots also take a video asset, whose audio track is extracted on drop.
+ * This is an asset-level allowance rather than a wider `accept` list so video
+ * assets without audio still read as incompatible.
+ */
+function acceptAssetForInputType(
+  inputType: WorkflowInput["inputType"],
+): ((asset: Asset) => boolean) | undefined {
+  return inputType === "audio" ? canDropAssetOnAudioSlot : undefined;
+}
+
+/**
+ * External files carry no `hasAudio` yet, so an audio slot takes any video and
+ * reports afterwards if it turned out to be silent.
+ */
+function resolveExternalAcceptTypes(
+  inputType: WorkflowInput["inputType"],
+): AssetType[] {
+  const accept = resolveAcceptTypes(inputType);
+  return inputType === "audio" ? [...accept, "video"] : [...accept];
 }
 
 function resolveAcceptTypes(
@@ -834,7 +877,12 @@ function MediaInputSection({
   const inputId = getWorkflowInputId(input);
   const mediaInputType = input.inputType;
   const acceptTypes = resolveAcceptTypes(mediaInputType);
-  const slotValue = useMemo(() => toSlotValue(value), [value]);
+  const acceptAsset = acceptAssetForInputType(mediaInputType);
+  const acceptExternalTypes = resolveExternalAcceptTypes(mediaInputType);
+  const slotValue = useMemo(
+    () => toSlotValue(value, mediaInputType),
+    [mediaInputType, value],
+  );
 
   return (
     <PanelSection title={input.label} bgColor={bgColor} defaultOpen={true}>
@@ -846,6 +894,8 @@ function MediaInputSection({
       <AssetDropSlot
         id={inputId}
         accept={acceptTypes}
+        acceptAsset={acceptAsset}
+        acceptExternal={acceptExternalTypes}
         value={slotValue}
         onClear={() => onInputClear(inputId)}
         onEdit={
@@ -924,6 +974,7 @@ function RepeatableMediaInputSection({
         {visibleSlotIds.map((inputId, index) => {
           const slotValue = toSlotValue(
             index === 0 ? firstValue : mediaInputs[inputId],
+            input.inputType,
           );
           return (
             <AssetDropSlot
@@ -931,6 +982,8 @@ function RepeatableMediaInputSection({
               id={inputId}
               label={`${slotLabelBase} ${index + 1}`}
               accept={acceptTypes}
+              acceptAsset={acceptAssetForInputType(input.inputType)}
+              acceptExternal={resolveExternalAcceptTypes(input.inputType)}
               value={slotValue}
               reorderData={slotValue ? { type: "media-input", inputId } : null}
               onReorderDrop={
@@ -999,7 +1052,7 @@ function MediaInputGroupSection({
           const mediaInputType = input.inputType;
           const acceptTypes = resolveAcceptTypes(mediaInputType);
           const value = getWorkflowInputValue(mediaInputs, input);
-          const slotValue = toSlotValue(value);
+          const slotValue = toSlotValue(value, mediaInputType);
 
           return (
             <Box key={inputId} sx={{ display: "flex", flexDirection: "column" }}>
@@ -1007,6 +1060,8 @@ function MediaInputGroupSection({
                 id={inputId}
                 label={input.label}
                 accept={acceptTypes}
+                acceptAsset={acceptAssetForInputType(mediaInputType)}
+                acceptExternal={resolveExternalAcceptTypes(mediaInputType)}
                 value={slotValue}
                 reorderData={slotValue ? { type: "media-input", inputId } : null}
                 onReorderDrop={(data) =>

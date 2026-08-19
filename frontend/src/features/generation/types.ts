@@ -184,6 +184,14 @@ export interface WorkflowDefinition {
 export interface GenerationAssetInputValue {
   kind: "asset";
   asset: Asset;
+  /**
+   * Audio track pulled out of a video asset dropped on an audio slot. Only
+   * populated for that case; audio assets are submitted as-is.
+   */
+  extractedAudioFile?: File | null;
+  isExtracting?: boolean;
+  extractionRequestId?: number;
+  extractionError?: string | null;
 }
 
 export interface GenerationFrameInputValue {

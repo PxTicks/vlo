@@ -58,11 +58,15 @@ export function buildMediaInputActions(
   | "clearMediaInput"
 > {
   return {
-    setMediaInputAsset: (inputId, asset: Asset) =>
+    setMediaInputAsset: (inputId, asset: Asset, options) =>
       set({
         mediaInputs: updateMediaInputs(get, inputId, {
           kind: "asset",
           asset,
+          isExtracting: options?.isExtracting ?? false,
+          extractionRequestId: options?.extractionRequestId ?? 0,
+          extractedAudioFile: options?.extractedAudioFile ?? null,
+          extractionError: options?.extractionError ?? null,
         }),
       }),
 

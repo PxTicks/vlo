@@ -1001,4 +1001,148 @@ describe("GenerationInputs", () => {
 
     expect(handleExternalInputDrop).not.toHaveBeenCalled();
   });
+  it("shows a video filling an audio slot as extracting, then as audio", () => {
+    const audioInput = {
+      id: "audio-input",
+      nodeId: "20",
+      classType: "LoadAudio",
+      inputType: "audio" as const,
+      param: "audio",
+      label: "Audio",
+      currentValue: null,
+      origin: "rule" as const,
+    };
+    const videoAsset = {
+      id: "asset-video",
+      hash: "hash",
+      name: "clip.mp4",
+      type: "video",
+      src: "assets/clip.mp4",
+      thumbnail: "blob:thumb",
+      hasAudio: true,
+      createdAt: 0,
+    };
+
+    const renderWithValue = (value: unknown) =>
+      render(
+        <GenerationInputs
+          inputs={[audioInput]}
+          textValues={{}}
+          onTextValueCommit={vi.fn()}
+          mediaInputs={{ "audio-input": value as never }}
+          onInputDrop={vi.fn()}
+          onExternalInputDrop={vi.fn()}
+          onInputClear={vi.fn()}
+          onSwapMediaInputs={vi.fn()}
+          onClickSelect={vi.fn()}
+          widgetInputs={[]}
+          widgetValues={{}}
+          randomizeToggles={{}}
+          onWidgetChange={vi.fn()}
+          onToggleRandomize={vi.fn()}
+        />,
+      );
+
+    const extracting = renderWithValue({
+      kind: "asset",
+      asset: videoAsset,
+      isExtracting: true,
+      extractionRequestId: 1,
+      extractedAudioFile: null,
+      extractionError: null,
+    });
+    expect(screen.getByText("Extracting audio…")).toBeInTheDocument();
+    // The video thumbnail must not stand in for a slot that is still working.
+    expect(document.querySelector('img[src="blob:thumb"]')).toBeNull();
+    extracting.unmount();
+
+    const ready = renderWithValue({
+      kind: "asset",
+      asset: videoAsset,
+      isExtracting: false,
+      extractionRequestId: 1,
+      extractedAudioFile: new File(["wav"], "audio.wav", {
+        type: "audio/wav",
+      }),
+      extractionError: null,
+    });
+    expect(screen.getByText("clip.mp4")).toBeInTheDocument();
+    expect(document.querySelector('img[src="blob:thumb"]')).toBeNull();
+    ready.unmount();
+
+    renderWithValue({
+      kind: "asset",
+      asset: videoAsset,
+      isExtracting: false,
+      extractionRequestId: 1,
+      extractedAudioFile: null,
+      extractionError: "No audio track was found in this video",
+    });
+    expect(
+      screen.getByText("No audio track was found in this video"),
+    ).toBeInTheDocument();
+  });
+  it("takes an external video file on an audio slot, but not on an image slot", () => {
+    const handleExternalInputDrop = vi.fn();
+    const audioInput = {
+      id: "audio-input",
+      nodeId: "20",
+      classType: "LoadAudio",
+      inputType: "audio" as const,
+      param: "audio",
+      label: "Audio",
+      currentValue: null,
+      origin: "rule" as const,
+    };
+    const imageInput = {
+      id: "image-input",
+      nodeId: "10",
+      classType: "LoadImage",
+      inputType: "image" as const,
+      param: "image",
+      label: "Image",
+      currentValue: null,
+      origin: "rule" as const,
+    };
+
+    render(
+      <GenerationInputs
+        inputs={[audioInput, imageInput]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={handleExternalInputDrop}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    const videoFile = new File(["video-bytes"], "clip.mp4", {
+      type: "video/mp4",
+    });
+
+    fireEvent.drop(
+      document.querySelector('[data-drop-slot-id="audio-input"]')!,
+      { dataTransfer: { files: [videoFile], types: ["Files"] } },
+    );
+    expect(handleExternalInputDrop).toHaveBeenCalledWith(
+      "audio-input",
+      videoFile,
+    );
+
+    // Widening external accept is scoped to audio slots only.
+    handleExternalInputDrop.mockClear();
+    fireEvent.drop(
+      document.querySelector('[data-drop-slot-id="image-input"]')!,
+      { dataTransfer: { files: [videoFile], types: ["Files"] } },
+    );
+    expect(handleExternalInputDrop).not.toHaveBeenCalled();
+  });
 });

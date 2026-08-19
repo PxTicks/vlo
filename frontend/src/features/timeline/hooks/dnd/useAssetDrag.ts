@@ -96,11 +96,15 @@ export const useAssetDrag = () => {
       if (overData?.type === "asset-slot") {
         if (activeData?.type === "asset" && overData.onDrop) {
           const asset = activeData.asset as Asset | undefined;
+          const acceptAsset = overData.acceptAsset as
+            | ((candidate: Asset) => boolean)
+            | undefined;
           if (
             asset &&
-            (overData.accept as AssetType[]).some((acceptedType) =>
+            ((overData.accept as AssetType[]).some((acceptedType) =>
               assetMatchesType(asset, acceptedType),
-            )
+            ) ||
+              acceptAsset?.(asset) === true)
           ) {
             overData.onDrop(asset, getDropPointerPosition(event));
           }

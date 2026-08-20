@@ -316,4 +316,24 @@ describe("MiniEditorModal", () => {
       isOpen: true,
     });
   });
+
+  it("closes an opt-in extraction workflow when Escape is pressed", async () => {
+    const source = preparedSource();
+    await act(async () => {
+      await useMiniEditorStore.getState().open({
+        prepare: vi.fn(async () => source),
+        onExtractFrame: vi.fn(),
+        closeOnExtractionCancel: true,
+      });
+      useMiniEditorStore.getState().beginFrameExtraction();
+    });
+    render(<MiniEditorModal />);
+
+    act(() => {
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    });
+
+    expect(useMiniEditorStore.getState().isOpen).toBe(false);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(source.sourceUrl);
+  });
 });

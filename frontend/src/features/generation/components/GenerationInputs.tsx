@@ -155,26 +155,25 @@ function toSlotValue(
   };
 }
 
-/**
- * Audio slots also take a video asset, whose audio track is extracted on drop.
- * This is an asset-level allowance rather than a wider `accept` list so video
- * assets without audio still read as incompatible.
- */
+/** Media-specific drop allowances beyond the slot's eventual output type. */
 function acceptAssetForInputType(
   inputType: WorkflowInput["inputType"],
 ): ((asset: Asset) => boolean) | undefined {
-  return inputType === "audio" ? canDropAssetOnAudioSlot : undefined;
+  if (inputType === "audio") return canDropAssetOnAudioSlot;
+  if (inputType === "image") {
+    return (asset) => resolveAssetType(asset) === "video";
+  }
+  return undefined;
 }
 
-/**
- * External files carry no `hasAudio` yet, so an audio slot takes any video and
- * reports afterwards if it turned out to be silent.
- */
+/** External video files can be inspected after drop for audio or a still frame. */
 function resolveExternalAcceptTypes(
   inputType: WorkflowInput["inputType"],
 ): AssetType[] {
   const accept = resolveAcceptTypes(inputType);
-  return inputType === "audio" ? [...accept, "video"] : [...accept];
+  return inputType === "audio" || inputType === "image"
+    ? [...accept, "video"]
+    : [...accept];
 }
 
 function resolveAcceptTypes(

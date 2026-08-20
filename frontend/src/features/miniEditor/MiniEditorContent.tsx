@@ -515,6 +515,9 @@ export function MiniEditorActions({ onRequestClose }: MiniEditorActionsProps) {
   const cancelExtractionSelection = useMiniEditorStore(
     (state) => state.cancelExtractionSelection,
   );
+  const closeOnExtractionCancel = useMiniEditorStore(
+    (state) => state._internal.closeOnExtractionCancel,
+  );
   const extractRange = useMiniEditorStore((state) => state.extractRange);
   const extractFrame = useMiniEditorStore((state) => state.extractFrame);
   const canSave = useMiniEditorStore((state) =>
@@ -535,7 +538,11 @@ export function MiniEditorActions({ onRequestClose }: MiniEditorActionsProps) {
     <>
       {extractionMode ? (
         <Button
-          onClick={cancelExtractionSelection}
+          onClick={
+            closeOnExtractionCancel
+              ? onRequestClose
+              : cancelExtractionSelection
+          }
           color="inherit"
           size="small"
           disabled={isBusy}

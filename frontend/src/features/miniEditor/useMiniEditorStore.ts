@@ -37,6 +37,7 @@ interface MiniEditorInternal {
   onSave: MiniEditorOpenArgs["onSave"] | null;
   onExtractRange: MiniEditorOpenArgs["onExtractRange"] | null;
   onExtractFrame: MiniEditorOpenArgs["onExtractFrame"] | null;
+  closeOnExtractionCancel: boolean;
   onClose: MiniEditorOpenArgs["onClose"] | null;
   onPrevious: MiniEditorOpenArgs["onPrevious"] | null;
   onNext: MiniEditorOpenArgs["onNext"] | null;
@@ -159,6 +160,7 @@ const INITIAL: Omit<
     onSave: null,
     onExtractRange: null,
     onExtractFrame: null,
+    closeOnExtractionCancel: false,
     onClose: null,
     onPrevious: null,
     onNext: null,
@@ -195,6 +197,7 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
         onSave: args.onSave ?? null,
         onExtractRange: args.onExtractRange ?? null,
         onExtractFrame: args.onExtractFrame ?? null,
+        closeOnExtractionCancel: args.closeOnExtractionCancel ?? false,
         onClose: args.onClose ?? null,
         onPrevious: args.onPrevious ?? null,
         onNext: args.onNext ?? null,

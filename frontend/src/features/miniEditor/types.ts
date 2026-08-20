@@ -77,6 +77,8 @@ export interface MiniEditorOpenArgs {
     playheadTicks: number,
     source: ResolvedEditorSource,
   ) => Promise<string | void>;
+  /** Close instead of returning to viewer mode when extraction is cancelled. */
+  closeOnExtractionCancel?: boolean;
   /** Called after the editor has released its source and closed. */
   onClose?: () => void;
   onPrevious?: () => void;

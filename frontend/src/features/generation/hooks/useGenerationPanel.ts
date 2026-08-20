@@ -64,6 +64,7 @@ import {
   resolveWorkflowInputForSlot,
 } from "../utils/workflowInputs";
 import { resolveExistingAssetForExternalDrop } from "../utils/externalDropAsset";
+import { openDroppedVideoFrameExtraction } from "../utils/droppedVideoFrameExtraction";
 import {
   collectStalledAudioExtractions,
   fillAudioSlotWithAsset,
@@ -82,7 +83,10 @@ import {
 } from "../utils/widgetValueReconciliation";
 import { buildWorkflowInputMetadataMap } from "../utils/inputMetadata";
 import { carryOverTextValues } from "../utils/workflowInputCarryover";
-import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
+import {
+  assetMatchesType,
+  resolveAssetType,
+} from "../../../shared/utils/assetTypeDetection";
 import { resolveManualWidgetInputs } from "../services/manualWorkflowWidgets";
 import { buildGenerationNodeCatalogue } from "../services/workflowNodeCatalogue";
 import {
@@ -336,6 +340,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const queueGeneration = useGenerationStore((s) => s.queueGeneration);
   const fetchWorkflows = useGenerationStore((s) => s.fetchWorkflows);
   const setMediaInputAsset = useGenerationStore((s) => s.setMediaInputAsset);
+  const setMediaInputFrame = useGenerationStore((s) => s.setMediaInputFrame);
   const setMediaInputFrameWithSelection = useGenerationStore(
     (s) => s.setMediaInputFrameWithSelection,
   );
@@ -1030,13 +1035,58 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
   const handleInputDrop = useCallback(
     (inputId: string, asset: Asset) => {
+      const input = resolveWorkflowInputForSlot(inputId, workflowInputById);
+      if (input?.inputType === "image" && resolveAssetType(asset) === "video") {
+        void openDroppedVideoFrameExtraction({
+          inputId,
+          title: asset.name,
+          setMediaInputFrame,
+          prepare: async () => {
+            const file = await resolveAssetFileForGeneration(asset);
+            const sourceUrl = URL.createObjectURL(file);
+            try {
+              const durationTicks =
+                typeof asset.duration === "number" && asset.duration > 0
+                  ? mediaSecondsToTick(asset.duration)
+                  : await probeVideoDurationTicks(sourceUrl);
+              return { sourceUrl, sourceFile: file, durationTicks };
+            } catch (error) {
+              URL.revokeObjectURL(sourceUrl);
+              throw error;
+            }
+          },
+        });
+        return;
+      }
       assignAssetToInput(inputId, asset);
     },
-    [assignAssetToInput],
+    [assignAssetToInput, setMediaInputFrame, workflowInputById],
   );
 
   const handleExternalInputDrop = useCallback(
     async (inputId: string, file: File) => {
+      const input = resolveWorkflowInputForSlot(inputId, workflowInputById);
+      const isVideoFile =
+        file.type.startsWith("video/") || /\.(mp4|mov|mkv)$/i.test(file.name);
+      if (input?.inputType === "image" && isVideoFile) {
+        await openDroppedVideoFrameExtraction({
+          inputId,
+          title: file.name,
+          setMediaInputFrame,
+          prepare: async () => {
+            const sourceUrl = URL.createObjectURL(file);
+            try {
+              const durationTicks = await probeVideoDurationTicks(sourceUrl);
+              return { sourceUrl, sourceFile: file, durationTicks };
+            } catch (error) {
+              URL.revokeObjectURL(sourceUrl);
+              throw error;
+            }
+          },
+        });
+        return;
+      }
+
       const requestId =
         (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
       selectionExtractionRequestIdsRef.current[inputId] = requestId;
@@ -1057,7 +1107,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
       assignAssetToInput(inputId, asset);
     },
-    [assignAssetToInput],
+    [assignAssetToInput, setMediaInputFrame, workflowInputById],
   );
 
   /**

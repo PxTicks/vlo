@@ -24,6 +24,9 @@ export function MiniEditorModal() {
   const cancelExtractionSelection = useMiniEditorStore(
     (state) => state.cancelExtractionSelection,
   );
+  const closeOnExtractionCancel = useMiniEditorStore(
+    (state) => state._internal.closeOnExtractionCancel,
+  );
   const isBusy =
     status === "saving" ||
     status === "extracting-range" ||
@@ -31,12 +34,18 @@ export function MiniEditorModal() {
 
   const handleClose = useCallback(() => {
     if (isBusy) return;
-    if (extractionMode !== null) {
+    if (extractionMode !== null && !closeOnExtractionCancel) {
       cancelExtractionSelection();
       return;
     }
     close();
-  }, [cancelExtractionSelection, close, extractionMode, isBusy]);
+  }, [
+    cancelExtractionSelection,
+    close,
+    closeOnExtractionCancel,
+    extractionMode,
+    isBusy,
+  ]);
 
   return (
     <Dialog

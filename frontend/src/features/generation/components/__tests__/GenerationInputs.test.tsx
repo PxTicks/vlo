@@ -950,7 +950,7 @@ describe("GenerationInputs", () => {
     expect(handleExternalInputDrop).toHaveBeenCalledWith("image-input", file);
   });
 
-  it("ignores incompatible external file drops", () => {
+  it("forwards video drops on image inputs for frame extraction", () => {
     const handleExternalInputDrop = vi.fn();
 
     render(
@@ -999,7 +999,7 @@ describe("GenerationInputs", () => {
       },
     });
 
-    expect(handleExternalInputDrop).not.toHaveBeenCalled();
+    expect(handleExternalInputDrop).toHaveBeenCalledWith("image-input", file);
   });
   it("shows a video filling an audio slot as extracting, then as audio", () => {
     const audioInput = {
@@ -1082,7 +1082,7 @@ describe("GenerationInputs", () => {
       screen.getByText("No audio track was found in this video"),
     ).toBeInTheDocument();
   });
-  it("takes an external video file on an audio slot, but not on an image slot", () => {
+  it("takes an external video file on audio and image slots", () => {
     const handleExternalInputDrop = vi.fn();
     const audioInput = {
       id: "audio-input",
@@ -1137,12 +1137,15 @@ describe("GenerationInputs", () => {
       videoFile,
     );
 
-    // Widening external accept is scoped to audio slots only.
+    // Image slots route video drops through frame extraction.
     handleExternalInputDrop.mockClear();
     fireEvent.drop(
       document.querySelector('[data-drop-slot-id="image-input"]')!,
       { dataTransfer: { files: [videoFile], types: ["Files"] } },
     );
-    expect(handleExternalInputDrop).not.toHaveBeenCalled();
+    expect(handleExternalInputDrop).toHaveBeenCalledWith(
+      "image-input",
+      videoFile,
+    );
   });
 });

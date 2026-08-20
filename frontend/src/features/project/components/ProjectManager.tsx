@@ -517,7 +517,11 @@ export function ProjectManager() {
           <Box
             sx={{
               flex: 1,
-              minHeight: 0,
+              // Views mount absolutely, so this box has no intrinsic height.
+              // Once the grid stacks (below `lg`, e.g. devtools docked at the
+              // side) the panel is content-sized and `flex: 1` resolves to 0,
+              // leaving the tab strip visible above an empty panel.
+              minHeight: { xs: 360, lg: 0 },
               position: "relative",
               overflow: "hidden",
             }}

@@ -1,6 +1,6 @@
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { prepareBrushMasksForTimelineRender } from "../../masks/api";
-import { normalizeTimelineSelection } from "../../timelineSelection";
+import { normalizeDetachedTimelineSelection } from "../../timelineSelection";
 import { preloadColorGradeLuts } from "../../transformations/catalogue/filters/colorGrade/lutTexture";
 import {
   ExportRenderer,
@@ -79,17 +79,18 @@ export async function renderSelectionToVideoFile(
   }
   const preparedTimelineSelection = options.renderInputs
     ? timelineSelection
-    : ((await prepareBrushMasksForTimelineRender(timelineSelection)) ??
-      timelineSelection);
+    : ((await prepareBrushMasksForTimelineRender(timelineSelection, {
+        refreshSelectionClips: false,
+      })) ?? timelineSelection);
   const { exportConfig, projectData } =
     options.renderInputs ?? buildProjectRenderInputs();
   const selection = options.skipNormalize
     ? preparedTimelineSelection
-    : normalizeTimelineSelection(preparedTimelineSelection, projectData.clips);
+    : normalizeDetachedTimelineSelection(preparedTimelineSelection);
 
   // Strict rendering starts pulling frames immediately; referenced grade LUTs
   // must be cached up front or early frames would render without them.
-  await preloadColorGradeLuts(projectData.clips);
+  await preloadColorGradeLuts(selection.clips);
 
   const renderer = await ExportRenderer.create(exportConfig);
   try {

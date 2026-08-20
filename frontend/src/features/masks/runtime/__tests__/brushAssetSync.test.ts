@@ -276,6 +276,31 @@ describe("brushAssetSync", () => {
     expect(selection.clips[1]).toEqual(brushMask);
   });
 
+  it("does not consult live brush state for a detached selection", async () => {
+    const savedMask = createBrushMaskClip("saved-brush-asset");
+    const selection = {
+      start: 0,
+      end: 120,
+      clips: [createParentClip(savedMask.id), savedMask],
+      tracks: [createTrack("track_1")],
+    };
+    const liveMask = createBrushMaskClip("live-brush-asset");
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [createTrack("track_1")],
+      clips: [createParentClip(liveMask.id), liveMask],
+    });
+    mockIsBrushBufferDirty.mockReturnValue(true);
+
+    const prepared = await prepareBrushMasksForTimelineRender(selection, {
+      refreshSelectionClips: false,
+    });
+
+    expect(prepared).toBe(selection);
+    expect(mockIsBrushBufferDirty).not.toHaveBeenCalled();
+    expect(mockExtractBrushPng).not.toHaveBeenCalled();
+    expect(prepared?.clips[1]).toEqual(savedMask);
+  });
+
   it("rejects rendering rather than using a stale brush PNG", async () => {
     const bounds = { x: 1, y: 2, width: 3, height: 4 };
     const brushMask = createBrushMaskClip("stale-asset", bounds);

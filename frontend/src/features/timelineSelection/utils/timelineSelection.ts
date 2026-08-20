@@ -388,3 +388,14 @@ export function normalizeTimelineSelection(
 
   return normalizedSelection;
 }
+
+/**
+ * Sanitizes a detached/persisted selection without consulting the open
+ * timeline. Missing clips stay missing so replay cannot silently substitute
+ * newer live clip state for the saved snapshot.
+ */
+export function normalizeDetachedTimelineSelection(
+  selection: TimelineSelection,
+): TimelineSelection {
+  return normalizeTimelineSelection(selection);
+}

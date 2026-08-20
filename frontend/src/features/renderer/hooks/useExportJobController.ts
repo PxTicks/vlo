@@ -243,6 +243,7 @@ export function useExportJobController({
             clips: [],
           }),
           tracks: projectData.tracks,
+          transitions: projectData.transitions,
           ...(selectionMessage ? { message: selectionMessage } : {}),
           ...(selectionIncludedTrackIds.length > 0
             ? { includedTrackIds: selectionIncludedTrackIds.slice() }
@@ -363,6 +364,8 @@ export function useExportJobController({
           start: 0,
           end: projectData.duration,
           clips: projectData.clips,
+          tracks: projectData.tracks,
+          transitions: projectData.transitions,
           fps: projectData.fps,
         };
 

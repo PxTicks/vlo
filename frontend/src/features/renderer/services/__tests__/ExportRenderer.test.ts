@@ -8,6 +8,8 @@ import type { Mock } from "vitest";
 import { Application, Container } from "pixi.js";
 import { RenderGroupOrchestrator } from "../RenderGroupOrchestrator";
 import { TrackRenderEngine } from "../TrackRenderEngine";
+import { AdjustmentEffectResolver } from "../AdjustmentEffectResolver";
+import * as transitionResolver from "../../../transitions/rendering/TransitionResolver";
 import type {
   StandardTimelineClip,
   TimelineClip,
@@ -1260,6 +1262,244 @@ describe("ExportRenderer", () => {
       registerTrackSpy.mockRestore();
       syncSpy.mockRestore();
       disposeSpy.mockRestore();
+    }
+  });
+
+  it("renders a detached selection without consulting live timeline topology", async () => {
+    const config = {
+      logicalWidth: 640,
+      logicalHeight: 360,
+      outputWidth: 640,
+      outputHeight: 360,
+    };
+    const liveTrack = {
+      id: "live-track",
+      type: "visual",
+      isVisible: true,
+    } as TimelineTrack;
+    const liveClip = {
+      id: "live-clip",
+      trackId: liveTrack.id,
+      assetId: "live-asset",
+      start: 0,
+      timelineDuration: 96_000,
+      offset: 0,
+      type: "video",
+    } as TimelineClip;
+    const savedTrack = {
+      id: "saved-track",
+      type: "visual",
+      isVisible: true,
+    } as TimelineTrack;
+    const savedClip = {
+      id: "saved-clip",
+      trackId: savedTrack.id,
+      assetId: "saved-asset",
+      start: 0,
+      timelineDuration: 96_000,
+      offset: 0,
+      type: "video",
+    } as TimelineClip;
+    const projectData: ProjectData = {
+      tracks: [liveTrack],
+      clips: [liveClip],
+      transitions: [
+        {
+          id: "live-transition",
+          type: "dissolve",
+          outgoingClipId: liveClip.id,
+          incomingClipId: "other-live-clip",
+          parameters: {},
+        },
+      ],
+      assets: [
+        { id: "live-asset", src: "blob:live", type: "video" },
+        { id: "saved-asset", src: "blob:saved", type: "video" },
+      ] as Asset[],
+      duration: 96_000,
+      fps: 24,
+    };
+    const setAdjustmentSourceSpy = vi.spyOn(
+      AdjustmentEffectResolver.prototype,
+      "setAdjustmentSource",
+    );
+    const registerTrackSpy = vi
+      .spyOn(RenderGroupOrchestrator.prototype, "registerTrack")
+      .mockImplementation(() => {});
+    const syncSpy = vi
+      .spyOn(RenderGroupOrchestrator.prototype, "syncPresentationPlan")
+      .mockImplementation(() => {});
+    const disposeSpy = vi
+      .spyOn(RenderGroupOrchestrator.prototype, "dispose")
+      .mockImplementation(() => {});
+
+    try {
+      const renderer = await ExportRenderer.create(config);
+      const testRenderer = renderer as unknown as TestExportRenderer;
+      Object.defineProperty(testRenderer.app.canvas, "toBlob", {
+        value: vi.fn((callback: BlobCallback, type?: string) =>
+          callback(new Blob(["frame"], { type: type ?? "image/png" })),
+        ),
+        configurable: true,
+      });
+
+      await testRenderer.renderStill(projectData, config, 0, {
+        timelineSelection: {
+          start: 0,
+          clips: [savedClip],
+          tracks: [savedTrack],
+          fps: 24,
+        },
+      });
+
+      expect(registerTrackSpy).toHaveBeenCalledWith(
+        savedTrack.id,
+        expect.anything(),
+      );
+      expect(registerTrackSpy).not.toHaveBeenCalledWith(
+        liveTrack.id,
+        expect.anything(),
+      );
+      expect(setAdjustmentSourceSpy).toHaveBeenCalledTimes(2);
+      for (const [tracks, clips] of setAdjustmentSourceSpy.mock.calls) {
+        expect(tracks).toEqual([savedTrack]);
+        expect(clips).toEqual([savedClip]);
+      }
+      expect(syncSpy.mock.calls[0]?.[1].tracks).toEqual([
+        expect.objectContaining({ trackId: savedTrack.id }),
+      ]);
+    } finally {
+      setAdjustmentSourceSpy.mockRestore();
+      registerTrackSpy.mockRestore();
+      syncSpy.mockRestore();
+      disposeSpy.mockRestore();
+    }
+  });
+
+  it("uses complete snapshot topology throughout render audio and frame loops", async () => {
+    const config = {
+      logicalWidth: 640,
+      logicalHeight: 360,
+      outputWidth: 640,
+      outputHeight: 360,
+    };
+    const track = (
+      id: string,
+      type: "visual" | "audio",
+      overrides: Partial<TimelineTrack> = {},
+    ): TimelineTrack => ({
+      id,
+      type,
+      label: id,
+      isVisible: true,
+      isMuted: false,
+      isLocked: false,
+      ...overrides,
+    });
+    const liveTracks = [track("live-visual", "visual"), track("live-audio", "audio")];
+    const savedTracks = [
+      track("saved-visual-a", "visual"),
+      track("saved-muted-audio", "audio", { isMuted: true }),
+      track("saved-hidden-visual", "visual", { isVisible: false }),
+      track("saved-visual-b", "visual"),
+    ];
+    const clip = (
+      id: string,
+      trackId: string,
+      assetId: string,
+      type: "video" | "audio" = "video",
+    ): TimelineClip =>
+      ({
+        id,
+        trackId,
+        assetId,
+        start: 0,
+        timelineDuration: 4_000,
+        offset: 0,
+        type,
+      }) as TimelineClip;
+    const liveClips = [
+      clip("live-video", "live-visual", "live-video-asset"),
+      clip("live-audio", "live-audio", "live-audio-asset", "audio"),
+    ];
+    const savedClips = [
+      clip("saved-video-a", "saved-visual-a", "saved-video-a-asset"),
+      clip("saved-muted-audio", "saved-muted-audio", "saved-audio-asset", "audio"),
+      clip("saved-hidden-video", "saved-hidden-visual", "saved-hidden-asset"),
+      clip("saved-video-b", "saved-visual-b", "saved-video-b-asset"),
+    ];
+    const savedTransition = {
+      id: "saved-transition",
+      type: "dissolve" as const,
+      outgoingClipId: "saved-video-a",
+      incomingClipId: "saved-video-b",
+      parameters: {},
+    };
+    const projectData: ProjectData = {
+      tracks: liveTracks,
+      clips: liveClips,
+      transitions: [
+        {
+          id: "live-transition",
+          type: "dissolve",
+          outgoingClipId: "live-video",
+          incomingClipId: "other-live-video",
+          parameters: {},
+        },
+      ],
+      assets: [
+        "live-video-asset",
+        "live-audio-asset",
+        "saved-video-a-asset",
+        "saved-audio-asset",
+        "saved-hidden-asset",
+        "saved-video-b-asset",
+      ].map((id) => ({ id, src: `blob:${id}`, type: "video" })) as Asset[],
+      duration: 4_000,
+      fps: 24,
+    };
+    const registerTrackSpy = vi.spyOn(
+      RenderGroupOrchestrator.prototype,
+      "registerTrack",
+    );
+    const transitionSpy = vi.spyOn(
+      transitionResolver,
+      "resolveTransitionFrame",
+    );
+
+    try {
+      const renderer = await ExportRenderer.create(config);
+      await renderer.render(projectData, config, () => {}, {
+        timelineSelection: {
+          start: 0,
+          end: 4_000,
+          clips: savedClips,
+          tracks: savedTracks,
+          transitions: [savedTransition],
+          fps: 24,
+        },
+      });
+
+      expect(
+        registerTrackSpy.mock.calls.map(([trackId]) => trackId),
+      ).toEqual(["saved-visual-a", "saved-visual-b"]);
+      expect(audioRendererMocks.instances.map(({ trackId }) => trackId)).toEqual([
+        "saved-visual-a",
+        "saved-visual-b",
+      ]);
+      expect(transitionSpy).toHaveBeenCalled();
+      for (const [options] of transitionSpy.mock.calls) {
+        expect(options.tracks).toEqual(savedTracks);
+        expect(options.clips).toEqual(savedClips);
+        expect(options.transitions).toEqual([savedTransition]);
+        expect(options.visualTrackOrder).toEqual([
+          "saved-visual-a",
+          "saved-visual-b",
+        ]);
+      }
+    } finally {
+      registerTrackSpy.mockRestore();
+      transitionSpy.mockRestore();
     }
   });
 

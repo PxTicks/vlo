@@ -447,7 +447,14 @@ describe("useExportJobController runProjectExport", () => {
     expect(deriveTrueDimensionsFromShortEdge).toHaveBeenCalledWith("16:9", 720);
     expect(prepareBrushMasksForTimelineRender).toHaveBeenCalledOnce();
     const [selection, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
-    expect(selection).toMatchObject({ start: 0, end: 5000, fps: 24 });
+    expect(selection).toMatchObject({
+      start: 0,
+      end: 5000,
+      clips: [],
+      tracks: [{ id: "t1" }],
+      transitions: [],
+      fps: 24,
+    });
     expect(opts!.filenamePrefix).toBe("export");
     expect(opts!.format).toBe("webm");
     expect(opts!.keyFrameInterval).toBe(2);

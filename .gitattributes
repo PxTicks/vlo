@@ -213,6 +213,7 @@
 # createClip path, which shares its generated-mask helper.
 /frontend/src/features/timeline/utils/insertAssetToTimeline.ts extension-surface=adapter
 /frontend/src/features/renderer/utils/clipLookup.ts extension-surface=adapter
+/frontend/src/features/renderer/utils/buildSelectionProjectData.ts extension-surface=adapter
 /frontend/src/features/panelUI/customControlRegistry.ts extension-surface=adapter
 /frontend/src/features/panelUI/types.ts extension-surface=adapter
 /frontend/src/features/panelUI/components/SelectControl.tsx extension-surface=adapter

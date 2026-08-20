@@ -214,7 +214,15 @@ export async function flushAllBrushMaskCommits(): Promise<void> {
  */
 export async function prepareBrushMasksForTimelineRender(
   selection?: TimelineSelection,
+  options: { refreshSelectionClips?: boolean } = {},
 ): Promise<TimelineSelection | undefined> {
+  // Persisted selections are complete render snapshots. Opting out of refresh
+  // must also avoid flushing or validating unrelated state in the open
+  // timeline, otherwise replay can still fail because of live brush buffers.
+  if (selection && options.refreshSelectionClips === false) {
+    return selection;
+  }
+
   await flushAllBrushMaskCommits();
   let dirtyMaskIds = getTimelineBrushMaskClipIds().filter(
     isBrushBufferDirty,

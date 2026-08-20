@@ -66,6 +66,7 @@ import {
   collectTemporalFrameScope,
   type TemporalFrameScope,
 } from "./TemporalFrameScopeResolver";
+import { buildSelectionProjectData } from "../utils/buildSelectionProjectData";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -448,36 +449,38 @@ export class ExportRenderer {
     const onAbort = () => this.cancel();
     options.signal?.addEventListener("abort", onAbort, { once: true });
 
-    const { tracks, clips, assets, fps } = projectData;
+    const renderProjectData = options.timelineSelection
+      ? buildSelectionProjectData(projectData, options.timelineSelection)
+      : projectData;
+    const { tracks, clips, assets, fps } = renderProjectData;
     const { logicalWidth, logicalHeight, outputWidth, outputHeight } = config;
 
     const timelineSelection = options.timelineSelection ?? {
       start: 0,
-      end: projectData.duration,
+      end: renderProjectData.duration,
       clips,
       tracks,
     };
     const selectedClips = getIncludedClipsForSelection(
       timelineSelection,
-      timelineSelection.clips,
+      clips,
     );
     const effectiveTracks = getIncludedTracksForSelection(
       timelineSelection,
-      timelineSelection.tracks ?? tracks,
+      tracks,
     );
     const startTick = timelineSelection.start;
     const renderFps = resolveSelectionFps(timelineSelection, fps);
     // Falls back to the clips' furthest presentation end when the selection
-    // omits an explicit end. Presentation resolves against the full timeline
-    // (the same source the AdjustmentEffectResolver uses below) so adjustment
-    // speed is honoured; we measure only the clips this selection emits.
+    // omits an explicit end. A supplied selection is a self-contained render
+    // topology, so presentation must resolve against its saved snapshot.
     // Quantize presentation on the canonical PROJECT-fps timeline grid (not
     // renderFps) so export and preview resolve identical clip footprints for
     // the same tick. renderFps only drives the export sample cadence + output
     // timestamps below.
     const inferredEndTick = computeFurthestPresentationEnd(
-      projectData.tracks,
-      projectData.clips,
+      renderProjectData.tracks,
+      renderProjectData.clips,
       fps,
       selectedClips,
     );
@@ -533,8 +536,8 @@ export class ExportRenderer {
       // Project fps: the presentation grid must match preview, not the export
       // sample rate (renderFps).
       adjustmentEffectResolver.setAdjustmentSource(
-        projectData.tracks,
-        projectData.clips,
+        renderProjectData.tracks,
+        renderProjectData.clips,
         fps,
       );
 
@@ -575,16 +578,16 @@ export class ExportRenderer {
                 track.id,
                 adjustmentEffectResolver,
                 {
-                  tracks: projectData.tracks,
-                  clips: projectData.clips,
-                  composites: projectData.composites ?? [],
-                  assets: projectData.assets,
+                  tracks: renderProjectData.tracks,
+                  clips: renderProjectData.clips,
+                  composites: renderProjectData.composites ?? [],
+                  assets: renderProjectData.assets,
                   projectFps: fps,
                   logicalDimensions: {
                     width: logicalWidth,
                     height: logicalHeight,
                   },
-                  sourcePolicy: projectData.compositeSourcePolicy,
+                  sourcePolicy: renderProjectData.compositeSourcePolicy,
                 },
               ),
           );
@@ -669,8 +672,9 @@ export class ExportRenderer {
         this.orchestrator!.registerTrack(track.id, engine.container);
         return engine;
       });
-      // Adjustment-clip derivation reads the *full* project tracks + clips
-      // (not the selection-filtered subset). The orchestrator still creates
+      // Adjustment-clip derivation reads the full render topology (before the
+      // included-track filter). For a saved selection this is its snapshot,
+      // never the currently open timeline. The orchestrator still creates
       // and attaches a container for every derived group — even ones whose
       // reach contains no registered visual tracks — but those containers
       // hold no engines and so produce no pixels on the GPU. We tolerate
@@ -680,8 +684,8 @@ export class ExportRenderer {
       // engines (audio effects, etc.) to ride through the same forest in
       // the future without an a-priori filter.
       this.orchestrator.setAdjustmentSource(
-        projectData.tracks,
-        projectData.clips,
+        renderProjectData.tracks,
+        renderProjectData.clips,
         fps,
       );
       const visualTrackOrder = visualTracks.map((track) => track.id);
@@ -704,9 +708,9 @@ export class ExportRenderer {
         const adjustmentForest =
           adjustmentEffectResolver.deriveGroups(currentTime);
         const transitionFrame = resolveTransitionFrame({
-          tracks: projectData.tracks,
-          clips: projectData.clips,
-          transitions: projectData.transitions ?? [],
+          tracks: renderProjectData.tracks,
+          clips: renderProjectData.clips,
+          transitions: renderProjectData.transitions ?? [],
           fps,
           presentationTick: currentTime,
           logicalDimensions: {
@@ -721,8 +725,8 @@ export class ExportRenderer {
           presentationTick: currentTime,
           tracks: resolutionTracks,
           assets,
-          composites: projectData.composites,
-          compositeSourcePolicy: projectData.compositeSourcePolicy,
+          composites: renderProjectData.composites,
+          compositeSourcePolicy: renderProjectData.compositeSourcePolicy,
           logicalDimensions: {
             width: logicalWidth,
             height: logicalHeight,
@@ -771,7 +775,7 @@ export class ExportRenderer {
           currentTime,
           resolutionTracks,
           adjustmentEffectResolver,
-          projectData.clips,
+          renderProjectData.clips,
         );
         const temporalPlan = temporalCoordinator.plan({
           presentationTick: currentTime,
@@ -876,11 +880,12 @@ export class ExportRenderer {
     const onAbort = () => this.cancel();
     options.signal?.addEventListener("abort", onAbort, { once: true });
 
-    const { assets, fps } = projectData;
-    const availableTracks =
-      options.timelineSelection?.tracks ?? projectData.tracks;
-    const availableClips =
-      options.timelineSelection?.clips ?? projectData.clips;
+    const renderProjectData = options.timelineSelection
+      ? buildSelectionProjectData(projectData, options.timelineSelection)
+      : projectData;
+    const { assets, fps } = renderProjectData;
+    const availableTracks = renderProjectData.tracks;
+    const availableClips = renderProjectData.clips;
     const tracks = options.timelineSelection
       ? getIncludedTracksForSelection(
           options.timelineSelection,
@@ -901,8 +906,8 @@ export class ExportRenderer {
     try {
       const adjustmentEffectResolver = new AdjustmentEffectResolver();
       adjustmentEffectResolver.setAdjustmentSource(
-        projectData.tracks,
-        projectData.clips,
+        renderProjectData.tracks,
+        renderProjectData.clips,
         fps,
       );
 
@@ -926,12 +931,11 @@ export class ExportRenderer {
         this.orchestrator!.registerTrack(track.id, engine.container);
         return engine;
       });
-      // Derivation reads the *full* project tracks + clips, including
-      // empty-container behaviour for unregistered reach. See the comment
-      // on the same call in render() above.
+      // Derivation reads the full render topology, including empty-container
+      // behaviour for unregistered reach. See render() above.
       this.orchestrator.setAdjustmentSource(
-        projectData.tracks,
-        projectData.clips,
+        renderProjectData.tracks,
+        renderProjectData.clips,
         fps,
       );
       const visualTrackOrder = visualTracks.map((track) => track.id);
@@ -948,7 +952,7 @@ export class ExportRenderer {
         tick,
         resolutionTracks,
         adjustmentEffectResolver,
-        projectData.clips,
+        renderProjectData.clips,
       );
       const temporalPlan = temporalCoordinator.plan({
         presentationTick: tick,
@@ -975,9 +979,9 @@ export class ExportRenderer {
         const adjustmentForest =
           adjustmentEffectResolver.deriveGroups(currentTime);
         const transitionFrame = resolveTransitionFrame({
-          tracks: projectData.tracks,
-          clips: projectData.clips,
-          transitions: projectData.transitions ?? [],
+          tracks: renderProjectData.tracks,
+          clips: renderProjectData.clips,
+          transitions: renderProjectData.transitions ?? [],
           fps,
           presentationTick: currentTime,
           logicalDimensions: {
@@ -992,8 +996,8 @@ export class ExportRenderer {
           presentationTick: currentTime,
           tracks: resolutionTracks,
           assets,
-          composites: projectData.composites,
-          compositeSourcePolicy: projectData.compositeSourcePolicy,
+          composites: renderProjectData.composites,
+          compositeSourcePolicy: renderProjectData.compositeSourcePolicy,
           logicalDimensions: {
             width: logicalWidth,
             height: logicalHeight,

@@ -140,6 +140,8 @@ export async function runSelectionExportProbe(
                 end: request.endTick,
                 clips: [],
             }),
+            tracks: projectData.tracks,
+            transitions: projectData.transitions,
             fps: projectData.fps,
         };
 

@@ -195,7 +195,7 @@ describe("inputSelection", () => {
     expect(result.type).toBe("video/mp4");
   });
 
-  it("recovers referenced mask clips before rendering a mask output", async () => {
+  it("does not recover referenced mask clips from the live timeline", async () => {
     const renderSpy = vi.fn().mockResolvedValue({
       video: new Blob(["mask"], { type: "video/mp4" }),
       outputs: {
@@ -220,7 +220,7 @@ describe("inputSelection", () => {
       renderSpy.mock.calls[0]?.[3]?.timelineSelection?.clips?.map(
         (clip: { id: string }) => clip.id,
       ),
-    ).toEqual(["clip_1", "clip_1::mask::mask_1"]);
+    ).toEqual(["clip_1"]);
   });
 
   it("uses the configured audio timing mask fps and defaults to 25 when omitted", async () => {

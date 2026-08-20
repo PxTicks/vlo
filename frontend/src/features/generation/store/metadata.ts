@@ -6,8 +6,7 @@ import type {
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { getAssetById } from "../../userAssets/api";
 import { useProjectStore } from "../../project";
-import { getTimelineClips } from "../../timeline/api";
-import { normalizeTimelineSelection } from "../../timelineSelection";
+import { normalizeDetachedTimelineSelection } from "../../timelineSelection";
 import type { DerivedMaskMapping } from "../pipeline/types";
 import {
   captureFramePngAtTick,
@@ -215,7 +214,6 @@ export async function restoreMediaInputsFromMetadata(
     getMediaInputs?: () => Record<string, GenerationMediaInputValue | null>;
   } = {},
 ): Promise<void> {
-  const timelineClips = getTimelineClips();
   const workflowInputById = buildWorkflowInputLookup(workflowInputs);
   const workflowInputByNodeId = new Map<string, WorkflowInput>();
   for (const workflowInput of workflowInputs) {
@@ -280,9 +278,8 @@ export async function restoreMediaInputsFromMetadata(
       continue;
     }
 
-    const timelineSelection = normalizeTimelineSelection(
+    const timelineSelection = normalizeDetachedTimelineSelection(
       input.timelineSelection,
-      timelineClips,
     );
 
     if (workflowInput.inputType === "image") {

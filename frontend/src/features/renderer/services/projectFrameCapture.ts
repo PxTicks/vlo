@@ -86,6 +86,7 @@ export async function renderProjectFrameAtTick(
 ): Promise<CapturedProjectFrame> {
   const preparedSelection = await prepareBrushMasksForTimelineRender(
     options.timelineSelection,
+    { refreshSelectionClips: false },
   );
   const { exportConfig, projectData } = buildProjectRenderInputs();
   const renderer = await ExportRenderer.create(exportConfig);

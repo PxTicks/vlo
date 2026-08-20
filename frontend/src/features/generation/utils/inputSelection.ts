@@ -23,7 +23,7 @@ import {
 } from "../../../core/time";
 import {
   getTicksPerFrame,
-  normalizeTimelineSelection,
+  normalizeDetachedTimelineSelection,
   resolveSelectionFps,
   resolveSelectionFrameStep,
   snapFrameCountToStep,
@@ -343,12 +343,13 @@ async function renderTimelineSelectionToOutputs(
 ): Promise<Awaited<ReturnType<ExportRenderer["render"]>>> {
   throwIfAborted(options.signal);
   const preparedTimelineSelection =
-    (await prepareBrushMasksForTimelineRender(timelineSelection)) ??
+    (await prepareBrushMasksForTimelineRender(timelineSelection, {
+      refreshSelectionClips: false,
+    })) ??
     timelineSelection;
   const { exportConfig, projectData } = buildProjectRenderInputs();
-  const normalizedSelection = normalizeTimelineSelection(
+  const normalizedSelection = normalizeDetachedTimelineSelection(
     preparedTimelineSelection,
-    projectData.clips,
   );
   const renderConfig = {
     ...exportConfig,
@@ -788,8 +789,9 @@ export async function renderTimelineSelectionToMp4WithMask(
   throwIfAborted(options.signal);
   const preparedTimelineSelection = options.renderInputs
     ? timelineSelection
-    : ((await prepareBrushMasksForTimelineRender(timelineSelection)) ??
-      timelineSelection);
+    : ((await prepareBrushMasksForTimelineRender(timelineSelection, {
+        refreshSelectionClips: false,
+      })) ?? timelineSelection);
   const { exportConfig, projectData } =
     options.renderInputs ?? buildProjectRenderInputs();
   const renderConfig: ExportConfig = {
@@ -812,9 +814,8 @@ export async function renderTimelineSelectionToMp4WithMask(
     // render texture), so the derived mask matte is unaffected.
     backgroundAlpha: 1,
   };
-  const normalizedSelection = normalizeTimelineSelection(
+  const normalizedSelection = normalizeDetachedTimelineSelection(
     preparedTimelineSelection,
-    projectData.clips,
   );
   try {
     const maskOutput = createMaskOutputDefinition(maskType, {

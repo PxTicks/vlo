@@ -3,6 +3,7 @@ import {
   getIncludedClipsForSelection,
   getIncludedTracksForSelection,
   getTicksPerFrame,
+  normalizeDetachedTimelineSelection,
   normalizeTimelineSelection,
   resolveSelectionFps,
   resolveSelectionFrameStep,
@@ -117,6 +118,41 @@ describe("timelineSelection helpers", () => {
         },
       ],
     });
+  });
+
+  it("does not recover live clips into a detached saved selection", () => {
+    const savedClip = {
+      id: "saved-clip",
+      type: "video" as const,
+      trackId: "saved-track",
+      name: "Saved clip",
+      assetId: "saved-asset",
+      sourceDuration: 100,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      start: 0,
+      timelineDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformations: [],
+      components: [
+        {
+          id: "mask-ref",
+          type: "mask_ref" as const,
+          parameters: { maskClipId: "live-mask" },
+        },
+      ],
+    };
+
+    expect(
+      normalizeDetachedTimelineSelection({
+        start: 0,
+        clips: [savedClip],
+      }).clips,
+    ).toEqual([savedClip]);
+    expect(
+      normalizeDetachedTimelineSelection({ start: 0, clips: [] }).clips,
+    ).toEqual([]);
   });
 
   it("preserves valid saved clips so metadata-backed transforms survive normalization", () => {

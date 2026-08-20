@@ -9,6 +9,7 @@ export {
   getClipsInSelection,
   getTicksPerFrame,
   normalizeTimelineSelection,
+  normalizeDetachedTimelineSelection,
   resolveSelectionFps,
   resolveSelectionFrameStep,
   selectionHasMaskClip,

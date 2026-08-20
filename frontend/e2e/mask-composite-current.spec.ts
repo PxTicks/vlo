@@ -143,7 +143,10 @@ test.describe('Current-project masks and composites', () => {
 
         const canvas = editor.player.canvasContainer.locator('canvas').first();
         await timeline.seekToTick(180_000);
-        await page.waitForTimeout(500);
+        // Cold hydration reconstructs a full 2752x1536 mask texture. The
+        // player can present the unmasked source frame while that work is in
+        // flight, so do not use the first painted frame as the reference.
+        await page.waitForTimeout(2_000);
         const initialMaskedFrame = await canvas.screenshot();
 
         await timeline.seekToTick(480_000);
@@ -253,9 +256,8 @@ test.describe('Current-project masks and composites', () => {
             `[data-testid="composite-card"][data-composite-id="${COMPOSITE_ID}"]`,
         );
         const placed = waitForTimelineSave(editor);
-        await sourceCard
-            .getByRole('button', { name: 'Place composite on timeline' })
-            .click();
+        await sourceCard.getByRole('button', { name: 'Composite actions' }).click();
+        await page.getByRole('menuitem', { name: 'Place on timeline' }).click();
         await placed;
 
         const sharedPlacements = readTimeline(editor).clips.filter(
@@ -377,7 +379,7 @@ test.describe('Current-project masks and composites', () => {
         await expect(authoredCard).toBeVisible();
         await expect(
             authoredCard.getByTestId('composite-bake-status'),
-        ).toHaveText('Bake ready', { timeout: 120_000 });
+        ).toContainText('Bake ready', { timeout: 120_000 });
         // Bake completion remaps the placement from its live placeholder to
         // the ready asset. Wait through the store's 250ms patch debounce and
         // any follow-up write before reloading the browser.

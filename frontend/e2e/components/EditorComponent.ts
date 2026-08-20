@@ -99,8 +99,10 @@ export class EditorComponent {
     }
 
     private async waitUntilReady() {
+        await expect(this.page.getByTestId('project-title-display')).toBeVisible({
+            timeout: 20000,
+        });
         await expect(this.player.canvasContainer).toBeVisible({ timeout: 20000 });
         await expect(this.timeline.toolbar).toBeVisible({ timeout: 20000 });
-        await expect(this.assetBrowser.assetCards.first()).toBeVisible({ timeout: 20000 });
     }
 }

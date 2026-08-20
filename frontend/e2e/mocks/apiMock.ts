@@ -2,6 +2,10 @@ import { Page, Route } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import {
+    BRIDGE_VERSION,
+    REQUIRED_BRIDGE_CAPABILITIES,
+} from '../../src/features/generation/services/iframeBridgeClient';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,21 +35,10 @@ function buildMockComfyFrameHtml(): string {
     <script>
       (() => {
         const BRIDGE_PROTOCOL = 'vlo-bridge';
-        const BRIDGE_VERSION = 3;
+        const BRIDGE_VERSION = ${BRIDGE_VERSION};
         const BRIDGE_DOCUMENT_ID = 'mock-document-' + Math.random().toString(16).slice(2);
-        const BRIDGE_CAPABILITIES = [
-          'health',
-          'health-changed',
-          'read-active',
-          'read-pending-warnings',
-          'inject-workflow',
-          'resolve-prompt',
-          'refresh-missing-models',
-          'graph-changed',
-          'workflow-revision',
-          'drop-asset',
-          'drop-asset-file',
-        ];
+        const BRIDGE_CAPABILITIES = ${JSON.stringify([...REQUIRED_BRIDGE_CAPABILITIES])};
+        const BRIDGE_CLIENT_ID = 'mock-comfy-client';
         let workflowSequence = 0;
 
         const placeholderActiveWorkflow = {
@@ -247,6 +240,7 @@ function buildMockComfyFrameHtml(): string {
             postBridgeMessage(message.channelId, {
               type: 'ready',
               capabilities: BRIDGE_CAPABILITIES,
+              clientId: BRIDGE_CLIENT_ID,
             });
             return;
           }

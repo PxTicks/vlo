@@ -70,7 +70,30 @@ def test_minimax_h3_reference_workflow_uses_vlo_batch_inputs():
     ]
     slots_by_name = {spec["name"]: spec for spec in slot_inputs}
     assert slots_by_name["ref_video_audios"]["link"] is None
-    assert wrapper["widgets_values_named"]["use_embedded_video_audio"] is False
+
+    # Per-video audio inclusion arrives as a BOOLEAN list from the video batch
+    # loader, so the adapter's flag input has to be linked rather than a widget.
+    widget_inputs_by_name = {
+        input_spec["name"]: input_spec
+        for input_spec in wrapper["inputs"]
+        if "widget" in input_spec
+    }
+    audio_flag_link = widget_inputs_by_name["use_embedded_video_audio"]["link"]
+    assert audio_flag_link is not None
+    loader = nodes[142]
+    assert [output["name"] for output in loader["outputs"]] == [
+        "videos",
+        "use audio",
+    ]
+    assert loader["outputs"][1]["links"] == [audio_flag_link]
+    assert loader["widgets_values_named"]["include_audio"] == ""
+    assert [
+        tuple(link[1:5])
+        for link in workflow["links"]
+        if link[0] == audio_flag_link
+    ] == [(142, 1, 136, wrapper["inputs"].index(
+        widget_inputs_by_name["use_embedded_video_audio"]
+    ))]
 
     media_links = {
         tuple(link[1:5])
@@ -124,14 +147,19 @@ def test_minimax_h3_reference_rules_expose_vlo_controls():
     assert rules["nodes"]["142"]["present"]["class_type"] == (
         "vloMemoryLoadVideoBatch"
     )
-    assert rules["nodes"]["142"]["present"]["repeatable"] == {"max": 3}
+    # The reference-video batch is the only input offering a per-item switch:
+    # audio inclusion is decided per video, not once for the whole batch.
+    assert rules["nodes"]["142"]["present"]["repeatable"] == {
+        "max": 3,
+        "item_options": ["audio"],
+    }
     assert rules["nodes"]["143"]["present"]["class_type"] == (
         "vloMemoryLoadAudioBatch"
     )
     assert rules["nodes"]["143"]["present"]["repeatable"] == {"max": 3}
-    assert rules["nodes"]["136"]["widgets"]["use_embedded_video_audio"][
-        "default"
-    ] is False
+    # The wholesale toggle is gone from the panel: the adapter's flag input is
+    # fed by the loader's per-video flags instead.
+    assert "use_embedded_video_audio" not in rules["nodes"]["136"]["widgets"]
     assert rules["validation"]["inputs"][0]["inputs"] == ["141", "142", "143"]
     assert rules["rewrites"][:3] == [
         {

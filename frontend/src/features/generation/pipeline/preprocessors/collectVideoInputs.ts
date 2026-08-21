@@ -37,7 +37,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       "derivedMaskMappings",
       "projectConfig",
     ],
-    writes: ["videoInputs"],
+    writes: ["videoInputs", "batchInputOptions"],
     description:
       "Normalizes video selections into MP4 files, renders derived masks, and routes video inputs",
   },
@@ -137,6 +137,14 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
         continue;
       }
       if (!input) continue;
+
+      // Recorded before the branches below so one write covers every path a
+      // reference video can take to its upload.
+      if (typeof value.includeEmbeddedAudio === "boolean") {
+        ctx.batchInputOptions[
+          getNodeInputRequestKeyForSlot(inputId, input, inputById)
+        ] = { include_audio: value.includeEmbeddedAudio };
+      }
 
       if (value.type === "video") {
         // The source video goes through unchanged. Note: this path does not

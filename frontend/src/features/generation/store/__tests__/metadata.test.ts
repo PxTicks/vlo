@@ -279,6 +279,72 @@ describe("generation metadata replay helpers", () => {
     );
   });
 
+  it("captures a batch item's audio switch so a replay reproduces it", () => {
+    const workflowInputs: WorkflowInput[] = [
+      {
+        id: "142:files",
+        nodeId: "142",
+        classType: "vloMemoryLoadVideoBatch",
+        inputType: "video",
+        param: "files",
+        label: "Video inputs",
+        currentValue: null,
+        origin: "rule",
+        presentation: {
+          repeatable: { max: 3, itemOptions: ["audio"] },
+        },
+      },
+    ];
+    const asset = (id: string) => ({
+      id,
+      hash: `${id}-hash`,
+      name: `${id}.mp4`,
+      type: "video" as const,
+      src: `${id}.mp4`,
+      createdAt: 1,
+      hasAudio: true,
+    });
+
+    const metadata = buildGeneratedCreationMetadata({
+      workflowName: "MiniMax",
+      workflowSourceId: "vlo_minimax_h3_r2v.json",
+      workflowRules: createDefaultWorkflowRules(),
+      workflowInputs,
+      mediaInputs: {
+        "142:files": { kind: "asset", asset: asset("first") },
+        "142:files::repeat::1": {
+          kind: "asset",
+          asset: asset("second"),
+          includeEmbeddedAudio: true,
+        },
+      },
+      slotValues: {},
+      targetResolution: 720,
+      exactAspectRatio: false,
+      maskCropMode: "crop",
+      maskCropDilation: 0,
+      frontendStateWidgetValues: {},
+      widgetModes: {},
+      derivedWidgetInputs: {},
+    });
+
+    expect(metadata.inputs).toEqual([
+      {
+        nodeId: "142",
+        inputId: "142:files",
+        kind: "draggedAsset",
+        parentAssetId: "first",
+      },
+      {
+        nodeId: "142",
+        inputId: "142:files::repeat::1",
+        includeEmbeddedAudio: true,
+        kind: "draggedAsset",
+        parentAssetId: "second",
+      },
+    ]);
+  });
+
   it("restores replay workflow inputs and panel state from saved metadata", () => {
     const replayState = {
       version: 1 as const,

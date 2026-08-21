@@ -365,6 +365,8 @@ export function GenerationPanel() {
     handleExternalInputDrop,
     handleInputClear,
     handleSwapMediaInputs,
+    handleMoveMediaInput,
+    handleToggleMediaInputOption,
     handleClickSelect,
     handleEditMedia,
 
@@ -1423,6 +1425,8 @@ export function GenerationPanel() {
                     onExternalInputDrop={handleExternalInputDrop}
                     onInputClear={handleInputClear}
                     onSwapMediaInputs={handleSwapMediaInputs}
+                    onMoveMediaInput={handleMoveMediaInput}
+                    onToggleMediaInputOption={handleToggleMediaInputOption}
                     onClickSelect={handleClickSelect}
                     onEditMedia={handleEditMedia}
                     widgetInputs={displayWidgetInputs}

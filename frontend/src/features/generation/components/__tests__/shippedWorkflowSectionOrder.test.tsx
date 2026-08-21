@@ -100,6 +100,7 @@ function renderPanel(
       onExternalInputDrop={vi.fn()}
       onInputClear={vi.fn()}
       onSwapMediaInputs={vi.fn()}
+      onMoveMediaInput={vi.fn()}
       onClickSelect={vi.fn()}
       widgetInputs={widgetInputs}
       widgetValues={{}}

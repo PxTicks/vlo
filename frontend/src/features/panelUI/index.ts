@@ -23,6 +23,13 @@ export type {
   AssetDropSlotReorderData,
   AssetDropSlotValue,
 } from "./components/assetDropSlotTypes";
+export { AssetBatchDropSlot } from "./components/AssetBatchDropSlot";
+export type {
+  AssetBatchDropSlotProps,
+  AssetBatchSlotItem,
+  AssetBatchSlotOption,
+  AssetBatchSlotOptionIcon,
+} from "./components/assetBatchDropSlotTypes";
 export { BufferedInput } from "./components/BufferedInput";
 export {
   BufferedColorInput,

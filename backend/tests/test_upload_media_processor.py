@@ -372,6 +372,120 @@ async def test_upload_media_processor_preserves_order_for_repeatable_batch_input
 
 
 @pytest.mark.anyio
+async def test_upload_media_processor_aligns_batch_item_flags_with_media_order():
+    async def upload_media_bytes_fn(*args, **kwargs):
+        return None, {"code": "unexpected_upload"}
+
+    async def register_media_bytes_fn(_client, media_bytes, *_args, **_kwargs):
+        return f"media-{media_bytes.decode()}", None
+
+    async def inspect_registered_media_fn(*args, **kwargs):
+        return False
+
+    ctx = _make_context(False, class_type="vloMemoryLoadVideoBatch")
+    ctx.workflow["92"]["inputs"] = {
+        "files": {"__value__": []},
+        "disable_in_memory": False,
+    }
+    # Index 1 was never uploaded, and only index 2 carries a switch: the flag
+    # list still has to line up one-for-one with the media that survived.
+    media_by_index = {
+        0: {
+            "node_id": "92",
+            "param": "files",
+            "input_type": "video",
+            "class_type": "vloMemoryLoadVideoBatch",
+            "bytes": b"first",
+            "content_type": "video/mp4",
+            "filename": "first.mp4",
+            "batch_index": 0,
+        },
+        2: {
+            "node_id": "92",
+            "param": "files",
+            "input_type": "video",
+            "class_type": "vloMemoryLoadVideoBatch",
+            "bytes": b"third",
+            "content_type": "video/mp4",
+            "filename": "third.mp4",
+            "batch_index": 2,
+            "item_options": {"include_audio": True},
+        },
+    }
+    ctx.buffered_media = {
+        f"92:files:{index}": media_by_index[index] for index in (2, 0)
+    }
+    processor = create_upload_media_processor(
+        upload_media_bytes_fn=upload_media_bytes_fn,
+        register_media_bytes_fn=register_media_bytes_fn,
+        inspect_registered_media_fn=inspect_registered_media_fn,
+        input_node_map={
+            "vloMemoryLoadVideoBatch": [
+                {"input_type": "video", "param": "files"},
+            ]
+        },
+    )
+
+    try:
+        await processor.execute(ctx)
+    finally:
+        await ctx.client.aclose()
+
+    assert ctx.workflow["92"]["inputs"]["files"] == {
+        "__value__": ["media-first", "media-third"]
+    }
+    assert ctx.workflow["92"]["inputs"]["include_audio"] == "0,1"
+
+
+@pytest.mark.anyio
+async def test_upload_media_processor_ignores_item_flags_for_other_loaders():
+    async def upload_media_bytes_fn(*args, **kwargs):
+        return None, {"code": "unexpected_upload"}
+
+    async def register_media_bytes_fn(_client, media_bytes, *_args, **_kwargs):
+        return f"media-{media_bytes.decode()}", None
+
+    async def inspect_registered_media_fn(*args, **kwargs):
+        return False
+
+    ctx = _make_context(False, class_type="vloMemoryLoadImageBatch")
+    ctx.workflow["92"]["inputs"] = {
+        "images": {"__value__": []},
+        "disable_in_memory": False,
+    }
+    ctx.buffered_media = {
+        "92:images:0": {
+            "node_id": "92",
+            "param": "images",
+            "input_type": "image",
+            "class_type": "vloMemoryLoadImageBatch",
+            "bytes": b"first",
+            "content_type": "image/png",
+            "filename": "first.png",
+            "batch_index": 0,
+            "item_options": {"include_audio": True},
+        }
+    }
+    processor = create_upload_media_processor(
+        upload_media_bytes_fn=upload_media_bytes_fn,
+        register_media_bytes_fn=register_media_bytes_fn,
+        inspect_registered_media_fn=inspect_registered_media_fn,
+        input_node_map={
+            "vloMemoryLoadImageBatch": [
+                {"input_type": "image", "param": "images"},
+            ]
+        },
+    )
+
+    try:
+        await processor.execute(ctx)
+    finally:
+        await ctx.client.aclose()
+
+    assert "include_audio" not in ctx.workflow["92"]["inputs"]
+
+
+@pytest.mark.anyio
 async def test_upload_media_processor_does_not_reuse_positional_batch_ids():
     registered: list[bytes] = []
 

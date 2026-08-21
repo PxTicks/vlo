@@ -52,6 +52,35 @@ export function collectStalledAudioExtractions(
   return stalled;
 }
 
+/**
+ * The same problem for timeline selections: a render in flight belongs to the
+ * slot it started in, so a clear or a reorder that shifts the value strands it
+ * marked extracting. Unlike the asset case the caller owns the restart — a
+ * selection render needs the panel's workflow context — so this only reports
+ * which slots need one.
+ */
+export function collectStalledSelectionExtractions(
+  inputIds: readonly string[],
+  getSlotValue: (inputId: string) => GenerationMediaInputValue | null,
+): Array<{
+  inputId: string;
+  value: Extract<GenerationMediaInputValue, { kind: "timelineSelection" }>;
+}> {
+  const stalled: Array<{
+    inputId: string;
+    value: Extract<GenerationMediaInputValue, { kind: "timelineSelection" }>;
+  }> = [];
+
+  for (const inputId of new Set(inputIds)) {
+    const value = getSlotValue(inputId);
+    if (value?.kind === "timelineSelection" && value.isExtracting) {
+      stalled.push({ inputId, value });
+    }
+  }
+
+  return stalled;
+}
+
 interface AudioAssetExtractionOptions {
   inputId: string;
   asset: Asset;

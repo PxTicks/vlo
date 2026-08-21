@@ -2480,6 +2480,22 @@
     },
     "WorkflowRuleRepeatableInput": {
       "properties": {
+        "item_options": {
+          "anyOf": [
+            {
+              "items": {
+                "const": "audio",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Options"
+        },
         "max": {
           "minimum": 1,
           "title": "Max",

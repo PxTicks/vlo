@@ -286,6 +286,15 @@ export async function generate(
     formData.append(`video_${nodeId}`, file);
   }
   if (
+    request.batchInputOptions &&
+    Object.keys(request.batchInputOptions).length > 0
+  ) {
+    formData.append(
+      "batch_input_options",
+      JSON.stringify(request.batchInputOptions),
+    );
+  }
+  if (
     request.cachedMediaInputs &&
     Object.keys(request.cachedMediaInputs).length > 0
   ) {

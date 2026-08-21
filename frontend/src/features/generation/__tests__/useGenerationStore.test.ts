@@ -1209,4 +1209,242 @@ describe("useGenerationStore workflow rules", () => {
       "68:image": startFrame,
     });
   });
+
+  describe("batch media inputs", () => {
+    const videoInput = {
+      id: "142:files",
+      nodeId: "142",
+      classType: "vloMemoryLoadVideoBatch",
+      inputType: "video" as const,
+      param: "files",
+      label: "Video inputs",
+      currentValue: null,
+      origin: "rule" as const,
+      presentation: {
+        repeatable: { max: 3, itemOptions: ["audio" as const] },
+      },
+    };
+
+    function makeVideoAsset(id: string) {
+      return {
+        kind: "asset" as const,
+        asset: {
+          id,
+          hash: id,
+          name: `${id}.mp4`,
+          type: "video" as const,
+          src: `blob:${id}`,
+          createdAt: 1,
+          hasAudio: true,
+        },
+      };
+    }
+
+    function seedBatch(count: number) {
+      const values = Array.from({ length: count }, (_, index) =>
+        makeVideoAsset(`clip-${index}`),
+      );
+      useGenerationStore.setState({
+        workflowInputs: [videoInput],
+        mediaInputs: Object.fromEntries(
+          values.map((value, index) => [
+            index === 0 ? "142:files" : `142:files::repeat::${index}`,
+            value,
+          ]),
+        ),
+      });
+      return values;
+    }
+
+    function readOrder() {
+      const { mediaInputs } = useGenerationStore.getState();
+      return ["142:files", "142:files::repeat::1", "142:files::repeat::2"]
+        .map((slotId) => mediaInputs[slotId])
+        .filter((value): value is NonNullable<typeof value> => Boolean(value))
+        .map((value) => (value.kind === "asset" ? value.asset.id : "?"));
+    }
+
+    it("moves a batch item to the dropped position and closes the gap", () => {
+      seedBatch(3);
+
+      useGenerationStore.getState().moveMediaInput("142:files::repeat::2", 0);
+
+      expect(readOrder()).toEqual(["clip-2", "clip-0", "clip-1"]);
+    });
+
+    it("leaves the order alone when the item lands where it started", () => {
+      seedBatch(3);
+
+      useGenerationStore.getState().moveMediaInput("142:files::repeat::1", 1);
+      useGenerationStore.getState().moveMediaInput("142:files::repeat::2", 7);
+
+      expect(readOrder()).toEqual(["clip-0", "clip-1", "clip-2"]);
+    });
+
+    it("closes a gap left in the batch when moving an item", () => {
+      seedBatch(3);
+      // A slot left empty by an older session: positions still have to follow
+      // the delivery order, not the raw slot numbering.
+      useGenerationStore.setState((state) => {
+        const next = { ...state.mediaInputs };
+        delete next["142:files::repeat::1"];
+        return { mediaInputs: next };
+      });
+
+      useGenerationStore.getState().moveMediaInput("142:files::repeat::2", 0);
+
+      expect(readOrder()).toEqual(["clip-2", "clip-0"]);
+    });
+
+    it("keeps a per-item switch with its media across a move", () => {
+      seedBatch(2);
+      useGenerationStore
+        .getState()
+        .setMediaInputItemOption("142:files::repeat::1", "audio", true);
+
+      useGenerationStore.getState().moveMediaInput("142:files::repeat::1", 0);
+
+      const moved = useGenerationStore.getState().mediaInputs["142:files"];
+      expect(moved?.kind === "asset" && moved.asset.id).toBe("clip-1");
+      expect(
+        moved?.kind === "asset" && moved.includeEmbeddedAudio,
+      ).toBe(true);
+      const trailing =
+        useGenerationStore.getState().mediaInputs["142:files::repeat::1"];
+      expect(
+        trailing?.kind === "asset" && trailing.includeEmbeddedAudio,
+      ).toBeUndefined();
+    });
+
+    it("front-packs the source batch when an item moves to another input", () => {
+      seedBatch(3);
+      useGenerationStore.setState((state) => ({
+        workflowInputs: [
+          ...state.workflowInputs,
+          {
+            id: "150:file",
+            nodeId: "150",
+            classType: "vloMemoryLoadVideo",
+            inputType: "video" as const,
+            param: "file",
+            label: "Single video",
+            currentValue: null,
+            origin: "rule" as const,
+          },
+        ],
+      }));
+
+      // The first item leaves the batch; what remains has to close up, or the
+      // next drop would fill the hole and land ahead of the survivors.
+      useGenerationStore.getState().reassignMediaInput("142:files", "150:file");
+
+      expect(readOrder()).toEqual(["clip-1", "clip-2"]);
+      const moved = useGenerationStore.getState().mediaInputs["150:file"];
+      expect(moved?.kind === "asset" && moved.asset.id).toBe("clip-0");
+      expect(
+        useGenerationStore.getState().mediaInputs["142:files::repeat::2"],
+      ).toBeUndefined();
+    });
+
+    it("keeps a per-item switch when the same media is re-prepared in place", () => {
+      seedBatch(1);
+      useGenerationStore
+        .getState()
+        .setMediaInputItemOption("142:files", "audio", true);
+      const { asset } = makeVideoAsset("clip-0");
+
+      useGenerationStore.getState().setMediaInputAsset("142:files", asset);
+
+      const value = useGenerationStore.getState().mediaInputs["142:files"];
+      expect(value?.kind === "asset" && value.includeEmbeddedAudio).toBe(true);
+    });
+
+    it("keeps a per-item switch across a re-render of the same selection", () => {
+      const selection = { start: 0, end: 100, clips: [] } as never;
+      const thumbnailFile = new File(["png"], "thumb.png", {
+        type: "image/png",
+      });
+      useGenerationStore.setState({
+        workflowInputs: [videoInput],
+        mediaInputs: {},
+      });
+      useGenerationStore
+        .getState()
+        .setMediaInputTimelineSelection("142:files", selection, thumbnailFile, {
+          mediaType: "video",
+          isExtracting: true,
+        });
+      useGenerationStore
+        .getState()
+        .setMediaInputItemOption("142:files", "audio", true);
+
+      // The extraction finishing rewrites the same selection in place.
+      useGenerationStore
+        .getState()
+        .setMediaInputTimelineSelection("142:files", selection, thumbnailFile, {
+          mediaType: "video",
+          isExtracting: false,
+          preparedVideoFile: new File(["mp4"], "clip.mp4"),
+        });
+
+      const value = useGenerationStore.getState().mediaInputs["142:files"];
+      expect(
+        value?.kind === "timelineSelection" &&
+          value.mediaType === "video" &&
+          value.includeEmbeddedAudio,
+      ).toBe(true);
+    });
+
+    it("drops a per-item switch when a different selection replaces the item", () => {
+      const thumbnailFile = new File(["png"], "thumb.png", {
+        type: "image/png",
+      });
+      useGenerationStore.setState({
+        workflowInputs: [videoInput],
+        mediaInputs: {},
+      });
+      useGenerationStore
+        .getState()
+        .setMediaInputTimelineSelection(
+          "142:files",
+          { start: 0, end: 100, clips: [] } as never,
+          thumbnailFile,
+          { mediaType: "video", isExtracting: false },
+        );
+      useGenerationStore
+        .getState()
+        .setMediaInputItemOption("142:files", "audio", true);
+
+      useGenerationStore
+        .getState()
+        .setMediaInputTimelineSelection(
+          "142:files",
+          { start: 500, end: 900, clips: [] } as never,
+          thumbnailFile,
+          { mediaType: "video", isExtracting: false },
+        );
+
+      const value = useGenerationStore.getState().mediaInputs["142:files"];
+      expect(
+        value?.kind === "timelineSelection" && value.mediaType === "video"
+          ? value.includeEmbeddedAudio
+          : undefined,
+      ).toBeUndefined();
+    });
+
+    it("drops a per-item switch when a different asset replaces the item", () => {
+      seedBatch(1);
+      useGenerationStore
+        .getState()
+        .setMediaInputItemOption("142:files", "audio", true);
+      const { asset } = makeVideoAsset("clip-9");
+
+      useGenerationStore.getState().setMediaInputAsset("142:files", asset);
+
+      const value = useGenerationStore.getState().mediaInputs["142:files"];
+      expect(
+        value?.kind === "asset" && value.includeEmbeddedAudio,
+      ).toBeUndefined();
+    });
+  });
 });

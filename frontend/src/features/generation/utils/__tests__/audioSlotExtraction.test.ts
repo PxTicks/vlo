@@ -18,6 +18,7 @@ import type { GenerationMediaInputValue } from "../../types";
 import {
   NO_ASSET_AUDIO_TRACK_MESSAGE,
   collectStalledAudioExtractions,
+  collectStalledSelectionExtractions,
   fillAudioSlotWithAsset,
   isAssetSlotExtractionCurrent,
 } from "../audioSlotExtraction";
@@ -276,5 +277,49 @@ describe("collectStalledAudioExtractions", () => {
         () => extracting,
       ),
     ).toEqual([{ inputId: "20:audio", asset: videoAsset }]);
+  });
+});
+
+describe("collectStalledSelectionExtractions", () => {
+  const extractingSelection = {
+    kind: "timelineSelection",
+    mediaType: "video",
+    isExtracting: true,
+    extractionRequestId: 2,
+    timelineSelection: { start: 0, end: 10, clips: [] },
+    thumbnailFile: new File(["png"], "thumb.png", { type: "image/png" }),
+  } as unknown as GenerationMediaInputValue;
+
+  it("reports a selection render left behind at the slot its value moved to", () => {
+    const slots: Record<string, GenerationMediaInputValue | null> = {
+      "142:files": null,
+      "142:files::repeat::1": extractingSelection,
+    };
+
+    expect(
+      collectStalledSelectionExtractions(
+        ["142:files", "142:files::repeat::1"],
+        (inputId) => slots[inputId] ?? null,
+      ),
+    ).toEqual([
+      { inputId: "142:files::repeat::1", value: extractingSelection },
+    ]);
+  });
+
+  it("ignores settled selections and asset values", () => {
+    expect(
+      collectStalledSelectionExtractions(["a", "b"], (inputId) =>
+        inputId === "a"
+          ? ({
+              ...(extractingSelection as object),
+              isExtracting: false,
+            } as GenerationMediaInputValue)
+          : ({
+              kind: "asset",
+              asset: videoAsset,
+              isExtracting: true,
+            } as GenerationMediaInputValue),
+      ),
+    ).toEqual([]);
   });
 });

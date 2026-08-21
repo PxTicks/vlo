@@ -1143,6 +1143,7 @@ export function buildWorkflowStoreState(
                 loadedState.setMediaInputFrameWithSelection,
               setMediaInputTimelineSelection:
                 loadedState.setMediaInputTimelineSelection,
+              setMediaInputItemOption: loadedState.setMediaInputItemOption,
             },
             { getMediaInputs: () => get().mediaInputs },
           );

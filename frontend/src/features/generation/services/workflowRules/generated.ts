@@ -313,6 +313,7 @@ export interface WorkflowRuleNodePresent {
 
 export interface WorkflowRuleRepeatableInput {
   max: number;
+  item_options?: Array<"audio"> | null;
 }
 
 export interface WorkflowRuleSelectionConfig {

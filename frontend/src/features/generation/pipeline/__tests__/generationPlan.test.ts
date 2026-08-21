@@ -129,6 +129,7 @@ function makeCacheEntry(): GenerationPreprocessCacheEntry {
       imageInputs: {},
       audioInputs: {},
       videoInputs: {},
+      batchInputOptions: {},
       pipelineInputs: {},
     },
     backendMedia: null,
@@ -217,6 +218,7 @@ describe("generationPlan cache media extraction", () => {
             >
           ).file,
         },
+        batchInputOptions: {},
         pipelineInputs: {},
       },
       backendMedia: {

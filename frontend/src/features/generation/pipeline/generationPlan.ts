@@ -29,6 +29,7 @@ import {
 import { throwIfAborted } from "./utils/abort";
 import { isMemoryLoaderClassType } from "../utils/workflowClassTypes";
 import type {
+  BatchInputOptions,
   DerivedMaskMapping,
   GenerationContributedEffectGroup,
   GenerationPlan,
@@ -85,6 +86,7 @@ interface CachedGenerationPreprocessAssets {
   imageInputs: Record<string, File>;
   audioInputs: Record<string, File>;
   videoInputs: Record<string, File>;
+  batchInputOptions: Record<string, BatchInputOptions>;
   pipelineInputs: Record<string, Record<string, unknown>>;
 }
 
@@ -177,6 +179,9 @@ function buildMediaSlotCacheDescriptor(
           {
             file: describeFileForCache(value.file),
             type: value.type,
+            ...(value.type === "video"
+              ? { includeEmbeddedAudio: value.includeEmbeddedAudio ?? null }
+              : {}),
           },
         ];
       }
@@ -193,6 +198,7 @@ function buildMediaSlotCacheDescriptor(
       return [
         inputId,
         {
+          includeEmbeddedAudio: value.includeEmbeddedAudio ?? null,
           preparedMaskFile: describeFileForCache(value.preparedMaskFile),
           preparedDerivedMaskSignature:
             value.preparedDerivedMaskSignature ?? null,
@@ -645,6 +651,7 @@ function buildGenerationRequestFromCache(
     imageInputs: cloneFileRecord(cacheEntry.assets.imageInputs),
     videoInputs: cloneFileRecord(cacheEntry.assets.videoInputs),
     audioInputs: cloneFileRecord(cacheEntry.assets.audioInputs),
+    batchInputOptions: { ...cacheEntry.assets.batchInputOptions },
     ...(backendMedia
       ? {
           // Keep cached backend references as an optimization, but they are no
@@ -673,6 +680,7 @@ export function buildGenerationPreprocessCacheEntry(
       imageInputs: cloneFileRecord(prepared.request.imageInputs),
       audioInputs: cloneFileRecord(prepared.request.audioInputs),
       videoInputs: cloneFileRecord(prepared.request.videoInputs),
+      batchInputOptions: { ...(prepared.request.batchInputOptions ?? {}) },
       pipelineInputs: cloneUnknownRecord(prepared.request.pipelineInputs ?? {}),
     },
     backendMedia: null,

@@ -55,8 +55,15 @@ class WorkflowRuleWarningModel(WorkflowRuleBaseModel):
     details: dict[str, Any] | None = None
 
 
+# Per-item switches a batch input offers inside its telescoping slot. "audio"
+# gives each reference video that carries a soundtrack its own speaker toggle,
+# so inclusion is decided per video instead of one flag for the whole batch.
+WorkflowRuleRepeatableItemOption = Literal["audio"]
+
+
 class WorkflowRuleRepeatableInput(WorkflowRuleBaseModel):
     max: int = Field(ge=1)
+    item_options: list[WorkflowRuleRepeatableItemOption] | None = None
 
 
 class WorkflowRuleNodePresent(WorkflowRuleBaseModel):

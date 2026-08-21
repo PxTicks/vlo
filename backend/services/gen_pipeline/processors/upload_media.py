@@ -32,6 +32,14 @@ BATCH_MEMORY_LOADER_NODE_TYPES = frozenset(
 )
 MEMORY_LOADER_DISABLE_PARAM = "disable_in_memory"
 
+# Per-item switches a batch loader accepts alongside its ordered media. Each
+# entry maps the submitted option key to the loader param that carries the
+# resulting flag list, and to the loaders that actually declare it.
+BATCH_INPUT_OPTION_PARAMS: dict[str, tuple[str, frozenset[str]]] = {
+    "include_audio": ("include_audio", frozenset({"vloMemoryLoadVideoBatch"})),
+}
+BATCH_INPUT_OPTION_KEYS = frozenset(BATCH_INPUT_OPTION_PARAMS)
+
 
 UploadMediaBytesFn = Callable[
     [Any, bytes, str, str],
@@ -114,25 +122,56 @@ def _set_memory_loader_injection(
     class_type: str,
     value: str,
     batch_index: int | None,
+    batch_option_injections: dict[tuple[str, str, str], dict[int, str]],
+    item_options: dict[str, Any] | None = None,
 ) -> None:
     node_injections = injections.setdefault(node_id, {})
-    if canonicalize_class_type(class_type) not in BATCH_MEMORY_LOADER_NODE_TYPES:
+    canonical_class_type = canonicalize_class_type(class_type)
+    if canonical_class_type not in BATCH_MEMORY_LOADER_NODE_TYPES:
         node_injections[param] = value
         return
 
     index = batch_index if isinstance(batch_index, int) and batch_index >= 0 else 0
     batch_injections.setdefault((node_id, param), {})[index] = value
+    for option_key, option_value in (item_options or {}).items():
+        option_param, supported_class_types = BATCH_INPUT_OPTION_PARAMS.get(
+            option_key, (None, frozenset())
+        )
+        if option_param is None or canonical_class_type not in supported_class_types:
+            continue
+        # Flags are carried as "1"/"0" and joined into the loader's
+        # comma-separated flag widget once the media order is known.
+        batch_option_injections.setdefault((node_id, param, option_param), {})[
+            index
+        ] = ("1" if _coerce_bool_like(option_value) else "0")
 
 
 def _apply_batch_memory_loader_injections(
     injections: dict[str, dict[str, Any]],
     batch_injections: dict[tuple[str, str], dict[int, str]],
+    batch_option_injections: dict[tuple[str, str, str], dict[int, str]],
 ) -> None:
     for (node_id, param), indexed_values in batch_injections.items():
         # Missing indices are compacted while supplied indices retain their
         # relative order. ComfyUI reserves bare arrays for output links.
-        values = [value for _, value in sorted(indexed_values.items())]
-        injections.setdefault(node_id, {})[param] = {"__value__": values}
+        ordered_indices = sorted(indexed_values)
+        injections.setdefault(node_id, {})[param] = {
+            "__value__": [indexed_values[index] for index in ordered_indices]
+        }
+        # Per-item flags are projected through the *media* index order, with a
+        # default for any item the user never touched. That keeps the two lists
+        # the same length and in the same order even when only some items carry
+        # an option, or when an upload dropped out of the batch entirely.
+        for (
+            option_node_id,
+            option_media_param,
+            option_param,
+        ), indexed_flags in batch_option_injections.items():
+            if option_node_id != node_id or option_media_param != param:
+                continue
+            injections.setdefault(node_id, {})[option_param] = ",".join(
+                indexed_flags.get(index, "0") for index in ordered_indices
+            )
 
 
 class _UploadMediaProcessor:
@@ -160,6 +199,7 @@ class _UploadMediaProcessor:
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
         batch_injections: dict[tuple[str, str], dict[int, str]] = {}
+        batch_option_injections: dict[tuple[str, str, str], dict[int, str]] = {}
         for buffered_input_id, media_info in ctx.buffered_media.items():
             node_id = media_info.get("node_id")
             param = media_info.get("param")
@@ -180,6 +220,10 @@ class _UploadMediaProcessor:
                 raw_batch_index
                 if isinstance(raw_batch_index, int) and raw_batch_index >= 0
                 else None
+            )
+            raw_item_options = media_info.get("item_options")
+            item_options = (
+                raw_item_options if isinstance(raw_item_options, dict) else None
             )
 
             if _should_use_in_memory_loader(
@@ -217,6 +261,8 @@ class _UploadMediaProcessor:
                             class_type=current_class_type,
                             value=current_memory_id,
                             batch_index=batch_index,
+                            batch_option_injections=batch_option_injections,
+                            item_options=item_options,
                         )
                         continue
 
@@ -270,6 +316,8 @@ class _UploadMediaProcessor:
                         class_type=current_class_type,
                         value=injected_value,
                         batch_index=batch_index,
+                        batch_option_injections=batch_option_injections,
+                        item_options=item_options,
                     )
                 elif mapping:
                     ctx.warnings.append(
@@ -284,7 +332,9 @@ class _UploadMediaProcessor:
                         )
                     )
 
-        _apply_batch_memory_loader_injections(ctx.injections, batch_injections)
+        _apply_batch_memory_loader_injections(
+            ctx.injections, batch_injections, batch_option_injections
+        )
         ctx.workflow = apply_injections(ctx.workflow, ctx.injections)
 
 

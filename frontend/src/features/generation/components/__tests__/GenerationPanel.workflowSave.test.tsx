@@ -104,6 +104,8 @@ function makeHookState(
     setUrlInput: vi.fn(),
     textValues: {},
     handleTextValuesCommit: vi.fn(),
+    handleMoveMediaInput: vi.fn(),
+    handleToggleMediaInputOption: vi.fn(),
     mediaInputs: {},
     latestPreviewUrl: null,
     previewAnimation: null,

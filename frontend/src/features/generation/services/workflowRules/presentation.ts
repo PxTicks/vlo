@@ -1,4 +1,4 @@
-import type { WorkflowInput } from "../../types";
+import type { WorkflowInput, WorkflowInputItemOption } from "../../types";
 import type {
   DerivedMaskMapping,
   ResolvePresentedInputsResult,
@@ -22,6 +22,9 @@ function resolveInputPresentation(
   const sectionId = present?.section_id?.trim();
   const groupId = present?.group_id?.trim();
   const repeatableMax = present?.repeatable?.max;
+  const itemOptions = (present?.repeatable?.item_options ?? []).filter(
+    (option): option is WorkflowInputItemOption => option === "audio",
+  );
   if (!sectionId && !groupId && typeof repeatableMax !== "number") {
     return undefined;
   }
@@ -51,6 +54,7 @@ function resolveInputPresentation(
       ? {
           repeatable: {
             max: Math.floor(repeatableMax),
+            ...(itemOptions.length > 0 ? { itemOptions } : {}),
           },
         }
       : {}),

@@ -19,6 +19,7 @@ import type {
   GenerationMediaInputValue,
   WorkflowSelectionConfig,
   WorkflowInput,
+  WorkflowInputItemOption,
   WorkflowWidgetInput,
 } from "../types";
 import type { SlotValue } from "../utils/pipeline";
@@ -67,11 +68,16 @@ import { resolveExistingAssetForExternalDrop } from "../utils/externalDropAsset"
 import { openDroppedVideoFrameExtraction } from "../utils/droppedVideoFrameExtraction";
 import {
   collectStalledAudioExtractions,
+  collectStalledSelectionExtractions,
   fillAudioSlotWithAsset,
   isAssetSlotExtractionCurrent,
 } from "../utils/audioSlotExtraction";
 import { isAudioSlotVideoAsset } from "../utils/audioSlotAssets";
 import { resolveSelectionConfigFps } from "../utils/selectionFps";
+import {
+  bumpSlotExtractionRequestIds,
+  pickChangedSlotIds,
+} from "../utils/slotExtractionRequests";
 import {
   hasProvidedMediaInputValue,
   resolveAssetFileForGeneration,
@@ -350,6 +356,10 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     (s) => s.setMediaInputTimelineSelection,
   );
   const reassignMediaInput = useGenerationStore((s) => s.reassignMediaInput);
+  const moveMediaInput = useGenerationStore((s) => s.moveMediaInput);
+  const setMediaInputItemOption = useGenerationStore(
+    (s) => s.setMediaInputItemOption,
+  );
   const clearMediaInput = useGenerationStore((s) => s.clearMediaInput);
   const pendingReplayPanelState = useGenerationStore(
     (s) => s.pendingReplayPanelState,
@@ -837,6 +847,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
                 type: "video",
                 file,
                 assetId: value.asset.id,
+                ...(typeof value.includeEmbeddedAudio === "boolean"
+                  ? { includeEmbeddedAudio: value.includeEmbeddedAudio }
+                  : {}),
               };
               continue;
             }
@@ -855,6 +868,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
                 pendingExtractionRequestId: value.isExtracting
                   ? value.extractionRequestId
                   : undefined,
+                ...(typeof value.includeEmbeddedAudio === "boolean"
+                  ? { includeEmbeddedAudio: value.includeEmbeddedAudio }
+                  : {}),
               };
             }
           }
@@ -1138,22 +1154,97 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   );
 
   /**
+   * Restarts a timeline-selection render at the slot the value now occupies.
+   * The caller has already invalidated the request the value arrived with, so
+   * whatever is still running for it will be discarded on completion.
+   */
+  const restartSelectionExtraction = useCallback(
+    (
+      inputId: string,
+      value: Extract<GenerationMediaInputValue, { kind: "timelineSelection" }>,
+    ) => {
+      const input = resolveWorkflowInputForSlot(inputId, workflowInputById);
+      const extractionRequestId =
+        (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
+      selectionExtractionRequestIdsRef.current[inputId] = extractionRequestId;
+      const { timelineSelection, thumbnailFile } = value;
+
+      setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
+        mediaType: value.mediaType,
+        isExtracting: true,
+        extractionRequestId,
+      });
+
+      if (value.mediaType === "audio") {
+        void extractAudioTimelineSelection({
+          inputId,
+          timelineSelection,
+          thumbnailFile,
+          extractionRequestId,
+          exportFps:
+            resolveSelectionConfigFps(
+              input?.dispatch?.selectionConfig,
+              Math.max(1, useProjectStore.getState().config.fps),
+            ) ?? undefined,
+          setMediaInputTimelineSelection,
+          selectionExtractionRequestIdsRef,
+        }).catch((error) => {
+          console.error(
+            "Failed to restart generation audio timeline selection",
+            error,
+          );
+        });
+        return;
+      }
+
+      void extractVideoTimelineSelection({
+        inputId,
+        inputNodeId: input?.nodeId,
+        timelineSelection,
+        thumbnailFile,
+        extractionRequestId,
+        mode,
+        derivedMaskMappings: useGenerationStore.getState().derivedMaskMappings,
+        setMediaInputTimelineSelection,
+        selectionExtractionRequestIdsRef,
+      }).catch((error) => {
+        console.error(
+          "Failed to restart generation video timeline selection",
+          error,
+        );
+      });
+    },
+    [mode, setMediaInputTimelineSelection, workflowInputById],
+  );
+
+  /**
    * Moving a value between slots orphans any extraction still running for it:
    * the in-flight request belongs to the slot it started in, so its result is
    * discarded, and the value would sit at its destination marked extracting
-   * forever. Restart extraction wherever a pending value came to rest.
+   * forever. Restart extraction wherever a pending value came to rest —
+   * dropped assets and timeline selections alike, since a stranded selection
+   * render leaves the value pending and generation waits on it.
    */
-  const restartPendingAudioExtractions = useCallback(
+  const restartPendingExtractions = useCallback(
     (inputIds: readonly string[]) => {
       const { mediaInputs } = useGenerationStore.getState();
-      const stalled = collectStalledAudioExtractions(inputIds, (inputId) =>
-        readWorkflowInputSlotValue(mediaInputs, inputId, workflowInputById),
-      );
-      for (const { inputId, asset } of stalled) {
+      const readSlot = (inputId: string) =>
+        readWorkflowInputSlotValue(mediaInputs, inputId, workflowInputById);
+
+      for (const { inputId, asset } of collectStalledAudioExtractions(
+        inputIds,
+        readSlot,
+      )) {
         assignAssetToInput(inputId, asset);
       }
+      for (const { inputId, value } of collectStalledSelectionExtractions(
+        inputIds,
+        readSlot,
+      )) {
+        restartSelectionExtraction(inputId, value);
+      }
     },
-    [assignAssetToInput, workflowInputById],
+    [assignAssetToInput, restartSelectionExtraction, workflowInputById],
   );
 
   /** Every slot id a repeatable input can occupy, including its base slot. */
@@ -1171,16 +1262,53 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     [workflowInputById],
   );
 
+  /**
+   * Runs a slot edit and repairs the extractions it disturbed.
+   *
+   * An in-flight extraction belongs to the slot it started in, so any slot the
+   * edit rewrites must have its request invalidated — otherwise a render that
+   * finishes afterwards writes into a slot it no longer owns, resurrecting a
+   * cleared item or duplicating a moved one. The slots that actually changed
+   * are compared rather than assumed, so an untouched item still extracting in
+   * the same batch is not thrown away and re-rendered for nothing. Everything
+   * here is synchronous, so no completion can interleave between the edit and
+   * the invalidation.
+   */
+  const applySlotMutation = useCallback(
+    (candidateSlotIds: readonly string[], mutate: () => void) => {
+      const slotIds = [...new Set(candidateSlotIds)];
+      const readSlots = () => {
+        const { mediaInputs } = useGenerationStore.getState();
+        return slotIds.map((slotId) =>
+          readWorkflowInputSlotValue(mediaInputs, slotId, workflowInputById),
+        );
+      };
+
+      const before = readSlots();
+      mutate();
+      const after = readSlots();
+
+      const changedSlotIds = pickChangedSlotIds(slotIds, before, after);
+      if (changedSlotIds.length === 0) return;
+
+      bumpSlotExtractionRequestIds(
+        selectionExtractionRequestIdsRef.current,
+        changedSlotIds,
+      );
+      restartPendingExtractions(changedSlotIds);
+    },
+    [restartPendingExtractions, workflowInputById],
+  );
+
   const handleInputClear = useCallback(
     (inputId: string) => {
-      selectionExtractionRequestIdsRef.current[inputId] =
-        (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
-      clearMediaInput(inputId);
-      // Clearing a repeatable slot shifts the later ones down, moving any
-      // pending value out from under its extraction.
-      restartPendingAudioExtractions(resolveSiblingSlotIds(inputId));
+      // Clearing a repeatable slot shifts every later one down, so the whole
+      // batch is in play, not just the slot being cleared.
+      applySlotMutation(resolveSiblingSlotIds(inputId), () =>
+        clearMediaInput(inputId),
+      );
     },
-    [clearMediaInput, resolveSiblingSlotIds, restartPendingAudioExtractions],
+    [applySlotMutation, clearMediaInput, resolveSiblingSlotIds],
   );
 
   const handleSwapMediaInputs = useCallback(
@@ -1189,14 +1317,34 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         return;
       }
 
-      selectionExtractionRequestIdsRef.current[sourceInputId] =
-        (selectionExtractionRequestIdsRef.current[sourceInputId] ?? 0) + 1;
-      selectionExtractionRequestIdsRef.current[targetInputId] =
-        (selectionExtractionRequestIdsRef.current[targetInputId] ?? 0) + 1;
-      reassignMediaInput(sourceInputId, targetInputId);
-      restartPendingAudioExtractions([sourceInputId, targetInputId]);
+      // A value leaving a batch front-packs what is left behind, so both
+      // inputs' slots can shift, not only the two being swapped.
+      applySlotMutation(
+        [
+          ...resolveSiblingSlotIds(sourceInputId),
+          ...resolveSiblingSlotIds(targetInputId),
+        ],
+        () => reassignMediaInput(sourceInputId, targetInputId),
+      );
     },
-    [reassignMediaInput, restartPendingAudioExtractions],
+    [applySlotMutation, reassignMediaInput, resolveSiblingSlotIds],
+  );
+
+  const handleMoveMediaInput = useCallback(
+    (sourceInputId: string, targetIndex: number) => {
+      // A move shifts every slot between source and destination.
+      applySlotMutation(resolveSiblingSlotIds(sourceInputId), () =>
+        moveMediaInput(sourceInputId, targetIndex),
+      );
+    },
+    [applySlotMutation, moveMediaInput, resolveSiblingSlotIds],
+  );
+
+  const handleToggleMediaInputOption = useCallback(
+    (inputId: string, option: WorkflowInputItemOption, active: boolean) => {
+      setMediaInputItemOption(inputId, option, active);
+    },
+    [setMediaInputItemOption],
   );
 
   const handleClickSelect = useCallback(
@@ -1802,6 +1950,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     handleExternalInputDrop,
     handleInputClear,
     handleSwapMediaInputs,
+    handleMoveMediaInput,
+    handleToggleMediaInputOption,
     handleClickSelect,
     handleEditMedia,
   };

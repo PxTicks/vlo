@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import {
   Box,
   TextField,
@@ -10,20 +10,30 @@ import {
   Tooltip,
 } from "@mui/material";
 import { Casino, InfoOutlined } from "@mui/icons-material";
-import { PanelSection, AssetDropSlot, CommittedTextInput } from "../../panelUI";
+import {
+  PanelSection,
+  AssetDropSlot,
+  AssetBatchDropSlot,
+  CommittedTextInput,
+} from "../../panelUI";
 import type { Asset, AssetType } from "../../../types/Asset";
 import { resolveAssetType } from "../../../shared/utils/assetTypeDetection";
 import {
   canDropAssetOnAudioSlot,
   isAudioSlotVideoAsset,
 } from "../utils/audioSlotAssets";
+import {
+  canValueCarryAudio,
+  readIncludeEmbeddedAudio,
+} from "../utils/mediaInputItemOptions";
 import type {
   GenerationMediaInputValue,
   WorkflowInput,
+  WorkflowInputItemOption,
   WorkflowWidgetInput,
 } from "../types";
 import type { WorkflowSection } from "../services/workflowRules";
-import type { AssetDropSlotValue } from "../../panelUI";
+import type { AssetBatchSlotItem, AssetDropSlotValue } from "../../panelUI";
 import {
   buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
@@ -42,6 +52,12 @@ interface GenerationInputsProps {
   onExternalInputDrop: (inputId: string, file: File) => void | Promise<void>;
   onInputClear: (inputId: string) => void;
   onSwapMediaInputs: (sourceInputId: string, targetInputId: string) => void;
+  onMoveMediaInput: (sourceInputId: string, targetIndex: number) => void;
+  onToggleMediaInputOption?: (
+    inputId: string,
+    option: WorkflowInputItemOption,
+    active: boolean,
+  ) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
   onEditMedia?: (inputId: string, inputType: "video") => void;
   widgetInputs: WorkflowWidgetInput[];
@@ -517,7 +533,7 @@ type RenderableInputBlock =
       input: MediaWorkflowInput;
     }
   | {
-      kind: "repeatableMedia";
+      kind: "batchMedia";
       sectionId: string;
       input: MediaWorkflowInput;
     }
@@ -532,7 +548,7 @@ type RenderableInputBlock =
 function getRenderableInputBlockPriority(block: RenderableInputBlock): number {
   switch (block.kind) {
     case "media":
-    case "repeatableMedia":
+    case "batchMedia":
     case "mediaGroup":
       return 0;
     case "text":
@@ -572,7 +588,7 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
     const mediaInput = input;
 
     if (mediaInput.presentation?.repeatable) {
-      blocks.push({ kind: "repeatableMedia", input: mediaInput, sectionId });
+      blocks.push({ kind: "batchMedia", input: mediaInput, sectionId });
       continue;
     }
 
@@ -912,7 +928,7 @@ function MediaInputSection({
 
 const MemoizedMediaInputSection = memo(MediaInputSection);
 
-interface RepeatableMediaInputSectionProps {
+interface BatchMediaInputSectionProps {
   input: MediaWorkflowInput;
   bgColor: string;
   mediaInputs: Record<string, GenerationMediaInputValue | null>;
@@ -920,12 +936,23 @@ interface RepeatableMediaInputSectionProps {
   onInputDrop: (inputId: string, asset: Asset) => void;
   onExternalInputDrop: (inputId: string, file: File) => void | Promise<void>;
   onInputClear: (inputId: string) => void;
+  onMoveMediaInput: (sourceInputId: string, targetIndex: number) => void;
   onSwapMediaInputs: (sourceInputId: string, targetInputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
   onEditMedia?: (inputId: string, inputType: "video") => void;
+  onToggleItemOption?: (
+    inputId: string,
+    option: WorkflowInputItemOption,
+    active: boolean,
+  ) => void;
 }
 
-function RepeatableMediaInputSection({
+/**
+ * A batch loader presented as one telescoping slot rather than a row of fixed
+ * slots: the strip holds exactly the references that were added, in the order
+ * the node will receive them, and offers a `+` while it is below its ceiling.
+ */
+function BatchMediaInputSection({
   input,
   bgColor,
   mediaInputs,
@@ -933,27 +960,92 @@ function RepeatableMediaInputSection({
   onInputDrop,
   onExternalInputDrop,
   onInputClear,
+  onMoveMediaInput,
   onSwapMediaInputs,
   onClickSelect,
   onEditMedia,
-}: RepeatableMediaInputSectionProps) {
+  onToggleItemOption,
+}: BatchMediaInputSectionProps) {
   const max = Math.max(1, Math.floor(input.presentation?.repeatable?.max ?? 1));
-  const visibleSlotIds = useMemo(() => {
-    let highestFilledIndex = -1;
+  const mediaInputType = input.inputType;
+  const itemOptions = input.presentation?.repeatable?.itemOptions;
+  const supportsAudioOption =
+    mediaInputType === "video" && itemOptions?.includes("audio") === true;
+  const slotLabelBase =
+    input.label.replace(/\s+inputs?$/i, "").trim() || input.label;
+
+  const items = useMemo<AssetBatchSlotItem[]>(() => {
+    const collected: AssetBatchSlotItem[] = [];
     for (let index = 0; index < max; index += 1) {
       const slotId = buildRepeatableInputSlotId(input, index);
       const value = index === 0 ? firstValue : mediaInputs[slotId];
-      if (value) {
-        highestFilledIndex = index;
-      }
+      const slotValue = toSlotValue(value, mediaInputType);
+      if (!value || !slotValue) continue;
+      collected.push({
+        slotId,
+        value: slotValue,
+        editable: mediaInputType === "video",
+        ...(supportsAudioOption && canValueCarryAudio(value)
+          ? {
+              options: [
+                {
+                  id: "audio",
+                  icon: "audio" as const,
+                  active: readIncludeEmbeddedAudio(value),
+                  label: "Include this video's audio as a reference",
+                  activeLabel: "Audio included as a reference",
+                },
+              ],
+            }
+          : {}),
+      });
     }
-    const visibleCount = Math.min(max, Math.max(1, highestFilledIndex + 2));
-    return Array.from({ length: visibleCount }, (_, index) =>
-      buildRepeatableInputSlotId(input, index),
-    );
-  }, [firstValue, input, max, mediaInputs]);
-  const acceptTypes = resolveAcceptTypes(input.inputType);
-  const slotLabelBase = input.label.replace(/\s+inputs?$/i, "").trim() || input.label;
+    return collected;
+  }, [firstValue, input, max, mediaInputs, mediaInputType, supportsAudioOption]);
+
+  /**
+   * Maps a strip position to the slot that backs it. Filled positions answer
+   * with their own slot; the trailing add tile answers with the first free
+   * slot, so a drop can never land on top of an occupied one even if the batch
+   * somehow holds a gap.
+   */
+  const slotIdAt = useCallback(
+    (index: number) => {
+      const item = items[index];
+      if (item) return item.slotId;
+      for (let candidate = 0; candidate < max; candidate += 1) {
+        const slotId = buildRepeatableInputSlotId(input, candidate);
+        const value = candidate === 0 ? firstValue : mediaInputs[slotId];
+        if (!value) return slotId;
+      }
+      return buildRepeatableInputSlotId(input, max - 1);
+    },
+    [firstValue, input, items, max, mediaInputs],
+  );
+
+  /**
+   * A drag can also arrive from another input's slot, which is a swap between
+   * two inputs rather than a move inside this batch. Route it the way it was
+   * routed before batches were a single slot.
+   */
+  const ownSlotIds = useMemo(() => {
+    const ids = new Set<string>([getWorkflowInputId(input), input.nodeId]);
+    for (let index = 0; index < max; index += 1) {
+      ids.add(buildRepeatableInputSlotId(input, index));
+    }
+    return ids;
+  }, [input, max]);
+
+  const handleReorder = useCallback(
+    (slotId: string, toIndex: number) => {
+      if (ownSlotIds.has(slotId)) {
+        onMoveMediaInput(slotId, toIndex);
+        return;
+      }
+      onSwapMediaInputs(slotId, slotIdAt(Math.min(toIndex, items.length)));
+    },
+    [items.length, onMoveMediaInput, onSwapMediaInputs, ownSlotIds, slotIdAt],
+  );
 
   return (
     <PanelSection title={input.label} bgColor={bgColor} defaultOpen={true}>
@@ -962,54 +1054,42 @@ function RepeatableMediaInputSection({
           {input.description}
         </Typography>
       ) : null}
-      <Box
-        sx={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 1.5,
-          alignItems: "flex-start",
-        }}
-      >
-        {visibleSlotIds.map((inputId, index) => {
-          const slotValue = toSlotValue(
-            index === 0 ? firstValue : mediaInputs[inputId],
-            input.inputType,
-          );
-          return (
-            <AssetDropSlot
-              key={inputId}
-              id={inputId}
-              label={`${slotLabelBase} ${index + 1}`}
-              accept={acceptTypes}
-              acceptAsset={acceptAssetForInputType(input.inputType)}
-              acceptExternal={resolveExternalAcceptTypes(input.inputType)}
-              value={slotValue}
-              reorderData={slotValue ? { type: "media-input", inputId } : null}
-              onReorderDrop={
-                slotValue
-                  ? (data) => onSwapMediaInputs(data.inputId, inputId)
-                  : undefined
-              }
-              onClear={() => onInputClear(inputId)}
-              onEdit={
-                input.inputType === "video" && slotValue && onEditMedia
-                  ? () => onEditMedia(inputId, "video")
-                  : undefined
-              }
-              onDrop={(asset: Asset) => onInputDrop(inputId, asset)}
-              onExternalDrop={(file: File) =>
-                onExternalInputDrop(inputId, file)
-              }
-              onSelect={() => onClickSelect(inputId, input.inputType)}
-            />
-          );
-        })}
-      </Box>
+      <AssetBatchDropSlot
+        id={getWorkflowInputId(input)}
+        accept={resolveAcceptTypes(mediaInputType)}
+        acceptAsset={acceptAssetForInputType(mediaInputType)}
+        acceptExternal={resolveExternalAcceptTypes(mediaInputType)}
+        items={items}
+        max={max}
+        itemLabel={(index) => `${slotLabelBase} ${index + 1}`}
+        onDrop={(index, asset) => onInputDrop(slotIdAt(index), asset)}
+        onExternalDrop={(index, file) =>
+          onExternalInputDrop(slotIdAt(index), file)
+        }
+        onSelect={(index) => onClickSelect(slotIdAt(index), mediaInputType)}
+        onClear={(slotId) => onInputClear(slotId)}
+        onEdit={
+          mediaInputType === "video" && onEditMedia
+            ? (slotId) => onEditMedia(slotId, "video")
+            : undefined
+        }
+        onReorder={handleReorder}
+        onToggleOption={
+          supportsAudioOption && onToggleItemOption
+            ? (slotId, optionId, nextActive) =>
+                onToggleItemOption(
+                  slotId,
+                  optionId as WorkflowInputItemOption,
+                  nextActive,
+                )
+            : undefined
+        }
+      />
     </PanelSection>
   );
 }
 
-const MemoizedRepeatableMediaInputSection = memo(RepeatableMediaInputSection);
+const MemoizedBatchMediaInputSection = memo(BatchMediaInputSection);
 
 interface MediaInputGroupSectionProps {
   title: string;
@@ -1512,8 +1592,8 @@ function getRenderableInputBlockKey(block: RenderableInputBlock): string {
       return `text:${getWorkflowInputId(block.input)}`;
     case "media":
       return `media:${getWorkflowInputId(block.input)}`;
-    case "repeatableMedia":
-      return `repeatable-media:${getWorkflowInputId(block.input)}`;
+    case "batchMedia":
+      return `batch-media:${getWorkflowInputId(block.input)}`;
     case "mediaGroup":
       return `media-group:${block.id}`;
   }
@@ -1528,6 +1608,8 @@ export const GenerationInputs = memo(function GenerationInputs({
   onExternalInputDrop,
   onInputClear,
   onSwapMediaInputs,
+  onMoveMediaInput,
+  onToggleMediaInputOption,
   onClickSelect,
   onEditMedia,
   widgetInputs,
@@ -1625,10 +1707,10 @@ export const GenerationInputs = memo(function GenerationInputs({
       );
     }
 
-    if (block.kind === "repeatableMedia") {
+    if (block.kind === "batchMedia") {
       return (
-        <MemoizedRepeatableMediaInputSection
-          key={key ?? `repeatable-media:${getWorkflowInputId(block.input)}`}
+        <MemoizedBatchMediaInputSection
+          key={key ?? `batch-media:${getWorkflowInputId(block.input)}`}
           input={block.input}
           bgColor={bgColor}
           mediaInputs={mediaInputs}
@@ -1640,9 +1722,11 @@ export const GenerationInputs = memo(function GenerationInputs({
           onInputDrop={onInputDrop}
           onExternalInputDrop={onExternalInputDrop}
           onInputClear={onInputClear}
+          onMoveMediaInput={onMoveMediaInput}
           onSwapMediaInputs={onSwapMediaInputs}
           onClickSelect={onClickSelect}
           onEditMedia={onEditMedia}
+          onToggleItemOption={onToggleMediaInputOption}
         />
       );
     }

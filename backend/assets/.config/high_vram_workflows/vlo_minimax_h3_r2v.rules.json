@@ -86,15 +86,6 @@
           "group_id": "reference_options",
           "group_title": "Reference Options",
           "group_order": 3
-        },
-        "use_embedded_video_audio": {
-          "label": "Use reference video audio",
-          "value_type": "boolean",
-          "default": false,
-          "section_id": "references",
-          "group_id": "reference_options",
-          "group_title": "Reference Options",
-          "group_order": 4
         }
       }
     },
@@ -119,7 +110,8 @@
         "class_type": "vloMemoryLoadVideoBatch",
         "section_id": "inputs",
         "repeatable": {
-          "max": 3
+          "max": 3,
+          "item_options": ["audio"]
         },
         "required": false
       },

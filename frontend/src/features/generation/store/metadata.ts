@@ -16,6 +16,7 @@ import {
 } from "../utils/inputSelection";
 import { buildDerivedMaskRenderSignature } from "../utils/derivedMaskRenderSignature";
 import { resolveSelectionConfigFps } from "../utils/selectionFps";
+import { readIncludeEmbeddedAudio } from "../utils/mediaInputItemOptions";
 import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
@@ -204,6 +205,7 @@ export async function restoreMediaInputsFromMetadata(
     | "setMediaInputAsset"
     | "setMediaInputFrameWithSelection"
     | "setMediaInputTimelineSelection"
+    | "setMediaInputItemOption"
   >,
   options: {
     /**
@@ -241,6 +243,13 @@ export async function restoreMediaInputsFromMetadata(
         ? input.inputId
         : getWorkflowInputId(workflowInput);
 
+    // Applied after the value lands, so it survives whichever setter seeded it.
+    const restoreItemOptions = () => {
+      if (input.includeEmbeddedAudio === true) {
+        actions.setMediaInputItemOption(inputId, "audio", true);
+      }
+    };
+
     if (input.kind === "draggedAsset") {
       const asset = getAssetById(input.parentAssetId);
       if (!asset) {
@@ -251,6 +260,7 @@ export async function restoreMediaInputsFromMetadata(
 
       if (workflowInput.inputType !== "audio") {
         actions.setMediaInputAsset(inputId, asset);
+        restoreItemOptions();
         continue;
       }
 
@@ -314,6 +324,9 @@ export async function restoreMediaInputsFromMetadata(
         extractionRequestId: 1,
       },
     );
+    // Set once here: the background extraction rewrites the same slot with the
+    // same media, which carries per-item switches forward.
+    restoreItemOptions();
 
     // Extraction renders run in the background — the caller observes
     // completion via the mediaInputs `isExtracting` flag. Holding the
@@ -486,11 +499,17 @@ export function buildGeneratedCreationMetadata(
       const inputId = buildRepeatableInputSlotId(workflowInput, index);
       const repeatableIdentity =
         workflowInput.presentation?.repeatable ? { inputId } : {};
+      // Per-item switches are part of what was generated, so a replay has to
+      // restore them alongside the media they belong to.
+      const itemOptions = readIncludeEmbeddedAudio(value)
+        ? { includeEmbeddedAudio: true as const }
+        : {};
 
       if (value.kind === "timelineSelection") {
         inputs.push({
           nodeId: workflowInput.nodeId,
           ...repeatableIdentity,
+          ...itemOptions,
           kind: "timelineSelection",
           timelineSelection: cloneTimelineSelectionForMetadata(
             value.timelineSelection,
@@ -515,6 +534,7 @@ export function buildGeneratedCreationMetadata(
         inputs.push({
           nodeId: workflowInput.nodeId,
           ...repeatableIdentity,
+          ...itemOptions,
           kind: "draggedAsset",
           parentAssetId: value.asset.id,
         });

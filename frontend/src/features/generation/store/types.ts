@@ -17,6 +17,7 @@ import type {
   GenerationMediaInputValue,
   GenerationPipelineStatus,
   WorkflowInput,
+  WorkflowInputItemOption,
   WorkflowLoadState,
   WorkflowMaskCroppingMode,
 } from "../types";
@@ -151,6 +152,17 @@ export interface GenerationWorkflowState {
     },
   ) => void;
   reassignMediaInput: (sourceInputId: string, targetInputId: string) => void;
+  /**
+   * Moves one batch item to `targetIndex` within its repeatable input, closing
+   * the gap behind it. Delivery order is slot order, so this is what reordering
+   * a batch strip means downstream.
+   */
+  moveMediaInput: (sourceInputId: string, targetIndex: number) => void;
+  setMediaInputItemOption: (
+    inputId: string,
+    option: WorkflowInputItemOption,
+    active: boolean,
+  ) => void;
   clearMediaInput: (inputId: string) => void;
   syncWorkflow: (
     workflow: Record<string, unknown> | null,

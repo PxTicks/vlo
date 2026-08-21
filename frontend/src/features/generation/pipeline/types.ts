@@ -76,6 +76,8 @@ export type SlotValue =
       // transparency-derived mask via renderAssetToMaskMp4 when this slot
       // also has derived mask mappings.
       assetId?: string;
+      // Per-item audio inclusion for a batch reference video.
+      includeEmbeddedAudio?: boolean;
     }
   | {
       type: "video_selection";
@@ -87,7 +89,20 @@ export type SlotValue =
       // still in flight. The dispatcher waits for the matching mediaInputs
       // entry to finish extracting before proceeding to preprocess.
       pendingExtractionRequestId?: number;
+      // Per-item audio inclusion for a batch reference video.
+      includeEmbeddedAudio?: boolean;
     };
+
+/**
+ * Per-item switches that travel with one batch upload, keyed by the same
+ * request key as the media part itself (`getNodeInputRequestKeyForSlot`).
+ * Keying them that way is what lets the backend build the loader's ordered
+ * flag list from the very same index map it compacts the media with, so the
+ * two lists cannot drift apart.
+ */
+export interface BatchInputOptions {
+  include_audio?: boolean;
+}
 
 export interface TimelineSelectionInputMetadata {
   startTick: number;
@@ -382,6 +397,7 @@ export interface FrontendPreprocessContext {
   imageInputs: Record<string, File>;
   audioInputs: Record<string, File>;
   videoInputs: Record<string, File>;
+  batchInputOptions: Record<string, BatchInputOptions>;
   pipelineInputs: Record<string, Record<string, unknown>>;
 }
 
@@ -403,6 +419,7 @@ export interface GenerationRequest {
   imageInputs: Record<string, File>;
   videoInputs: Record<string, File>;
   audioInputs: Record<string, File>;
+  batchInputOptions?: Record<string, BatchInputOptions>;
   cachedMediaInputs?: Record<string, Record<string, unknown>>;
   maskCropMode?: WorkflowMaskCroppingMode;
   maskCropDilation?: number;

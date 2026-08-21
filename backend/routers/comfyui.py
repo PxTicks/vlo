@@ -55,6 +55,7 @@ from services.workflow_rules.object_info import (
     set_object_info_cache,
 )
 from services.workflow_rules.input_labels import default_input_label
+from services.gen_pipeline.processors.upload_media import BATCH_INPUT_OPTION_KEYS
 from services.gen_pipeline.processors.validate_inputs import (
     collect_provided_input_ids_from_sources,
 )
@@ -1464,6 +1465,43 @@ async def generate(request: Request):
             if isinstance(input_id, str) and isinstance(value, dict)
         }
 
+    # Per-item switches for batch uploads, keyed by the same request key as the
+    # media part they belong to (`<nodeId>[_<param>]__repeat_<index>`). They
+    # ride with the media so the loader's flag list is built from the same
+    # index map the media list is compacted from.
+    batch_input_options: dict[tuple[str, str | None, int | None], dict[str, Any]] = {}
+    batch_input_options_json = form.get("batch_input_options")
+    if isinstance(batch_input_options_json, str) and batch_input_options_json.strip():
+        try:
+            parsed_batch_options = json.loads(batch_input_options_json)
+        except json.JSONDecodeError:
+            return error_response(
+                400,
+                "invalid_batch_input_options_payload",
+                "Batch input options payload must be valid JSON",
+                retryable=False,
+            )
+        if not isinstance(parsed_batch_options, dict):
+            return error_response(
+                400,
+                "invalid_batch_input_options_payload",
+                "Batch input options payload must be an object",
+                retryable=False,
+            )
+        for raw_key, raw_options in parsed_batch_options.items():
+            if not isinstance(raw_key, str) or not isinstance(raw_options, dict):
+                continue
+            options = {
+                option: value
+                for option, value in raw_options.items()
+                if option in BATCH_INPUT_OPTION_KEYS and isinstance(value, bool)
+            }
+            if not options:
+                continue
+            batch_input_options[
+                _parse_repeatable_node_input_form_key(raw_key)
+            ] = options
+
     # --- Collect injections from form fields ---
     injections: dict[str, dict[str, Any]] = {}
     workflow_warnings: list[dict[str, Any]] = []
@@ -1564,6 +1602,11 @@ async def generate(request: Request):
         buffer_key = f"{node_id}:{mapping['param']}"
         if batch_index is not None:
             buffer_key = f"{buffer_key}:{batch_index}"
+        # The submitted key may name the param explicitly or not at all; match
+        # both so an option lands on the item it was sent with.
+        item_options = batch_input_options.get(
+            (node_id, explicit_param, batch_index)
+        ) or batch_input_options.get((node_id, mapping["param"], batch_index))
         buffered_media[buffer_key] = {
             "node_id": node_id,
             "param": mapping["param"],
@@ -1573,6 +1616,7 @@ async def generate(request: Request):
             "content_type": content_type,
             "filename": filename_value,
             **({"batch_index": batch_index} if batch_index is not None else {}),
+            **({"item_options": dict(item_options)} if item_options else {}),
         }
 
     for key, value in form.multi_items():

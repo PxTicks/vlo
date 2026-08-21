@@ -64,6 +64,7 @@ function renderLoraPanel(rules: Record<string, unknown> | null) {
       onExternalInputDrop={vi.fn()}
       onInputClear={vi.fn()}
       onSwapMediaInputs={vi.fn()}
+      onMoveMediaInput={vi.fn()}
       onClickSelect={vi.fn()}
       widgetInputs={[...widgetInputs]}
       widgetValues={{}}
@@ -114,6 +115,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
           {
@@ -161,6 +163,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
           {
@@ -190,7 +193,7 @@ describe("GenerationInputs", () => {
     ).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("spawns repeatable media slots as preceding slots fill, up to the sidecar maximum", () => {
+  it("telescopes a batch input as it fills, up to the sidecar maximum", () => {
     const input = {
       id: "141:images",
       nodeId: "141",
@@ -223,6 +226,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[]}
         widgetValues={{}}
@@ -232,15 +236,17 @@ describe("GenerationInputs", () => {
       />
     );
 
+    // An empty batch is just the add tile; each filled item adds one more.
     const view = render(renderPanel({}));
     expect(document.querySelectorAll("[data-drop-slot-id]")).toHaveLength(1);
+    expect(
+      document.querySelector('[data-drop-slot-id="141:images-add"]'),
+    ).not.toBeNull();
 
     view.rerender(renderPanel({ "141": frameValue("first.png") }));
     expect(document.querySelectorAll("[data-drop-slot-id]")).toHaveLength(2);
     expect(
-      document.querySelector(
-        '[data-drop-slot-id="141:images::repeat::1"]',
-      ),
+      document.querySelector('[data-drop-slot-id="141:images"]'),
     ).not.toBeNull();
 
     view.rerender(
@@ -251,6 +257,7 @@ describe("GenerationInputs", () => {
     );
     expect(document.querySelectorAll("[data-drop-slot-id]")).toHaveLength(3);
 
+    // At the ceiling the add tile is gone, so the strip stops growing.
     view.rerender(
       renderPanel({
         "141:images": frameValue("first.png"),
@@ -259,6 +266,74 @@ describe("GenerationInputs", () => {
       }),
     );
     expect(document.querySelectorAll("[data-drop-slot-id]")).toHaveLength(3);
+    expect(
+      document.querySelector('[data-drop-slot-id="141:images-add"]'),
+    ).toBeNull();
+  });
+
+  it("offers the audio switch only on batch videos that can carry audio", () => {
+    const input = {
+      id: "142:files",
+      nodeId: "142",
+      classType: "vloMemoryLoadVideoBatch",
+      inputType: "video" as const,
+      param: "files",
+      label: "Video inputs",
+      currentValue: null,
+      origin: "rule" as const,
+      presentation: {
+        repeatable: { max: 3, itemOptions: ["audio" as const] },
+      },
+    };
+    const videoValue = (id: string, hasAudio: boolean) => ({
+      kind: "asset" as const,
+      asset: {
+        id,
+        hash: id,
+        name: `${id}.mp4`,
+        type: "video" as const,
+        src: `blob:${id}`,
+        createdAt: 1,
+        hasAudio,
+      },
+    });
+    const onToggleMediaInputOption = vi.fn();
+
+    render(
+      <GenerationInputs
+        inputs={[input]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{
+          "142:files": videoValue("with-audio", true),
+          "142:files::repeat::1": videoValue("silent", false),
+        }}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
+        onToggleMediaInputOption={onToggleMediaInputOption}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    const toggles = screen.getAllByRole("button", {
+      name: "Include this video's audio as a reference",
+    });
+    expect(toggles).toHaveLength(1);
+
+    fireEvent.click(toggles[0]);
+    expect(onToggleMediaInputOption).toHaveBeenCalledWith(
+      "142:files",
+      "audio",
+      true,
+    );
   });
 
   it("keeps the built-in inputs section ahead of explicitly ordered options", () => {
@@ -294,6 +369,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
           {
@@ -347,6 +423,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[]}
         widgetValues={{}}
@@ -383,6 +460,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
           {
@@ -476,6 +554,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[]}
         widgetValues={{}}
@@ -507,6 +586,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
           {
@@ -580,6 +660,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[]}
         widgetValues={{}}
@@ -611,6 +692,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
           {
@@ -684,6 +766,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[]}
         widgetValues={{}}
@@ -713,6 +796,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
           {
@@ -770,6 +854,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
           {
@@ -814,6 +899,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
           {
@@ -858,6 +944,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
           {
@@ -922,6 +1009,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={handleExternalInputDrop}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[]}
         widgetValues={{}}
@@ -974,6 +1062,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={handleExternalInputDrop}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[]}
         widgetValues={{}}
@@ -1034,6 +1123,7 @@ describe("GenerationInputs", () => {
           onExternalInputDrop={vi.fn()}
           onInputClear={vi.fn()}
           onSwapMediaInputs={vi.fn()}
+          onMoveMediaInput={vi.fn()}
           onClickSelect={vi.fn()}
           widgetInputs={[]}
           widgetValues={{}}
@@ -1115,6 +1205,7 @@ describe("GenerationInputs", () => {
         onExternalInputDrop={handleExternalInputDrop}
         onInputClear={vi.fn()}
         onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[]}
         widgetValues={{}}

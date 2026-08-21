@@ -1,5 +1,10 @@
 import type { Asset } from "../../../types/Asset";
-import type { GenerationMediaInputValue } from "../types";
+import type { TimelineSelection } from "../../../types/TimelineTypes";
+import type {
+  GenerationMediaInputValue,
+  WorkflowInput,
+  WorkflowInputItemOption,
+} from "../types";
 import {
   buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
@@ -45,6 +50,144 @@ function getExistingMediaInputValue(
   return null;
 }
 
+/**
+ * Reads the ordered contents of a repeatable input, densely: batch slots are
+ * kept contiguous (clearing shifts the tail down), so the list index is the
+ * delivery position the nodes will see.
+ */
+function readRepeatableSlotValues(
+  mediaInputs: Record<string, GenerationMediaInputValue | null>,
+  input: Pick<WorkflowInput, "id" | "nodeId" | "param">,
+  inputById: ReadonlyMap<string, Pick<WorkflowInput, "id" | "nodeId" | "param">>,
+  max: number,
+): Array<{ slotId: string; value: GenerationMediaInputValue }> {
+  const entries: Array<{ slotId: string; value: GenerationMediaInputValue }> = [];
+  for (let index = 0; index < max; index += 1) {
+    const slotId = buildRepeatableInputSlotId(input, index);
+    const keys =
+      index === 0 ? resolveWorkflowInputKeys(slotId, inputById) : [slotId];
+    const value = getExistingMediaInputValue(mediaInputs, keys);
+    if (value) {
+      entries.push({ slotId, value });
+    }
+  }
+  return entries;
+}
+
+/** Writes an ordered list back over a repeatable input's slots, front-packed. */
+function writeRepeatableSlotValues(
+  mediaInputs: Record<string, GenerationMediaInputValue | null>,
+  input: Pick<WorkflowInput, "id" | "nodeId" | "param">,
+  inputById: ReadonlyMap<string, Pick<WorkflowInput, "id" | "nodeId" | "param">>,
+  max: number,
+  values: readonly GenerationMediaInputValue[],
+): Record<string, GenerationMediaInputValue | null> {
+  const next = { ...mediaInputs };
+  for (let index = 0; index < max; index += 1) {
+    const slotId = buildRepeatableInputSlotId(input, index);
+    const keys =
+      index === 0 ? resolveWorkflowInputKeys(slotId, inputById) : [slotId];
+    for (const key of keys) {
+      delete next[key];
+    }
+    const value = values[index];
+    if (value) {
+      // The canonical key is the one the rest of the store reads through.
+      next[keys[0] ?? slotId] = value;
+    }
+  }
+  return next;
+}
+
+/**
+ * Front-packs a repeatable input so its occupied slots stay contiguous. Slot
+ * order is delivery order, and the panel presents the batch densely, so a hole
+ * left behind by a value moving out would silently reorder what the nodes
+ * receive the next time an item is added.
+ */
+function compactRepeatableInput(
+  mediaInputs: Record<string, GenerationMediaInputValue | null>,
+  input: Pick<WorkflowInput, "id" | "nodeId" | "param" | "presentation">,
+  inputById: ReadonlyMap<string, Pick<WorkflowInput, "id" | "nodeId" | "param">>,
+): Record<string, GenerationMediaInputValue | null> {
+  const repeatableMax = input.presentation?.repeatable?.max;
+  if (!repeatableMax) {
+    return mediaInputs;
+  }
+  const entries = readRepeatableSlotValues(
+    mediaInputs,
+    input,
+    inputById,
+    repeatableMax,
+  );
+  const isGapless = entries.every(
+    (entry, index) =>
+      entry.slotId === buildRepeatableInputSlotId(input, index),
+  );
+  if (isGapless) {
+    return mediaInputs;
+  }
+  return writeRepeatableSlotValues(
+    mediaInputs,
+    input,
+    inputById,
+    repeatableMax,
+    entries.map((entry) => entry.value),
+  );
+}
+
+/**
+ * Identity for a timeline selection as far as per-item switches are concerned:
+ * the same range over the same clips. Re-preparing a selection rewrites the
+ * value with an equal selection, while picking a new range produces a
+ * different one and must not inherit the previous item's switches.
+ */
+function isSameTimelineSelection(
+  previous: TimelineSelection,
+  next: TimelineSelection,
+): boolean {
+  if (previous === next) return true;
+  if (previous.start !== next.start || previous.end !== next.end) return false;
+  if (previous.clips.length !== next.clips.length) return false;
+  return previous.clips.every((clip, index) => clip.id === next.clips[index]?.id);
+}
+
+/**
+ * A batch item's per-item switches belong to the media, not to the slot it
+ * happens to occupy. Preparation rewrites a value in place (an extraction
+ * finishing, a selection re-rendered), so carry the switches across whenever
+ * the replacement is the same media.
+ */
+function carryForwardItemOptions(
+  previous: GenerationMediaInputValue | null,
+  next: GenerationMediaInputValue,
+): GenerationMediaInputValue {
+  if (!previous) return next;
+
+  const carry = (includeEmbeddedAudio: boolean | undefined) =>
+    typeof includeEmbeddedAudio === "boolean"
+      ? { ...next, includeEmbeddedAudio }
+      : next;
+
+  if (
+    previous.kind === "asset" &&
+    next.kind === "asset" &&
+    previous.asset.id === next.asset.id
+  ) {
+    return carry(previous.includeEmbeddedAudio);
+  }
+  if (
+    previous.kind === "timelineSelection" &&
+    previous.mediaType === "video" &&
+    next.kind === "timelineSelection" &&
+    next.mediaType === "video" &&
+    isSameTimelineSelection(previous.timelineSelection, next.timelineSelection)
+  ) {
+    return carry(previous.includeEmbeddedAudio);
+  }
+  return next;
+}
+
 export function buildMediaInputActions(
   set: GenerationStoreSet,
   get: GenerationStoreGet,
@@ -55,6 +198,8 @@ export function buildMediaInputActions(
   | "setMediaInputFrameWithSelection"
   | "setMediaInputTimelineSelection"
   | "reassignMediaInput"
+  | "moveMediaInput"
+  | "setMediaInputItemOption"
   | "clearMediaInput"
 > {
   return {
@@ -134,6 +279,75 @@ export function buildMediaInputActions(
         mediaInputs: reassignMediaInputs(get, sourceInputId, targetInputId),
       }),
 
+    moveMediaInput: (sourceInputId, targetIndex) => {
+      const { workflowInputs, mediaInputs } = get();
+      const inputById = buildWorkflowInputLookup(workflowInputs);
+      const workflowInput = resolveWorkflowInputForSlot(sourceInputId, inputById);
+      const repeatableMax = workflowInput?.presentation?.repeatable?.max;
+      if (!workflowInput || !repeatableMax) return;
+
+      const entries = readRepeatableSlotValues(
+        mediaInputs,
+        workflowInput,
+        inputById,
+        repeatableMax,
+      );
+      // Matched by slot rather than by slot index: the two only agree while the
+      // batch is gapless, and the move itself is what closes any gap.
+      const sourceSlotId = buildRepeatableInputSlotId(
+        workflowInput,
+        parseRepeatableInputSlotId(sourceInputId)?.index ?? 0,
+      );
+      const sourceIndex = entries.findIndex(
+        (entry) => entry.slotId === sourceSlotId,
+      );
+      if (sourceIndex < 0) return;
+      const destination = Math.max(
+        0,
+        Math.min(entries.length - 1, Math.floor(targetIndex)),
+      );
+      if (destination === sourceIndex) return;
+
+      const reordered = entries.map((entry) => entry.value);
+      const [moved] = reordered.splice(sourceIndex, 1);
+      reordered.splice(destination, 0, moved);
+      set({
+        mediaInputs: writeRepeatableSlotValues(
+          mediaInputs,
+          workflowInput,
+          inputById,
+          repeatableMax,
+          reordered,
+        ),
+      });
+    },
+
+    setMediaInputItemOption: (
+      inputId: string,
+      option: WorkflowInputItemOption,
+      active: boolean,
+    ) => {
+      if (option !== "audio") return;
+      const { workflowInputs, mediaInputs } = get();
+      const inputById = buildWorkflowInputLookup(workflowInputs);
+      const keys = resolveWorkflowInputKeys(inputId, inputById);
+      const existingKey = keys.find((key) =>
+        Object.prototype.hasOwnProperty.call(mediaInputs, key),
+      );
+      const value = existingKey ? mediaInputs[existingKey] : null;
+      if (!existingKey || !value) return;
+      if (value.kind === "frame") return;
+      if (value.kind === "timelineSelection" && value.mediaType !== "video") {
+        return;
+      }
+      set({
+        mediaInputs: {
+          ...mediaInputs,
+          [existingKey]: { ...value, includeEmbeddedAudio: active },
+        },
+      });
+    },
+
     clearMediaInput: (inputId) => {
       const { workflowInputs, mediaInputs } = get();
       const inputById = buildWorkflowInputLookup(workflowInputs);
@@ -188,9 +402,10 @@ function updateMediaInputs(
   const inputById = buildWorkflowInputLookup(workflowInputs);
   const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
   const canonicalInputId = inputKeys[0] ?? inputId;
+  const previous = getExistingMediaInputValue(mediaInputs, inputKeys);
   return {
     ...removeMediaInputEntries(mediaInputs, inputKeys),
-    [canonicalInputId]: value,
+    [canonicalInputId]: carryForwardItemOptions(previous, value),
   };
 }
 
@@ -241,5 +456,11 @@ function reassignMediaInputs(
     next[sourceCanonicalInputId] = targetValue;
   }
 
-  return next;
+  // Moving a value into an empty slot of another input empties the one it came
+  // from, which can leave a batch with a hole in the middle.
+  return compactRepeatableInput(
+    compactRepeatableInput(next, sourceInput, inputById),
+    targetInput,
+    inputById,
+  );
 }

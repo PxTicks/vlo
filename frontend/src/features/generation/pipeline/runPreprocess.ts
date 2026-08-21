@@ -106,6 +106,7 @@ export async function runFrontendPreprocess(
     imageInputs: {},
     audioInputs: {},
     videoInputs: {},
+    batchInputOptions: {},
     pipelineInputs: {},
   };
 
@@ -126,6 +127,7 @@ export async function runFrontendPreprocess(
     imageInputs: ctx.imageInputs,
     videoInputs: ctx.videoInputs,
     audioInputs: ctx.audioInputs,
+    batchInputOptions: ctx.batchInputOptions,
     maskCropMode: ctx.maskCropMode,
     maskCropDilation:
       ctx.maskCropMode === "full" ? undefined : ctx.maskCropDilation,

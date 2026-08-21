@@ -147,11 +147,18 @@ export interface WorkflowInputPresentationSection {
   id: string;
 }
 
+/**
+ * A per-item switch a batch input offers inside its telescoping slot. `audio`
+ * decides, per reference video, whether its own soundtrack is delivered.
+ */
+export type WorkflowInputItemOption = "audio";
+
 export interface WorkflowInputPresentation {
   section?: WorkflowInputPresentationSection;
   group?: WorkflowInputPresentationGroup;
   repeatable?: {
     max: number;
+    itemOptions?: WorkflowInputItemOption[];
   };
 }
 
@@ -184,6 +191,12 @@ export interface WorkflowDefinition {
 export interface GenerationAssetInputValue {
   kind: "asset";
   asset: Asset;
+  /**
+   * Per-item audio inclusion for a batch video reference. Carried on the value
+   * itself so it follows the media through reorders and clears instead of
+   * living in a parallel map that has to be kept in step.
+   */
+  includeEmbeddedAudio?: boolean;
   /**
    * Audio track pulled out of a video asset dropped on an audio slot. Only
    * populated for that case; audio assets are submitted as-is.
@@ -220,6 +233,8 @@ export interface GenerationAudioTimelineSelectionInputValue
 export interface GenerationVideoTimelineSelectionInputValue
   extends BaseGenerationTimelineSelectionInputValue {
   mediaType: "video";
+  /** See {@link GenerationAssetInputValue.includeEmbeddedAudio}. */
+  includeEmbeddedAudio?: boolean;
   preparedVideoFile: File | null;
   preparedMaskFile: File | null;
   preparedDerivedMaskSignature?: string | null;

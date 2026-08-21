@@ -23,12 +23,16 @@ export type GeneratedCreationInput =
       inputId?: string;
       kind: "timelineSelection";
       timelineSelection: TimelineSelection;
+      /** Per-item audio inclusion for a batch reference video. */
+      includeEmbeddedAudio?: boolean;
     }
   | {
       nodeId: string;
       inputId?: string;
       kind: "draggedAsset";
       parentAssetId: string;
+      /** Per-item audio inclusion for a batch reference video. */
+      includeEmbeddedAudio?: boolean;
     };
 
 export interface GeneratedCreationWorkflowSelectionConfig {

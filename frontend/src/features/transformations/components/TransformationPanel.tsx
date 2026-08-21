@@ -169,6 +169,8 @@ export function TransformationPanelSurface({
     handleAddTransform,
     handleAddTransformAfter,
     handleRemoveTransform,
+    handleResetDefaultGroups,
+    handleResetTransform,
     handleSetTransformEnabled,
     handleSetDefaultGroupsEnabled,
     handleCommit,
@@ -1003,6 +1005,7 @@ export function TransformationPanelSurface({
           timelineClip={domainClip}
           onCommit={handleCommit}
           onSetDefaultGroupsEnabled={handleSetDefaultGroupsEnabled}
+          onResetDefaultGroups={handleResetDefaultGroups}
           onUpdateTransform={updateActiveTransform}
           onSetTransforms={setActiveTransforms}
           onActivateSection={activateSection}
@@ -1066,6 +1069,14 @@ export function TransformationPanelSurface({
                     colorGradePositions.size < 2
                       ? undefined
                       : () => handleRemoveTransform(t.id)
+                  }
+                  onReset={
+                    // Color grades are permanent panel fixtures (the tab keeps
+                    // one materialized), so they reset in place instead of
+                    // being dropped like the other dynamic effects.
+                    getTransformationTab(t) === "color"
+                      ? () => handleResetTransform(t.id)
+                      : undefined
                   }
                   onCommit={handleCommit}
                   onCommitMany={handleCommitMany}

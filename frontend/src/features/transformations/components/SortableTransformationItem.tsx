@@ -2,6 +2,7 @@ import { Box } from "@mui/material";
 import { SortableSection } from "../../panelUI/components/SortableSection";
 import { TransformationGroup } from "./TransformationGroup";
 import { EffectMaskControl } from "./EffectMaskControl";
+import { TransformationResetButton } from "./TransformationResetButton";
 import type {
   ClipTransform,
   TimelineClip,
@@ -31,6 +32,8 @@ interface SortableTransformationItemProps {
   title: string;
   bgColor: string;
   onRemove?: () => void;
+  /** Present for sections that stay in the stack and reset in place. */
+  onReset?: () => void;
   onCommit: (
     groupId: string,
     controlName: string,
@@ -71,6 +74,7 @@ export function SortableTransformationItem({
   title,
   bgColor,
   onRemove,
+  onReset,
   onCommit,
   onCommitMany,
   minTime,
@@ -100,6 +104,20 @@ export function SortableTransformationItem({
     />
   ) : null;
 
+  const headerActions =
+    effectMaskAction || onReset ? (
+      <>
+        {effectMaskAction}
+        {onReset ? (
+          <TransformationResetButton
+            label={`Reset ${title}`}
+            tooltip={`Reset ${title} to defaults`}
+            onReset={onReset}
+          />
+        ) : null}
+      </>
+    ) : null;
+
   return (
     <SortableSection
       id={id}
@@ -111,7 +129,7 @@ export function SortableTransformationItem({
       onToggle={onToggle}
       isActive={isActiveSection}
       onSectionClick={onSectionClick}
-      headerActions={effectMaskAction}
+      headerActions={headerActions}
       showDragHandle={false}
       sectionToggle={{
         checked: isEnabled,

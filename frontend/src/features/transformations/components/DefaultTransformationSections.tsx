@@ -9,6 +9,7 @@ import { getTransformLayerDomain } from "../utils/layerDomain";
 import { getSectionGroupKeyframeColor } from "../utils/sectionKeyframes";
 import { getDefaultTransformationSectionModels } from "../utils/defaultSectionModels";
 import { TransformationGroup } from "./TransformationGroup";
+import { TransformationResetButton } from "./TransformationResetButton";
 import { TransformationSection } from "./TransformationSection";
 
 interface DefaultTransformationSectionsProps {
@@ -24,6 +25,8 @@ interface DefaultTransformationSectionsProps {
     transformId?: string,
   ) => void;
   onSetDefaultGroupsEnabled: (groupIds: string[], enabled: boolean) => void;
+  /** Drop the stored transforms for these groups, returning them to defaults. */
+  onResetDefaultGroups?: (groupIds: string[]) => void;
   onUpdateTransform?: (
     transformId: string,
     updates: Partial<Omit<ClipTransform, "id" | "type">>,
@@ -43,6 +46,16 @@ interface DefaultTransformationSectionsProps {
   restoreSnapshot?: (snapshot: unknown) => void;
 }
 
+/**
+ * Group titles are display-shouty ("SCALE (Multiplier)"), so reset affordances
+ * label themselves from the group id instead: "blendMode" -> "Blend Mode".
+ */
+function humanizeGroupId(groupId: string): string {
+  return groupId
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/^./, (character) => character.toUpperCase());
+}
+
 export function DefaultTransformationSections({
   definitions,
   activeTransforms,
@@ -51,6 +64,7 @@ export function DefaultTransformationSections({
   timelineClip,
   onCommit,
   onSetDefaultGroupsEnabled,
+  onResetDefaultGroups,
   onUpdateTransform,
   onSetTransforms,
   onActivateSection,
@@ -69,6 +83,12 @@ export function DefaultTransformationSections({
       return transform?.isEnabled ?? true;
     });
 
+    // A group is only resettable once it carries a stored transform — an
+    // absent transform already renders at its defaults.
+    const resettableGroupIds = groupIds.filter((groupId) =>
+      activeTransforms.some((item) => item.type === groupId),
+    );
+
     return (
       <TransformationSection
         key={section.sectionId}
@@ -78,6 +98,15 @@ export function DefaultTransformationSections({
         dimmed={dimmed}
         isActive={activeSectionId === section.sectionId}
         onSectionClick={() => onActivateSection(section.sectionId)}
+        headerActions={
+          onResetDefaultGroups && resettableGroupIds.length > 0 ? (
+            <TransformationResetButton
+              label={`Reset ${section.title}`}
+              tooltip={`Reset ${section.title} to defaults`}
+              onReset={() => onResetDefaultGroups(resettableGroupIds)}
+            />
+          ) : undefined
+        }
         sectionToggle={{
           checked: isSectionEnabled,
           onChange: (enabled) => onSetDefaultGroupsEnabled(groupIds, enabled),
@@ -96,6 +125,21 @@ export function DefaultTransformationSections({
               (item) => item.type === group.id,
             );
             const groupProps = getGroupProps?.(group.id, transform) ?? {};
+            // Per-group reset sits beside any group-specific header actions;
+            // the section header resets every group at once.
+            const groupHeaderActions =
+              onResetDefaultGroups && transform ? (
+                <>
+                  {groupProps.headerActions}
+                  <TransformationResetButton
+                    label={`Reset ${humanizeGroupId(group.id)}`}
+                    tooltip={`Reset ${humanizeGroupId(group.id)} to defaults`}
+                    onReset={() => onResetDefaultGroups([group.id])}
+                  />
+                </>
+              ) : (
+                groupProps.headerActions
+              );
             const domain = getTransformLayerDomain(timelineClip, transform?.id);
 
             return (
@@ -105,7 +149,7 @@ export function DefaultTransformationSections({
                 transform={transform}
                 disabled={groupProps.disabled}
                 disableKeyframe={groupProps.disableKeyframe}
-                headerActions={groupProps.headerActions}
+                headerActions={groupHeaderActions}
                 hideTitle={section.hideGroupTitles}
                 onCommit={onCommit}
                 minTime={domain.minTime}

@@ -476,6 +476,69 @@ export function useTransformationController(
     [applyTargetTransforms],
   );
 
+  /**
+   * Reset always-present ("default") groups by dropping their transforms from
+   * the stack entirely. Those sections render from the registry definition, so
+   * the UI keeps showing them with default values — the clip simply stops
+   * carrying the transform, its keyframes and its disabled state. Speed resets
+   * flow through applyTargetTransforms, so the clip's timeline shape is
+   * recomputed for the un-warped stack.
+   */
+  const handleResetDefaultGroups = useCallback(
+    (groupIds: string[]) => {
+      if (groupIds.length === 0) return;
+      const groupIdSet = new Set(groupIds);
+      const currentTransforms = activeTransformsRef.current;
+      const nextTransforms = currentTransforms.filter(
+        (transform) => !groupIdSet.has(transform.type),
+      );
+      if (nextTransforms.length === currentTransforms.length) return;
+      applyTargetTransforms(nextTransforms);
+    },
+    [applyTargetTransforms],
+  );
+
+  /**
+   * Reset a materialized transform in place: fresh default parameters, no
+   * keyframes, same id / stack position / enabled state / effect mask. Used by
+   * sections that must stay in the stack to keep their slot (the always-present
+   * color grade and any chained grades below it), where removal would mean
+   * losing the slot rather than returning it to defaults.
+   */
+  const handleResetTransform = useCallback(
+    (transformId: string) => {
+      const currentTransforms = activeTransformsRef.current;
+      const existing = currentTransforms.find(
+        (transform) => transform.id === transformId,
+      );
+      if (!existing) return;
+
+      const isFilter = existing.type === "filter";
+      const filterName = (existing as { filterName?: string }).filterName;
+      const fresh = createAddTransform(
+        isFilter ? (filterName ?? "") : existing.type,
+        isFilter,
+        existing.isEnabled,
+      );
+      if (!fresh) return;
+
+      applyTargetTransforms(
+        currentTransforms.map((transform) =>
+          transform.id === transformId
+            ? {
+                ...fresh,
+                id: existing.id,
+                ...(existing.effectMask
+                  ? { effectMask: existing.effectMask }
+                  : {}),
+              }
+            : transform,
+        ),
+      );
+    },
+    [applyTargetTransforms],
+  );
+
   const handleRemoveTransform = useCallback(
     (transformId: string) => {
       applyTargetTransforms(
@@ -635,6 +698,8 @@ export function useTransformationController(
     handleAddTransform,
     handleAddTransformAfter,
     handleRemoveTransform,
+    handleResetDefaultGroups,
+    handleResetTransform,
     handleSetTransformEnabled,
     handleSetDefaultGroupsEnabled,
     handleCommit,

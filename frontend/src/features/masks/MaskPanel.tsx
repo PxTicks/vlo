@@ -222,6 +222,7 @@ export const MaskPanel = memo(function MaskPanel() {
     setActiveTransforms: setSharedMaskTransforms,
     updateActiveTransform: updateSharedMaskTransform,
     handleSetDefaultGroupsEnabled: handleSetSharedMaskGroupsEnabled,
+    handleResetDefaultGroups: handleResetSharedMaskGroups,
     handleCommit: handleSharedMaskCommit,
   } = useTransformationController({ target: "maskComposite" });
   const {
@@ -231,6 +232,7 @@ export const MaskPanel = memo(function MaskPanel() {
     setActiveTransforms: setSelectedMaskTransforms,
     updateActiveTransform: updateSelectedMaskTransform,
     handleSetDefaultGroupsEnabled: handleSetSelectedMaskGroupsEnabled,
+    handleResetDefaultGroups: handleResetSelectedMaskGroups,
     handleCommit: handleSelectedMaskCommit,
   } = useTransformationController({ target: "mask" });
 
@@ -766,6 +768,7 @@ export const MaskPanel = memo(function MaskPanel() {
                   timelineClip={selectedMaskTimelineClip}
                   onCommit={handleSelectedMaskCommit}
                   onSetDefaultGroupsEnabled={handleSetSelectedMaskGroupsEnabled}
+                  onResetDefaultGroups={handleResetSelectedMaskGroups}
                   onUpdateTransform={updateSelectedMaskTransform}
                   onSetTransforms={setSelectedMaskTransforms}
                   onActivateSection={activateSelectedMaskSection}
@@ -887,6 +890,7 @@ export const MaskPanel = memo(function MaskPanel() {
                 timelineClip={selectedMaskTimelineClip}
                 onCommit={handleSelectedMaskCommit}
                 onSetDefaultGroupsEnabled={handleSetSelectedMaskGroupsEnabled}
+                onResetDefaultGroups={handleResetSelectedMaskGroups}
                 onUpdateTransform={updateSelectedMaskTransform}
                 onSetTransforms={setSelectedMaskTransforms}
                 onActivateSection={activateSelectedMaskSection}
@@ -1122,6 +1126,7 @@ export const MaskPanel = memo(function MaskPanel() {
                     timelineClip={sharedMaskTimelineClip}
                     onCommit={handleSharedMaskCommit}
                     onSetDefaultGroupsEnabled={handleSetSharedMaskGroupsEnabled}
+                    onResetDefaultGroups={handleResetSharedMaskGroups}
                     onUpdateTransform={updateSharedMaskTransform}
                     onSetTransforms={setSharedMaskTransforms}
                     onActivateSection={activateSharedSection}

@@ -87,9 +87,11 @@ describe("TransformationPanel toggles", () => {
       parameters: Record<string, unknown>;
     }>,
     maskClips: readonly MaskTimelineClip[] = [],
+    clipOverrides: Partial<typeof baseClip> = {},
   ) {
     const parentClip = {
       ...baseClip,
+      ...clipOverrides,
       transformations,
       ...(maskClips.length > 0
         ? {
@@ -320,5 +322,106 @@ describe("TransformationPanel toggles", () => {
       "true",
     );
     expect(useTransformationViewStore.getState().pathPanelView).toBe("home");
+  });
+
+  it("resets a default section by dropping its stored transforms", () => {
+    mockTimeline([
+      { id: "volume_1", type: "volume", isEnabled: true, parameters: { volume: 0.2 } },
+      { id: "pan_1", type: "pan", isEnabled: false, parameters: { pan: -0.5 } },
+      {
+        id: "color_1",
+        type: "filter",
+        filterName: "HslAdjustmentFilter",
+        isEnabled: true,
+        parameters: { hue: 0, saturation: 0 },
+      },
+    ]);
+
+    render(<TransformationPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "Audio" }));
+    fireEvent.click(screen.getByLabelText("Reset Audio"));
+
+    expect(mockSetClipTransforms).toHaveBeenCalledTimes(1);
+    const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
+    expect((nextTransforms as Array<{ id: string }>).map((t) => t.id)).toEqual([
+      "color_1",
+    ]);
+  });
+
+  it("resets a single default group without touching its siblings", () => {
+    mockTimeline([
+      { id: "position_1", type: "position", isEnabled: true, parameters: { x: 10, y: 20 } },
+      { id: "scale_1", type: "scale", isEnabled: true, parameters: { scaleX: 2, scaleY: 2 } },
+    ]);
+
+    render(<TransformationPanel />);
+    fireEvent.click(screen.getByLabelText("Reset Scale"));
+
+    expect(mockSetClipTransforms).toHaveBeenCalledTimes(1);
+    const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
+    expect((nextTransforms as Array<{ id: string }>).map((t) => t.id)).toEqual([
+      "position_1",
+    ]);
+  });
+
+  it("offers no reset for a default group that carries no transform", () => {
+    mockTimeline([]);
+
+    render(<TransformationPanel />);
+
+    expect(screen.queryByLabelText("Reset Display")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Reset Scale")).not.toBeInTheDocument();
+  });
+
+  it("restores the clip's timeline shape when speed is reset", () => {
+    mockTimeline(
+      [
+        { id: "speed_1", type: "speed", isEnabled: true, parameters: { speed: 2 } },
+      ],
+      [],
+      // Stored shape of a 10s source played at 2x.
+      {
+        timelineDuration: 5 * TICKS_PER_SECOND,
+        transformedDuration: 5 * TICKS_PER_SECOND,
+      },
+    );
+
+    render(<TransformationPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "Speed" }));
+    fireEvent.click(screen.getByLabelText("Reset Speed"));
+
+    expect(mockSetClipTransformsAndShape).toHaveBeenCalledTimes(1);
+    const [, nextTransforms, shape] =
+      mockSetClipTransformsAndShape.mock.calls[0];
+    expect(nextTransforms).toEqual([]);
+    expect((shape as { timelineDuration: number }).timelineDuration).toBe(
+      10 * TICKS_PER_SECOND,
+    );
+  });
+
+  it("resets a color grade in place so it keeps its slot in the stack", () => {
+    mockTimeline([
+      {
+        id: "grade_1",
+        type: "filter",
+        filterName: "ColorGradeFilter",
+        isEnabled: true,
+        parameters: { exposure: 1.5 },
+      },
+    ]);
+
+    render(<TransformationPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "Color" }));
+    fireEvent.click(screen.getByLabelText("Reset Color Grade"));
+
+    const resetCall = mockSetClipTransforms.mock.calls.at(-1);
+    expect(resetCall).toBeDefined();
+    const nextTransforms = resetCall![1] as Array<{
+      id: string;
+      parameters: Record<string, unknown>;
+    }>;
+    expect(nextTransforms).toHaveLength(1);
+    expect(nextTransforms[0].id).toBe("grade_1");
+    expect(nextTransforms[0].parameters.exposure).not.toBe(1.5);
   });
 });

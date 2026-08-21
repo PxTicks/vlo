@@ -3,16 +3,28 @@
   "name": "MiniMax H3 Reference to Video",
   "sections": [
     {
-      "id": "references",
-      "title": "References",
-      "order": 0,
-      "default_open": true
-    },
-    {
       "id": "video_generation",
       "title": "Video Generation",
       "order": 2,
       "default_open": true
+    },
+    {
+      "id": "lora_loaders",
+      "title": "LoRA loaders",
+      "order": 3,
+      "default_open": true
+    },
+    {
+      "id": "references",
+      "title": "References",
+      "order": 4,
+      "default_open": true
+    },
+    {
+      "id": "advanced_settings",
+      "title": "Advanced Settings",
+      "order": 5,
+      "default_open": false
     }
   ],
   "nodes": {
@@ -131,6 +143,29 @@
         },
         "required": false
       }
+    },
+    "145": {
+      "widgets": {
+        "attention": {
+          "label": "Attention backend",
+          "section_id": "advanced_settings",
+          "group_id": "model_patches",
+          "group_title": "Model",
+          "group_order": 0
+        }
+      }
+    },
+    "148": {
+      "widgets": {
+        "lora_name": {
+          "label": "Model",
+          "discover_when_bypassed": true,
+          "default_node_bypass": true,
+          "section_id": "lora_loaders",
+          "group_id": "lora_model",
+          "group_title": "Model LoRA"
+        }
+      }
     }
   },
   "validation": {
@@ -142,6 +177,17 @@
         "message": "Provide at least one image, video, or audio reference."
       }
     ]
+  },
+  "frontend_controls": {
+    "spectrum_enabled": {
+      "label": "MiniMax Spectrum",
+      "value_type": "boolean",
+      "default": true,
+      "section_id": "advanced_settings",
+      "group_id": "model_patches",
+      "group_title": "Model",
+      "group_order": 1
+    }
   },
   "derived_widgets": [],
   "rewrites": [
@@ -168,6 +214,18 @@
         "match": "all_missing"
       },
       "bypass": ["143"]
+    },
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "frontend_control",
+          "control_id": "spectrum_enabled"
+        },
+        "operator": "eq",
+        "value": false
+      },
+      "bypass": ["146"]
     }
   ],
   "effect_switches": [],

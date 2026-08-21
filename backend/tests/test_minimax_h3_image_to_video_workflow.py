@@ -193,6 +193,7 @@ def test_minimax_h3_image_to_video_lora_loader_defaults_to_none():
     rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
 
     lora = rules["nodes"]["150"]["widgets"]["lora_name"]
+    assert lora["discover_when_bypassed"] is True
     assert lora["default_node_bypass"] is True
     # The installed LoRA files are runtime data, so the sidecar must not pin an
     # option list; autodiscovery lends the enum and the None (bypass) choice.
@@ -201,10 +202,18 @@ def test_minimax_h3_image_to_video_lora_loader_defaults_to_none():
 
     workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
     loader = next(node for node in workflow["nodes"] if node["id"] == 150)
-    # Autodiscovery only surfaces active loaders, so the node itself must ship
-    # enabled; the panel is what starts it bypassed.
     assert loader["type"] == "LoraLoaderModelOnly"
-    assert loader["mode"] == 0
+    # The loader ships bypassed, and that is load-bearing rather than cosmetic:
+    # ComfyUI's missing-model scan skips mode 2 and 4 nodes, so this is what
+    # stops the placeholder LoRA below from raising the download dialog for
+    # every user who does not happen to have that file. `discover_when_bypassed`
+    # is what lets the panel present the loader anyway, and picking a model
+    # activates the node for that submission only.
+    assert loader["mode"] == 4
+    # Re-saving the graph with the loader switched on would silently restore the
+    # dialog, so the placeholder name is pinned here as the thing to look at if
+    # that ever regresses.
+    assert loader["widgets_values_named"]["lora_name"].endswith(".safetensors")
 
 
 def test_minimax_h3_image_to_video_advanced_settings_toggle_model_patches():

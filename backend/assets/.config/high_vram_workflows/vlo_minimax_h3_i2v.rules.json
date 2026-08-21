@@ -113,6 +113,7 @@
       "widgets": {
         "lora_name": {
           "label": "Model",
+          "discover_when_bypassed": true,
           "default_node_bypass": true,
           "section_id": "lora_loaders",
           "group_id": "lora_model",

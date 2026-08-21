@@ -1447,68 +1447,6 @@
       }
     },
     {
-      "id": 150,
-      "type": "LoraLoaderModelOnly",
-      "pos": [
-        -760.7638880185406,
-        4555.004590087017
-      ],
-      "size": [
-        270,
-        82
-      ],
-      "flags": {},
-      "order": 14,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "model",
-          "name": "model",
-          "type": "MODEL",
-          "link": 233
-        },
-        {
-          "localized_name": "lora_name",
-          "name": "lora_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "lora_name"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "strength_model",
-          "name": "strength_model",
-          "type": "FLOAT",
-          "widget": {
-            "name": "strength_model"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "MODEL",
-          "name": "MODEL",
-          "type": "MODEL",
-          "links": [
-            235
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "LoraLoaderModelOnly"
-      },
-      "widgets_values": [
-        "Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
-        1
-      ],
-      "widgets_values_named": {
-        "lora_name": "Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
-        "strength_model": 1
-      }
-    },
-    {
       "id": 151,
       "type": "ModelAttentionBackend",
       "pos": [
@@ -1735,6 +1673,68 @@
           "paused": false,
           "params": {}
         }
+      }
+    },
+    {
+      "id": 150,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -760.7638880185406,
+        4555.004590087017
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 4,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 233
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            235
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
+        "strength_model": 1
       }
     }
   ],
@@ -2039,8 +2039,8 @@
     "ds": {
       "scale": 0.6595178310096934,
       "offset": [
-        21.206525740227605,
-        -4695.2694843121835
+        1450.5336389831175,
+        -4384.94173062828
       ]
     },
     "frontendVersion": "1.47.12",

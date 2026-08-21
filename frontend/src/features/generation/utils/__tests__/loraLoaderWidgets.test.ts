@@ -4,9 +4,12 @@ import { buildGenerationNodeCatalogue } from "../../services/workflowNodeCatalog
 import {
   LORA_BYPASS_CHOICE,
   LORA_LOADERS_SECTION_ID,
+  collectBypassDiscoveryDiagnostics,
+  collectBypassDiscoveryNodeIds,
   mergeAutodiscoveredLoraWidgetInputs,
   resolveAutodiscoveredLoraWidgetInputs,
 } from "../loraLoaderWidgets";
+import type { WorkflowRules } from "../../services/workflowRules";
 
 const LORA_OBJECT_INFO = {
   LoraLoaderModelOnly: {
@@ -27,10 +30,44 @@ function discoverLoraWidgets(
   workflow: Record<string, unknown> | null,
   objectInfo: Record<string, unknown> | null,
   graphData: Record<string, unknown> | null,
+  bypassDiscoveryNodeIds?: ReadonlySet<string>,
 ) {
   return resolveAutodiscoveredLoraWidgetInputs(
     buildGenerationNodeCatalogue(workflow, objectInfo, graphData),
+    bypassDiscoveryNodeIds,
   );
+}
+
+const OPTIONAL_LORA_WORKFLOW = {
+  "4": {
+    class_type: "LoraLoaderModelOnly",
+    inputs: { lora_name: "detail.safetensors", strength_model: 1 },
+    _meta: { title: "Optional detail" },
+  },
+};
+
+function optionalLoraGraph(mode: number) {
+  return {
+    nodes: [
+      {
+        id: 4,
+        type: "LoraLoaderModelOnly",
+        title: "Optional detail",
+        mode,
+        widgets_values: ["detail.safetensors", 1],
+      },
+    ],
+  };
+}
+
+function rulesWithBypassDiscovery(nodeId: string): WorkflowRules {
+  return {
+    nodes: {
+      [nodeId]: {
+        widgets: { lora_name: { discover_when_bypassed: true } },
+      },
+    },
+  } as unknown as WorkflowRules;
 }
 
 describe("autodiscovered LoRA widget inputs", () => {
@@ -274,8 +311,96 @@ describe("autodiscovered LoRA widget inputs", () => {
             value: LORA_BYPASS_CHOICE,
             label: "None (bypass)",
           },
+          nodeShipsBypassed: undefined,
+          defaultNodeBypass: undefined,
         },
       },
     ]);
+  });
+});
+
+describe("loaders the workflow ships bypassed", () => {
+  it("stays hidden without a rule opting the node in", () => {
+    expect(
+      discoverLoraWidgets(
+        OPTIONAL_LORA_WORKFLOW,
+        LORA_OBJECT_INFO,
+        optionalLoraGraph(4),
+      ),
+    ).toEqual([]);
+  });
+
+  it("surfaces an opted-in loader, off by default", () => {
+    const [widget] = discoverLoraWidgets(
+      OPTIONAL_LORA_WORKFLOW,
+      LORA_OBJECT_INFO,
+      optionalLoraGraph(4),
+      collectBypassDiscoveryNodeIds(rulesWithBypassDiscovery("4")),
+    );
+
+    expect(widget?.config).toMatchObject({
+      sectionId: LORA_LOADERS_SECTION_ID,
+      nodeBypassOption: { value: LORA_BYPASS_CHOICE },
+      nodeShipsBypassed: true,
+      // The panel opens on "None" whatever stale filename the file carries.
+      defaultNodeBypass: true,
+    });
+    expect(widget?.config.options).toEqual([
+      "base.safetensors",
+      "detail.safetensors",
+    ]);
+  });
+
+  it("leaves an opted-in loader that ships active exactly as before", () => {
+    const [widget] = discoverLoraWidgets(
+      OPTIONAL_LORA_WORKFLOW,
+      LORA_OBJECT_INFO,
+      optionalLoraGraph(0),
+      collectBypassDiscoveryNodeIds(rulesWithBypassDiscovery("4")),
+    );
+
+    expect(widget?.config.nodeShipsBypassed).toBeUndefined();
+    expect(widget?.config.defaultNodeBypass).toBeUndefined();
+  });
+
+  it("never reaches a muted node, whose outputs are gone either way", () => {
+    expect(
+      discoverLoraWidgets(
+        OPTIONAL_LORA_WORKFLOW,
+        LORA_OBJECT_INFO,
+        optionalLoraGraph(2),
+        collectBypassDiscoveryNodeIds(rulesWithBypassDiscovery("4")),
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports an opt-in the workflow was re-saved out of", () => {
+    const nodes = buildGenerationNodeCatalogue(
+      OPTIONAL_LORA_WORKFLOW,
+      LORA_OBJECT_INFO,
+      optionalLoraGraph(0),
+    );
+    const optedIn = collectBypassDiscoveryNodeIds(
+      rulesWithBypassDiscovery("4"),
+    );
+
+    expect(collectBypassDiscoveryDiagnostics(nodes, optedIn)).toEqual([
+      expect.stringContaining("ships active"),
+    ]);
+  });
+
+  it("says nothing while the node still ships bypassed", () => {
+    const nodes = buildGenerationNodeCatalogue(
+      OPTIONAL_LORA_WORKFLOW,
+      LORA_OBJECT_INFO,
+      optionalLoraGraph(4),
+    );
+
+    expect(
+      collectBypassDiscoveryDiagnostics(
+        nodes,
+        collectBypassDiscoveryNodeIds(rulesWithBypassDiscovery("4")),
+      ),
+    ).toEqual([]);
   });
 });

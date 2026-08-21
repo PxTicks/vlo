@@ -72,6 +72,8 @@ export interface GeneratedCreationReplayState {
   derivedWidgetValues?: Record<string, string>;
   /** Native panel node bypasses that must be restored when replaying. */
   bypassNodeIds?: string[];
+  /** Nodes shipping bypassed that the panel turned on. */
+  activateNodeIds?: string[];
   exactAspectRatio?: boolean;
   pipelineInputs?: Record<string, Record<string, unknown>>;
   maskCropMode?: "crop" | "full";

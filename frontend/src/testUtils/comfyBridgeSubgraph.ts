@@ -318,6 +318,7 @@ export async function resolveScopedPrompt(
   requestId: string,
   effects: {
     bypassNodeIds?: readonly string[];
+    activateNodeIds?: readonly string[];
     // `value` is optional to match the pipeline's own `WidgetOverride`, so a
     // built bridge payload can be passed straight through.
     widgetOverrides?: ReadonlyArray<{
@@ -361,6 +362,7 @@ export async function resolveScopedPrompt(
     payload: {
       ...snapshot,
       bypassNodeIds: effects.bypassNodeIds ?? [],
+      activateNodeIds: effects.activateNodeIds ?? [],
       widgetOverrides: effects.widgetOverrides ?? [],
     },
   });

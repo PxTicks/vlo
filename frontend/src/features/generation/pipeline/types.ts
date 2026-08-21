@@ -191,6 +191,8 @@ export interface GenerationSubmissionPlan {
   derivedWidgetInputs: Record<string, string>;
   widgetModes: Record<string, "fixed" | "randomize">;
   bypassNodeIds: string[];
+  /** Nodes shipping `mode: 4` that this submission turns on. */
+  activateNodeIds: string[];
   /** Contributions captured once, at submission time. Never re-invoked. */
   contributedEffects: readonly GenerationContributedEffectGroup[];
 }
@@ -251,6 +253,12 @@ export type GenerationGraphEffect =
       readonly source: GenerationEffectSource;
     }
   | {
+      /** Clear a node's shipped `mode: 4` for this submission. */
+      readonly kind: "activate-nodes";
+      readonly nodeIds: readonly string[];
+      readonly source: GenerationEffectSource;
+    }
+  | {
       readonly kind: "set-widget";
       readonly target: GenerationWidgetTarget;
       readonly value: GenerationEffectJsonValue;
@@ -263,6 +271,8 @@ export interface GenerationEffectDiagnostic {
     | "invalid-target"
     | "invalid-value"
     | "widget-collision"
+    /** One node was asked to be both bypassed and activated. */
+    | "node-mode-collision"
     /** A submission contributor threw, or could not be run at all. */
     | "contributor-failed";
   readonly source: GenerationEffectSource;
@@ -304,6 +314,7 @@ export interface GenerationContributedEffectGroup {
   readonly source: GenerationExtensionEffectSource;
   readonly workflow: GenerationContributionWorkflowIdentity;
   readonly bypassNodeIds: readonly string[];
+  readonly activateNodeIds?: readonly string[];
   readonly widgetOverrides: readonly GenerationContributedWidgetOverride[];
   readonly diagnostics: readonly GenerationEffectDiagnostic[];
 }

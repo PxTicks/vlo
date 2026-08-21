@@ -225,6 +225,7 @@ function makePlan(options: {
       widgetModes: {},
       derivedWidgetInputs: {},
       bypassNodeIds: [],
+      activateNodeIds: [],
       contributedEffects: options.contributedEffects ?? [],
     },
     metadata: {

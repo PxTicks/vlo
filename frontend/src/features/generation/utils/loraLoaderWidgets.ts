@@ -2,8 +2,13 @@ import type {
   GenerationNodeSnapshot,
   GenerationWidgetSnapshot,
 } from "../services/generationSessionTypes";
+import type { WorkflowRules } from "../services/workflowRules";
 import type { WorkflowWidgetInput } from "../types";
 import { getNodeBypassWidgetKey } from "./nodeBypassWidgets";
+
+const BYPASS_MODE = 4;
+
+const EMPTY_NODE_IDS: ReadonlySet<string> = new Set<string>();
 
 export const LORA_BYPASS_CHOICE = "vlo.lora-loader:none";
 export const LORA_LOADERS_SECTION_ID = "lora_loaders";
@@ -25,10 +30,32 @@ function findModelWidget(
     : null;
 }
 
+/** Read discovery opt-ins before the corresponding widgets are resolved. */
+export function collectBypassDiscoveryNodeIds(
+  rules: WorkflowRules | null | undefined,
+): ReadonlySet<string> {
+  const nodeIds = new Set<string>();
+  for (const [nodeId, nodeRule] of Object.entries(rules?.nodes ?? {})) {
+    if (nodeRule.ignore) continue;
+    for (const entry of Object.values(nodeRule.widgets ?? {})) {
+      if (entry.discover_when_bypassed === true) {
+        nodeIds.add(nodeId);
+        break;
+      }
+    }
+  }
+  return nodeIds;
+}
+
 function toLoraWidgetInput(
   node: GenerationNodeSnapshot,
+  bypassDiscoveryNodeIds: ReadonlySet<string>,
 ): WorkflowWidgetInput | null {
-  if (node.mode !== 0 || !isLoraLoaderClass(node.classType)) return null;
+  // Muted nodes drop their outputs and cannot be made usable here.
+  const shipsBypassed = node.mode === BYPASS_MODE;
+  const discoverable =
+    node.mode === 0 || (shipsBypassed && bypassDiscoveryNodeIds.has(node.id));
+  if (!discoverable || !isLoraLoaderClass(node.classType)) return null;
   const widget = findModelWidget(node);
   if (!widget) return null;
 
@@ -56,6 +83,14 @@ function toLoraWidgetInput(
         value: LORA_BYPASS_CHOICE,
         label: "None (bypass)",
       },
+      // Ignore the stored model name until the user turns this loader on.
+      ...(shipsBypassed
+        ? {
+            nodeShipsBypassed: true,
+            defaultNodeBypass: true,
+            discoverWhenBypassed: true,
+          }
+        : {}),
     },
   };
 }
@@ -66,11 +101,35 @@ function toLoraWidgetInput(
  */
 export function resolveAutodiscoveredLoraWidgetInputs(
   nodes: readonly GenerationNodeSnapshot[],
+  bypassDiscoveryNodeIds: ReadonlySet<string> = EMPTY_NODE_IDS,
 ): readonly WorkflowWidgetInput[] {
   return nodes.flatMap((node) => {
-    const input = toLoraWidgetInput(node);
+    const input = toLoraWidgetInput(node, bypassDiscoveryNodeIds);
     return input ? [input] : [];
   });
+}
+
+/** Report discovery opt-ins that no longer target a bypassed node. */
+export function collectBypassDiscoveryDiagnostics(
+  nodes: readonly GenerationNodeSnapshot[],
+  bypassDiscoveryNodeIds: ReadonlySet<string>,
+): readonly string[] {
+  if (bypassDiscoveryNodeIds.size === 0) return [];
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const diagnostics: string[] = [];
+  for (const nodeId of bypassDiscoveryNodeIds) {
+    const node = byId.get(nodeId);
+    if (!node) continue;
+    if (node.mode === BYPASS_MODE) continue;
+    diagnostics.push(
+      node.mode === 0
+        ? `Node ${nodeId} (${node.title || node.classType}) sets discover_when_bypassed, but ships active — ` +
+            "its model will still be reported missing. Re-save the workflow with the node bypassed."
+        : `Node ${nodeId} (${node.title || node.classType}) sets discover_when_bypassed, but ships with mode ` +
+            `${node.mode}; only bypassed (4) nodes can be turned on from the panel.`,
+    );
+  }
+  return diagnostics;
 }
 
 /**
@@ -107,6 +166,11 @@ export function mergeAutodiscoveredLoraWidgetInputs(
         valueType: widget.config.valueType ?? discovered.config.valueType,
         options: widget.config.options ?? discovered.config.options,
         nodeBypassOption: discovered.config.nodeBypassOption,
+        // Not presentation: which way the submission has to move the node is
+        // a fact about the workflow file, so a sidecar cannot override it.
+        nodeShipsBypassed: discovered.config.nodeShipsBypassed,
+        defaultNodeBypass:
+          discovered.config.defaultNodeBypass ?? widget.config.defaultNodeBypass,
       },
     };
   });

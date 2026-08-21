@@ -467,6 +467,7 @@ export function buildGeneratedCreationMetadata(
     widgetModes: Record<string, "fixed" | "randomize">;
     derivedWidgetInputs: Record<string, string>;
     bypassNodeIds?: readonly string[];
+    activateNodeIds?: readonly string[];
   },
 ): GeneratedCreationMetadata {
   const inputs: GeneratedCreationMetadata["inputs"] = [];
@@ -530,6 +531,7 @@ export function buildGeneratedCreationMetadata(
     widgetModes: options.widgetModes,
     derivedWidgetInputs: options.derivedWidgetInputs,
     bypassNodeIds: options.bypassNodeIds,
+    activateNodeIds: options.activateNodeIds,
     exactAspectRatio: options.exactAspectRatio,
     targetResolution: options.targetResolution,
     maskCropMode: options.maskCropMode,
@@ -676,13 +678,17 @@ export function extractReplayPanelState(
   const bypassNodeIds = isStringArray(replayState.bypassNodeIds)
     ? replayState.bypassNodeIds
     : [];
+  const activateNodeIds = isStringArray(replayState.activateNodeIds)
+    ? replayState.activateNodeIds
+    : [];
 
   if (
     Object.keys(textValues).length === 0 &&
     Object.keys(widgetValues).length === 0 &&
     Object.keys(widgetModes).length === 0 &&
     Object.keys(derivedWidgetValues).length === 0 &&
-    bypassNodeIds.length === 0
+    bypassNodeIds.length === 0 &&
+    activateNodeIds.length === 0
   ) {
     return null;
   }
@@ -694,6 +700,9 @@ export function extractReplayPanelState(
     derivedWidgetValues: { ...derivedWidgetValues },
     ...(bypassNodeIds.length > 0
       ? { bypassNodeIds: [...new Set(bypassNodeIds)] }
+      : {}),
+    ...(activateNodeIds.length > 0
+      ? { activateNodeIds: [...new Set(activateNodeIds)] }
       : {}),
   };
 }
@@ -822,6 +831,7 @@ function buildGeneratedCreationReplayState(options: {
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetInputs: Record<string, string>;
   bypassNodeIds?: readonly string[];
+  activateNodeIds?: readonly string[];
   exactAspectRatio: boolean;
   targetResolution: number;
   maskCropMode: WorkflowMaskCroppingMode;
@@ -877,6 +887,11 @@ function buildGeneratedCreationReplayState(options: {
   }
   if ((options.bypassNodeIds?.length ?? 0) > 0) {
     replayState.bypassNodeIds = [...new Set(options.bypassNodeIds)];
+  }
+  // Absence from `bypassNodeIds` cannot distinguish an activated loader from
+  // one that shipped bypassed and remained off.
+  if ((options.activateNodeIds?.length ?? 0) > 0) {
+    replayState.activateNodeIds = [...new Set(options.activateNodeIds)];
   }
 
   return replayState;

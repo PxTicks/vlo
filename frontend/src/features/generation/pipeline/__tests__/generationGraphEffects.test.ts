@@ -47,6 +47,7 @@ function makePlan(options: {
       widgetModes: {},
       derivedWidgetInputs: {},
       bypassNodeIds: options.bypassNodeIds ?? [],
+      activateNodeIds: [],
       contributedEffects: options.contributedEffects ?? [],
     },
     metadata: {
@@ -309,6 +310,7 @@ describe("normalizeGenerationGraphEffects", () => {
     expect(diagnostics).toEqual([]);
     expect(buildBridgeEffectPayload(effects)).toEqual({
       bypassNodeIds: ["no-such-node"],
+      activateNodeIds: [],
       widgetOverrides: [
         { node_id: "no-such-node", widget: "no-such-widget", value: 1 },
       ],
@@ -350,8 +352,77 @@ describe("buildBridgeEffectPayload", () => {
       ]),
     ).toEqual({
       bypassNodeIds: ["7", "8", "9"],
+      activateNodeIds: [],
       widgetOverrides: [{ node_id: "5", widget: "seed", value: 2 }],
     });
+  });
+
+  it("carries activations through as their own resolve-prompt argument", () => {
+    expect(
+      buildBridgeEffectPayload([
+        { kind: "activate-nodes", nodeIds: ["7"], source: "panel-bypass" },
+        { kind: "bypass-nodes", nodeIds: ["8"], source: "panel-bypass" },
+      ]),
+    ).toEqual({
+      bypassNodeIds: ["8"],
+      activateNodeIds: ["7"],
+      widgetOverrides: [],
+    });
+  });
+});
+
+describe("node mode collisions", () => {
+  it("rejects a node asked to be both bypassed and activated", () => {
+    const { effects, diagnostics } = normalizeGenerationGraphEffects([
+      {
+        source: "panel-bypass",
+        bypassNodeIds: [],
+        activateNodeIds: ["7", "8"],
+        widgetOverrides: [],
+      },
+      {
+        source: "rule-rewrite",
+        bypassNodeIds: ["7"],
+        activateNodeIds: [],
+        widgetOverrides: [],
+      },
+    ]);
+
+    expect(effects).toEqual([
+      { kind: "activate-nodes", nodeIds: ["8"], source: "panel-bypass" },
+      { kind: "bypass-nodes", nodeIds: ["7"], source: "rule-rewrite" },
+    ]);
+    expect(diagnostics).toEqual([
+      {
+        severity: "error",
+        code: "node-mode-collision",
+        source: "panel-bypass",
+        message:
+          "Node 7 is asked to be both bypassed and activated (activation from panel-bypass)",
+      },
+    ]);
+    // The diagnostic stops submission; removing activation is fail-safe.
+    expect(collectGenerationEffectErrors({
+      schemaVersion: 1,
+      expectation: null,
+      effects,
+      diagnostics,
+    })).toHaveLength(1);
+  });
+
+  it("drops an activation effect entirely when every node was bypassed", () => {
+    const { effects } = normalizeGenerationGraphEffects([
+      {
+        source: "panel-bypass",
+        bypassNodeIds: ["7"],
+        activateNodeIds: ["7"],
+        widgetOverrides: [],
+      },
+    ]);
+
+    expect(effects).toEqual([
+      { kind: "bypass-nodes", nodeIds: ["7"], source: "panel-bypass" },
+    ]);
   });
 });
 

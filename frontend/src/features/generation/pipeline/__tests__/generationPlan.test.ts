@@ -78,6 +78,7 @@ function makePlan(classType: string): GenerationPlan {
       derivedWidgetInputs: {},
       widgetModes: {},
       bypassNodeIds: [],
+      activateNodeIds: [],
       contributedEffects: [],
     },
     metadata: {

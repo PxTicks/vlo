@@ -18,29 +18,43 @@ export function isNodeBypassWidgetValue(
 export interface NodeBypassWidgetPartition {
   readonly activeWidgetInputs: readonly WorkflowWidgetInput[];
   readonly bypassNodeIds: readonly string[];
+  /** Nodes shipping bypassed that this submission turns on. */
+  readonly activateNodeIds: readonly string[];
 }
 
+/**
+ * Partition widget writes from mode changes, accounting for the node's shipped
+ * mode when deciding whether bypass or activation needs to be emitted.
+ */
 export function partitionNodeBypassWidgetInputs(
   widgetInputs: readonly WorkflowWidgetInput[],
   bypassedWidgetTargets: ReadonlySet<string>,
 ): NodeBypassWidgetPartition {
-  const nodeIds = new Set<string>();
+  const bypassNodeIds = new Set<string>();
+  const activateNodeIds = new Set<string>();
   const activeWidgetInputs: WorkflowWidgetInput[] = [];
   for (const widget of widgetInputs) {
+    if (!widget.config.nodeBypassOption) {
+      activeWidgetInputs.push(widget);
+      continue;
+    }
+    const shipsBypassed = widget.config.nodeShipsBypassed === true;
     if (
-      widget.config.nodeBypassOption &&
       bypassedWidgetTargets.has(
         getNodeBypassWidgetKey(widget.nodeId, widget.param),
       )
     ) {
-      nodeIds.add(widget.nodeId);
+      // A node already bypassed in the file needs no effect to stay off.
+      if (!shipsBypassed) bypassNodeIds.add(widget.nodeId);
       continue;
     }
+    if (shipsBypassed) activateNodeIds.add(widget.nodeId);
     activeWidgetInputs.push(widget);
   }
   return {
     activeWidgetInputs,
-    bypassNodeIds: [...nodeIds],
+    bypassNodeIds: [...bypassNodeIds],
+    activateNodeIds: [...activateNodeIds],
   };
 }
 

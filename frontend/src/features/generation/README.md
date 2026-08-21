@@ -104,7 +104,8 @@ root or scoped node id to the existing `panel-bypass` effects and replay
 metadata. Explicit
 sidecar presentation metadata wins when it already exposes the same widget;
 the native bypass choice remains available as built-in loader behaviour.
-Muted, bypassed, and link-fed loaders are not auto-presented.
+Muted and link-fed loaders are not auto-presented, and neither is a bypassed
+one unless its rules opt in (below).
 
 Loaders start on. A sidecar can start one bypassed with
 `widgets.<param>.default_node_bypass`, which seeds the panel's bypass state
@@ -112,6 +113,41 @@ once per mounted workflow (`reconcileNodeBypassWidgetTargets` in
 `utils/nodeBypassWidgets.ts`). It seeds initial state only: it never rewrites
 the widget value, never re-applies itself over a user who turned the loader
 back on, and yields to state restored from a replayed generation.
+
+### Optional loaders (`discover_when_bypassed`)
+
+ComfyUI has no "none" entry for a model combo, so a workflow offering an
+optional LoRA has to ship the loader carrying a filename the user may not
+have — and ComfyUI's missing-model dialog fires on that at load time, from its
+own scan of the graph, long before vlo resolves a prompt. Nothing done at
+submission can suppress it.
+
+What does suppress it is the shipped node mode: that scan skips nodes with
+`mode` 2 or 4 outright. So an optional loader ships **bypassed**, and
+`widgets.<param>.discover_when_bypassed` is what lets the panel present it
+anyway. Every other node keeps warning exactly as before — the opt-in is per
+node, never blanket.
+
+This inverts which way a selection moves the graph, though not what the user
+sees: the choice still reads `None (bypass)` and still starts selected. For a
+normally-shipped loader, selecting it emits a `bypass-nodes` effect; for one
+shipping bypassed, *clearing* it emits `activate-nodes`, the mirror effect that
+clears `mode` on the prompt-resolution clone only. Nothing is emitted in the
+two cases where the shipped mode is already what the user asked for.
+
+Consequences worth knowing:
+
+- The shipped `mode` becomes load-bearing project data. Re-saving the workflow
+  from the ComfyUI editor with the loader switched back on silently restores
+  the dialog; `collectBypassDiscoveryDiagnostics` reports that to the console
+  alongside the other rule warnings, and changes nothing else.
+- Replay records `activateNodeIds` next to `bypassNodeIds`, because a loader
+  shipping bypassed and left off emits no effect at all — its absence from
+  `bypassNodeIds` says nothing on its own.
+- Activation needs the pre-resolved prompt path, like bypass. The bridge fails
+  closed (`activation-verification-failed`) if an activated node does not reach
+  the prompt, so a loader can never be silently dropped after the user picked a
+  model for it.
 
 Selection/media extraction helpers live in:
 

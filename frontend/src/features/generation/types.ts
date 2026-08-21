@@ -292,6 +292,10 @@ export interface WidgetInputConfig {
    * with a loader off until the user turns it on. Inert without that option.
    */
   defaultNodeBypass?: boolean;
+  /** The node ships with `mode: 4`, inverting `nodeBypassOption` effects. */
+  nodeShipsBypassed?: boolean;
+  /** Rules opted this widget's node into discovery while bypassed. */
+  discoverWhenBypassed?: boolean;
 }
 
 export interface WorkflowParamReference {

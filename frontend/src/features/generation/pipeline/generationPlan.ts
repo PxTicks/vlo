@@ -58,6 +58,7 @@ interface CreateGenerationPlanOptions {
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetInputs: Record<string, string>;
   bypassNodeIds?: string[];
+  activateNodeIds?: string[];
   /** Submission contributions, already validated against the mounted session. */
   contributedEffects?: readonly GenerationContributedEffectGroup[];
   postprocessConfig: import("../types").WorkflowPostprocessingConfig;
@@ -969,6 +970,7 @@ export function createGenerationPlan(
       widgetModes: { ...options.widgetModes },
       derivedWidgetInputs: { ...options.derivedWidgetInputs },
       bypassNodeIds: [...(options.bypassNodeIds ?? [])],
+      activateNodeIds: [...(options.activateNodeIds ?? [])],
       // Detached like everything else in the plan: the contribution is
       // finished data by now, and a queued plan must not share structure with
       // whatever the contributing extension still holds.
@@ -994,6 +996,7 @@ export function createGenerationPlan(
             widgetModes: options.widgetModes,
             derivedWidgetInputs: options.derivedWidgetInputs,
             bypassNodeIds: options.bypassNodeIds,
+            activateNodeIds: options.activateNodeIds,
           },
         ),
       ),

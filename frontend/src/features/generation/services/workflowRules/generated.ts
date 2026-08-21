@@ -183,6 +183,7 @@ export interface WorkflowFrontendControl {
   control_after_generate?: boolean;
   default_randomize?: boolean | null;
   default_node_bypass?: boolean | null;
+  discover_when_bypassed?: boolean | null;
   frontend_only?: boolean | null;
   hidden?: boolean | null;
   control?: "slider" | null;
@@ -343,6 +344,7 @@ export interface WorkflowRuleWidgetEntry {
   control_after_generate?: boolean;
   default_randomize?: boolean | null;
   default_node_bypass?: boolean | null;
+  discover_when_bypassed?: boolean | null;
   frontend_only?: boolean | null;
   hidden?: boolean | null;
   control?: "slider" | null;

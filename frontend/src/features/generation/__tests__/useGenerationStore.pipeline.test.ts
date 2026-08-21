@@ -1762,6 +1762,7 @@ describe("useGenerationStore pipeline phases", () => {
         { workflowInstanceId: "workflow-instance", revision: 0 },
         expect.any(Array),
         expect.any(Array),
+        expect.any(Array),
       );
       expect(mockGenerate).not.toHaveBeenCalled();
 
@@ -2278,6 +2279,7 @@ describe("useGenerationStore pipeline phases", () => {
             widgetModes: {},
             derivedWidgetInputs: {},
             bypassNodeIds: [],
+            activateNodeIds: [],
             contributedEffects: [],
           },
           metadata: {
@@ -2347,6 +2349,7 @@ describe("useGenerationStore pipeline phases", () => {
             widgetModes: {},
             derivedWidgetInputs: {},
             bypassNodeIds: [],
+            activateNodeIds: [],
             contributedEffects: [],
           },
           metadata: {
@@ -2414,6 +2417,7 @@ describe("useGenerationStore pipeline phases", () => {
             widgetModes: {},
             derivedWidgetInputs: {},
             bypassNodeIds: [],
+            activateNodeIds: [],
             contributedEffects: [],
           },
           metadata: {

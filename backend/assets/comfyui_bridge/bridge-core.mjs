@@ -386,18 +386,43 @@ function resolveEffectTarget(rootGraph, rawId, executionPathCounts) {
   return { reason: "node-not-found" };
 }
 
-function describeUnresolvedTargets(bypassNodeIds, widgetOverrides) {
+function describeUnresolvedTargets(nodeTargets, widgetOverrides) {
   return [
-    ...bypassNodeIds.map(({ nodeId, reason }) => `${nodeId} (${reason})`),
+    ...nodeTargets.map(({ nodeId, reason }) => `${nodeId} (${reason})`),
     ...widgetOverrides.map(
       ({ nodeId, widget, reason }) => `${nodeId}.${widget} (${reason})`,
     ),
   ].join(", ");
 }
 
-function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
+function resolveNodeTargets(graph, nodeIds, executionPathCounts) {
+  const targets = [];
+  const unresolved = [];
+  const seen = new Set();
+  for (const nodeId of nodeIds) {
+    const externalNodeId = String(nodeId);
+    if (seen.has(externalNodeId)) continue;
+    seen.add(externalNodeId);
+
+    const resolved = resolveEffectTarget(graph, nodeId, executionPathCounts);
+    if (resolved.node) {
+      targets.push(resolved);
+    } else {
+      unresolved.push({ nodeId: externalNodeId, reason: resolved.reason });
+    }
+  }
+  return { targets, unresolved };
+}
+
+function applyOverridesToGraph(
+  graph,
+  bypassNodeIds,
+  widgetOverrides,
+  activateNodeIds = [],
+) {
   const addressesSubgraph = [
     ...bypassNodeIds,
+    ...activateNodeIds,
     ...widgetOverrides.map((override) =>
       isRecord(override) ? override.node_id : null,
     ),
@@ -411,24 +436,10 @@ function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
     ? countNodeExecutionPaths(graph)
     : null;
 
-  const bypassTargets = [];
-  const unresolvedBypassNodeIds = [];
-  const seenBypassNodeIds = new Set();
-  for (const nodeId of bypassNodeIds) {
-    const externalNodeId = String(nodeId);
-    if (seenBypassNodeIds.has(externalNodeId)) continue;
-    seenBypassNodeIds.add(externalNodeId);
-
-    const resolved = resolveEffectTarget(graph, nodeId, executionPathCounts);
-    if (resolved.node) {
-      bypassTargets.push(resolved);
-    } else {
-      unresolvedBypassNodeIds.push({
-        nodeId: externalNodeId,
-        reason: resolved.reason,
-      });
-    }
-  }
+  const { targets: bypassTargets, unresolved: unresolvedBypassNodeIds } =
+    resolveNodeTargets(graph, bypassNodeIds, executionPathCounts);
+  const { targets: activateTargets, unresolved: unresolvedActivateNodeIds } =
+    resolveNodeTargets(graph, activateNodeIds, executionPathCounts);
 
   const widgetTargets = [];
   const unresolvedWidgetOverrides = [];
@@ -486,16 +497,21 @@ function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
     widgetTargets.push({ override, widget });
   }
 
-  if (unresolvedBypassNodeIds.length > 0 || unresolvedWidgetOverrides.length > 0) {
+  if (
+    unresolvedBypassNodeIds.length > 0 ||
+    unresolvedActivateNodeIds.length > 0 ||
+    unresolvedWidgetOverrides.length > 0
+  ) {
     throw new BridgeRuntimeError(
       "graph-override-target-missing",
-      "Could not resolve every bypass or widget override against the temporary " +
-        `ComfyUI graph: ${describeUnresolvedTargets(
-          unresolvedBypassNodeIds,
+      "Could not resolve every bypass, activation or widget override against the " +
+        `temporary ComfyUI graph: ${describeUnresolvedTargets(
+          [...unresolvedBypassNodeIds, ...unresolvedActivateNodeIds],
           unresolvedWidgetOverrides,
         )}`,
       {
         bypassNodeIds: unresolvedBypassNodeIds,
+        activateNodeIds: unresolvedActivateNodeIds,
         widgetOverrides: unresolvedWidgetOverrides,
       },
     );
@@ -505,6 +521,13 @@ function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
   for (const { node, executionId } of bypassTargets) {
     node.mode = 4;
     appliedBypassExecutionIds.push(executionId);
+  }
+  // Apply second so bypass remains the fail-safe winner for malformed payloads.
+  const appliedActivateExecutionIds = [];
+  for (const { node, executionId } of activateTargets) {
+    if (appliedBypassExecutionIds.includes(executionId)) continue;
+    node.mode = 0;
+    appliedActivateExecutionIds.push(executionId);
   }
   // Node objects are recreated by `configure`, so `mode` is private to the
   // clone. Widget *values* are not: current ComfyUI keys widget state by
@@ -535,7 +558,11 @@ function applyOverridesToGraph(graph, bypassNodeIds, widgetOverrides) {
       { reason: error instanceof Error ? error.message : String(error) },
     );
   }
-  return { appliedBypassExecutionIds, widgetRestores };
+  return {
+    appliedBypassExecutionIds,
+    appliedActivateExecutionIds,
+    widgetRestores,
+  };
 }
 
 function restoreWidgetValues(widgetRestores) {
@@ -895,10 +922,15 @@ export function startVloBridge({ app, api, windowObject = window }) {
       );
     }
 
-    const { appliedBypassExecutionIds, widgetRestores } = applyOverridesToGraph(
+    const {
+      appliedBypassExecutionIds,
+      appliedActivateExecutionIds,
+      widgetRestores,
+    } = applyOverridesToGraph(
       tempGraph,
       Array.isArray(payload?.bypassNodeIds) ? payload.bypassNodeIds : [],
       Array.isArray(payload?.widgetOverrides) ? payload.widgetOverrides : [],
+      Array.isArray(payload?.activateNodeIds) ? payload.activateNodeIds : [],
     );
     const randomNonce = windowObject.crypto?.randomUUID?.() ?? Date.now().toString(36);
     const promptGraphNonce = `${++promptResolutionCounter}:${randomNonce}`;
@@ -975,6 +1007,21 @@ export function startVloBridge({ app, api, windowObject = window }) {
         "bypass-verification-failed",
         "ComfyUI included bypassed nodes in the resolved prompt",
         { nodeIds: leakedBypassNodeIds },
+      );
+    }
+    // An activated loader missing here would silently ignore the selected model.
+    const missingActivatedNodeIds = appliedActivateExecutionIds.filter(
+      (executionId) =>
+        !Object.prototype.hasOwnProperty.call(resolved.output, executionId) &&
+        !promptNodeIds.some((promptNodeId) =>
+          promptNodeId.startsWith(`${executionId}${EXECUTION_ID_SEPARATOR}`),
+        ),
+    );
+    if (missingActivatedNodeIds.length > 0) {
+      throw new BridgeRuntimeError(
+        "activation-verification-failed",
+        "ComfyUI dropped nodes this prompt activated; nothing they feed reaches an output",
+        { nodeIds: missingActivatedNodeIds },
       );
     }
     const workflowExtra = { ...resolved.workflow.extra };

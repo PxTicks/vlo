@@ -134,6 +134,43 @@ describe("replayPanelHydration", () => {
     ).toEqual(new Set());
   });
 
+  it("reads a loader that ships bypassed from the recorded activation", () => {
+    const widget = makeLoraWidget();
+    const shippedBypassed: WorkflowWidgetInput = {
+      ...widget,
+      config: { ...widget.config, nodeShipsBypassed: true },
+    };
+    const key = getNodeBypassWidgetKey("12:6", "lora_name");
+
+    // Nothing recorded: the generation ran with the loader off, because that
+    // is what a node shipping bypassed and contributing no effect means.
+    expect(
+      resolveReplayNodeBypassWidgetTargets(EMPTY_REPLAY_STATE, [
+        shippedBypassed,
+      ]),
+    ).toEqual(new Set([key]));
+
+    expect(
+      resolveReplayNodeBypassWidgetTargets(
+        { ...EMPTY_REPLAY_STATE, activateNodeIds: ["12:6"] },
+        [shippedBypassed],
+      ),
+    ).toEqual(new Set());
+
+    // Both lists cannot come from a submission, so this is merged or edited
+    // metadata; replay follows the same precedence the runtime does.
+    expect(
+      resolveReplayNodeBypassWidgetTargets(
+        {
+          ...EMPTY_REPLAY_STATE,
+          bypassNodeIds: ["12:6"],
+          activateNodeIds: ["12:6"],
+        },
+        [shippedBypassed],
+      ),
+    ).toEqual(new Set([key]));
+  });
+
   it("keeps text state identity when replayed text is already applied", () => {
     const previous = { "6:text": "same prompt" };
     const replayState: WorkflowReplayPanelState = {

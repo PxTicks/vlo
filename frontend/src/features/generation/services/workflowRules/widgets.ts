@@ -753,6 +753,7 @@ export function resolveWidgetInputsFromRules(
         controlAfterGenerate: entry.control_after_generate ?? false,
         defaultRandomize: toOptionalBoolean(entry.default_randomize),
         defaultNodeBypass: toOptionalBoolean(entry.default_node_bypass),
+        discoverWhenBypassed: toOptionalBoolean(entry.discover_when_bypassed),
         frontendOnly: toOptionalBoolean(entry.frontend_only),
         hidden: toOptionalBoolean(entry.hidden),
         sectionId: toOptionalString(entry.section_id),

@@ -35,12 +35,42 @@ describe("node-bypass widget choices", () => {
     ).toEqual({
       activeWidgetInputs: [],
       bypassNodeIds: ["12:6"],
+      activateNodeIds: [],
     });
     expect(
       partitionNodeBypassWidgetInputs([widget], new Set()),
     ).toEqual({
       activeWidgetInputs: [widget],
       bypassNodeIds: [],
+      activateNodeIds: [],
+    });
+  });
+
+  it("inverts the effect for a loader the workflow ships bypassed", () => {
+    const shippedBypassed: WorkflowWidgetInput = {
+      ...widget,
+      config: { ...widget.config, nodeShipsBypassed: true },
+    };
+
+    // Left on the bypass choice: the node is already off in the file, so the
+    // submission has nothing to say about it.
+    expect(
+      partitionNodeBypassWidgetInputs(
+        [shippedBypassed],
+        new Set([getNodeBypassWidgetKey("12:6", "lora_name")]),
+      ),
+    ).toEqual({
+      activeWidgetInputs: [],
+      bypassNodeIds: [],
+      activateNodeIds: [],
+    });
+
+    expect(
+      partitionNodeBypassWidgetInputs([shippedBypassed], new Set()),
+    ).toEqual({
+      activeWidgetInputs: [shippedBypassed],
+      bypassNodeIds: [],
+      activateNodeIds: ["12:6"],
     });
   });
 
@@ -61,6 +91,7 @@ describe("node-bypass widget choices", () => {
     ).toEqual({
       activeWidgetInputs: [fixedWidget],
       bypassNodeIds: [],
+      activateNodeIds: [],
     });
   });
 });

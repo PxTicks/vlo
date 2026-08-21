@@ -63,6 +63,7 @@ export interface WorkflowReplayPanelState {
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetValues: Record<string, string>;
   bypassNodeIds?: string[];
+  activateNodeIds?: string[];
 }
 
 export interface GenerationWorkflowState {
@@ -237,6 +238,7 @@ export interface GenerationExecutionState {
     derivedWidgetInputs?: Record<string, string>,
     frontendStateWidgetValues?: Record<string, unknown>,
     bypassNodeIds?: string[],
+    activateNodeIds?: string[],
   ) => Promise<string | null>;
   queueGeneration: (
     slotValues: Record<string, SlotValue>,
@@ -246,6 +248,7 @@ export interface GenerationExecutionState {
     count?: number,
     frontendStateWidgetValues?: Record<string, unknown>,
     bypassNodeIds?: string[],
+    activateNodeIds?: string[],
   ) => Promise<void>;
   processGenerationQueue: () => Promise<void>;
   /**

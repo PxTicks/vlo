@@ -405,10 +405,12 @@ export class IframeBridgeClient {
     expectation: BridgeWorkflowExpectation,
     bypassNodeIds: string[],
     widgetOverrides: BridgeWidgetOverride[],
+    activateNodeIds: string[] = [],
   ): Promise<BridgeResolvedPrompt> {
     const result = await this.request("resolve-prompt", {
       ...expectation,
       bypassNodeIds,
+      activateNodeIds,
       widgetOverrides,
     });
     if (!isRecord(result) || !isRecord(result.output)) {

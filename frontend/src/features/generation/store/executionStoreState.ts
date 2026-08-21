@@ -372,8 +372,17 @@ function buildGenerationPlanFromState(
   derivedWidgetInputs: Record<string, string>,
   frontendStateWidgetValues: Record<string, unknown>,
   bypassNodeIds: string[] = [],
+  activateNodeIds: string[] = [],
   contributedEffects: readonly GenerationContributedEffectGroup[] = [],
 ): GenerationPlan {
+  // Without prompt capture an activation would silently ignore the selected model.
+  if (activateNodeIds.length > 0 && !state.preResolvedPromptEnabled) {
+    throw new Error(
+      "Generation rejected before submission: this workflow ships a loader bypassed and the " +
+        "panel turned it on, but pre-resolved prompt capture is disabled, so it cannot be applied.",
+    );
+  }
+
   const workflowId =
     state.rulesWorkflowSourceId ??
     (state.selectedWorkflowId === TEMP_WORKFLOW_ID ||
@@ -438,6 +447,7 @@ function buildGenerationPlanFromState(
     widgetModes,
     derivedWidgetInputs,
     bypassNodeIds,
+    activateNodeIds,
     contributedEffects,
     postprocessConfig,
     workflowWarnings: state.activeRulesWarnings,
@@ -501,7 +511,9 @@ function assertContributionsApplicable(
 
   const hasEffects = groups.some(
     (group) =>
-      group.bypassNodeIds.length > 0 || group.widgetOverrides.length > 0,
+      group.bypassNodeIds.length > 0 ||
+      (group.activateNodeIds?.length ?? 0) > 0 ||
+      group.widgetOverrides.length > 0,
   );
   if (hasEffects && !state.preResolvedPromptEnabled) {
     throw new Error(
@@ -579,13 +591,13 @@ async function captureSubmittedWorkflow(
     throw new WorkflowOutOfSyncError(state.selectedWorkflowId, null);
   }
 
-  const { bypassNodeIds, widgetOverrides } = buildBridgeEffectPayload(
-    effects.effects,
-  );
+  const { bypassNodeIds, activateNodeIds, widgetOverrides } =
+    buildBridgeEffectPayload(effects.effects);
   const resolved = await iframeBridge.resolvePrompt(
     effects.expectation,
     bypassNodeIds,
     widgetOverrides,
+    activateNodeIds,
   );
 
   return {
@@ -630,6 +642,7 @@ async function buildQueuedGenerationPlansFromState(
   frontendStateWidgetValues: Record<string, unknown>,
   count: number,
   bypassNodeIds: string[] = [],
+  activateNodeIds: string[] = [],
 ): Promise<GenerationPlan[]> {
   // One collection for the batch: every plan in it is the same submission
   // repeated, and the enqueue capture below already shares one effect record
@@ -645,6 +658,7 @@ async function buildQueuedGenerationPlansFromState(
       derivedWidgetInputs,
       frontendStateWidgetValues,
       bypassNodeIds,
+      activateNodeIds,
       contributedEffects,
     ),
   );
@@ -1268,6 +1282,7 @@ export function buildExecutionStoreState(
       derivedWidgetInputs = {},
       frontendStateWidgetValues = {},
       bypassNodeIds = [],
+      activateNodeIds = [],
     ) => {
       const currentState = get();
       const activeJob = currentState.activeJobId
@@ -1288,16 +1303,22 @@ export function buildExecutionStoreState(
         );
       }
 
-      const plan = buildGenerationPlanFromState(
-        currentState,
-        slotValues,
-        widgetInputs,
-        widgetModes,
-        derivedWidgetInputs,
-        frontendStateWidgetValues,
-        bypassNodeIds,
-        collectSubmissionContributions(currentState),
-      );
+      let plan: GenerationPlan;
+      try {
+        plan = buildGenerationPlanFromState(
+          currentState,
+          slotValues,
+          widgetInputs,
+          widgetModes,
+          derivedWidgetInputs,
+          frontendStateWidgetValues,
+          bypassNodeIds,
+          activateNodeIds,
+          collectSubmissionContributions(currentState),
+        );
+      } catch (error) {
+        return buildSubmissionErrorPatch(get, set, error);
+      }
       return dispatchGenerationPlan(plan);
     },
 
@@ -1309,6 +1330,7 @@ export function buildExecutionStoreState(
       count = 1,
       frontendStateWidgetValues = {},
       bypassNodeIds = [],
+      activateNodeIds = [],
     ) => {
       const safeCount = Math.max(1, Math.floor(count));
       const currentState = get();
@@ -1328,6 +1350,7 @@ export function buildExecutionStoreState(
           frontendStateWidgetValues,
           safeCount,
           bypassNodeIds,
+          activateNodeIds,
         );
         plans = await captureQueuedSubmittedWorkflows(plans, currentState);
       } catch (error) {

@@ -251,6 +251,9 @@ class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     # widget the panel gives a node-bypass choice to (autodiscovered LoRA
     # loaders today); inert everywhere else.
     default_node_bypass: bool | None = None
+    # Surface this widget even when its node ships bypassed (``mode: 4``), so
+    # selecting a model can activate an optional loader for one submission.
+    discover_when_bypassed: bool | None = None
     frontend_only: bool | None = None
     hidden: bool | None = None
     control: WidgetControl | None = None

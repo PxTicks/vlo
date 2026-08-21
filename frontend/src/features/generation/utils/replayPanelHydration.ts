@@ -45,7 +45,8 @@ export function shouldWaitForReplayPanelHydration(
     hasEntries(replayState.widgetValues) ||
     hasEntries(replayState.derivedWidgetValues) ||
     hasEntries(replayState.widgetModes) ||
-    (replayState.bypassNodeIds?.length ?? 0) > 0;
+    (replayState.bypassNodeIds?.length ?? 0) > 0 ||
+    (replayState.activateNodeIds?.length ?? 0) > 0;
 
   return (
     (needsWorkflowInputs && workflowInputs.length === 0) ||
@@ -53,17 +54,27 @@ export function shouldWaitForReplayPanelHydration(
   );
 }
 
+/**
+ * Rebuild bypass choices from recorded effects, falling back to the shipped
+ * mode for older metadata. Bypass wins for malformed metadata naming both.
+ */
 export function resolveReplayNodeBypassWidgetTargets(
   replayState: WorkflowReplayPanelState,
   widgetInputs: readonly WorkflowWidgetInput[],
 ): ReadonlySet<string> {
   const bypassedNodes = new Set(replayState.bypassNodeIds ?? []);
+  const activatedNodes = new Set(replayState.activateNodeIds ?? []);
   return new Set(
-    widgetInputs.flatMap((widget) =>
-      widget.config.nodeBypassOption && bypassedNodes.has(widget.nodeId)
+    widgetInputs.flatMap((widget) => {
+      if (!widget.config.nodeBypassOption) return [];
+      const wasBypassed = bypassedNodes.has(widget.nodeId)
+        ? true
+        : !activatedNodes.has(widget.nodeId) &&
+          widget.config.nodeShipsBypassed === true;
+      return wasBypassed
         ? [getNodeBypassWidgetKey(widget.nodeId, widget.param)]
-        : [],
-    ),
+        : [];
+    }),
   );
 }
 

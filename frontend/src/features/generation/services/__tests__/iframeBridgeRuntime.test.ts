@@ -639,6 +639,128 @@ describe("hosted iframe bridge runtime", () => {
     expect(JSON.stringify(response)).not.toContain("__vloPromptGraphNonce");
   });
 
+  it("activates a node the workflow ships bypassed, on the clone only", async () => {
+    const harness = createHarness();
+    // The arrangement an optional LoRA loader ships in: off in the file, so
+    // ComfyUI's missing-model scan never looks at its widget.
+    harness.liveNode.mode = 4;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "read-activate", "read-active");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "read-activate"),
+      ).toBe(true),
+    );
+    const snapshot = harness.posted.find(
+      (message) => message.requestId === "read-activate",
+    )?.result as Record<string, unknown>;
+
+    request(harness, "resolve-activate", "resolve-prompt", {
+      ...snapshot,
+      bypassNodeIds: [],
+      activateNodeIds: ["node-a"],
+      widgetOverrides: [],
+    });
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "resolve-activate"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "resolve-activate"),
+    ).toMatchObject({
+      ok: true,
+      result: { output: { "node-a": { class_type: "LoadImage" } } },
+    });
+    expect(harness.liveNode.mode).toBe(4);
+  });
+
+  it("lets a bypass of the same node win over its activation", async () => {
+    const harness = createHarness();
+    harness.liveNode.mode = 4;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "read-both", "read-active");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "read-both"),
+      ).toBe(true),
+    );
+    const snapshot = harness.posted.find(
+      (message) => message.requestId === "read-both",
+    )?.result as Record<string, unknown>;
+
+    request(harness, "resolve-both", "resolve-prompt", {
+      ...snapshot,
+      bypassNodeIds: ["node-a"],
+      activateNodeIds: ["node-a"],
+      widgetOverrides: [],
+    });
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "resolve-both"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "resolve-both"),
+    ).toMatchObject({ ok: true, result: { output: {} } });
+  });
+
+  it("fails closed when an activated node never reaches the prompt", async () => {
+    const harness = createHarness();
+    harness.liveNode.mode = 4;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "read-dropped", "read-active");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "read-dropped"),
+      ).toBe(true),
+    );
+    const snapshot = harness.posted.find(
+      (message) => message.requestId === "read-dropped",
+    )?.result as Record<string, unknown>;
+
+    // Nothing the loader feeds still reaches an output, so ComfyUI prunes it.
+    harness.app.graphToPrompt.mockImplementationOnce(async (graph) => ({
+      output: {},
+      workflow: { extra: { ...graph.extra } },
+    }));
+    request(harness, "resolve-dropped", "resolve-prompt", {
+      ...snapshot,
+      bypassNodeIds: [],
+      activateNodeIds: ["node-a"],
+      widgetOverrides: [],
+    });
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "resolve-dropped"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "resolve-dropped"),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        code: "activation-verification-failed",
+        details: { nodeIds: ["node-a"] },
+      },
+    });
+  });
+
   it("fails closed and reports unresolved bypass node ids", async () => {
     const harness = createHarness();
     startVloBridge({
@@ -681,6 +803,7 @@ describe("hosted iframe bridge runtime", () => {
         code: "graph-override-target-missing",
         details: {
           bypassNodeIds: [{ nodeId: "105:104", reason: "node-not-found" }],
+          activateNodeIds: [],
           widgetOverrides: [],
         },
       },

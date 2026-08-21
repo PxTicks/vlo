@@ -94,6 +94,13 @@ function mergeReplayState(
           ],
         }
       : {}),
+    ...(fromManifest.activateNodeIds || existing.activateNodeIds
+      ? {
+          activateNodeIds: [
+            ...(existing.activateNodeIds ?? fromManifest.activateNodeIds ?? []),
+          ],
+        }
+      : {}),
     ...(fromManifest.pipelineInputs || existing.pipelineInputs
       ? {
           pipelineInputs: {

@@ -104,6 +104,8 @@ import {
 } from "../utils/replayPanelHydration";
 import { parseStoredWidgetValue } from "../utils/storedWidgetValues";
 import {
+  collectBypassDiscoveryDiagnostics,
+  collectBypassDiscoveryNodeIds,
   mergeAutodiscoveredLoraWidgetInputs,
   resolveAutodiscoveredLoraWidgetInputs,
 } from "../utils/loraLoaderWidgets";
@@ -488,10 +490,30 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       ),
     [rawObjectInfo, syncedGraphData, syncedWorkflow],
   );
-  const autodiscoveredLoraWidgetInputs = useMemo(
-    () => resolveAutodiscoveredLoraWidgetInputs(generationNodes),
-    [generationNodes],
+  const bypassDiscoveryNodeIds = useMemo(
+    () => collectBypassDiscoveryNodeIds(activeWorkflowRules),
+    [activeWorkflowRules],
   );
+  const autodiscoveredLoraWidgetInputs = useMemo(
+    () =>
+      resolveAutodiscoveredLoraWidgetInputs(
+        generationNodes,
+        bypassDiscoveryNodeIds,
+      ),
+    [bypassDiscoveryNodeIds, generationNodes],
+  );
+  // An ineffective discovery opt-in is advisory, like other rule warnings.
+  useEffect(() => {
+    for (const diagnostic of collectBypassDiscoveryDiagnostics(
+      generationNodes,
+      bypassDiscoveryNodeIds,
+    )) {
+      console.debug("[GenerationPanel] Workflow rule warning", {
+        workflowId: selectedWorkflowId,
+        message: diagnostic,
+      });
+    }
+  }, [bypassDiscoveryNodeIds, generationNodes, selectedWorkflowId]);
   const widgetInputs = useMemo(
     () =>
       mergeAutodiscoveredLoraWidgetInputs(
@@ -716,6 +738,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       // Build slot values from current UI state
       const slotValues: Record<string, SlotValue> = {};
       const bypassNodeIds = new Set<string>();
+      const activateNodeIds = new Set<string>();
 
       for (const input of workflowInputs) {
         const inputId = getWorkflowInputId(input);
@@ -852,6 +875,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       for (const nodeId of widgetSubmission.bypassNodeIds) {
         bypassNodeIds.add(nodeId);
       }
+      for (const nodeId of widgetSubmission.activateNodeIds) {
+        activateNodeIds.add(nodeId);
+      }
       for (const w of widgetSubmission.activeWidgetInputs) {
         const value =
           currentWidgetValues[w.nodeId]?.[w.param] ?? w.currentValue;
@@ -917,6 +943,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         count,
         frontendStateWidgetValues,
         [...bypassNodeIds],
+        [...activateNodeIds],
       );
     },
     [

@@ -26,6 +26,7 @@ import type {
 interface GenerationEffectSourceGroup {
   source: GenerationEffectSource;
   bypassNodeIds: readonly unknown[];
+  activateNodeIds?: readonly unknown[];
   widgetOverrides: readonly WidgetOverride[];
 }
 
@@ -36,6 +37,7 @@ export interface NormalizedGenerationEffects {
 
 export interface GenerationBridgeEffectPayload {
   bypassNodeIds: string[];
+  activateNodeIds: string[];
   widgetOverrides: WidgetOverride[];
 }
 
@@ -65,6 +67,7 @@ export function normalizeGenerationGraphEffects(
   const effects: GenerationGraphEffect[] = [];
   const diagnostics: GenerationEffectDiagnostic[] = [];
   const seenBypassIds = new Set<string>();
+  const seenActivateIds = new Set<string>();
   const widgetWrites = new Map<
     string,
     { index: number; serialized: string; source: GenerationEffectSource }
@@ -91,6 +94,32 @@ export function normalizeGenerationGraphEffects(
     }
     if (nodeIds.length > 0) {
       effects.push({ kind: "bypass-nodes", nodeIds, source: group.source });
+    }
+
+    const activateIds: string[] = [];
+    for (const rawNodeId of group.activateNodeIds ?? []) {
+      const nodeId = typeof rawNodeId === "string" ? rawNodeId.trim() : "";
+      if (nodeId.length === 0) {
+        diagnostics.push({
+          severity: "error",
+          code: "invalid-target",
+          source: group.source,
+          message: `Activate target from ${group.source} is not a valid node id`,
+        });
+        continue;
+      }
+      if (seenActivateIds.has(nodeId)) {
+        continue;
+      }
+      seenActivateIds.add(nodeId);
+      activateIds.push(nodeId);
+    }
+    if (activateIds.length > 0) {
+      effects.push({
+        kind: "activate-nodes",
+        nodeIds: activateIds,
+        source: group.source,
+      });
     }
 
     for (const override of group.widgetOverrides) {
@@ -161,7 +190,25 @@ export function normalizeGenerationGraphEffects(
     }
   }
 
-  return { effects, diagnostics };
+  // A mode conflict is an error; also remove the activation so consumers that
+  // fail to inspect diagnostics still receive the safer payload.
+  const safeEffects = effects.flatMap<GenerationGraphEffect>((effect) => {
+    if (effect.kind !== "activate-nodes") return [effect];
+    const nodeIds = effect.nodeIds.filter((nodeId) => {
+      if (!seenBypassIds.has(nodeId)) return true;
+      diagnostics.push({
+        severity: "error",
+        code: "node-mode-collision",
+        source: effect.source,
+        message: `Node ${describeTarget(nodeId)} is asked to be both bypassed and activated (activation from ${effect.source})`,
+      });
+      return false;
+    });
+    if (nodeIds.length === effect.nodeIds.length) return [effect];
+    return nodeIds.length > 0 ? [{ ...effect, nodeIds }] : [];
+  });
+
+  return { effects: safeEffects, diagnostics };
 }
 
 /**
@@ -264,6 +311,7 @@ export function captureGenerationEffectsForPlan(
     {
       source: "panel-bypass",
       bypassNodeIds: plan.submission.bypassNodeIds,
+      activateNodeIds: plan.submission.activateNodeIds,
       widgetOverrides: [],
     },
     // Contributors last, so a widget an extension and a rule both write keeps
@@ -278,6 +326,7 @@ export function captureGenerationEffectsForPlan(
     ...applicable.map((group) => ({
       source: group.source,
       bypassNodeIds: group.bypassNodeIds,
+      activateNodeIds: group.activateNodeIds,
       widgetOverrides: group.widgetOverrides,
     })),
   ]);
@@ -304,10 +353,13 @@ export function buildBridgeEffectPayload(
   effects: readonly GenerationGraphEffect[],
 ): GenerationBridgeEffectPayload {
   const bypassNodeIds: string[] = [];
+  const activateNodeIds: string[] = [];
   const widgetOverrides: WidgetOverride[] = [];
   for (const effect of effects) {
     if (effect.kind === "bypass-nodes") {
       bypassNodeIds.push(...effect.nodeIds);
+    } else if (effect.kind === "activate-nodes") {
+      activateNodeIds.push(...effect.nodeIds);
     } else {
       widgetOverrides.push({
         node_id: effect.target.nodeId,
@@ -316,7 +368,7 @@ export function buildBridgeEffectPayload(
       });
     }
   }
-  return { bypassNodeIds, widgetOverrides };
+  return { bypassNodeIds, activateNodeIds, widgetOverrides };
 }
 
 /**

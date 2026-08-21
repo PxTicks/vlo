@@ -436,6 +436,7 @@ describe("buildExecutionStoreState", () => {
       { workflowInstanceId: "workflow-instance", revision: 0 },
       [],
       [],
+      [],
     );
     expect(mocks.generate.mock.calls[0]?.[0]).toMatchObject({
       workflow: { "1": { class_type: "SaveImage", inputs: {} } },
@@ -778,6 +779,7 @@ describe("buildExecutionStoreState", () => {
       { workflowInstanceId: "workflow-instance", revision: 0 },
       ["7", "9"],
       [{ node_id: "5", widget: "seed", value: 1 }],
+      [],
     );
     const queue = harness.state.generationQueue as Array<{
       effects: Record<string, unknown>;
@@ -865,6 +867,7 @@ describe("buildExecutionStoreState", () => {
     expect(mocks.preResolvePrompt).toHaveBeenCalledTimes(2);
     expect(mocks.preResolvePrompt).toHaveBeenLastCalledWith(
       { workflowInstanceId: "workflow-instance", revision: 0 },
+      [],
       [],
       [],
     );
@@ -958,6 +961,7 @@ describe("buildExecutionStoreState", () => {
       { workflowInstanceId: "new-instance", revision: 9 },
       [],
       [],
+      [],
     );
     expect(mocks.generate.mock.calls[0]?.[0]).toMatchObject({
       workflow: { "1": { class_type: "SaveImage", inputs: {} } },
@@ -1015,6 +1019,7 @@ describe("buildExecutionStoreState", () => {
       { workflowInstanceId: "workflow-instance", revision: 0 },
       [],
       [{ node_id: "5", widget: "seed", value: 2 }],
+      [],
     );
     const queue = harness.state.generationQueue as Array<{
       effects: { diagnostics: unknown[] };

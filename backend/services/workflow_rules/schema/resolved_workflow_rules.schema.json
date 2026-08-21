@@ -1470,6 +1470,18 @@
           "default": null,
           "title": "Default Randomize"
         },
+        "discover_when_bypassed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Discover When Bypassed"
+        },
         "display_unit": {
           "anyOf": [
             {
@@ -2761,6 +2773,18 @@
           ],
           "default": null,
           "title": "Default Randomize"
+        },
+        "discover_when_bypassed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Discover When Bypassed"
         },
         "display_unit": {
           "anyOf": [

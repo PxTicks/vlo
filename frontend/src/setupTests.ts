@@ -73,3 +73,46 @@ if (
     } as DOMRect;
   };
 }
+
+// Node 24+ exposes a built-in `localStorage` global. Vitest's jsdom environment
+// only copies a window key onto the global when that key is absent there
+// (getWindowKeys: `if (k in global) return keysArray.includes(k)`), and
+// `localStorage` is not on its allowlist -- so jsdom's Storage never lands and
+// Node's own global wins. Without `--localstorage-file` that global is an inert
+// empty object, which breaks every `localStorage` reader and every zustand
+// `persist` store ("storage.setItem is not a function"). Hand the global back to
+// jsdom's real per-document Storage, which is torn down between test files.
+const jsdomWindow = (globalThis as { jsdom?: { window?: Window } }).jsdom?.window;
+
+if (typeof globalThis.localStorage?.setItem !== "function") {
+  const storage: Storage =
+    typeof jsdomWindow?.localStorage?.setItem === "function"
+      ? jsdomWindow.localStorage
+      : createMemoryStorage();
+
+  Object.defineProperty(globalThis, "localStorage", {
+    value: storage,
+    writable: true,
+    configurable: true,
+  });
+}
+
+function createMemoryStorage(): Storage {
+  const entries = new Map<string, string>();
+  return {
+    get length() {
+      return entries.size;
+    },
+    key: (index: number) => [...entries.keys()][index] ?? null,
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      entries.set(key, String(value));
+    },
+    removeItem: (key: string) => {
+      entries.delete(key);
+    },
+    clear: () => {
+      entries.clear();
+    },
+  } as Storage;
+}

@@ -241,8 +241,13 @@ async def model_work_events(websocket: WebSocket):
             await websocket.send_json({"type": "event", "data": event.to_payload()})
 
     async def _await_disconnect() -> None:
+        # Starlette hands the disconnect frame over exactly once; receiving past
+        # it raises RuntimeError, which would race the teardown below and leak an
+        # unretrieved task exception on every client disconnect.
         while True:
-            await websocket.receive()
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                return
 
     sender = asyncio.create_task(_push_events())
     receiver = asyncio.create_task(_await_disconnect())

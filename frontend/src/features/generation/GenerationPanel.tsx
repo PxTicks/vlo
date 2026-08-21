@@ -258,6 +258,12 @@ function LivePreviewPlayback({
 
 export function GenerationPanel() {
   const workflowMenuDefinition = useWorkflowMenuDefinition();
+  // Held here rather than inside the tree: selecting a workflow unmounts the
+  // menu, so tree-local state would send Back to the root instead of the
+  // folder the workflow was picked from.
+  const [workflowMenuParentId, setWorkflowMenuParentId] = useState<
+    string | null
+  >(null);
   const [isBackendSavePending, setIsBackendSavePending] = useState(false);
   const [isWorkflowUploadPending, setIsWorkflowUploadPending] = useState(false);
   const [isWorkflowJsonDragActive, setIsWorkflowJsonDragActive] =
@@ -1290,6 +1296,8 @@ export function GenerationPanel() {
             layout={workflowMenuLayout.layout}
             defaultLayout={defaultWorkflowMenuLayout}
             leaves={workflowMenuLeaves}
+            currentParentId={workflowMenuParentId}
+            onCurrentParentIdChange={setWorkflowMenuParentId}
             onLeafActivate={(workflow) =>
               handleWorkflowSelect(workflow.id)
             }

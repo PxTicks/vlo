@@ -94,6 +94,32 @@ describe("NestedMenuTree", () => {
     ).toBeInTheDocument();
   });
 
+  it("reports navigation to the owner when the current folder is controlled", () => {
+    const onCurrentParentIdChange = vi.fn();
+    renderTree({ currentParentId: null, onCurrentParentIdChange });
+
+    fireEvent.click(screen.getByRole("button", { name: /Generate/ }));
+    expect(onCurrentParentIdChange).toHaveBeenCalledWith("image.generate");
+    // The owner holds the state, so the tree itself must not have navigated.
+    expect(
+      screen.queryByRole("button", { name: "Back to previous menu" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the controlled folder and walks back one level from it", () => {
+    const onCurrentParentIdChange = vi.fn();
+    renderTree({
+      currentParentId: "image.generate",
+      onCurrentParentIdChange,
+    });
+
+    expect(screen.getByRole("button", { name: "Flux" })).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to previous menu" }),
+    );
+    expect(onCurrentParentIdChange).toHaveBeenCalledWith(null);
+  });
+
   it("shows empty nodes in edit mode and cancels a draft", async () => {
     const { onSave } = renderTree();
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));

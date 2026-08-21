@@ -92,6 +92,13 @@ export interface NestedMenuTreeProps<TLeaf extends NestedMenuLeaf> {
   readonly defaultLayout: MenuTreeLayout;
   readonly leaves: readonly TLeaf[];
   readonly selectedLeafId?: string | null;
+  /**
+   * Optional controlled navigation: pass both to keep the browsed folder alive
+   * across unmounts (selecting a leaf swaps this tree out for a detail view,
+   * and uncontrolled state would drop the user back at the root).
+   */
+  readonly currentParentId?: string | null;
+  readonly onCurrentParentIdChange?: (parentId: string | null) => void;
   readonly onLeafActivate: (leaf: TLeaf) => void;
   readonly renderLeaf?: (
     leaf: TLeaf,
@@ -319,6 +326,8 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
   defaultLayout,
   leaves,
   selectedLeafId = null,
+  currentParentId: controlledParentId,
+  onCurrentParentIdChange,
   onLeafActivate,
   renderLeaf,
   onSave,
@@ -327,7 +336,18 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
   isSaving = false,
   persistenceError = null,
 }: NestedMenuTreeProps<TLeaf>) {
-  const [currentParentId, setCurrentParentId] = useState<string | null>(null);
+  const [uncontrolledParentId, setUncontrolledParentId] = useState<
+    string | null
+  >(null);
+  const currentParentId =
+    controlledParentId === undefined ? uncontrolledParentId : controlledParentId;
+  const setCurrentParentId = (parentId: string | null) => {
+    if (onCurrentParentIdChange) {
+      onCurrentParentIdChange(parentId);
+      return;
+    }
+    setUncontrolledParentId(parentId);
+  };
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(layout);
   const [resetRequested, setResetRequested] = useState(false);

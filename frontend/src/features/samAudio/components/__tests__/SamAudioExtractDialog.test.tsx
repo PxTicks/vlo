@@ -252,6 +252,18 @@ describe("SamAudioExtractDialog", () => {
       await screen.findByTestId("sam-audio-download-overlay"),
     ).toBeInTheDocument();
     expect(screen.getByText("Model missing")).toBeInTheDocument();
+    // Nothing in the prompt form can be used until a runtime exists, so the
+    // download panel owns the dialog on its own.
+    expect(screen.queryByLabelText("Text prompt")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Select Range" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Isolate Sound" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Add a text prompt, select a timeline range, or use both."),
+    ).not.toBeInTheDocument();
   });
 
   it("cancels the active SAM-Audio backend job during processing", async () => {

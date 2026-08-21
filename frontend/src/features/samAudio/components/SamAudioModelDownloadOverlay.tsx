@@ -112,7 +112,6 @@ export function SamAudioModelDownloadOverlay({
       onDismissError={dismissError}
       onAdoptExternalJob={adoptExternalJob}
       variant="plain"
-      fillHeight
     />
   );
 }

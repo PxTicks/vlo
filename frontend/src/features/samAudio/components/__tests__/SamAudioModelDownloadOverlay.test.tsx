@@ -65,9 +65,11 @@ describe("SamAudioModelDownloadOverlay", () => {
         models,
         loading: false,
         variant: "plain",
-        fillHeight: true,
       }),
     );
+    // The panel sits in the dialog's own column flow and must size to its
+    // content: a flex-grow child would collapse to a zero basis there.
+    expect(panelMock.mock.lastCall?.[0]).not.toHaveProperty("fillHeight");
   });
 
   it("uses the gated fallback for empty or failed registry responses", async () => {

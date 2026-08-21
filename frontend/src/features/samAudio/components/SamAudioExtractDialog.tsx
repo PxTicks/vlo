@@ -384,7 +384,16 @@ export function SamAudioExtractDialog() {
         aria-labelledby="sam-audio-extract-dialog-title"
       >
         <DialogTitle id="sam-audio-extract-dialog-title">{title}</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <DialogContent
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            // Children must keep their intrinsic height: a shrunk child
+            // overflows its box and paints over whatever follows it.
+            "& > *": { flexShrink: 0 },
+          }}
+        >
           {clip === null ? (
             <Alert severity="warning">The source clip is no longer available.</Alert>
           ) : null}
@@ -423,17 +432,7 @@ export function SamAudioExtractDialog() {
 
           {view === "configure" ? (
             <>
-              {availability === "unavailable" ? (
-                <Box sx={{ minHeight: 280, display: "flex" }}>
-                  <SamAudioModelDownloadOverlay
-                    onModelsInstalled={() => {
-                      setAvailability("idle");
-                      void checkAvailability();
-                    }}
-                  />
-                </Box>
-              ) : null}
-              {availability === "checking" ? (
+              {availability === "idle" || availability === "checking" ? (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
                   <LinearProgress />
                   <Typography variant="caption" sx={{ color: "text.secondary" }}>
@@ -441,62 +440,81 @@ export function SamAudioExtractDialog() {
                   </Typography>
                 </Box>
               ) : null}
-              {availabilityError ? (
-                <Alert severity="warning">{availabilityError}</Alert>
+
+              {/* Without a runtime there is nothing to configure, so the
+                  download panel replaces the prompt form rather than sharing
+                  the dialog with controls that cannot be used yet. */}
+              {availability === "unavailable" ? (
+                <>
+                  {availabilityError ? (
+                    <Alert severity="warning">{availabilityError}</Alert>
+                  ) : null}
+                  <SamAudioModelDownloadOverlay
+                    onModelsInstalled={() => {
+                      setAvailability("idle");
+                      void checkAvailability();
+                    }}
+                  />
+                </>
               ) : null}
-              {error ? <Alert severity="error">{error}</Alert> : null}
-              <TextField
-                label="Text prompt"
-                placeholder="man speaking"
-                value={promptText}
-                onChange={(event) => setPromptText(event.target.value)}
-                size="small"
-                fullWidth
-                sx={{ mt: 0.5 }}
-              />
-              <Box
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 1,
-                  border: "1px solid",
-                  borderColor: "divider",
-                  borderRadius: 1,
-                  p: 1.25,
-                }}
-              >
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <TimerIcon fontSize="small" color="primary" />
-                  <Typography variant="subtitle2">Timeline range</Typography>
-                </Box>
-                <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                  {range ? formatRangeSummary(range) : "No range selected"}
-                </Typography>
-                <Stack direction="row" spacing={1}>
-                  <Button
-                    variant="outlined"
-                    onClick={handleSelectRange}
+
+              {availability === "available" ? (
+                <>
+                  {error ? <Alert severity="error">{error}</Alert> : null}
+                  <TextField
+                    label="Text prompt"
+                    placeholder="man speaking"
+                    value={promptText}
+                    onChange={(event) => setPromptText(event.target.value)}
                     size="small"
-                    sx={{ textTransform: "none" }}
+                    fullWidth
+                    sx={{ mt: 0.5 }}
+                  />
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 1,
+                      border: "1px solid",
+                      borderColor: "divider",
+                      borderRadius: 1,
+                      p: 1.25,
+                    }}
                   >
-                    Select Range
-                  </Button>
-                  <Button
-                    variant="text"
-                    onClick={() => setRange(null)}
-                    size="small"
-                    disabled={!range}
-                    sx={{ textTransform: "none" }}
-                  >
-                    Clear Range
-                  </Button>
-                </Stack>
-              </Box>
-              <Divider />
-              {!hasPrompt && !hasRange ? (
-                <Alert severity="info">
-                  Add a text prompt, select a timeline range, or use both.
-                </Alert>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <TimerIcon fontSize="small" color="primary" />
+                      <Typography variant="subtitle2">Timeline range</Typography>
+                    </Box>
+                    <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                      {range ? formatRangeSummary(range) : "No range selected"}
+                    </Typography>
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        variant="outlined"
+                        onClick={handleSelectRange}
+                        size="small"
+                        sx={{ textTransform: "none" }}
+                      >
+                        Select Range
+                      </Button>
+                      <Button
+                        variant="text"
+                        onClick={() => setRange(null)}
+                        size="small"
+                        disabled={!range}
+                        sx={{ textTransform: "none" }}
+                      >
+                        Clear Range
+                      </Button>
+                    </Stack>
+                  </Box>
+                  <Divider />
+                  {!hasPrompt && !hasRange ? (
+                    <Alert severity="info">
+                      Add a text prompt, select a timeline range, or use both.
+                    </Alert>
+                  ) : null}
+                </>
               ) : null}
             </>
           ) : null}
@@ -535,7 +553,7 @@ export function SamAudioExtractDialog() {
               Cancel
             </Button>
           )}
-          {view === "configure" ? (
+          {view === "configure" && availability === "available" ? (
             <Button
               variant="contained"
               startIcon={<CallSplitIcon />}

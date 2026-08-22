@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # launch it should apply to.
 SETTINGS_RELATIVE_PATH = Path("user") / "default" / "comfy.settings.json"
 # VideoHelperSuite ships its animated sampling preview off, but vlo always
-# launches ComfyUI with `--preview-method taesd`, so on a managed install that
+# launches ComfyUI with `--preview-method latent2rgb`, so on a managed install that
 # frontend toggle is the only thing between sampling and useful video previews.
 # These are defaults, not policy: a key already present is the user's own
 # choice — including an explicit `false` — and is never rewritten.

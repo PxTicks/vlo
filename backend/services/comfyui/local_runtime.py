@@ -40,13 +40,13 @@ MANAGED_CUSTOM_NODE_REPOSITORY_URLS = (
 TORCH_CUDA_INDEX_URL = "https://download.pytorch.org/whl/cu130"
 TORCH_CUDA_PACKAGES = ("torch", "torchvision", "torchaudio")
 # Extras vlo passes when it launches ComfyUI itself: the bundled manager, and
-# TAESD latent previews so sampling streams useful progress frames (this needs
-# a matching model in models/vae_approx, and degrades quietly without one).
+# latent2rgb previews so sampling streams useful progress frames without an
+# additional preview model.
 # `--enable-manager` is recent, so each flag is only passed when the checkout's
 # parser advertises it — argparse aborts startup on an unknown argument.
 OPTIONAL_LAUNCH_ARGUMENTS: tuple[tuple[str, ...], ...] = (
     ("--enable-manager",),
-    ("--preview-method", "taesd"),
+    ("--preview-method", "latent2rgb"),
 )
 _CLI_ARGS_SOURCE_LIMIT_BYTES = 128 * 1024
 _GIT_REQUIRED_MESSAGE = (

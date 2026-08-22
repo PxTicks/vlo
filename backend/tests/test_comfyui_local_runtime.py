@@ -499,7 +499,7 @@ def _write_cli_args(checkout: Path, flags: tuple[str, ...]) -> None:
     (checkout / "comfy" / "cli_args.py").write_text(parser_source, encoding="utf-8")
 
 
-def test_launch_passes_manager_and_taesd_previews_when_supported(
+def test_launch_passes_manager_and_latent2rgb_previews_when_supported(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -534,7 +534,7 @@ def test_launch_passes_manager_and_taesd_previews_when_supported(
         "--disable-auto-launch",
         "--enable-manager",
         "--preview-method",
-        "taesd",
+        "latent2rgb",
     ]
 
 
@@ -566,7 +566,7 @@ def test_launch_omits_arguments_an_older_checkout_would_reject(
     ComfyuiLocalRuntime().launch(checkout, "http://127.0.0.1:8188")
 
     assert "--enable-manager" not in captured["command"]
-    assert captured["command"][-2:] == ["--preview-method", "taesd"]
+    assert captured["command"][-2:] == ["--preview-method", "latent2rgb"]
 
 
 def test_launch_arguments_are_dropped_without_a_readable_cli_args(

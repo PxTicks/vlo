@@ -382,20 +382,18 @@ python scripts/install-comfyui-nodes.py
 <!-- comfyui-custom-nodes:end -->
 
 When vlo launches ComfyUI itself, it passes `--enable-manager` and
-`--preview-method taesd`, so ComfyUI-Manager is available and sampling streams
+`--preview-method latent2rgb`, so ComfyUI-Manager is available and sampling streams
 live previews. Flags a checkout's argument parser does not advertise are
 dropped, so older ComfyUI versions still start. Starting ComfyUI yourself, the
 equivalent is:
 
 ```bash
 cd /path/to/ComfyUI
-python main.py --enable-manager --preview-method taesd
+python main.py --enable-manager --preview-method latent2rgb
 ```
 
-For previews from Wan workflows you will also need the Wan TAESD model. Download
-[`taew2_1.safetensors`](https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/taew2_1.safetensors)
-and place it at `ComfyUI/models/vae_approx/taew2_1.safetensors`, creating the
-`vae_approx` directory if it does not already exist.
+The `latent2rgb` preview method does not require a model in
+`ComfyUI/models/vae_approx`.
 
 ## Acknowledgements
 

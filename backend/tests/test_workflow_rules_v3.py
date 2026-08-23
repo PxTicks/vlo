@@ -350,7 +350,7 @@ def test_aspect_ratio_processing_normalizes_resize_image_mask_targets_in_v3_sche
 def test_ic_edit_rules_allow_frontend_control_prompt_enhancer_rewrites():
     rules_model, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
-        "vlo_ltx2_3_ic_edit.json",
+        "vlo_ltx2_5_ic_edit.json",
     )
 
     assert warnings == []
@@ -377,7 +377,7 @@ def test_ic_edit_rules_allow_frontend_control_prompt_enhancer_rewrites():
 def test_ltx23_inpaint_rules_allow_prompt_enhancer_rewrites_and_retake_widget():
     rules_model, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
-        "vlo_ltx2_3_inpaint.json",
+        "vlo_ltx2_5_inpaint.json",
     )
 
     assert warnings == []
@@ -399,7 +399,7 @@ def test_ltx23_inpaint_rules_allow_prompt_enhancer_rewrites_and_retake_widget():
 
 def test_ltx23_inpaint_workflow_emits_websocket_frames_and_preview_audio():
     workflow_graph = json.loads(
-        (DEFAULT_WORKFLOWS_DIR / "vlo_ltx2_3_inpaint.json").read_text(
+        (DEFAULT_WORKFLOWS_DIR / "vlo_ltx2_5_inpaint.json").read_text(
             encoding="utf-8"
         )
     )

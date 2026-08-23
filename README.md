@@ -38,7 +38,7 @@ Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, 
 - SAM2 points editor and masking.
   - Includes automatic cropping and stitching for video inpainting workflows.
 - ComfyUI bridge, allowing images, videos and timeline selections to be sent to ComfyUI
-  - Includes automatic aspect ratio adjustment (video models such as WAN and LTX2.3 cannot do all aspect ratios exactly).
+  - Includes automatic aspect ratio adjustment (video models such as WAN and LTX2.5 cannot do all aspect ratios exactly).
 - Built-in stackable adjustments and filters
 - Keyframes and spline editor for all transformations (layout, adjustments and filter effects)
 - Snappable markers and beat detection

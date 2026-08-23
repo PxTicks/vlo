@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "name": "LTX2.3 inpaint and stitch",
+  "name": "LTX2.5 inpaint and stitch",
   "nodes": {
     "115": {
       "widgets": {

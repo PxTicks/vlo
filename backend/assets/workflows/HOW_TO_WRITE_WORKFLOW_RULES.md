@@ -5,7 +5,7 @@ JSON and controls how that workflow is presented in the Generate panel and
 how assets (videos, masks) and frontend-widget inputs are fed into the ComfyUI workflow.
 
 This document walks through authoring a sidecar, using the real
-[`vlo_ltx2_3_inpaint.rules.json`](../../assets/.config/default_workflows/vlo_ltx2_3_inpaint.rules.json)
+[`vlo_ltx2_5_inpaint.rules.json`](../../assets/.config/default_workflows/vlo_ltx2_5_inpaint.rules.json)
 as the running example. It also covers the decisions an author will hit
 most often: exposing widgets, hiding widgets (and inputs), mask processing, and
 aspect ratio processing.
@@ -75,7 +75,7 @@ Sidecars must declare `"version": 3` and use the shape below.
 
 ---
 
-## Running Example: LTX2.3 inpaint and stitch
+## Running Example: LTX2.5 inpaint and stitch
 
 The inpaint workflow performs masked video inpainting with optional
 video/audio retake. Its sidecar is a good small-but-complete example — it
@@ -86,7 +86,7 @@ pipeline stages.
 ```json
 {
   "version": 3,
-  "name": "LTX2.3 inpaint and stitch",
+  "name": "LTX2.5 inpaint and stitch",
 
   "nodes": {
     "115": {
@@ -577,7 +577,7 @@ the right hook for "this control is meaningless until X happens" rather than
 
 ### Example: gate a widget on a media input being provided
 
-The LTX2.3 FLF2V "Voice only" toggle only matters when the optional
+The LTX2.5 FLF2V "Voice only" toggle only matters when the optional
 custom-audio input is populated. Gate it with `input_presence`:
 
 ```json

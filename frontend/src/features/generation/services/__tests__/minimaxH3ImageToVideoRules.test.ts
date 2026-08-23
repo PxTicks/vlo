@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { evaluateRewrites, type RewriteRule } from "../evaluateRewrites";
 
 /**
- * Both keyframes may be left empty here (as in vlo_ltx2_3), so an unfilled
+ * Both keyframes may be left empty here (as in vlo_ltx2_5), so an unfilled
  * input has to drop its loader and resize branch out of the prompt — otherwise
  * the loader executes and pulls whatever its filename widget resolved to.
  */

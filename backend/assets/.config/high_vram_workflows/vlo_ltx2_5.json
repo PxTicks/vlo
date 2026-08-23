@@ -791,15 +791,15 @@
         "Node name for S&R": "VAELoaderKJ",
         "models": [
           {
-            "name": "LTX23_audio_vae_bf16.safetensors",
-            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/vae/LTX23_audio_vae_bf16.safetensors",
+            "name": "ltx-2.5-audio-vae-bf16.safetensors",
+            "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/vae/ltx-2.5-audio-vae-bf16.safetensors",
             "directory": "vae"
           }
         ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "LTX23_audio_vae_bf16.safetensors",
+        "ltx-2.5-audio-vae-bf16.safetensors",
         "main_device",
         "bf16"
       ],
@@ -823,7 +823,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "Download models from here:\n\nhttps://huggingface.co/Kijai/LTX2.3_comfy\n\nText encoder: https://huggingface.co/Comfy-Org/ltx-2\n\nUse standard ComfyUI model directories such as diffusion_models, text_encoders, vae, loras, and latent_upscale_models."
+        "Download gated LTX-2.5 models from here:\n\nhttps://huggingface.co/Lightricks/LTX-2.5\n\nUse standard ComfyUI model directories such as diffusion_models, text_encoders, vae, loras, and latent_upscale_models."
       ],
       "color": "#222",
       "bgcolor": "#000"
@@ -938,14 +938,14 @@
         "Node name for S&R": "VAELoader",
         "models": [
           {
-            "name": "LTX23_video_vae_bf16.safetensors",
-            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/vae/LTX23_video_vae_bf16.safetensors",
+            "name": "ltx-2.5-video-vae-bf16.safetensors",
+            "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/vae/ltx-2.5-video-vae-bf16.safetensors",
             "directory": "vae"
           }
         ],
         "widget_ue_connectable": {}
       },
-      "widgets_values": ["LTX23_video_vae_bf16.safetensors"],
+      "widgets_values": ["ltx-2.5-video-vae-bf16.safetensors"],
       "color": "#1f1f48",
       "bgcolor": "rgba(24,24,27,.9)"
     },
@@ -1455,15 +1455,15 @@
         "secondTabWidth": 65,
         "models": [
           {
-            "name": "ltx-2.3-22b-distilled-lora-384.safetensors",
-            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/loras/ltx-2.3-22b-distilled-1.1_lora-dynamic_fro09_avg_rank_111_bf16.safetensors",
+            "name": "ltx-2.5-22b-distilled-lora-450-bf16.safetensors",
+            "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/loras/ltx-2.5-22b-distilled-lora-450-bf16.safetensors",
             "directory": "loras"
           }
         ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "ltx-2.3-22b-distilled-1.1_lora-dynamic_fro09_avg_rank_111_bf16.safetensors",
+        "ltx-2.5-22b-distilled-lora-450-bf16.safetensors",
         0.6
       ],
       "color": "#1f1f48",
@@ -1493,15 +1493,15 @@
         "Node name for S&R": "UNETLoader",
         "models": [
           {
-            "name": "ltx-2.3-22b-distilled-1.1_transformer_only_bf16.safetensors",
-            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/diffusion_models/ltx-2.3-22b-distilled-1.1_transformer_only_bf16.safetensors",
+            "name": "ltx-2.5-22b-distilled-transformer-bf16.safetensors",
+            "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors",
             "directory": "diffusion_models"
           }
         ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "ltx-2.3-22b-distilled-1.1_transformer_only_bf16.safetensors",
+        "ltx-2.5-22b-distilled-transformer-bf16.safetensors",
         "default"
       ],
       "color": "#1f1f48",
@@ -2888,7 +2888,7 @@
     },
     {
       "id": 190,
-      "type": "DualCLIPLoader",
+      "type": "CLIPLoader",
       "pos": [190, 3890],
       "size": [370, 130],
       "flags": {
@@ -2907,24 +2907,18 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.8.2",
-        "Node name for S&R": "DualCLIPLoader",
+        "Node name for S&R": "CLIPLoader",
         "models": [
           {
-            "name": "gemma_3_12B_it.safetensors",
-            "url": "https://huggingface.co/Comfy-Org/ltx-2/resolve/main/split_files/text_encoders/gemma_3_12B_it.safetensors",
-            "directory": "text_encoders"
-          },
-          {
-            "name": "ltx-2.3_text_projection_bf16.safetensors",
-            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/text_encoders/ltx-2.3_text_projection_bf16.safetensors",
+            "name": "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+            "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
             "directory": "text_encoders"
           }
         ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "gemma_3_12B_it.safetensors",
-        "ltx-2.3_text_projection_bf16.safetensors",
+        "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
         "ltxv",
         "default"
       ],

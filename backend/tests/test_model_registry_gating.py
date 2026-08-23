@@ -5,6 +5,7 @@ from services.model_registry import (
     _extract_workflow_models,
     _gated_repo_url_for,
     _is_gated_flux_url,
+    _is_gated_workflow_model_url,
 )
 
 
@@ -51,6 +52,19 @@ def test_is_gated_flux_url_ignores_non_huggingface_hosts():
     )
 
 
+def test_is_gated_workflow_model_url_matches_official_ltx_25_repo():
+    assert _is_gated_workflow_model_url(
+        "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/"
+        "diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors"
+    )
+
+
+def test_is_gated_workflow_model_url_does_not_gate_other_lightricks_repos():
+    assert not _is_gated_workflow_model_url(
+        "https://huggingface.co/Lightricks/LTX-Video/resolve/main/model.safetensors"
+    )
+
+
 def test_gated_repo_url_strips_path_to_repo_root():
     assert (
         _gated_repo_url_for(
@@ -75,6 +89,11 @@ def test_extract_workflow_models_marks_gated_and_repo_url():
                         "url": "https://huggingface.co/Comfy-Org/flux2-klein-9B/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors",
                         "directory": "text_encoders",
                     },
+                    {
+                        "name": "ltx-2.5-video-vae-bf16.safetensors",
+                        "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/vae/ltx-2.5-video-vae-bf16.safetensors",
+                        "directory": "vae",
+                    },
                 ]
             ),
         ],
@@ -92,3 +111,7 @@ def test_extract_workflow_models_marks_gated_and_repo_url():
     qwen_model = models["qwen_3_8b_fp8mixed.safetensors"]
     assert qwen_model["gated"] is False
     assert qwen_model["gatedRepoUrl"] is None
+
+    ltx_model = models["ltx-2.5-video-vae-bf16.safetensors"]
+    assert ltx_model["gated"] is True
+    assert ltx_model["gatedRepoUrl"] == "https://huggingface.co/Lightricks/LTX-2.5"

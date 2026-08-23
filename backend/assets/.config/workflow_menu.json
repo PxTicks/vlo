@@ -60,7 +60,7 @@
   ],
   "leaf_placements": [
     {
-      "workflow_id": "vlo_ltx2_3.json",
+      "workflow_id": "vlo_ltx2_5.json",
       "parent_id": "video.generate",
       "order": 0
     },
@@ -85,12 +85,12 @@
       "order": 0
     },
     {
-      "workflow_id": "vlo_ltx2_3_inpaint.json",
+      "workflow_id": "vlo_ltx2_5_inpaint.json",
       "parent_id": "video.edit",
       "order": 1
     },
     {
-      "workflow_id": "vlo_ltx2_3_ic_edit.json",
+      "workflow_id": "vlo_ltx2_5_ic_edit.json",
       "parent_id": "video.edit",
       "order": 2
     },

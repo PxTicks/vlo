@@ -32,6 +32,9 @@ _OPEN_FLUX_REPO_EXCEPTIONS = (
     re.compile(r"^black-forest-labs/FLUX\.1-schnell$", re.IGNORECASE),
     re.compile(r"^black-forest-labs/FLUX\.2-klein-base-4b", re.IGNORECASE),
 )
+_GATED_WORKFLOW_MODEL_REPOS = frozenset({
+    "lightricks/ltx-2.5",
+})
 
 # Download policy, mirroring ComfyUI's missingModelDownload.ts. Workflow graphs
 # are untrusted input — a graph opened in the editor can name any URL — so the
@@ -274,6 +277,17 @@ def _is_gated_flux_url(url: str) -> bool:
     return not any(exception.match(repo) for exception in _OPEN_FLUX_REPO_EXCEPTIONS)
 
 
+def _is_gated_workflow_model_url(url: str) -> bool:
+    if _is_gated_flux_url(url):
+        return True
+
+    repo_info = _parse_hf_repo(url)
+    if repo_info is None:
+        return False
+    owner, repo_name, _repo_url = repo_info
+    return f"{owner}/{repo_name}".lower() in _GATED_WORKFLOW_MODEL_REPOS
+
+
 def _gated_repo_url_for(url: str) -> str | None:
     repo_info = _parse_hf_repo(url)
     if repo_info is None:
@@ -317,7 +331,7 @@ def _extract_workflow_models(workflow: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
 
             key = _build_workflow_model_key(directory, filename)
-            gated = _is_gated_flux_url(url)
+            gated = _is_gated_workflow_model_url(url)
             unique_models.setdefault(
                 key,
                 {

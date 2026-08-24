@@ -47,6 +47,7 @@ describe("composite adapters", () => {
       clips: [videoClip("a", 500, 1000), videoClip("b", 800, 400)],
       fps: 24,
       frameStep: 4,
+      frameOffset: 5,
     };
 
     const content = selectionToCompositeContent(selection, GRID_FPS);
@@ -55,6 +56,7 @@ describe("composite adapters", () => {
     expect(content.clips.map((clip) => clip.start)).toEqual([0, 300]);
     expect(content.fps).toBe(24);
     expect(content.frameStep).toBe(4);
+    expect(content.frameOffset).toBe(5);
   });
 
   it("deep-clones captured clips and tracks so content edits are isolated", () => {
@@ -243,6 +245,8 @@ describe("composite adapters", () => {
       end: 1500,
       clips: [videoClip("a", 500, 1000)],
       fps: 30,
+      frameStep: 17,
+      frameOffset: 5,
     };
 
     const replayed = compositeContentToSelection(
@@ -253,6 +257,34 @@ describe("composite adapters", () => {
     expect(replayed.end).toBe(1000);
     expect(replayed.clips[0].start).toBe(0);
     expect(replayed.fps).toBe(30);
+    expect(replayed.frameStep).toBe(17);
+    expect(replayed.frameOffset).toBe(5);
+  });
+
+  it("hashes the frame-count grid, so an offset change forces a re-bake", () => {
+    const base = selectionToCompositeContent(
+      {
+        start: 0,
+        end: 1000,
+        clips: [videoClip("a", 0, 1000)],
+        fps: 24,
+        frameStep: 17,
+      },
+      GRID_FPS,
+    );
+    const offset = selectionToCompositeContent(
+      {
+        start: 0,
+        end: 1000,
+        clips: [videoClip("a", 0, 1000)],
+        fps: 24,
+        frameStep: 17,
+        frameOffset: 5,
+      },
+      GRID_FPS,
+    );
+
+    expect(hashCompositeContent(offset)).not.toBe(hashCompositeContent(base));
   });
 
   it("hashes stably and changes when bake-affecting content changes", () => {

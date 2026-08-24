@@ -21,13 +21,16 @@ interface MockSelectionState {
   selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
   selectionFrameStep: number;
+  selectionFrameOffset: number;
   selectionRecommendedFps: number | null;
   selectionRecommendedFrameStep: number | null;
+  selectionRecommendedFrameOffset: number | null;
   selectionRecommendedMaxTicks: number | null;
   updateSelectionStart: Mock;
   updateSelectionEnd: Mock;
   setSelectionFpsOverride: Mock;
   setSelectionFrameStep: Mock;
+  setSelectionFrameOffset: Mock;
   enterTrackSelectionStage: Mock;
   returnToRangeSelectionStage: Mock;
   toggleSelectionIncludedTrack: Mock;
@@ -63,13 +66,16 @@ function createSelectionState(
     selectionIncludedTrackIds: ["track-1", "track-2"],
     selectionFpsOverride: null,
     selectionFrameStep: 1,
+    selectionFrameOffset: 1,
     selectionRecommendedFps: null,
     selectionRecommendedFrameStep: null,
+    selectionRecommendedFrameOffset: null,
     selectionRecommendedMaxTicks: null,
     updateSelectionStart: vi.fn(),
     updateSelectionEnd: vi.fn(),
     setSelectionFpsOverride: vi.fn(),
     setSelectionFrameStep: vi.fn(),
+    setSelectionFrameOffset: vi.fn(),
     enterTrackSelectionStage: vi.fn(),
     returnToRangeSelectionStage: vi.fn(),
     toggleSelectionIncludedTrack: vi.fn(),
@@ -266,6 +272,20 @@ describe("SelectionOverlay", () => {
     });
 
     expect(hasColResizeHandle).toBe(true);
+  });
+
+  it("surfaces the workflow's frame-count grid, offset included", () => {
+    selectionState = createSelectionState({
+      selectionFrameStep: 17,
+      selectionFrameOffset: 5,
+      selectionRecommendedFrameStep: 17,
+      selectionRecommendedFrameOffset: 5,
+    });
+
+    render(<SelectionOverlay />);
+
+    expect(screen.getByText("+5")).toBeInTheDocument();
+    expect(screen.getByText(/rec\s*17\+5/)).toBeInTheDocument();
   });
 
   it("advances to track selection before final confirmation when include mode is enabled", () => {

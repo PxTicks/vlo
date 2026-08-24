@@ -25,6 +25,7 @@ import {
   getTicksPerFrame,
   normalizeDetachedTimelineSelection,
   resolveSelectionFps,
+  resolveSelectionFrameOffset,
   resolveSelectionFrameStep,
   snapFrameCountToStep,
 } from "../../timelineSelection";
@@ -911,7 +912,11 @@ export async function renderTimelineSelectionToMp4WithMask(
 export async function renderTimelineSelectionToFrameBatch(
   timelineSelection: TimelineSelection,
   fps: number,
-  options: { frameStep?: number; maxFrames?: number } = {},
+  options: {
+    frameStep?: number;
+    frameOffset?: number;
+    maxFrames?: number;
+  } = {},
 ): Promise<File[]> {
   const clampedFps = resolveSelectionFps(timelineSelection, fps);
   const frameStep = resolveSelectionFrameStep({
@@ -919,6 +924,12 @@ export async function renderTimelineSelectionToFrameBatch(
       timelineSelection.frameStep && timelineSelection.frameStep > 1
         ? timelineSelection.frameStep
         : (options.frameStep ?? timelineSelection.frameStep),
+  });
+  const frameOffset = resolveSelectionFrameOffset({
+    frameOffset:
+      timelineSelection.frameOffset && timelineSelection.frameOffset > 1
+        ? timelineSelection.frameOffset
+        : (options.frameOffset ?? timelineSelection.frameOffset),
   });
   const ticksPerFrame = getTicksPerFrame(clampedFps);
   const startTick = timelineSelection.start;
@@ -930,7 +941,12 @@ export async function renderTimelineSelectionToFrameBatch(
     1,
     Math.ceil((requestedEndTick - startTick) / ticksPerFrame),
   );
-  let frameCount = snapFrameCountToStep(rawFrameCount, frameStep, "floor");
+  let frameCount = snapFrameCountToStep(
+    rawFrameCount,
+    frameStep,
+    "floor",
+    frameOffset,
+  );
   const maxFrames =
     typeof options.maxFrames === "number" &&
     Number.isFinite(options.maxFrames) &&
@@ -942,6 +958,7 @@ export async function renderTimelineSelectionToFrameBatch(
       Math.min(frameCount, maxFrames),
       frameStep,
       "floor",
+      frameOffset,
     );
   }
 

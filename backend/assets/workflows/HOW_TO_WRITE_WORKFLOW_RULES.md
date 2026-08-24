@@ -1030,7 +1030,7 @@ slot entry mirrors a subset of `present`:
 | `label`                                    | Display label                                    |
 | `param`                                    | Parameter name for value injection               |
 | `experimental`                             | Gated behind an experimental toggle in the UI    |
-| `export_fps` / `frame_step` / `max_frames` | Frame selection overrides (numbers only)         |
+| `export_fps` / `frame_step` / `frame_offset` / `max_frames` | Frame selection overrides (numbers only) |
 
 Slots are referenced by id from node `present` blocks when a node should
 appear behind a slot rather than as its own top-level input.
@@ -1046,7 +1046,7 @@ appear behind a slot rather than as its own top-level input.
 | `present`          | object                                   | Primary-input presentation (see below)               |
 | `widgets_mode`     | `"control_after_generate"` \| `"all"`    | Widget auto-discovery mode for this node             |
 | `widgets`          | `{ <param>: WidgetEntry }`               | Explicit widget definitions and overrides            |
-| `selection`        | `{ export_fps, frame_step, max_frames }` | Video frame selection for video inputs (see below)   |
+| `selection`        | `{ export_fps, frame_step, frame_offset, max_frames }` | Video frame selection for video inputs (see below) |
 | `node_title`       | string                                   | Override for auto-derived group title fallback       |
 
 ### `selection`
@@ -1057,7 +1057,8 @@ audio input.
 | Field            | Type                | Purpose                                                       |
 | ---------------- | ------------------- | ------------------------------------------------------------- |
 | `export_fps`     | integer \| `"project"` | Frame rate the selection is rendered at                    |
-| `frame_step`     | integer             | Selection length must be a multiple of this many frames        |
+| `frame_step`     | integer             | Grid spacing: the selected frame count moves in steps of this  |
+| `frame_offset`   | integer             | Grid phase (default 1): valid counts are `frame_step * n + frame_offset` |
 | `max_frames`     | integer             | Cap on the selected frame count                                |
 | `message`        | string              | Hint shown in the selection overlay                            |
 | `include_tracks` | boolean             | Record which timeline tracks the selection covers              |
@@ -1071,6 +1072,14 @@ the model genuinely cannot run at anything else.
 Omitting `export_fps` also falls back to the project frame rate, but it
 gives the user no recommendation in the selection overlay — `"project"`
 states the intent and surfaces the rate in the UI.
+
+`frame_step` and `frame_offset` together describe the grid of frame counts
+the model accepts: `frame_step * n + frame_offset` for integer `n >= 0`.
+The default offset of `1` gives the usual `8n + 1` style grid (`frame_step: 8`
+→ 1, 9, 17, 25 ...). Models with a different phase declare it: MiniMax H3
+takes `frame_step: 17` with `frame_offset: 5`, so the selection snaps to 5,
+22, 39, 56 ... frames, and `frame_offset` is also the shortest selection the
+user can drag out.
 
 ### `present`
 

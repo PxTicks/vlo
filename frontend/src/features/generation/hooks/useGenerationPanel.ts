@@ -123,6 +123,29 @@ import {
   reconcileNodeBypassWidgetTargets,
 } from "../utils/nodeBypassWidgets";
 
+/**
+ * Mirrors the render pipeline's `applySelectionConfigDefaults`: a selection
+ * value of 1 (or none) counts as unset, and the workflow rule fills it in. The
+ * mini editor has to resolve its crop grid the same way, otherwise it accepts a
+ * span the pipeline then re-snaps — truncating the crop the user just made.
+ */
+function resolveGridConstraint(
+  selectionValue: number | undefined,
+  configValue: number | undefined,
+): number {
+  if (typeof selectionValue === "number" && selectionValue > 1) {
+    return Math.max(1, Math.round(selectionValue));
+  }
+  if (
+    typeof configValue === "number" &&
+    Number.isFinite(configValue) &&
+    configValue > 0
+  ) {
+    return Math.max(1, Math.round(configValue));
+  }
+  return 1;
+}
+
 function applySelectionConfigDefaults(
   selection: ReturnType<typeof createTimelineSelection>,
   config: WorkflowSelectionConfig | undefined,
@@ -136,6 +159,15 @@ function applySelectionConfigDefaults(
     config.frameStep > 0
   ) {
     next.frameStep = Math.max(1, Math.round(config.frameStep));
+  }
+
+  if (
+    (typeof next.frameOffset !== "number" || next.frameOffset <= 0) &&
+    typeof config?.frameOffset === "number" &&
+    Number.isFinite(config.frameOffset) &&
+    config.frameOffset > 0
+  ) {
+    next.frameOffset = Math.max(1, Math.round(config.frameOffset));
   }
 
   return next;
@@ -1407,6 +1439,11 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         selectionConfig.frameStep > 0
           ? selectionConfig.frameStep
           : null;
+      const recommendedFrameOffset =
+        typeof selectionConfig?.frameOffset === "number" &&
+        selectionConfig.frameOffset > 0
+          ? selectionConfig.frameOffset
+          : null;
       const recommendedMaxTicks =
         typeof selectionConfig?.maxFrames === "number" &&
         selectionConfig.maxFrames > 0
@@ -1414,9 +1451,13 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
           : null;
       timelineSelectionStore.setSelectionFpsOverride(recommendedFps);
       timelineSelectionStore.setSelectionFrameStep(recommendedFrameStep ?? 1);
+      timelineSelectionStore.setSelectionFrameOffset(
+        recommendedFrameOffset ?? 1,
+      );
       timelineSelectionStore.setSelectionRecommendations({
         fps: recommendedFps,
         frameStep: recommendedFrameStep,
+        frameOffset: recommendedFrameOffset,
         maxTicks: recommendedMaxTicks,
       });
 
@@ -1683,20 +1724,25 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
           ? sourceSelection.fps
           : projectFps
         : (resolveSelectionConfigFps(selectionConfig, projectFps) ?? projectFps);
-      const constraintFrameStep = sourceSelection
-        ? sourceSelection.frameStep && sourceSelection.frameStep > 0
-          ? sourceSelection.frameStep
-          : 1
-        : selectionConfig?.frameStep && selectionConfig.frameStep > 0
-          ? selectionConfig.frameStep
-          : 1;
+      const constraintFrameStep = resolveGridConstraint(
+        sourceSelection?.frameStep,
+        selectionConfig?.frameStep,
+      );
+      const constraintFrameOffset = resolveGridConstraint(
+        sourceSelection?.frameOffset,
+        selectionConfig?.frameOffset,
+      );
 
       void useMiniEditorStore.getState().open({
         openerId: "generation-panel",
         title: input?.label ? `Edit: ${input.label}` : "Edit video",
         prepare,
         onSave,
-        frameConstraint: { fps: constraintFps, frameStep: constraintFrameStep },
+        frameConstraint: {
+          fps: constraintFps,
+          frameStep: constraintFrameStep,
+          frameOffset: constraintFrameOffset,
+        },
       });
     },
     [

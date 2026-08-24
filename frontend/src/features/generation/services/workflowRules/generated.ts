@@ -58,7 +58,7 @@ export interface FrontendControlStateReference {
 export interface InputMetadataReference {
   kind?: "input_metadata";
   input: string;
-  field: "sourceKind" | "inputType" | "mediaType" | "timelineSelection.startTick" | "timelineSelection.endTick" | "timelineSelection.durationTicks" | "timelineSelection.durationSeconds" | "timelineSelection.effectiveFps" | "timelineSelection.frameStep" | "timelineSelection.frameCount" | "timelineSelection.clipCount" | "timelineSelection.trackCount" | "timelineSelection.includedTrackCount" | "timelineSelection.hasMaskClip" | "timelineSelection.isRange";
+  field: "sourceKind" | "inputType" | "mediaType" | "timelineSelection.startTick" | "timelineSelection.endTick" | "timelineSelection.durationTicks" | "timelineSelection.durationSeconds" | "timelineSelection.effectiveFps" | "timelineSelection.frameStep" | "timelineSelection.frameOffset" | "timelineSelection.frameCount" | "timelineSelection.clipCount" | "timelineSelection.trackCount" | "timelineSelection.includedTrackCount" | "timelineSelection.hasMaskClip" | "timelineSelection.isRange";
 }
 
 export interface MaskProcessingTarget {
@@ -319,6 +319,7 @@ export interface WorkflowRuleRepeatableInput {
 export interface WorkflowRuleSelectionConfig {
   export_fps?: number | "project" | null;
   frame_step?: number | null;
+  frame_offset?: number | null;
   max_frames?: number | null;
   message?: string | null;
   include_tracks?: boolean | null;
@@ -331,6 +332,7 @@ export interface WorkflowRuleSlot {
   experimental?: boolean | null;
   export_fps?: number | null;
   frame_step?: number | null;
+  frame_offset?: number | null;
   max_frames?: number | null;
 }
 

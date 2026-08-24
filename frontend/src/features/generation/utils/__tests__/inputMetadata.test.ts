@@ -75,6 +75,51 @@ describe("buildWorkflowInputMetadataMap", () => {
     });
   });
 
+  it("reports a frame count on the selection's offset grid", () => {
+    // 4s at 24 fps is 96 raw frames; the nearest 17k+5 count at or below is 90.
+    const selection = createSelection({ frameStep: 17, frameOffset: 5 });
+    const metadata = buildWorkflowInputMetadataMap(
+      [
+        {
+          id: "video_input",
+          nodeId: "89",
+          classType: "LoadVideo",
+          inputType: "video",
+          param: "video",
+          label: "Video",
+          currentValue: null,
+          origin: "rule",
+        },
+      ],
+      {
+        video_input: {
+          kind: "timelineSelection",
+          mediaType: "video",
+          timelineSelection: selection,
+          thumbnailFile: new File(["thumb"], "thumb.png", { type: "image/png" }),
+          thumbnailUrl: "blob://thumb",
+          isExtracting: false,
+          extractionRequestId: 1,
+          extractionError: null,
+          preparedVideoFile: null,
+          preparedMaskFile: null,
+        },
+      },
+      {
+        fps: 30,
+        aspectRatio: "16:9",
+      },
+    );
+
+    expect(metadata.video_input).toMatchObject({
+      timelineSelection: {
+        frameStep: 17,
+        frameOffset: 5,
+        frameCount: 90,
+      },
+    });
+  });
+
   it("preserves frame-source metadata for timeline-derived image inputs", () => {
     const metadata = buildWorkflowInputMetadataMap(
       [

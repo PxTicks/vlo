@@ -29,10 +29,12 @@ describe("ExportRenderer - RenderOptions interface", () => {
           clips: [],
           fps: 24,
           frameStep: 4,
+          frameOffset: 5,
         },
       };
       expect(options.timelineSelection?.fps).toBe(24);
       expect(options.timelineSelection?.frameStep).toBe(4);
+      expect(options.timelineSelection?.frameOffset).toBe(5);
     });
 
     it("should accept timelineSelection with clip-store only", () => {

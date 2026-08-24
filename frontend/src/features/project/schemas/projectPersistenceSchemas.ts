@@ -326,6 +326,7 @@ const compositeContentSchema = z
     includedTrackIds: z.array(z.string()).optional(),
     fps: z.number().positive().optional(),
     frameStep: z.number().positive().optional(),
+    frameOffset: z.number().positive().optional(),
     durationTicks: z.number(),
   })
   .passthrough();

@@ -100,6 +100,7 @@ describe("workflow rule primitives", () => {
       toSelectionConfig({
         export_fps: 24,
         frame_step: 4,
+        frame_offset: 5,
         max_frames: 81,
         message: " Choose a range ",
         include_tracks: true,
@@ -107,6 +108,7 @@ describe("workflow rule primitives", () => {
     ).toEqual({
       exportFps: 24,
       frameStep: 4,
+      frameOffset: 5,
       maxFrames: 81,
       message: "Choose a range",
       includeTracks: true,
@@ -115,6 +117,7 @@ describe("workflow rule primitives", () => {
       toSelectionConfig({
         export_fps: 0,
         frame_step: -1,
+        frame_offset: 0,
         max_frames: 0,
         message: " ",
         include_tracks: false,

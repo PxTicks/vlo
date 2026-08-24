@@ -63,9 +63,16 @@ export interface TimelineRegionData {
   fps?: number;
   /**
    * Optional frame-step constraint for AI workflows that require frame counts
-   * matching `frameStep * n + 1` (for integer n). Defaults to 1.
+   * matching `frameStep * n + frameOffset` (for integer n >= 0). Defaults to 1.
    */
   frameStep?: number;
+  /**
+   * Phase of the frame-count grid described by {@link frameStep}: the smallest
+   * valid frame count, and the remainder every larger one leaves. Defaults to 1
+   * (the historical `frameStep * n + 1` grid); MiniMax H3, for instance, uses
+   * frameStep 17 with frameOffset 5.
+   */
+  frameOffset?: number;
 }
 
 export interface TimelineSelection extends TimelineRegionData {

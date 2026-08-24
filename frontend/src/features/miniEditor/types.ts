@@ -44,12 +44,14 @@ export interface MiniEditorInitialState {
 /**
  * Frame-quantization constraint inherited from the workflow's timeline-selection
  * rules. When provided, the crop snaps so its length is always a valid frame
- * count (`frameStep * n + 1` frames at `fps`), matching what the generation
+ * count (`frameStep * n + frameOffset` frames at `fps`), matching what the
  * pipeline requires of the rendered selection.
  */
 export interface MiniEditorFrameConstraint {
   fps: number;
   frameStep: number;
+  /** Grid phase; defaults to 1. */
+  frameOffset?: number;
 }
 
 export interface MiniEditorOpenArgs {

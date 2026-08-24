@@ -19,6 +19,7 @@ import {
   getReferencedSubordinateClipIds,
   getTicksPerFrame,
   resolveSelectionFps,
+  resolveSelectionFrameOffset,
   resolveSelectionFrameStep,
   snapFrameCountToStep,
 } from "./timelineSelection";
@@ -30,6 +31,7 @@ export interface CreateTimelineSelectionFromClipIdsOptions {
   transitions?: readonly Transition[];
   fps?: number;
   frameStep?: number;
+  frameOffset?: number;
   message?: string;
   includedTrackIds?: readonly string[];
 }
@@ -44,6 +46,7 @@ export function createTimelineSelection(
   const {
     selectionFpsOverride,
     selectionFrameStep,
+    selectionFrameOffset,
     selectionMessage,
     selectionIncludeModeEnabled,
     selectionIncludedTrackIds,
@@ -76,6 +79,7 @@ export function createTimelineSelection(
       : {}),
     fps: selectionFps,
     frameStep: selectionFrameStep,
+    frameOffset: selectionFrameOffset,
   };
 }
 
@@ -111,6 +115,7 @@ export function createTimelineSelectionFromClipIds({
   transitions,
   fps,
   frameStep,
+  frameOffset,
   message,
   includedTrackIds,
 }: CreateTimelineSelectionFromClipIdsOptions): TimelineSelection | null {
@@ -161,12 +166,13 @@ export function createTimelineSelectionFromClipIds({
       : {}),
     ...(typeof fps === "number" ? { fps } : {}),
     ...(typeof frameStep === "number" ? { frameStep } : {}),
+    ...(typeof frameOffset === "number" ? { frameOffset } : {}),
   };
 }
 
 export function getDefaultSelectionEnd(startTick: number): number {
   const fps = useProjectStore.getState().config.fps;
-  const { selectionFpsOverride, selectionFrameStep } =
+  const { selectionFpsOverride, selectionFrameStep, selectionFrameOffset } =
     useTimelineSelectionStore.getState();
   const effectiveFps = resolveSelectionFps(
     { fps: selectionFpsOverride },
@@ -174,6 +180,9 @@ export function getDefaultSelectionEnd(startTick: number): number {
   );
   const frameStep = resolveSelectionFrameStep({
     frameStep: selectionFrameStep,
+  });
+  const frameOffset = resolveSelectionFrameOffset({
+    frameOffset: selectionFrameOffset,
   });
   const ticksPerFrame = getTicksPerFrame(effectiveFps);
   const maxDuration = getTimelineDuration();
@@ -183,6 +192,15 @@ export function getDefaultSelectionEnd(startTick: number): number {
     1,
     Math.ceil((requestedEndTick - startTick) / ticksPerFrame),
   );
-  const safeFrameCount = snapFrameCountToStep(rawFrameCount, frameStep, "floor");
+  // When the timeline runs out before the grid's smallest valid count, the
+  // default still spans that count and overhangs the end. The grid is a hard
+  // workflow requirement, so an overhang the user can see and drag back beats
+  // seeding them with a length the generation would reject.
+  const safeFrameCount = snapFrameCountToStep(
+    rawFrameCount,
+    frameStep,
+    "floor",
+    frameOffset,
+  );
   return startTick + safeFrameCount * ticksPerFrame;
 }

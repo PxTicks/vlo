@@ -88,6 +88,7 @@ export interface SelectionExportOptions {
   selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
   selectionFrameStep: number;
+  selectionFrameOffset?: number;
   onProgress?: (progress: number) => void;
   /** Output container; the renderer's own default when omitted. */
   format?: OutputVideoFormat;
@@ -205,6 +206,7 @@ export function useExportJobController({
         selectionIncludedTrackIds,
         selectionFpsOverride,
         selectionFrameStep,
+        selectionFrameOffset,
         onProgress,
         format,
         keyFrameInterval,
@@ -250,6 +252,9 @@ export function useExportJobController({
             : {}),
           fps: selectionFps,
           frameStep: selectionFrameStep,
+          ...(selectionFrameOffset && selectionFrameOffset > 1
+            ? { frameOffset: selectionFrameOffset }
+            : {}),
         };
 
         const file = await renderSelectionToVideoFile(

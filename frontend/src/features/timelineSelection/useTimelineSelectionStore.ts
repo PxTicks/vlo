@@ -13,8 +13,10 @@ export interface TimelineSelectionState {
   selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
   selectionFrameStep: number;
+  selectionFrameOffset: number;
   selectionRecommendedFps: number | null;
   selectionRecommendedFrameStep: number | null;
+  selectionRecommendedFrameOffset: number | null;
   selectionRecommendedMaxTicks: number | null;
   enterSelectionMode: (
     startTick: number,
@@ -35,9 +37,11 @@ export interface TimelineSelectionState {
   includeAllSelectionTracks: (trackIds: readonly string[]) => void;
   setSelectionFpsOverride: (fps: number | null) => void;
   setSelectionFrameStep: (step: number) => void;
+  setSelectionFrameOffset: (offset: number) => void;
   setSelectionRecommendations: (options: {
     fps?: number | null;
     frameStep?: number | null;
+    frameOffset?: number | null;
     maxTicks?: number | null;
   }) => void;
   clearSelectionRecommendations: () => void;
@@ -55,8 +59,10 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
   selectionIncludedTrackIds: [],
   selectionFpsOverride: null,
   selectionFrameStep: 1,
+  selectionFrameOffset: 1,
   selectionRecommendedFps: null,
   selectionRecommendedFrameStep: null,
+  selectionRecommendedFrameOffset: null,
   selectionRecommendedMaxTicks: null,
   enterSelectionMode: (startTick, endTick, options) =>
     set({
@@ -138,7 +144,14 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
           ? Math.max(1, Math.round(step))
           : 1,
     }),
-  setSelectionRecommendations: ({ fps, frameStep, maxTicks }) =>
+  setSelectionFrameOffset: (offset) =>
+    set({
+      selectionFrameOffset:
+        typeof offset === "number" && Number.isFinite(offset) && offset > 0
+          ? Math.max(1, Math.round(offset))
+          : 1,
+    }),
+  setSelectionRecommendations: ({ fps, frameStep, frameOffset, maxTicks }) =>
     set({
       selectionRecommendedFps:
         typeof fps === "number" && Number.isFinite(fps) && fps > 0
@@ -150,6 +163,12 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
         frameStep > 0
           ? Math.max(1, Math.round(frameStep))
           : null,
+      selectionRecommendedFrameOffset:
+        typeof frameOffset === "number" &&
+        Number.isFinite(frameOffset) &&
+        frameOffset > 0
+          ? Math.max(1, Math.round(frameOffset))
+          : null,
       selectionRecommendedMaxTicks:
         typeof maxTicks === "number" && Number.isFinite(maxTicks) && maxTicks > 0
           ? maxTicks
@@ -159,6 +178,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
     set({
       selectionRecommendedFps: null,
       selectionRecommendedFrameStep: null,
+      selectionRecommendedFrameOffset: null,
       selectionRecommendedMaxTicks: null,
     }),
   exitSelectionMode: () =>
@@ -173,6 +193,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
       selectionIncludedTrackIds: [],
       selectionRecommendedFps: null,
       selectionRecommendedFrameStep: null,
+      selectionRecommendedFrameOffset: null,
       selectionRecommendedMaxTicks: null,
     }),
 }));

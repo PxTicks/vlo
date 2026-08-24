@@ -112,6 +112,7 @@ WorkflowInputMetadataField = Literal[
     "timelineSelection.durationSeconds",
     "timelineSelection.effectiveFps",
     "timelineSelection.frameStep",
+    "timelineSelection.frameOffset",
     "timelineSelection.frameCount",
     "timelineSelection.clipCount",
     "timelineSelection.trackCount",
@@ -294,6 +295,7 @@ class WorkflowConditionalBooleanOverride(WorkflowRuleBaseModel):
 class WorkflowRuleSelectionConfig(WorkflowRuleBaseModel):
     export_fps: SelectionFps | None = None
     frame_step: int | None = None
+    frame_offset: int | None = None
     max_frames: int | None = None
     message: str | None = None
     include_tracks: bool | None = None
@@ -318,6 +320,7 @@ class WorkflowRuleSlot(WorkflowRuleBaseModel):
     experimental: bool | None = None
     export_fps: int | None = None
     frame_step: int | None = None
+    frame_offset: int | None = None
     max_frames: int | None = None
 
 

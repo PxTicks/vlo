@@ -23,7 +23,11 @@ describe("generation metadata replay helpers", () => {
         origin: "rule",
         dispatch: {
           kind: "node",
-          selectionConfig: { exportFps: "project", frameStep: 4 },
+          selectionConfig: {
+            exportFps: "project",
+            frameStep: 4,
+            frameOffset: 5,
+          },
         },
       },
     ];
@@ -52,8 +56,16 @@ describe("generation metadata replay helpers", () => {
       // The link resolves at capture time, so the same rule records whatever
       // rate the project was on — never the sentinel, which a later project
       // change would silently reinterpret.
-      expect(buildAtProjectFps(24)).toEqual({ exportFps: 24, frameStep: 4 });
-      expect(buildAtProjectFps(60)).toEqual({ exportFps: 60, frameStep: 4 });
+      expect(buildAtProjectFps(24)).toEqual({
+        exportFps: 24,
+        frameStep: 4,
+        frameOffset: 5,
+      });
+      expect(buildAtProjectFps(60)).toEqual({
+        exportFps: 60,
+        frameStep: 4,
+        frameOffset: 5,
+      });
     } finally {
       useProjectStore.setState({ config: originalConfig });
     }

@@ -780,6 +780,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
       selectionIncludedTrackIds,
       selectionFpsOverride,
       selectionFrameStep,
+      selectionFrameOffset,
       exitSelectionMode,
     } = useTimelineSelectionStore.getState();
 
@@ -797,6 +798,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
         selectionIncludedTrackIds,
         selectionFpsOverride,
         selectionFrameStep,
+        selectionFrameOffset,
         onProgress: (progress) => {
           useExtractStore.getState().setProgress(progress);
         },

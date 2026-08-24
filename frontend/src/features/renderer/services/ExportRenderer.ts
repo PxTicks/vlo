@@ -39,6 +39,7 @@ import {
   getIncludedTracksForSelection,
   getTicksPerFrame,
   resolveSelectionFps,
+  resolveSelectionFrameOffset,
   resolveSelectionFrameStep,
   snapFrameCountToStep,
 } from "../../timelineSelection";
@@ -489,12 +490,18 @@ export class ExportRenderer {
       timelineSelection.end ?? inferredEndTick,
     );
     const frameStep = resolveSelectionFrameStep(timelineSelection);
+    const frameOffset = resolveSelectionFrameOffset(timelineSelection);
     const ticksPerFrame = getTicksPerFrame(renderFps);
     const rawFrameCount = Math.max(
       1,
       Math.ceil((requestedEndTick - startTick) / ticksPerFrame),
     );
-    const totalFrames = snapFrameCountToStep(rawFrameCount, frameStep, "floor");
+    const totalFrames = snapFrameCountToStep(
+      rawFrameCount,
+      frameStep,
+      "floor",
+      frameOffset,
+    );
     const rangeDurationTicks = totalFrames * ticksPerFrame;
 
     const outputDefinitions = resolveOutputDefinitions(options).map((def) => ({

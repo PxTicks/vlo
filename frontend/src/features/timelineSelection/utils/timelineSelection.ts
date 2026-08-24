@@ -11,6 +11,7 @@ export { getTicksPerFrame } from "../../../core/time/ticksPerFrame";
 
 const MIN_FPS = 1;
 const MIN_FRAME_STEP = 1;
+const DEFAULT_FRAME_OFFSET = 1;
 
 function clampToPositiveInteger(
   value: number | null | undefined,
@@ -36,6 +37,18 @@ export function resolveSelectionFrameStep(
   return clampToPositiveInteger(selection?.frameStep, MIN_FRAME_STEP);
 }
 
+/**
+ * Phase of the frame-count grid: the smallest valid frame count, and the
+ * remainder every larger one leaves. Workflows that need
+ * `frameStep * n + frameOffset` frames (MiniMax H3's 17k + 5, for example)
+ * declare it; everything else stays on the historical `frameStep * n + 1`.
+ */
+export function resolveSelectionFrameOffset(
+  selection: { frameOffset?: number | null } | null | undefined,
+): number {
+  return clampToPositiveInteger(selection?.frameOffset, DEFAULT_FRAME_OFFSET);
+}
+
 export function snapTickToFrame(tick: number, ticksPerFrame: number): number {
   return snapTickToGrid(tick, ticksPerFrame, "nearest");
 }
@@ -44,17 +57,26 @@ export function snapFrameCountToStep(
   frameCount: number,
   frameStep: number,
   mode: FrameSnapMode = "nearest",
+  frameOffset: number = DEFAULT_FRAME_OFFSET,
 ): number {
   const safeFrameCount = Math.max(1, frameCount);
   const safeFrameStep = clampToPositiveInteger(frameStep, MIN_FRAME_STEP);
+  const safeFrameOffset = clampToPositiveInteger(
+    frameOffset,
+    DEFAULT_FRAME_OFFSET,
+  );
 
   if (safeFrameStep <= 1) {
-    if (mode === "floor") return Math.max(1, Math.floor(safeFrameCount));
-    if (mode === "ceil") return Math.max(1, Math.ceil(safeFrameCount));
-    return Math.max(1, Math.round(safeFrameCount));
+    const rounded =
+      mode === "floor"
+        ? Math.floor(safeFrameCount)
+        : mode === "ceil"
+          ? Math.ceil(safeFrameCount)
+          : Math.round(safeFrameCount);
+    return Math.max(safeFrameOffset, rounded);
   }
 
-  const normalized = (safeFrameCount - 1) / safeFrameStep;
+  const normalized = (safeFrameCount - safeFrameOffset) / safeFrameStep;
   const snappedUnits =
     mode === "floor"
       ? Math.floor(normalized)
@@ -62,7 +84,10 @@ export function snapFrameCountToStep(
         ? Math.ceil(normalized)
         : Math.round(normalized);
 
-  return Math.max(1, snappedUnits * safeFrameStep + 1);
+  return Math.max(
+    safeFrameOffset,
+    snappedUnits * safeFrameStep + safeFrameOffset,
+  );
 }
 
 export interface SnapSteppedRangeEdgeOptions {
@@ -71,6 +96,8 @@ export interface SnapSteppedRangeEdgeOptions {
   fixedTick: number;
   ticksPerFrame: number;
   frameStep: number;
+  /** Grid phase: valid frame counts are `frameStep * n + frameOffset`. */
+  frameOffset?: number;
   mode?: FrameSnapMode;
   minTick?: number;
   maxTick?: number;
@@ -78,8 +105,14 @@ export interface SnapSteppedRangeEdgeOptions {
 }
 
 /**
- * Resolves one moving range edge onto the shared `frameStep * n + 1` grid
- * while preserving the opposite edge and respecting optional range limits.
+ * Resolves one moving range edge onto the shared `frameStep * n + frameOffset`
+ * grid while preserving the opposite edge and respecting optional range limits.
+ *
+ * Returns null when the room between the anchor and the limits cannot hold even
+ * the smallest valid frame count (`frameOffset`). Callers must reject the move
+ * rather than fall back to a bounded tick: clamping there would hand back a
+ * range whose frame count is off-grid, which is exactly what the workflow's
+ * grid forbids.
  */
 export function snapSteppedRangeEdge({
   edge,
@@ -87,11 +120,12 @@ export function snapSteppedRangeEdge({
   fixedTick,
   ticksPerFrame,
   frameStep,
+  frameOffset = DEFAULT_FRAME_OFFSET,
   mode = "nearest",
   minTick = 0,
   maxTick = Number.POSITIVE_INFINITY,
   maxFrameCount = null,
-}: SnapSteppedRangeEdgeOptions): number {
+}: SnapSteppedRangeEdgeOptions): number | null {
   const safeTicksPerFrame =
     Number.isFinite(ticksPerFrame) && ticksPerFrame > 0 ? ticksPerFrame : 1;
   const lowerEdge = edge === "start" ? minTick : fixedTick + safeTicksPerFrame;
@@ -102,20 +136,48 @@ export function snapSteppedRangeEdge({
     edge === "start"
       ? (fixedTick - boundedTick) / safeTicksPerFrame
       : (boundedTick - fixedTick) / safeTicksPerFrame;
-  let frameCount = snapFrameCountToStep(rawFrameCount, frameStep, mode);
+  // The grid's smallest valid count is its offset. When neither the room to the
+  // limit nor an explicit cap can hold that many frames, no tick represents a
+  // valid range: snapping would return the offset anyway and the final clamp
+  // would silently hand back an off-grid range at the boundary.
+  const smallestValidFrameCount = clampToPositiveInteger(
+    frameOffset,
+    DEFAULT_FRAME_OFFSET,
+  );
+  const availableFrameCount =
+    edge === "start"
+      ? (fixedTick - minTick) / safeTicksPerFrame
+      : (maxTick - fixedTick) / safeTicksPerFrame;
+  if (
+    (Number.isFinite(availableFrameCount) &&
+      availableFrameCount < smallestValidFrameCount) ||
+    (maxFrameCount !== null &&
+      Number.isFinite(maxFrameCount) &&
+      maxFrameCount < smallestValidFrameCount)
+  ) {
+    return null;
+  }
+
+  let frameCount = snapFrameCountToStep(
+    rawFrameCount,
+    frameStep,
+    mode,
+    frameOffset,
+  );
 
   if (maxFrameCount !== null && Number.isFinite(maxFrameCount)) {
     frameCount = Math.min(frameCount, Math.max(1, maxFrameCount));
   }
 
-  const availableFrameCount =
-    edge === "start"
-      ? (fixedTick - minTick) / safeTicksPerFrame
-      : (maxTick - fixedTick) / safeTicksPerFrame;
   if (Number.isFinite(availableFrameCount)) {
     frameCount = Math.min(
       frameCount,
-      snapFrameCountToStep(availableFrameCount, frameStep, "floor"),
+      snapFrameCountToStep(
+        availableFrameCount,
+        frameStep,
+        "floor",
+        frameOffset,
+      ),
     );
   }
 

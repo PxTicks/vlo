@@ -11,6 +11,7 @@ export {
   normalizeTimelineSelection,
   normalizeDetachedTimelineSelection,
   resolveSelectionFps,
+  resolveSelectionFrameOffset,
   resolveSelectionFrameStep,
   selectionHasMaskClip,
   snapFrameCountToStep,

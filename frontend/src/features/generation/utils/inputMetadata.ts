@@ -3,6 +3,7 @@ import {
   getIncludedTracksForSelection,
   getTicksPerFrame,
   resolveSelectionFps,
+  resolveSelectionFrameOffset,
   resolveSelectionFrameStep,
   selectionHasMaskClip,
   snapFrameCountToStep,
@@ -27,6 +28,7 @@ function buildTimelineSelectionInputMetadata(
 ): TimelineSelectionInputMetadata {
   const effectiveFps = resolveSelectionFps(selection, projectFps);
   const frameStep = resolveSelectionFrameStep(selection);
+  const frameOffset = resolveSelectionFrameOffset(selection);
   const ticksPerFrame = getTicksPerFrame(effectiveFps);
   const requestedEndTick = Math.max(
     selection.start + ticksPerFrame,
@@ -36,7 +38,12 @@ function buildTimelineSelectionInputMetadata(
     1,
     Math.ceil((requestedEndTick - selection.start) / ticksPerFrame),
   );
-  const frameCount = snapFrameCountToStep(rawFrameCount, frameStep, "floor");
+  const frameCount = snapFrameCountToStep(
+    rawFrameCount,
+    frameStep,
+    "floor",
+    frameOffset,
+  );
   const durationTicks = frameCount * ticksPerFrame;
   const includedTrackCount = getIncludedTracksForSelection(
     selection,
@@ -50,6 +57,7 @@ function buildTimelineSelectionInputMetadata(
     durationSeconds: tickToMediaSeconds(durationTicks),
     effectiveFps,
     frameStep,
+    frameOffset,
     frameCount,
     clipCount: selection.clips.length,
     trackCount: selection.tracks?.length ?? 0,

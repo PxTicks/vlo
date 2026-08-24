@@ -63,6 +63,9 @@ export function selectionToCompositeContent(
     ...(typeof selection.frameStep === "number"
       ? { frameStep: selection.frameStep }
       : {}),
+    ...(typeof selection.frameOffset === "number"
+      ? { frameOffset: selection.frameOffset }
+      : {}),
   };
 }
 
@@ -119,6 +122,9 @@ export function compositeContentToSelection(
     ...(typeof content.frameStep === "number"
       ? { frameStep: content.frameStep }
       : {}),
+    ...(typeof content.frameOffset === "number"
+      ? { frameOffset: content.frameOffset }
+      : {}),
   };
 }
 
@@ -174,6 +180,7 @@ function projectContentForHash(content: CompositeContent): unknown {
     durationTicks: content.durationTicks,
     fps: content.fps ?? null,
     frameStep: content.frameStep ?? null,
+    frameOffset: content.frameOffset ?? null,
     includedTrackIds: content.includedTrackIds ?? null,
     tracks: (content.tracks ?? []).map((track) => ({
       id: track.id,

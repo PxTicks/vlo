@@ -116,6 +116,12 @@ export function toSelectionConfig(
   if (typeof selection.frame_step === "number" && selection.frame_step > 0) {
     next.frameStep = selection.frame_step;
   }
+  if (
+    typeof selection.frame_offset === "number" &&
+    selection.frame_offset > 0
+  ) {
+    next.frameOffset = selection.frame_offset;
+  }
   if (typeof selection.max_frames === "number" && selection.max_frames > 0) {
     next.maxFrames = selection.max_frames;
   }

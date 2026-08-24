@@ -111,6 +111,7 @@ export interface TimelineSelectionInputMetadata {
   durationSeconds: number;
   effectiveFps: number;
   frameStep: number;
+  frameOffset: number;
   frameCount: number;
   clipCount: number;
   trackCount: number;

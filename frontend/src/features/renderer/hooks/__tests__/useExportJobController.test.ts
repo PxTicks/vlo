@@ -128,6 +128,24 @@ describe("useExportJobController runSelectionExport", () => {
     );
   });
 
+  it("carries the frame-count grid into the rendered selection", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "selection.mp4"),
+    );
+
+    const { result } = makeController();
+    await act(async () => {
+      await result.current.runSelectionExport({
+        ...selectionOptions(),
+        selectionFrameStep: 17,
+        selectionFrameOffset: 5,
+      });
+    });
+
+    const [selection] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
+    expect(selection).toMatchObject({ frameStep: 17, frameOffset: 5 });
+  });
+
   it("logs non-abort failures and does not ingest", async () => {
     vi.mocked(renderSelectionToVideoFile).mockRejectedValue(new Error("boom"));
 

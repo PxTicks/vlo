@@ -46,6 +46,7 @@ interface MiniEditorInternal {
   /** Crop frame quantization (null = unconstrained, free dragging). */
   ticksPerFrame: number | null;
   frameStep: number;
+  frameOffset: number;
   extractionSnapshot: {
     cropStartTicks: number;
     cropEndTicks: number;
@@ -168,6 +169,7 @@ const INITIAL: Omit<
     hasNext: false,
     ticksPerFrame: null,
     frameStep: 1,
+    frameOffset: 1,
     extractionSnapshot: null,
   },
 };
@@ -210,6 +212,10 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
         frameStep: Math.max(
           1,
           Math.round(args.frameConstraint?.frameStep ?? 1),
+        ),
+        frameOffset: Math.max(
+          1,
+          Math.round(args.frameConstraint?.frameOffset ?? 1),
         ),
         extractionSnapshot: null,
       },
@@ -290,7 +296,7 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
   setCrop: (startTicks, endTicks) => {
     const state = get();
     const { durationTicks } = state;
-    const { ticksPerFrame, frameStep } = state._internal;
+    const { ticksPerFrame, frameStep, frameOffset } = state._internal;
 
     let start = clamp(
       startTicks,
@@ -304,24 +310,32 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
       const startMoved = startTicks !== state.cropStartTicks;
       const endMoved = endTicks !== state.cropEndTicks;
       if (endMoved && !startMoved) {
-        end = snapSteppedRangeEdge({
+        const snappedEnd = snapSteppedRangeEdge({
           edge: "end",
           proposedTick: end,
           fixedTick: start,
           ticksPerFrame,
           frameStep,
+          frameOffset,
           maxTick: durationTicks,
         });
+        // No grid-valid end fits between here and the source's end: leave the
+        // crop where it was rather than committing an off-grid span.
+        if (snappedEnd === null) return;
+        end = snappedEnd;
       } else {
-        start = snapSteppedRangeEdge({
+        const snappedStart = snapSteppedRangeEdge({
           edge: "start",
           proposedTick: start,
           fixedTick: end,
           ticksPerFrame,
           frameStep,
+          frameOffset,
           minTick: 0,
           maxTick: durationTicks,
         });
+        if (snappedStart === null) return;
+        start = snappedStart;
       }
     }
 

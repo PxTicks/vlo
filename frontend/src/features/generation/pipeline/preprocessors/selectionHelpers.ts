@@ -14,12 +14,20 @@ export function applySelectionConfigDefaults(
 ): TimelineSelection {
   const next: TimelineSelection = { ...selection };
   const configFrameStep = toPositiveInteger(config?.frameStep);
+  const configFrameOffset = toPositiveInteger(config?.frameOffset);
 
   if (
     (typeof selection.frameStep !== "number" || selection.frameStep <= 1) &&
     configFrameStep !== null
   ) {
     next.frameStep = configFrameStep;
+  }
+
+  if (
+    (typeof selection.frameOffset !== "number" || selection.frameOffset <= 1) &&
+    configFrameOffset !== null
+  ) {
+    next.frameOffset = configFrameOffset;
   }
 
   return next;

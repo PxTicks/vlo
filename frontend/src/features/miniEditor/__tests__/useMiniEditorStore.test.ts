@@ -168,6 +168,46 @@ describe("useMiniEditorStore", () => {
     );
   });
 
+  it("snaps crop length to a workflow offset grid", async () => {
+    // 10 fps with a 4k+5 grid: valid crop lengths are 0.5s, 0.9s, 1.3s, ...
+    const prepared = source("blob:source", mediaSecondsToTick(2));
+    await useMiniEditorStore.getState().open({
+      prepare: vi.fn(async () => prepared),
+      onSave: vi.fn(),
+      frameConstraint: { fps: 10, frameStep: 4, frameOffset: 5 },
+    });
+
+    useMiniEditorStore.getState().setCrop(0, mediaSecondsToTick(1));
+    expect(useMiniEditorStore.getState().cropEndTicks).toBe(
+      mediaSecondsToTick(0.9),
+    );
+
+    useMiniEditorStore
+      .getState()
+      .setCrop(mediaSecondsToTick(1.4), mediaSecondsToTick(2));
+    expect(useMiniEditorStore.getState().cropStartTicks).toBe(
+      mediaSecondsToTick(1.5),
+    );
+  });
+
+  it("leaves the crop alone when no grid-valid span fits the source", async () => {
+    // Three frames of source against a grid whose shortest span is five.
+    const prepared = source("blob:source", mediaSecondsToTick(0.3));
+    await useMiniEditorStore.getState().open({
+      prepare: vi.fn(async () => prepared),
+      onSave: vi.fn(),
+      frameConstraint: { fps: 10, frameStep: 4, frameOffset: 5 },
+    });
+
+    const before = useMiniEditorStore.getState();
+    useMiniEditorStore.getState().setCrop(0, mediaSecondsToTick(0.2));
+
+    expect(useMiniEditorStore.getState().cropStartTicks).toBe(
+      before.cropStartTicks,
+    );
+    expect(useMiniEditorStore.getState().cropEndTicks).toBe(before.cropEndTicks);
+  });
+
   it("manages range masks within crop and duration bounds", async () => {
     const prepared = source("blob:source", mediaSecondsToTick(5));
     await useMiniEditorStore.getState().open({

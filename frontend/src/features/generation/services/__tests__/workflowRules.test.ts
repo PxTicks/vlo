@@ -1642,6 +1642,7 @@ describe("resolvePresentedInputs", () => {
               durationSeconds: 3,
               effectiveFps: 24,
               frameStep: 1,
+              frameOffset: 1,
               frameCount: 72,
               clipCount: 1,
               trackCount: 1,

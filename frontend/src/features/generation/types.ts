@@ -127,6 +127,8 @@ export type WorkflowSelectionFps = number | "project";
 export interface WorkflowSelectionConfig {
   exportFps?: WorkflowSelectionFps;
   frameStep?: number;
+  /** Grid phase: valid frame counts are `frameStep * n + frameOffset`. */
+  frameOffset?: number;
   maxFrames?: number;
   message?: string;
   includeTracks?: boolean;

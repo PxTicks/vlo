@@ -383,6 +383,7 @@
             "timelineSelection.durationSeconds",
             "timelineSelection.effectiveFps",
             "timelineSelection.frameStep",
+            "timelineSelection.frameOffset",
             "timelineSelection.frameCount",
             "timelineSelection.clipCount",
             "timelineSelection.trackCount",
@@ -2526,6 +2527,18 @@
           "default": null,
           "title": "Export Fps"
         },
+        "frame_offset": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Offset"
+        },
         "frame_step": {
           "anyOf": [
             {
@@ -2603,6 +2616,18 @@
           ],
           "default": null,
           "title": "Export Fps"
+        },
+        "frame_offset": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Offset"
         },
         "frame_step": {
           "anyOf": [

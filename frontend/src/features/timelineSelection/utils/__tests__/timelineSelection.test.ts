@@ -6,6 +6,7 @@ import {
   normalizeDetachedTimelineSelection,
   normalizeTimelineSelection,
   resolveSelectionFps,
+  resolveSelectionFrameOffset,
   resolveSelectionFrameStep,
   selectionHasMaskClip,
   snapFrameCountToStep,
@@ -36,6 +37,25 @@ describe("timelineSelection helpers", () => {
     expect(snapFrameCountToStep(1, 8, "floor")).toBe(1);
   });
 
+  it("resolves frame offset with sane defaults", () => {
+    expect(resolveSelectionFrameOffset({ frameOffset: 5 })).toBe(5);
+    expect(resolveSelectionFrameOffset({ frameOffset: 0 })).toBe(1);
+    expect(resolveSelectionFrameOffset(undefined)).toBe(1);
+  });
+
+  it("snaps frame counts to step*n + offset", () => {
+    // MiniMax H3's 17k + 5 grid: 5, 22, 39, 56, ...
+    expect(snapFrameCountToStep(56, 17, "floor", 5)).toBe(56);
+    expect(snapFrameCountToStep(60, 17, "floor", 5)).toBe(56);
+    expect(snapFrameCountToStep(72, 17, "ceil", 5)).toBe(73);
+    expect(snapFrameCountToStep(70, 17, "nearest", 5)).toBe(73);
+    // Never falls below the smallest valid count on the grid.
+    expect(snapFrameCountToStep(3, 17, "floor", 5)).toBe(5);
+    // A step of 1 still respects the offset as a minimum.
+    expect(snapFrameCountToStep(3, 1, "floor", 5)).toBe(5);
+    expect(snapFrameCountToStep(9, 1, "floor", 5)).toBe(9);
+  });
+
   it("snaps a bounded moving range edge while preserving its anchor", () => {
     expect(
       snapSteppedRangeEdge({
@@ -57,6 +77,76 @@ describe("timelineSelection helpers", () => {
         minTick: 0,
       }),
     ).toBe(1_500);
+  });
+
+  it("snaps a moving range edge onto an offset grid", () => {
+    // 100 ticks per frame, so 56 frames of a 17k+5 grid land 5_600 ticks out.
+    expect(
+      snapSteppedRangeEdge({
+        edge: "end",
+        proposedTick: 6_000,
+        fixedTick: 0,
+        ticksPerFrame: 100,
+        frameStep: 17,
+        frameOffset: 5,
+        mode: "floor",
+        maxTick: 100_000,
+      }),
+    ).toBe(5_600);
+    expect(
+      snapSteppedRangeEdge({
+        edge: "start",
+        proposedTick: 4_000,
+        fixedTick: 10_000,
+        ticksPerFrame: 100,
+        frameStep: 17,
+        frameOffset: 5,
+        mode: "floor",
+        minTick: 0,
+      }),
+    ).toBe(4_400);
+  });
+
+  it("returns null when no grid-valid frame count fits the available room", () => {
+    // Only three frames of room before minTick, but the grid starts at five:
+    // clamping to the boundary would hand back an off-grid selection.
+    expect(
+      snapSteppedRangeEdge({
+        edge: "start",
+        proposedTick: 0,
+        fixedTick: 300,
+        ticksPerFrame: 100,
+        frameStep: 17,
+        frameOffset: 5,
+        mode: "floor",
+        minTick: 0,
+      }),
+    ).toBeNull();
+    // Same when a maxFrameCount cap sits below the smallest valid count.
+    expect(
+      snapSteppedRangeEdge({
+        edge: "end",
+        proposedTick: 10_000,
+        fixedTick: 0,
+        ticksPerFrame: 100,
+        frameStep: 17,
+        frameOffset: 5,
+        mode: "floor",
+        maxFrameCount: 3,
+      }),
+    ).toBeNull();
+    // The default grid keeps its old behaviour: one frame always fits.
+    expect(
+      snapSteppedRangeEdge({
+        edge: "start",
+        proposedTick: 0,
+        fixedTick: 300,
+        ticksPerFrame: 100,
+        frameStep: 4,
+        mode: "floor",
+        minTick: 0,
+      }),
+    ).toBe(200);
   });
 
   it("computes ticks per frame from fps", () => {

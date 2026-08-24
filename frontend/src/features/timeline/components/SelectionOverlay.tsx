@@ -24,6 +24,7 @@ import {
 import {
   getTicksPerFrame,
   resolveSelectionFps,
+  resolveSelectionFrameOffset,
   resolveSelectionFrameStep,
   snapFrameCountToStep,
   snapSteppedRangeEdge,
@@ -41,6 +42,7 @@ export interface SelectionOverlayProps {
   recommendedMaxTicks?: number | null;
   recommendedFps?: number | null;
   recommendedFrameStep?: number | null;
+  recommendedFrameOffset?: number | null;
 }
 
 const DEFAULT_TRACK_SELECTION_PROMPT =
@@ -51,6 +53,7 @@ export function SelectionOverlay({
   recommendedMaxTicks,
   recommendedFps,
   recommendedFrameStep,
+  recommendedFrameOffset,
 }: SelectionOverlayProps) {
   const selectionMode = useTimelineSelectionStore((s) => s.selectionMode);
   const selectionStage = useTimelineSelectionStore((s) => s.selectionStage);
@@ -64,6 +67,9 @@ export function SelectionOverlay({
   );
   const selectionFrameStep = useTimelineSelectionStore(
     (s) => s.selectionFrameStep,
+  );
+  const selectionFrameOffset = useTimelineSelectionStore(
+    (s) => s.selectionFrameOffset,
   );
   const selectionMessage = useTimelineSelectionStore((s) => s.selectionMessage);
   const selectionIncludeModeEnabled = useTimelineSelectionStore(
@@ -93,6 +99,9 @@ export function SelectionOverlay({
   const recommendedFrameStepFromStore = useTimelineSelectionStore(
     (s) => s.selectionRecommendedFrameStep,
   );
+  const recommendedFrameOffsetFromStore = useTimelineSelectionStore(
+    (s) => s.selectionRecommendedFrameOffset,
+  );
   const recommendedMaxTicksFromStore = useTimelineSelectionStore(
     (s) => s.selectionRecommendedMaxTicks,
   );
@@ -118,11 +127,16 @@ export function SelectionOverlay({
   const effectiveFrameStep = resolveSelectionFrameStep({
     frameStep: selectionFrameStep,
   });
+  const effectiveFrameOffset = resolveSelectionFrameOffset({
+    frameOffset: selectionFrameOffset,
+  });
   const ticksPerFrame = getTicksPerFrame(effectiveFps);
   const resolvedRecommendedFps =
     recommendedFps ?? recommendedFpsFromStore ?? null;
   const resolvedRecommendedFrameStep =
     recommendedFrameStep ?? recommendedFrameStepFromStore ?? null;
+  const resolvedRecommendedFrameOffset =
+    recommendedFrameOffset ?? recommendedFrameOffsetFromStore ?? null;
   const resolvedRecommendedMaxTicks =
     recommendedMaxTicks ?? recommendedMaxTicksFromStore ?? null;
 
@@ -141,8 +155,9 @@ export function SelectionOverlay({
       localMaxTicks / ticksPerFrame,
       effectiveFrameStep,
       "floor",
+      effectiveFrameOffset,
     );
-  }, [effectiveFrameStep, localMaxTicks, ticksPerFrame]);
+  }, [effectiveFrameOffset, effectiveFrameStep, localMaxTicks, ticksPerFrame]);
 
   const clampFrameCount = useCallback(
     (rawFrameCount: number, mode: "nearest" | "floor" | "ceil" = "floor") => {
@@ -150,6 +165,7 @@ export function SelectionOverlay({
         rawFrameCount,
         effectiveFrameStep,
         mode,
+        effectiveFrameOffset,
       );
       const maxFrameCount = getMaxFrameCount();
       if (maxFrameCount !== null) {
@@ -157,7 +173,7 @@ export function SelectionOverlay({
       }
       return Math.max(1, frameCount);
     },
-    [effectiveFrameStep, getMaxFrameCount],
+    [effectiveFrameOffset, effectiveFrameStep, getMaxFrameCount],
   );
 
   // Enforce valid selection size whenever fps/frame-step/max changes.
@@ -236,8 +252,8 @@ export function SelectionOverlay({
       rawEdgeTick: number,
       minTick: number,
       maxTick: number,
-      resolveTick: (edgeTick: number) => number,
-    ) => {
+      resolveTick: (edgeTick: number) => number | null,
+    ): number | null => {
       const interaction = useInteractionStore.getState();
       const ticksToPxFromStore = useTimelineViewStore.getState().ticksToPx;
 
@@ -271,7 +287,11 @@ export function SelectionOverlay({
       }
 
       const snappedEdgeTick = resolveTick(candidate.snapTick);
-      if (snappedEdgeTick < minTick || snappedEdgeTick > maxTick) {
+      if (
+        snappedEdgeTick === null ||
+        snappedEdgeTick < minTick ||
+        snappedEdgeTick > maxTick
+      ) {
         if (interaction.snapTick !== null) {
           const keepCurrent =
             Math.abs(ticksToPxFromStore(rawEdgeTick - interaction.snapTick)) <=
@@ -327,6 +347,7 @@ export function SelectionOverlay({
             fixedTick: selectionEndTick,
             ticksPerFrame,
             frameStep: effectiveFrameStep,
+            frameOffset: effectiveFrameOffset,
             mode: "floor",
             minTick: minStartTick,
             maxFrameCount: getMaxFrameCount(),
@@ -339,7 +360,7 @@ export function SelectionOverlay({
           resolveStartTick,
         );
 
-        if (finalTick < selectionEndTick) {
+        if (finalTick !== null && finalTick < selectionEndTick) {
           updateSelectionStart(finalTick);
           playbackClock.setTime(finalTick);
         }
@@ -358,6 +379,7 @@ export function SelectionOverlay({
             fixedTick: selectionStartTick,
             ticksPerFrame,
             frameStep: effectiveFrameStep,
+            frameOffset: effectiveFrameOffset,
             mode: "floor",
             maxTick: maxEndTick,
             maxFrameCount,
@@ -370,7 +392,7 @@ export function SelectionOverlay({
           resolveEndTick,
         );
 
-        if (finalTick > selectionStartTick) {
+        if (finalTick !== null && finalTick > selectionStartTick) {
           updateSelectionEnd(finalTick);
           playbackClock.setTime(finalTick);
         }
@@ -397,6 +419,7 @@ export function SelectionOverlay({
     },
     [
       clampFrameCount,
+      effectiveFrameOffset,
       effectiveFrameStep,
       getMaxFrameCount,
       maybeResolveSnappedEdgeTick,
@@ -497,6 +520,7 @@ export function SelectionOverlay({
         rawFrameCount,
         effectiveFrameStep,
         "floor",
+        effectiveFrameOffset,
       );
       setLocalMaxTicksOverride(
         Math.max(ticksPerFrame, frameCount * ticksPerFrame),
@@ -946,9 +970,18 @@ export function SelectionOverlay({
                   },
                 }}
               />
+              {effectiveFrameOffset > 1 && (
+                <Typography variant="body2" sx={{ color: "#aaa" }}>
+                  +{effectiveFrameOffset}
+                </Typography>
+              )}
               {resolvedRecommendedFrameStep !== null && (
                 <Typography variant="body2" sx={{ color: "#777" }}>
                   rec {resolvedRecommendedFrameStep}
+                  {resolvedRecommendedFrameOffset !== null &&
+                  resolvedRecommendedFrameOffset > 1
+                    ? `+${resolvedRecommendedFrameOffset}`
+                    : ""}
                 </Typography>
               )}
             </Box>

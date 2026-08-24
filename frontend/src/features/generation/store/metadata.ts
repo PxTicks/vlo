@@ -824,6 +824,9 @@ function buildWorkflowInputSnapshot(
               ...(selectionConfig.frameStep != null
                 ? { frameStep: selectionConfig.frameStep }
                 : {}),
+              ...(selectionConfig.frameOffset != null
+                ? { frameOffset: selectionConfig.frameOffset }
+                : {}),
               ...(selectionConfig.maxFrames != null
                 ? { maxFrames: selectionConfig.maxFrames }
                 : {}),

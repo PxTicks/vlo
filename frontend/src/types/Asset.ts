@@ -43,6 +43,7 @@ export interface GeneratedCreationWorkflowSelectionConfig {
    */
   exportFps?: number;
   frameStep?: number;
+  frameOffset?: number;
   maxFrames?: number;
   message?: string;
   includeTracks?: boolean;

@@ -24,6 +24,7 @@ function createSelectionMetadata(
     durationSeconds,
     effectiveFps: 24,
     frameStep: 1,
+    frameOffset: 1,
     frameCount: durationSeconds * 24,
     clipCount: 1,
     trackCount: 1,

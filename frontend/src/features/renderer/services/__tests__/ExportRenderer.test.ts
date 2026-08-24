@@ -79,9 +79,14 @@ vi.mock("pixi.js", async () => {
     },
     Container: class MockContainer {
       scale = {
-        set: vi.fn(function (this: { x: number; y: number }, s: number) {
-          this.x = s;
-          this.y = s;
+        // Mirrors Pixi's ObservablePoint.set(x, y = x).
+        set: vi.fn(function (
+          this: { x: number; y: number },
+          x: number,
+          y: number = x,
+        ) {
+          this.x = x;
+          this.y = y;
         }),
         x: 1,
         y: 1,
@@ -316,6 +321,30 @@ describe("ExportRenderer", () => {
 
     // Scale should be ~0.444 (480 / 1080)
     expect(logicalStage.scale.y).toBeCloseTo(0.444, 3);
+    expect(logicalStage.scale.x).toBeCloseTo(854 / 1920, 6);
+
+    renderer.dispose();
+  });
+
+  it("maps the logical rect onto the output rect on both axes", async () => {
+    // A 9:16 logical canvas is 608x1080, which is 0.09% wider than 9:16. A
+    // height-only scale would push content past the right edge of a 1080x1920
+    // frame; scaling each axis to its own output extent cannot.
+    const config = {
+      logicalWidth: 608,
+      logicalHeight: 1080,
+      outputWidth: 1080,
+      outputHeight: 1920,
+    };
+
+    const renderer = await ExportRenderer.create(config);
+    const logicalStage = (renderer as unknown as TestExportRenderer)
+      .logicalStage;
+
+    expect(logicalStage.scale.x).toBeCloseTo(1080 / 608, 6);
+    expect(logicalStage.scale.y).toBeCloseTo(1920 / 1080, 6);
+    expect(logicalStage.scale.x * config.logicalWidth).toBeCloseTo(1080, 6);
+    expect(logicalStage.scale.y * config.logicalHeight).toBeCloseTo(1920, 6);
 
     renderer.dispose();
   });

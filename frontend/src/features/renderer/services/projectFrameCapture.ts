@@ -8,7 +8,10 @@ import {
 import { getAssets } from "../../userAssets";
 import { getCompositeAssets } from "../../composite";
 import { prepareBrushMasksForTimelineRender } from "../../masks/api";
-import { getProjectDimensions } from "../utils/dimensions";
+import {
+  getProjectDimensions,
+  resolveRenderOutputDimensions,
+} from "../utils/dimensions";
 import {
   ExportRenderer,
   type ExportConfig,
@@ -39,18 +42,15 @@ export function buildProjectRenderInputs(): ProjectRenderInputs {
   const projectStore = useProjectStore.getState();
   const assets = getAssets();
 
-  const logicalDimensions = getProjectDimensions(projectStore.config.aspectRatio);
-  const outputWidth = Math.max(2, Math.round(logicalDimensions.width / 2) * 2);
-  const outputHeight = Math.max(
-    2,
-    Math.round(logicalDimensions.height / 2) * 2,
-  );
+  const { aspectRatio } = projectStore.config;
+  const logicalDimensions = getProjectDimensions(aspectRatio);
+  const outputDimensions = resolveRenderOutputDimensions(aspectRatio);
 
   const exportConfig: ExportConfig = {
     logicalWidth: logicalDimensions.width,
     logicalHeight: logicalDimensions.height,
-    outputWidth,
-    outputHeight,
+    outputWidth: outputDimensions.width,
+    outputHeight: outputDimensions.height,
     backgroundAlpha: 0,
   };
 
@@ -69,7 +69,7 @@ export function buildProjectRenderInputs(): ProjectRenderInputs {
 
 export interface CapturedProjectFrame {
   blob: Blob;
-  /** Output pixel dimensions, which are the project's, rounded to even. */
+  /** Output pixel dimensions: the project ratio at the render short edge. */
   width: number;
   height: number;
 }

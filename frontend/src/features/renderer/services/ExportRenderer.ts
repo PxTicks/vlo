@@ -382,6 +382,7 @@ export class ExportRenderer {
    */
   public static async create(config: ExportConfig): Promise<ExportRenderer> {
     const {
+      logicalWidth,
       logicalHeight,
       outputWidth,
       outputHeight,
@@ -408,10 +409,14 @@ export class ExportRenderer {
     // 2. Setup the "Logical Stage"
     const logicalStage = new Container();
 
-    // Calculate Scale Factor (Uniform scaling to fit height)
-    const scale = outputHeight / logicalHeight;
-
-    logicalStage.scale.set(scale);
+    // Map the logical rect onto the output rect on both axes. A height-only
+    // scale leaves content off-frame whenever the logical canvas's ratio
+    // differs from the output's by rounding (9:16 logical is 608x1080, which
+    // is 0.09% wider than 9:16, so it overhangs a 1080x1920 output).
+    logicalStage.scale.set(
+      outputWidth / logicalWidth,
+      outputHeight / logicalHeight,
+    );
     app.stage.addChild(logicalStage);
 
     return new ExportRenderer(app, logicalStage);

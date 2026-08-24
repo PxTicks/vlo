@@ -51,6 +51,12 @@ export interface DecodedTrackSummary extends MediaTimestampRange {
     canDecode: boolean;
 }
 
+/** Coded pixel size of the muxed video track, read back off the file. */
+export interface EncodedVideoDimensions {
+    width: number;
+    height: number;
+}
+
 export interface SelectionExportProbeResult {
     requested: SelectionExportProbeRequest;
     /**
@@ -62,6 +68,12 @@ export interface SelectionExportProbeResult {
     encodeFrameIndices: number[];
     frameWidth: number | null;
     frameHeight: number | null;
+    /**
+     * What the encoder actually wrote, as opposed to `frameWidth/Height`,
+     * which is what the renderer handed it. The render-resolution canary
+     * asserts on this so a mismatch between the two cannot pass unnoticed.
+     */
+    encodedVideo: EncodedVideoDimensions | null;
     fileSize: number;
     fileType: string;
     video: DecodedTrackSummary | null;
@@ -179,6 +191,12 @@ export async function runSelectionExportProbe(
                 encodeFrameIndices,
                 frameWidth,
                 frameHeight,
+                encodedVideo: videoTrack
+                    ? {
+                          width: videoTrack.codedWidth,
+                          height: videoTrack.codedHeight,
+                      }
+                    : null,
                 fileSize: file.size,
                 fileType: file.type,
                 video,

@@ -22,9 +22,16 @@ vi.mock("../../../timelineSelection", () => ({
 vi.mock("../../services/renderSelectionToVideoFile", () => ({
   renderSelectionToVideoFile: vi.fn(),
 }));
-vi.mock("../../utils/dimensions", () => ({
-  deriveTrueDimensionsFromShortEdge: vi.fn(() => ({ width: 1280, height: 720 })),
-}));
+// Spied, not stubbed: the resolver is pure, and these tests assert the real
+// output sizes the render paths derive from the project ratio.
+vi.mock("../../utils/dimensions", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../utils/dimensions")>();
+  return {
+    ...actual,
+    resolveRenderOutputDimensions: vi.fn(actual.resolveRenderOutputDimensions),
+  };
+});
 vi.mock("../../services/ExportRenderer", () => ({
   ExportRenderer: class {},
 }));
@@ -32,8 +39,9 @@ vi.mock("../../services/ExportRenderer", () => ({
 import { addLocalAsset } from "../../../userAssets";
 import { prepareBrushMasksForTimelineRender } from "../../../masks/api";
 import { renderSelectionToVideoFile } from "../../services/renderSelectionToVideoFile";
-import { deriveTrueDimensionsFromShortEdge } from "../../utils/dimensions";
+import { resolveRenderOutputDimensions } from "../../utils/dimensions";
 import { useExportJobController } from "../useExportJobController";
+import type { AspectRatio } from "../../../project/useProjectStore";
 import { useExtractStore } from "../../../../core/extract/useExtractStore";
 import { getHostExportController } from "../../../../core/export/exportController";
 import {
@@ -49,14 +57,30 @@ function abortError(): Error {
   return error;
 }
 
-function makeController() {
+function makeController(
+  overrides: Partial<{
+    projectAspectRatio: AspectRatio;
+    logicalDimensions: { width: number; height: number };
+  }> = {},
+) {
   return renderHook(() =>
     useExportJobController({
       projectAspectRatio: "16:9",
       logicalDimensions: { width: 1920, height: 1080 },
       projectFps: 24,
+      ...overrides,
     }),
   );
+}
+
+/** The logical canvas a 9:16 project carries — fixed height, derived width. */
+const PORTRAIT_LOGICAL_DIMENSIONS = { width: 608, height: 1080 };
+
+function makePortraitController() {
+  return makeController({
+    projectAspectRatio: "9:16",
+    logicalDimensions: PORTRAIT_LOGICAL_DIMENSIONS,
+  });
 }
 
 function selectionOptions() {
@@ -75,11 +99,7 @@ beforeEach(() => {
   vi.mocked(addLocalAsset).mockReset();
   vi.mocked(prepareBrushMasksForTimelineRender).mockReset();
   vi.mocked(prepareBrushMasksForTimelineRender).mockResolvedValue(undefined);
-  vi.mocked(deriveTrueDimensionsFromShortEdge).mockReset();
-  vi.mocked(deriveTrueDimensionsFromShortEdge).mockReturnValue({
-    width: 1280,
-    height: 720,
-  });
+  vi.mocked(resolveRenderOutputDimensions).mockClear();
   vi.spyOn(console, "error").mockImplementation(() => {});
   resetExportRunLogForTests();
   useExtractStore.setState({
@@ -126,6 +146,51 @@ describe("useExportJobController runSelectionExport", () => {
       undefined,
       { reuseExistingHash: true },
     );
+  });
+
+  it("renders a portrait selection at the true short-edge resolution", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "selection.mp4"),
+    );
+
+    const { result } = makePortraitController();
+    await act(async () => {
+      await result.current.runSelectionExport(selectionOptions());
+    });
+
+    expect(resolveRenderOutputDimensions).toHaveBeenCalledWith("9:16");
+    const [, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
+    // The regression: output used to be copied from the logical canvas, so a
+    // 9:16 selection encoded at 608x1080 while the same project exported at
+    // 1080x1920.
+    expect(opts!.renderInputs!.exportConfig).toMatchObject({
+      logicalWidth: 608,
+      logicalHeight: 1080,
+      outputWidth: 1080,
+      outputHeight: 1920,
+    });
+  });
+
+  it("renders a portrait selection and its project export at the same size", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "out.mp4"),
+    );
+
+    const { result } = makePortraitController();
+    await act(async () => {
+      await result.current.runSelectionExport(selectionOptions());
+    });
+    await act(async () => {
+      await result.current.runProjectExport({ resolution: 1080 });
+    });
+
+    const [selectionCall, projectCall] = vi.mocked(renderSelectionToVideoFile)
+      .mock.calls;
+    const selectionConfig = selectionCall[1]!.renderInputs!.exportConfig;
+    const projectConfig = projectCall[1]!.renderInputs!.exportConfig;
+
+    expect(selectionConfig.outputWidth).toBe(projectConfig.outputWidth);
+    expect(selectionConfig.outputHeight).toBe(projectConfig.outputHeight);
   });
 
   it("carries the frame-count grid into the rendered selection", async () => {
@@ -462,7 +527,7 @@ describe("useExportJobController runProjectExport", () => {
       });
     });
 
-    expect(deriveTrueDimensionsFromShortEdge).toHaveBeenCalledWith("16:9", 720);
+    expect(resolveRenderOutputDimensions).toHaveBeenCalledWith("16:9", 720);
     expect(prepareBrushMasksForTimelineRender).toHaveBeenCalledOnce();
     const [selection, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
     expect(selection).toMatchObject({
@@ -533,7 +598,7 @@ describe("useExportJobController runProjectExport", () => {
         request: vi.fn(async () => sentinel),
       },
     });
-    vi.mocked(deriveTrueDimensionsFromShortEdge).mockImplementationOnce(() => {
+    vi.mocked(resolveRenderOutputDimensions).mockImplementationOnce(() => {
       throw new Error("invalid dimensions");
     });
 

@@ -28,7 +28,7 @@ import {
 } from "../services/ExportRenderer";
 import { renderSelectionToVideoFile } from "../services/renderSelectionToVideoFile";
 import { acquireExportWakeLock } from "../services/exportWakeLock";
-import { deriveTrueDimensionsFromShortEdge } from "../utils/dimensions";
+import { resolveRenderOutputDimensions } from "../utils/dimensions";
 import type { AspectRatio } from "../../project/useProjectStore";
 import type { OutputVideoFormat } from "../services/TextureOutputEncoder";
 import {
@@ -218,15 +218,14 @@ export function useExportJobController({
 
       try {
         wakeLock = acquireExportWakeLock();
-        const aspectRatio = logicalDimensions.width / logicalDimensions.height;
-        const outputHeight = Math.round(logicalDimensions.height / 2) * 2;
-        const outputWidth = Math.round((outputHeight * aspectRatio) / 2) * 2;
+        const outputDimensions =
+          resolveRenderOutputDimensions(projectAspectRatio);
 
         const exportConfig: ExportConfig = {
           logicalWidth: logicalDimensions.width,
           logicalHeight: logicalDimensions.height,
-          outputWidth,
-          outputHeight,
+          outputWidth: outputDimensions.width,
+          outputHeight: outputDimensions.height,
           backgroundAlpha: 0,
         };
 
@@ -309,6 +308,7 @@ export function useExportJobController({
       buildProjectData,
       finalizeSession,
       logicalDimensions,
+      projectAspectRatio,
       registerRenderer,
     ],
   );
@@ -345,21 +345,16 @@ export function useExportJobController({
 
       try {
         wakeLock = acquireExportWakeLock();
-        const trueDimensions = deriveTrueDimensionsFromShortEdge(
+        const outputDimensions = resolveRenderOutputDimensions(
           projectAspectRatio,
           resolution,
-        );
-        const outputWidth = Math.max(2, Math.round(trueDimensions.width / 2) * 2);
-        const outputHeight = Math.max(
-          2,
-          Math.round(trueDimensions.height / 2) * 2,
         );
 
         const exportConfig: ExportConfig = {
           logicalWidth: logicalDimensions.width,
           logicalHeight: logicalDimensions.height,
-          outputWidth,
-          outputHeight,
+          outputWidth: outputDimensions.width,
+          outputHeight: outputDimensions.height,
           fileHandle,
         };
 

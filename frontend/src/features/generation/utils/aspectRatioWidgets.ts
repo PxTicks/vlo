@@ -7,6 +7,9 @@ function normalizeWidgetLabel(label: string | undefined): string {
 export function isAspectRatioWidget(widget: WorkflowWidgetInput): boolean {
   return (
     widget.param === "aspect_ratio" ||
+    // The panel's own aspect ratio selector, contributed by the aspect ratio
+    // pipeline stage rather than by a node widget.
+    widget.param === "target_aspect_ratio" ||
     normalizeWidgetLabel(widget.config.label) === "aspect ratio"
   );
 }

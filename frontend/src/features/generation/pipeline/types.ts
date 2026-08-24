@@ -15,6 +15,7 @@ import type {
   WorkflowRuleWarning,
   WorkflowRules,
 } from "../services/workflowRules";
+import type { GenerationAspectRatioSelection } from "../utils/aspectRatioSelection";
 
 // ---------------------------------------------------------------------------
 // Derived mask metadata
@@ -195,6 +196,8 @@ export interface GenerationPreprocessPlan {
   derivedMaskMappings: DerivedMaskMapping[];
   projectConfig: ProjectConfig;
   exactAspectRatio: boolean;
+  /** The panel's aspect ratio choice; see {@link FrontendPreprocessOptions}. */
+  aspectRatioSelection: GenerationAspectRatioSelection;
   targetResolution: number;
   maskCropDilation: number;
   maskCropMode: WorkflowMaskCroppingMode;
@@ -386,6 +389,11 @@ export interface FrontendPreprocessContext {
   readonly derivedMaskMappings: DerivedMaskMapping[];
   readonly projectConfig: ProjectConfig;
   readonly exactAspectRatio: boolean;
+  /**
+   * The aspect ratio the panel pinned, or `null` to probe the supplied media
+   * (the "Auto" choice).
+   */
+  readonly requestedAspectRatio: string | null;
   readonly targetResolution: number;
   readonly clientId: string;
   readonly maskCropDilation: number | undefined;
@@ -509,6 +517,11 @@ export interface FrontendPostprocessOptions {
 export interface FrontendPreprocessOptions {
   signal?: AbortSignal;
   exactAspectRatio?: boolean;
+  /**
+   * The panel's aspect ratio selector value: `"auto"` (probe the media, else
+   * the project ratio) or a pinned `"<w>:<h>"` ratio. Defaults to `"auto"`.
+   */
+  aspectRatioSelection?: GenerationAspectRatioSelection;
   maskCropMode?: WorkflowMaskCroppingMode;
   targetResolution?: number;
   projectConfig?: ProjectConfig;

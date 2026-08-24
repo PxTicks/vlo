@@ -15,6 +15,11 @@ import {
   renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../utils/inputSelection";
 import { buildDerivedMaskRenderSignature } from "../utils/derivedMaskRenderSignature";
+import {
+  ASPECT_RATIO_SELECTION_AUTO,
+  isAspectRatioSelection,
+  type GenerationAspectRatioSelection,
+} from "../utils/aspectRatioSelection";
 import { resolveSelectionConfigFps } from "../utils/selectionFps";
 import { readIncludeEmbeddedAudio } from "../utils/mediaInputItemOptions";
 import {
@@ -474,6 +479,7 @@ export function buildGeneratedCreationMetadata(
     slotValues: Record<string, import("../utils/pipeline").SlotValue>;
     targetResolution: number;
     exactAspectRatio: boolean;
+    aspectRatioSelection: GenerationAspectRatioSelection;
     maskCropMode: WorkflowMaskCroppingMode;
     maskCropDilation: number;
     frontendStateWidgetValues: Record<string, unknown>;
@@ -553,6 +559,7 @@ export function buildGeneratedCreationMetadata(
     bypassNodeIds: options.bypassNodeIds,
     activateNodeIds: options.activateNodeIds,
     exactAspectRatio: options.exactAspectRatio,
+    aspectRatioSelection: options.aspectRatioSelection,
     targetResolution: options.targetResolution,
     maskCropMode: options.maskCropMode,
     maskCropDilation: options.maskCropDilation,
@@ -856,6 +863,7 @@ function buildGeneratedCreationReplayState(options: {
   bypassNodeIds?: readonly string[];
   activateNodeIds?: readonly string[];
   exactAspectRatio: boolean;
+  aspectRatioSelection: GenerationAspectRatioSelection;
   targetResolution: number;
   maskCropMode: WorkflowMaskCroppingMode;
   maskCropDilation: number;
@@ -883,6 +891,7 @@ function buildGeneratedCreationReplayState(options: {
     version: 2,
     workflowInputs: options.workflowInputs.map(buildWorkflowInputSnapshot),
     exactAspectRatio: options.exactAspectRatio,
+    aspectRatioSelection: options.aspectRatioSelection,
     maskCropMode: options.maskCropMode,
     maskCropDilation: options.maskCropDilation,
     ...(Object.keys(pipelineInputs).length > 0 ? { pipelineInputs } : {}),
@@ -936,6 +945,22 @@ export function getReplayTargetResolution(
   return typeof metadata.targetResolution === "number"
     ? metadata.targetResolution
     : undefined;
+}
+
+/**
+ * The aspect ratio selection to restore for a replay. Assets generated before
+ * the selector existed carry none, and replay as `"auto"` so their ratio is
+ * probed off the inputs the way it originally was.
+ */
+export function getReplayAspectRatioSelection(
+  replayState: GeneratedCreationReplayState | null | undefined,
+): GenerationAspectRatioSelection {
+  if (!replayState) {
+    return ASPECT_RATIO_SELECTION_AUTO;
+  }
+  return isAspectRatioSelection(replayState.aspectRatioSelection)
+    ? replayState.aspectRatioSelection
+    : ASPECT_RATIO_SELECTION_AUTO;
 }
 
 export function getReplayMaskCropMode(

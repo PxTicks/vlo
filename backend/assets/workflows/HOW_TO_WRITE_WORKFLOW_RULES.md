@@ -245,7 +245,7 @@ pipeline stages.
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [480, 720],
+        "resolution_ladder": { "min": 240, "max": 720, "steps": 5 },
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -268,13 +268,13 @@ pipeline stages.
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [480, 720],
           "default": 720
         },
         {
           "key": "target_aspect_ratio",
+          "label": "Aspect ratio",
           "value_type": "string",
-          "expose": "none",
+          "expose": "widget",
           "source": "client"
         }
       ]
@@ -773,7 +773,7 @@ model-valid (width, height) pair and writes it back into the workflow.
 "config": {
   "stride": 32,
   "search_steps": 2,
-  "resolutions": [480, 720, 1080],
+  "resolution_ladder": { "min": 240, "max": 720, "steps": 5 },
   "postprocess": {
     "enabled": true,
     "mode": "stretch_exact",
@@ -786,7 +786,8 @@ model-valid (width, height) pair and writes it back into the workflow.
 | ---------------------- | ---------------------------------------------------------------------- |
 | `stride`               | Model's resolution quantum (both width and height are rounded to this) |
 | `search_steps`         | How many stride-multiples to search around the target                  |
-| `resolutions`          | Allowed "longest-side" values surfaced to the widget                   |
+| `resolution_ladder`    | `{ min, max, steps }` short-edge range the panel interpolates into rungs |
+| `resolutions`          | Legacy whitelist of allowed short edges; clamps out-of-list requests   |
 | `postprocess.enabled`  | Whether to post-stretch outputs back to the requested aspect           |
 | `postprocess.mode`     | Currently only `"stretch_exact"`                                       |
 | `postprocess.apply_to` | Currently only `"all_visual_outputs"`                                  |
@@ -798,13 +799,34 @@ resolved dimensions. Multiple targets are supported for workflows where
 several nodes need the same (w, h) — for example a sampler latent size and
 a mask resize node.
 
+### Resolution ladder vs. resolutions
+
+Prefer `resolution_ladder`. The panel interpolates it into evenly spaced
+rungs — `{ min: 240, max: 720, steps: 5 }` becomes 240, 360, 480, 600, 720 —
+and renders them as a snapped slider with a custom field beside it. The
+rungs are guidance, not a whitelist: a custom short edge is dispatched as
+typed, so nothing clamps it. `steps` must be between 2 and 20.
+
+`resolutions` is the older whitelist. It keeps its dropdown, and both
+frontend and backend clamp an out-of-list `target_resolution` to the closest
+listed value. Use it only when the model genuinely accepts nothing else. A
+stage cannot declare both `resolutions` and `resolution_ladder`.
+
+Declaring neither still yields a ladder — the 240..720 default.
+
 ### Controls
 
-- `target_resolution` — widget enum over the allowed longest-side values.
-- `target_aspect_ratio` — hidden, `source: "client"`. The frontend computes
-  this from the user's selection UI and submits it per-request. Declaring
-  `source` explicitly is required — this is exactly the invariant that
-  prevents the value from being silently dropped.
+- `target_resolution` — the ladder slider (or, with `resolutions`, an enum
+  over the allowed short edges). `default` seeds it, and is what a workflow
+  switch falls back to when the carried-over value is not a rung.
+- `target_aspect_ratio` — `source: "client"`. The panel supplies the choices
+  (the project ratios, plus "Auto"), so `options` on this control is ignored.
+  "Auto" is the default: it probes the supplied media and falls back to the
+  project ratio when there is nothing to probe, which is what every
+  generation did before the selector existed. Declaring `source` explicitly
+  is required — this is exactly the invariant that prevents the value from
+  being silently dropped. Declare the control with `expose: "widget"` to show
+  the selector; `expose: "none"` opts out of it.
 
 ### Stage ordering
 

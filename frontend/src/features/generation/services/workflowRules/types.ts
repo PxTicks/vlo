@@ -57,6 +57,7 @@ export type {
   WorkflowParamReference,
   WorkflowParamValueReference,
   WorkflowRequiredInputValidationRule,
+  WorkflowResolutionLadder,
   WorkflowRewriteRule,
   WorkflowRuleNode,
   WorkflowRuleNodePresent,
@@ -173,13 +174,6 @@ export function createDefaultWorkflowRules(
 }
 
 export const DEFAULT_GENERATION_TARGET_RESOLUTION = 1080;
-export const DEFAULT_GENERATION_RESOLUTION_OPTIONS = [
-  360,
-  480,
-  720,
-  1080,
-] as const;
-
 export interface ResolvePresentedInputsResult {
   inputs: WorkflowInput[];
   widgetInputs: WorkflowWidgetInput[];

@@ -196,7 +196,7 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [240, 480, 540, 720],
+        "resolution_ladder": { "min": 240, "max": 720, "steps": 5 },
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -221,7 +221,6 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [240, 480, 540, 720],
           "default": 720,
           "group_id": "video_generation",
           "group_title": "Video Generation",
@@ -230,7 +229,11 @@
         {
           "key": "target_aspect_ratio",
           "value_type": "string",
-          "expose": "none",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0,
+          "label": "Aspect ratio",
+          "expose": "widget",
           "source": "client"
         }
       ]

@@ -3,12 +3,21 @@ import { buildWorkflowResultFromGraphData } from "../services/workflowBridge";
 import { iframeBridge } from "../services/iframeBridgeClient";
 import {
   DEFAULT_GENERATION_TARGET_RESOLUTION,
+  getAspectRatioStage,
   getClosestWorkflowResolution,
   getMaskCropDilationDefault,
   getMaskCropModeDefault,
   getSupportedWorkflowResolutions,
+  getWorkflowResolutionLadder,
+  getWorkflowStageControl,
+  normalizeCustomResolution,
+  type WorkflowRules,
   type WorkflowRuleWarning,
 } from "../services/workflowRules";
+import {
+  DEFAULT_ASPECT_RATIO_SELECTION,
+  normalizeAspectRatioSelection,
+} from "../utils/aspectRatioSelection";
 import {
   injectWorkflowAndRead,
   waitForAppReady,
@@ -17,6 +26,7 @@ import { mergeRuleWarnings } from "../services/warnings";
 import { buildMediaInputActions } from "./mediaInputActions";
 import {
   extractReplayPanelState,
+  getReplayAspectRatioSelection,
   getReplayMaskCropDilation,
   getReplayMaskCropMode,
   getReplayTargetResolution,
@@ -90,6 +100,50 @@ const MAX_BRIDGE_LOAD_RETRIES = 3;
  */
 const SUSPECT_RULE_LOSS_CONFIRMATION_THRESHOLD = 2;
 
+/**
+ * Brings `targetResolution` in line with the workflow that just loaded.
+ *
+ * A legacy `resolutions` whitelist still clamps to its closest entry. A ladder
+ * does not clamp — it only reclaims a value that is neither a rung nor a
+ * deliberate custom override, handing it the control's own default so a
+ * carried-over value from another workflow cannot look like a chosen one.
+ */
+function reconcileTargetResolutionForRules(
+  rules: WorkflowRules | null,
+  get: GenerationStoreGet,
+  set: GenerationStoreSet,
+): void {
+  const supportedResolutions = getSupportedWorkflowResolutions(rules);
+  const { targetResolution, targetResolutionIsCustom } = get();
+
+  if (supportedResolutions.length > 0) {
+    if (!supportedResolutions.includes(targetResolution)) {
+      set({
+        targetResolution: getClosestWorkflowResolution(
+          targetResolution,
+          supportedResolutions,
+        ),
+        targetResolutionIsCustom: false,
+      });
+    }
+    return;
+  }
+
+  const ladder = getWorkflowResolutionLadder(rules);
+  if (!ladder || targetResolutionIsCustom) return;
+  if (ladder.values.includes(targetResolution)) return;
+
+  const controlDefault = getWorkflowStageControl(
+    getAspectRatioStage(rules),
+    "target_resolution",
+  )?.default;
+  const fallback =
+    typeof controlDefault === "number"
+      ? controlDefault
+      : (ladder.values[ladder.values.length - 1] ?? targetResolution);
+  set({ targetResolution: fallback, targetResolutionIsCustom: false });
+}
+
 async function waitForReplayWorkflowInputs(
   get: GenerationStoreGet,
 ): Promise<void> {
@@ -147,7 +201,22 @@ export function buildWorkflowStoreState(
     suspectRuleLossCount: 0,
     derivedMaskMappings: [],
     targetResolution: DEFAULT_GENERATION_TARGET_RESOLUTION,
-    setTargetResolution: (targetResolution) => set({ targetResolution }),
+    targetResolutionIsCustom: false,
+    setTargetResolution: (targetResolution, isCustom = false) => {
+      const normalized = normalizeCustomResolution(targetResolution);
+      if (normalized === null) return;
+      set({
+        targetResolution: normalized,
+        targetResolutionIsCustom: isCustom,
+      });
+    },
+    aspectRatioSelection: DEFAULT_ASPECT_RATIO_SELECTION,
+    setAspectRatioSelection: (aspectRatioSelection) =>
+      set({
+        aspectRatioSelection: normalizeAspectRatioSelection(
+          aspectRatioSelection,
+        ),
+      }),
     preResolvedPromptEnabled: true,
     setPreResolvedPromptEnabled: (preResolvedPromptEnabled) =>
       set({ preResolvedPromptEnabled }),
@@ -748,18 +817,7 @@ export function buildWorkflowStoreState(
         }
         if (isStale()) return;
 
-        const supportedResolutions = getSupportedWorkflowResolutions(rules);
-        if (supportedResolutions.length > 0) {
-          const { targetResolution } = get();
-          if (!supportedResolutions.includes(targetResolution)) {
-            set({
-              targetResolution: getClosestWorkflowResolution(
-                targetResolution,
-                supportedResolutions,
-              ),
-            });
-          }
-        }
+        reconcileTargetResolutionForRules(rules, get, set);
 
         set({
           activeWorkflowRules: rules,
@@ -1087,17 +1145,22 @@ export function buildWorkflowStoreState(
           metadata,
         );
         if (typeof savedTargetResolution === "number") {
-          const supportedResolutions = getSupportedWorkflowResolutions(
-            get().activeWorkflowRules,
-          );
+          const rules = get().activeWorkflowRules;
+          const supportedResolutions = getSupportedWorkflowResolutions(rules);
+          const restoredResolution =
+            supportedResolutions.length > 0
+              ? getClosestWorkflowResolution(
+                  savedTargetResolution,
+                  supportedResolutions,
+                )
+              : savedTargetResolution;
           set({
-            targetResolution:
-              supportedResolutions.length > 0
-                ? getClosestWorkflowResolution(
-                    savedTargetResolution,
-                    supportedResolutions,
-                  )
-                : savedTargetResolution,
+            targetResolution: restoredResolution,
+            // A replayed short edge that is not a rung was a custom override
+            // when it was generated, and has to stay one through the reload.
+            targetResolutionIsCustom: !(
+              getWorkflowResolutionLadder(rules)?.values ?? []
+            ).includes(restoredResolution),
           });
         }
 
@@ -1113,6 +1176,8 @@ export function buildWorkflowStoreState(
           );
           set({
             exactAspectRatio: savedReplayState.exactAspectRatio ?? false,
+            aspectRatioSelection:
+              getReplayAspectRatioSelection(savedReplayState),
             maskCropMode: replayMaskCropMode ?? get().maskCropMode,
             maskCropDilation:
               typeof replayMaskCropDilation === "number"

@@ -94,6 +94,98 @@ describe("generation pipeline", () => {
     );
   });
 
+  it("falls back to the project aspect ratio when nothing can be probed", async () => {
+    useProjectStore.setState((state) => ({
+      ...state,
+      config: {
+        ...state.config,
+        aspectRatio: "9:16",
+        fps: 30,
+      },
+    }));
+    const aspectRatioSpy = vi
+      .spyOn(mediaUtils, "probeVisualFileAspectRatio")
+      .mockResolvedValue(null);
+
+    const request = await frontendPreprocess(
+      {},
+      "workflow.json",
+      [
+        {
+          nodeId: "prompt",
+          classType: "CLIPTextEncode",
+          inputType: "text",
+          param: "text",
+          label: "Prompt",
+          currentValue: null,
+          origin: "rule",
+        },
+      ],
+      { prompt: { type: "text", value: "a cat" } },
+      "client-id",
+      [],
+      undefined,
+      { targetResolution: 720 },
+    );
+
+    // "auto" is the default, and a text-only run has nothing to probe.
+    expect(aspectRatioSpy).not.toHaveBeenCalled();
+    expect(request.targetAspectRatio).toBe("9:16");
+  });
+
+  it("pins an explicitly selected aspect ratio over input, project, and exact mode", async () => {
+    useProjectStore.setState((state) => ({
+      ...state,
+      config: {
+        ...state.config,
+        aspectRatio: "16:9",
+        fps: 30,
+      },
+    }));
+    const imageFile = new File(["image"], "input.png", { type: "image/png" });
+    const aspectRatioSpy = vi
+      .spyOn(mediaUtils, "probeVisualFileAspectRatio")
+      .mockResolvedValue("1:1");
+    const cropSpy = vi
+      .spyOn(mediaUtils, "maybeCropVisualFileToAspectRatio")
+      .mockResolvedValue(imageFile);
+
+    const request = await frontendPreprocess(
+      {},
+      "workflow.json",
+      [
+        {
+          nodeId: "image_input",
+          classType: "LoadImage",
+          inputType: "image",
+          param: "image",
+          label: "Image Input",
+          currentValue: null,
+          origin: "rule",
+        },
+      ],
+      {
+        image_input: {
+          type: "image",
+          file: imageFile,
+        },
+      },
+      "client-id",
+      [],
+      undefined,
+      {
+        aspectRatioSelection: "4:3",
+        exactAspectRatio: true,
+        targetResolution: 720,
+      },
+    );
+
+    expect(aspectRatioSpy).not.toHaveBeenCalled();
+    expect(request.targetAspectRatio).toBe("4:3");
+    expect(request.exactAspectRatio).toBe(false);
+    expect(cropSpy).toHaveBeenCalledWith(imageFile, "4:3");
+  });
+
   it("prefers the first visual input aspect ratio over the project aspect ratio", async () => {
     useProjectStore.setState((state) => ({
       ...state,

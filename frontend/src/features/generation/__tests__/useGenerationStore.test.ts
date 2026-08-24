@@ -662,6 +662,7 @@ describe("useGenerationStore workflow rules", () => {
       replayState: {
         version: 2,
         workflowSourceId: "video_wan_vace_14B_v2v.json",
+        aspectRatioSelection: "auto",
         workflowInputs: [
           {
             nodeId: "node_timeline",

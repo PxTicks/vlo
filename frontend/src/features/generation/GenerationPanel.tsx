@@ -42,7 +42,7 @@ import {
 import { ComfyUIEditor } from "./components/ComfyUIEditor";
 import { GenerationInputs } from "./components/GenerationInputs";
 import {
-  DEFAULT_GENERATION_RESOLUTION_OPTIONS,
+  getWorkflowResolutionLadder,
   getAspectRatioStage,
   getPipelineWidgetKey,
   getSupportedWorkflowResolutions,
@@ -65,7 +65,12 @@ import {
 } from "./services/comfyuiApi";
 import { resolveNodeDisplayTitle } from "./services/nodeTitles";
 import { isAspectRatioWidget } from "./utils/aspectRatioWidgets";
+import {
+  ASPECT_RATIO_SELECTION_AUTO,
+  normalizeAspectRatioSelection,
+} from "./utils/aspectRatioSelection";
 import { WorkflowDependencyResolver } from "./components/WorkflowDependencyResolver";
+import { useProjectStore } from "../project";
 import { ExtensionUiSlot } from "../extensions/ui/publicApi";
 import { useGenerationSessionMount } from "./hooks/useGenerationSessionMount";
 import { NestedMenuTree } from "../panelUI";
@@ -514,6 +519,13 @@ export function GenerationPanel() {
   const activeWorkflowRules = useGenerationStore((s) => s.activeWorkflowRules);
   const targetResolution = useGenerationStore((s) => s.targetResolution);
   const setTargetResolution = useGenerationStore((s) => s.setTargetResolution);
+  const aspectRatioSelection = useGenerationStore(
+    (s) => s.aspectRatioSelection,
+  );
+  const setAspectRatioSelection = useGenerationStore(
+    (s) => s.setAspectRatioSelection,
+  );
+  const projectAspectRatio = useProjectStore((s) => s.config.aspectRatio);
   const exactAspectRatio = useGenerationStore((s) => s.exactAspectRatio);
   const setExactAspectRatio = useGenerationStore((s) => s.setExactAspectRatio);
   const maskCropMode = useGenerationStore((s) => s.maskCropMode);
@@ -563,31 +575,37 @@ export function GenerationPanel() {
   );
   const showRulesResolutionSelector =
     effectiveWorkflowMode === "rules" && showResolutionSelector;
+  const resolutionLadder = getWorkflowResolutionLadder(activeWorkflowRules);
   const supportedResolutions =
     getSupportedWorkflowResolutions(activeWorkflowRules);
-  const resolutionOptions: number[] =
-    supportedResolutions.length > 0
-      ? supportedResolutions
-      : [...DEFAULT_GENERATION_RESOLUTION_OPTIONS];
-  const currentResolution = resolutionOptions.includes(targetResolution)
-    ? targetResolution
-    : resolutionOptions[0];
+  // A legacy whitelist has no custom escape hatch, so an unknown value still
+  // falls back to a listed one; a ladder shows whatever is set, rung or not.
+  const currentResolution =
+    supportedResolutions.length > 0 &&
+    !supportedResolutions.includes(targetResolution)
+      ? supportedResolutions[0]
+      : targetResolution;
   const pipelineWidgetInputs = useMemo(
     () =>
       resolvePipelineWidgetInputs(activeWorkflowRules, {
         showTargetResolution: showRulesResolutionSelector,
         currentResolution,
+        showAspectRatioSelector: showRulesResolutionSelector,
+        aspectRatioSelection,
+        projectAspectRatio,
         showMaskControls: effectiveWorkflowMode === "rules" && hasMaskMappings,
         maskCropMode,
         maskCropDilation,
       }),
     [
       activeWorkflowRules,
+      aspectRatioSelection,
       currentResolution,
       hasMaskMappings,
       maskCropDilation,
       maskCropMode,
       effectiveWorkflowMode,
+      projectAspectRatio,
       showRulesResolutionSelector,
     ],
   );
@@ -618,6 +636,11 @@ export function GenerationPanel() {
     displayWidgetInputs,
     showRulesResolutionSelector,
   ]);
+  // "Exact" only decides what a probed input ratio is snapped to, so it is
+  // meaningless once a ratio has been pinned explicitly.
+  const showExactAspectRatioControl =
+    showRulesResolutionSelector &&
+    aspectRatioSelection === ASPECT_RATIO_SELECTION_AUTO;
   const canSaveWorkflowToBackend =
     !isBackendSavePending &&
     !!syncedGraphData &&
@@ -679,7 +702,17 @@ export function GenerationPanel() {
       }
 
       if (param === "target_resolution" && typeof value === "number") {
-        setTargetResolution(value);
+        // Anything off the presented ladder came from the custom field, and is
+        // flagged so a later workflow load leaves it alone.
+        setTargetResolution(
+          value,
+          !(resolutionLadder?.values ?? []).includes(value),
+        );
+        return;
+      }
+
+      if (param === "target_aspect_ratio" && typeof value === "string") {
+        setAspectRatioSelection(normalizeAspectRatioSelection(value));
         return;
       }
 
@@ -694,6 +727,8 @@ export function GenerationPanel() {
     },
     [
       handleWidgetChange,
+      resolutionLadder,
+      setAspectRatioSelection,
       setMaskCropDilation,
       setMaskCropMode,
       setTargetResolution,
@@ -1435,7 +1470,7 @@ export function GenerationPanel() {
                     randomizeToggles={randomizeToggles}
                     onWidgetChange={handleDisplayedWidgetChange}
                     onToggleRandomize={handleToggleRandomize}
-                    showExactAspectRatioControl={showRulesResolutionSelector}
+                    showExactAspectRatioControl={showExactAspectRatioControl}
                     exactAspectRatioWidgetKey={exactAspectRatioWidgetKey}
                     exactAspectRatio={exactAspectRatio}
                     onExactAspectRatioChange={setExactAspectRatio}

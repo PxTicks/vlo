@@ -25,6 +25,7 @@ import type {
   WorkflowRuleWarning,
   WorkflowRules,
 } from "../services/workflowRules";
+import type { GenerationAspectRatioSelection } from "../utils/aspectRatioSelection";
 
 export type ComfyUIConnectionStatus =
   | "disconnected"
@@ -100,7 +101,18 @@ export interface GenerationWorkflowState {
   derivedMaskMappings: DerivedMaskMapping[];
   maskCropMode: WorkflowMaskCroppingMode;
   targetResolution: number;
-  setTargetResolution: (resolution: number) => void;
+  /**
+   * The user typed a short edge off the workflow's ladder. Loading a workflow
+   * leaves a custom value alone rather than snapping it back to a rung.
+   */
+  targetResolutionIsCustom: boolean;
+  setTargetResolution: (resolution: number, isCustom?: boolean) => void;
+  /**
+   * The panel's aspect ratio choice: `"auto"` (the default — probe the supplied
+   * media, else the project ratio), or a pinned `"<w>:<h>"` ratio.
+   */
+  aspectRatioSelection: GenerationAspectRatioSelection;
+  setAspectRatioSelection: (selection: GenerationAspectRatioSelection) => void;
   preResolvedPromptEnabled: boolean;
   setPreResolvedPromptEnabled: (enabled: boolean) => void;
   exactAspectRatio: boolean;

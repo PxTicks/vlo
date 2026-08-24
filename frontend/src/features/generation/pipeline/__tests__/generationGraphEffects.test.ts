@@ -36,6 +36,7 @@ function makePlan(options: {
       derivedMaskMappings: [],
       projectConfig: { fps: 30, aspectRatio: "16:9" },
       exactAspectRatio: false,
+      aspectRatioSelection: "auto",
       targetResolution: 720,
       maskCropDilation: 0,
       maskCropMode: "full",

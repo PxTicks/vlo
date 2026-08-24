@@ -540,13 +540,46 @@ class WorkflowAspectRatioPostprocessConfig(WorkflowRuleBaseModel):
     apply_to: AspectRatioPostprocessApplyTo = "all_visual_outputs"
 
 
+class WorkflowResolutionLadder(WorkflowRuleBaseModel):
+    """
+    A short-edge resolution range the panel interpolates into evenly spaced
+    rungs (e.g. 240..720 in 5 steps -> 240, 360, 480, 600, 720).
+
+    The rungs are the presented ladder, not a whitelist: unlike the legacy
+    `resolutions` list, a ladder never clamps `target_resolution`, so the
+    panel's custom override can dispatch an arbitrary short edge.
+    """
+
+    min: int = Field(default=240, gt=0)
+    max: int = 720
+    steps: int = Field(default=5, ge=2, le=20)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> "WorkflowResolutionLadder":
+        if self.max < self.min:
+            raise ValueError("Resolution ladder max must be >= min")
+        return self
+
+
 class WorkflowAspectRatioStageConfig(WorkflowRuleBaseModel):
     stride: int = 16
     search_steps: int = 2
+    """Legacy whitelist of allowed short edges; out-of-list requests clamp."""
     resolutions: list[int] = Field(default_factory=list)
+    """Interpolated ladder presented by the panel; never clamps."""
+    resolution_ladder: WorkflowResolutionLadder | None = None
     postprocess: WorkflowAspectRatioPostprocessConfig = Field(
         default_factory=WorkflowAspectRatioPostprocessConfig
     )
+
+    @model_validator(mode="after")
+    def validate_resolution_presentation(self) -> "WorkflowAspectRatioStageConfig":
+        if self.resolutions and self.resolution_ladder is not None:
+            raise ValueError(
+                "Aspect ratio config must declare either resolutions or "
+                "resolution_ladder, not both"
+            )
+        return self
 
 
 class WorkflowOutputAssemblyStageConfig(WorkflowRuleBaseModel):

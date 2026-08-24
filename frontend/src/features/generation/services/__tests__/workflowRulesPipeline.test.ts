@@ -229,6 +229,9 @@ describe("workflowRules pipeline helpers", () => {
       resolvePipelineWidgetInputs(rules, {
         showTargetResolution: false,
         currentResolution: 720,
+        showAspectRatioSelector: false,
+        aspectRatioSelection: "auto",
+        projectAspectRatio: "16:9",
         showMaskControls: true,
         maskCropMode: "full",
         maskCropDilation: 0.1,

@@ -313,6 +313,16 @@ export interface WidgetInputConfig {
   nodeShipsBypassed?: boolean;
   /** Rules opted this widget's node into discovery while bypassed. */
   discoverWhenBypassed?: boolean;
+  /**
+   * Human labels for `options`, keyed by `String(option)`. Options without an
+   * entry render as their own value.
+   */
+  optionLabels?: Record<string, string>;
+  /**
+   * Renders this widget as a stepped resolution ladder: a snapped slider over
+   * these rungs plus a custom field for arbitrary values off the ladder.
+   */
+  resolutionLadder?: readonly number[];
 }
 
 export interface WorkflowParamReference {

@@ -42,6 +42,7 @@ describe("generation metadata replay helpers", () => {
         slotValues: {},
         targetResolution: 720,
         exactAspectRatio: false,
+        aspectRatioSelection: "auto",
         maskCropMode: "crop",
         maskCropDilation: 0.1,
         frontendStateWidgetValues: {},
@@ -137,6 +138,7 @@ describe("generation metadata replay helpers", () => {
       },
       targetResolution: 720,
       exactAspectRatio: true,
+      aspectRatioSelection: "auto",
       maskCropMode: "full",
       maskCropDilation: 0.2,
       frontendStateWidgetValues: {
@@ -160,6 +162,7 @@ describe("generation metadata replay helpers", () => {
       replayState: {
         version: 2,
         workflowSourceId: "wan2_2_flf2v.json",
+        aspectRatioSelection: "auto",
         workflowInputs: [
           {
             id: "6:text",
@@ -261,6 +264,7 @@ describe("generation metadata replay helpers", () => {
       slotValues: {},
       targetResolution: 720,
       exactAspectRatio: false,
+      aspectRatioSelection: "auto",
       maskCropMode: "crop",
       maskCropDilation: 0,
       frontendStateWidgetValues: {},
@@ -333,6 +337,7 @@ describe("generation metadata replay helpers", () => {
       slotValues: {},
       targetResolution: 720,
       exactAspectRatio: false,
+      aspectRatioSelection: "auto",
       maskCropMode: "crop",
       maskCropDilation: 0,
       frontendStateWidgetValues: {},
@@ -463,6 +468,7 @@ describe("generation metadata replay helpers", () => {
       slotValues: {},
       targetResolution: 720,
       exactAspectRatio: false,
+      aspectRatioSelection: "auto",
       maskCropMode: "crop",
       maskCropDilation: 0.1,
       frontendStateWidgetValues: {},
@@ -558,6 +564,7 @@ describe("generation metadata replay helpers", () => {
       slotValues: {},
       targetResolution: 720,
       exactAspectRatio: false,
+      aspectRatioSelection: "auto",
       maskCropMode: "crop",
       maskCropDilation: 0.1,
       frontendStateWidgetValues: {},

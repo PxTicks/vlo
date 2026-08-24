@@ -132,7 +132,7 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [480, 720],
+        "resolution_ladder": { "min": 240, "max": 720, "steps": 5 },
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -167,13 +167,13 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [480, 720],
           "default": 720
         },
         {
           "key": "target_aspect_ratio",
           "value_type": "string",
-          "expose": "none",
+          "label": "Aspect ratio",
+          "expose": "widget",
           "source": "client"
         }
       ]

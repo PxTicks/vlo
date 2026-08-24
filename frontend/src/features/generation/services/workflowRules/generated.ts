@@ -146,6 +146,7 @@ export interface WorkflowAspectRatioStageConfig {
   stride?: number;
   search_steps?: number;
   resolutions?: Array<number>;
+  resolution_ladder?: WorkflowResolutionLadder | null;
   postprocess?: WorkflowAspectRatioPostprocessConfig;
 }
 
@@ -273,6 +274,12 @@ export interface WorkflowRequiredInputValidationRule {
   kind: "required";
   input: string;
   message?: string | null;
+}
+
+export interface WorkflowResolutionLadder {
+  min?: number;
+  max?: number;
+  steps?: number;
 }
 
 export interface WorkflowRewriteRule {

@@ -439,6 +439,7 @@ function buildGenerationPlanFromState(
     slotValues,
     derivedMaskMappings: state.derivedMaskMappings,
     exactAspectRatio: state.exactAspectRatio,
+    aspectRatioSelection: state.aspectRatioSelection,
     targetResolution: state.targetResolution,
     maskCropMode,
     maskCropDilation: state.maskCropDilation,

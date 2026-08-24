@@ -621,6 +621,11 @@ describe("GenerationPanel workflow rule hints", () => {
                 value_type: "int",
                 options: [480, 720],
               },
+              {
+                key: "target_aspect_ratio",
+                label: "Aspect ratio",
+                value_type: "string",
+              },
             ],
           },
         ],
@@ -635,9 +640,21 @@ describe("GenerationPanel workflow rule hints", () => {
 
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.getByText("Resolution")).toBeInTheDocument();
+    // The exposed client control becomes the panel's ratio selector.
+    expect(screen.getByText("Aspect ratio")).toBeInTheDocument();
+    // "Auto" is the default and still probes, so "exact" applies to it.
     expect(
       screen.getByLabelText("Use exact input aspect ratio"),
     ).toBeInTheDocument();
+
+    // Pinning a ratio leaves nothing for "exact" to decide.
+    act(() => {
+      useGenerationStore.getState().setAspectRatioSelection("4:3");
+    });
+
+    expect(
+      screen.queryByLabelText("Use exact input aspect ratio"),
+    ).not.toBeInTheDocument();
   });
 
   it("routes unified resolution control changes through the store setter", () => {
@@ -690,10 +707,77 @@ describe("GenerationPanel workflow rule hints", () => {
 
     render(<GenerationPanel />);
 
-    fireEvent.mouseDown(screen.getAllByRole("combobox")[1]!);
+    const resolutionSelect = screen
+      .getAllByRole("combobox")
+      .find((element) => element.textContent === "480");
+    expect(resolutionSelect).toBeDefined();
+    fireEvent.mouseDown(resolutionSelect!);
     fireEvent.click(screen.getByRole("option", { name: "720" }));
 
-    expect(setTargetResolution).toHaveBeenCalledWith(720);
+    // A whitelisted resolution is never a custom override.
+    expect(setTargetResolution).toHaveBeenCalledWith(720, false);
+  });
+
+  it("drives a ladder resolution through the slider and the custom override", () => {
+    const setTargetResolution = vi.fn();
+    useGenerationStore.setState({
+      activeWorkflowRules: createDefaultWorkflowRules({
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            config: {
+              stride: 32,
+              search_steps: 2,
+              resolution_ladder: { min: 240, max: 720, steps: 5 },
+              postprocess: {
+                enabled: true,
+                mode: "stretch_exact",
+                apply_to: "all_visual_outputs",
+              },
+            },
+            targets: [
+              {
+                width: { node_id: "49", param: "width" },
+                height: { node_id: "49", param: "height" },
+              },
+            ],
+            controls: [
+              {
+                key: "target_resolution",
+                label: "Resolution",
+                value_type: "int",
+                default: 720,
+              },
+            ],
+          },
+        ],
+      }),
+      rulesWorkflowSourceId: "wf.json",
+      targetResolution: 480,
+      setTargetResolution,
+    });
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState(),
+    );
+
+    render(<GenerationPanel />);
+
+    // The rungs are the slider's only stops...
+    const slider = screen.getByRole("slider", { name: "Resolution" });
+    expect(slider).toHaveAttribute("aria-valuemin", "240");
+    expect(slider).toHaveAttribute("aria-valuemax", "720");
+    expect(slider).toHaveAttribute("aria-valuenow", "480");
+    for (const rung of ["240", "360", "480", "600", "720"]) {
+      expect(screen.getByText(rung)).toBeInTheDocument();
+    }
+
+    // ...but the custom field is free-form, and flags the value as an override.
+    const customInput = screen.getByLabelText("Custom resolution");
+    fireEvent.change(customInput, { target: { value: "544" } });
+    fireEvent.blur(customInput);
+
+    expect(setTargetResolution).toHaveBeenCalledWith(544, true);
   });
 
   it("shows only postprocessed preview when replace mode has preview", () => {

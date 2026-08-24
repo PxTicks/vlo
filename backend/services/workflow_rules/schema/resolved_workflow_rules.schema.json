@@ -1144,6 +1144,17 @@
         "postprocess": {
           "$ref": "#/$defs/WorkflowAspectRatioPostprocessConfig"
         },
+        "resolution_ladder": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowResolutionLadder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "resolutions": {
           "items": {
             "type": "integer"
@@ -2169,6 +2180,31 @@
         "input"
       ],
       "title": "WorkflowRequiredInputValidationRule",
+      "type": "object"
+    },
+    "WorkflowResolutionLadder": {
+      "description": "A short-edge resolution range the panel interpolates into evenly spaced\nrungs (e.g. 240..720 in 5 steps -> 240, 360, 480, 600, 720).\n\nThe rungs are the presented ladder, not a whitelist: unlike the legacy\n`resolutions` list, a ladder never clamps `target_resolution`, so the\npanel's custom override can dispatch an arbitrary short edge.",
+      "properties": {
+        "max": {
+          "default": 720,
+          "title": "Max",
+          "type": "integer"
+        },
+        "min": {
+          "default": 240,
+          "exclusiveMinimum": 0,
+          "title": "Min",
+          "type": "integer"
+        },
+        "steps": {
+          "default": 5,
+          "maximum": 20,
+          "minimum": 2,
+          "title": "Steps",
+          "type": "integer"
+        }
+      },
+      "title": "WorkflowResolutionLadder",
       "type": "object"
     },
     "WorkflowRewriteRule": {

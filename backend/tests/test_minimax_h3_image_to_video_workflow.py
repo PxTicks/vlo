@@ -162,9 +162,15 @@ def test_minimax_h3_image_to_video_rules_expose_length_and_aspect_ratio():
             "height": {"node_id": "146", "param": "value"},
         }
     ]
-    expected_resolutions = [240, 480, 540, 720]
-    assert stage["config"]["resolutions"] == expected_resolutions
-    assert stage["controls"][0]["options"] == expected_resolutions
+    # The panel interpolates the range into 240/360/480/600/720 rungs and
+    # keeps a custom override open, so no whitelist is enumerated.
+    assert stage["config"]["resolution_ladder"] == {
+        "min": 240,
+        "max": 720,
+        "steps": 5,
+    }
+    assert "resolutions" not in stage["config"]
+    assert "options" not in stage["controls"][0]
     # The aspect-ratio targets are the widgets the panel hides, not edits.
     assert rules["nodes"]["145"]["widgets"]["value"]["hidden"] is True
     assert rules["nodes"]["146"]["widgets"]["value"]["hidden"] is True

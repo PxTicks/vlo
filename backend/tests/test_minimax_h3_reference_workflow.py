@@ -172,16 +172,15 @@ def test_minimax_h3_reference_rules_expose_vlo_controls():
         }
         for node_id in ("141", "142", "143")
     ]
-    expected_resolutions = [
-        240,
-        480,
-        540,
-        720,
-    ]
-    assert rules["pipeline"][0]["config"]["resolutions"] == expected_resolutions
-    assert rules["pipeline"][0]["controls"][0]["options"] == (
-        expected_resolutions
-    )
+    # The panel interpolates the range into 240/360/480/600/720 rungs and
+    # keeps a custom override open, so no whitelist is enumerated.
+    assert rules["pipeline"][0]["config"]["resolution_ladder"] == {
+        "min": 240,
+        "max": 720,
+        "steps": 5,
+    }
+    assert "resolutions" not in rules["pipeline"][0]["config"]
+    assert "options" not in rules["pipeline"][0]["controls"][0]
     assert rules["pipeline"][0]["targets"] == [
         {
             "width": {"node_id": "136", "param": "width"},

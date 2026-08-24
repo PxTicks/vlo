@@ -80,6 +80,12 @@ export interface GeneratedCreationReplayState {
   /** Nodes shipping bypassed that the panel turned on. */
   activateNodeIds?: string[];
   exactAspectRatio?: boolean;
+  /**
+   * The panel's aspect ratio choice: `"auto"` or a pinned `"<w>:<h>"` ratio.
+   * Absent on assets generated before the selector existed, which replay as
+   * `"auto"` to reproduce their probing behavior.
+   */
+  aspectRatioSelection?: string;
   pipelineInputs?: Record<string, Record<string, unknown>>;
   maskCropMode?: "crop" | "full";
   maskCropDilation?: number;

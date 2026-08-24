@@ -11,6 +11,12 @@ import {
   getAspectRatioStage,
   getMaskProcessingStage,
 } from "./pipeline";
+import { getWorkflowResolutionLadder } from "./resolutions";
+import {
+  getAspectRatioSelectionLabels,
+  getAspectRatioSelectionOptions,
+} from "../../utils/aspectRatioSelection";
+import type { GenerationAspectRatioSelection } from "../../utils/aspectRatioSelection";
 
 const PIPELINE_WIDGET_NODE_ID_PREFIX = "__pipeline__:";
 
@@ -115,6 +121,9 @@ function shouldExposePipelineControl(
 interface ResolvePipelineWidgetInputsOptions {
   showTargetResolution: boolean;
   currentResolution: number;
+  showAspectRatioSelector: boolean;
+  aspectRatioSelection: GenerationAspectRatioSelection;
+  projectAspectRatio: string;
   showMaskControls: boolean;
   maskCropMode: WorkflowMaskCroppingMode;
   maskCropDilation: number;
@@ -126,21 +135,63 @@ export function resolvePipelineWidgetInputs(
 ): WorkflowWidgetInput[] {
   const result: WorkflowWidgetInput[] = [];
 
-  if (options.showTargetResolution) {
-    const aspectRatioStage = getAspectRatioStage(rules);
+  const aspectRatioStage = getAspectRatioStage(rules);
+
+  if (options.showAspectRatioSelector && aspectRatioStage) {
+    const targetAspectRatioControl = getStageControl(
+      aspectRatioStage.controls,
+      "target_aspect_ratio",
+    );
+    if (shouldExposePipelineControl(targetAspectRatioControl)) {
+      result.push(
+        createPipelineWidgetInput(
+          aspectRatioStage.id,
+          targetAspectRatioControl,
+          options.aspectRatioSelection,
+          {
+            label: targetAspectRatioControl.label ?? "Aspect ratio",
+            valueType: "enum",
+            // The choices are the project's ratios, not something a workflow
+            // enumerates, so they are supplied here rather than from `control.options`.
+            options: getAspectRatioSelectionOptions(),
+            optionLabels: getAspectRatioSelectionLabels(
+              options.projectAspectRatio,
+            ),
+          },
+        ),
+      );
+    }
+  }
+
+  if (options.showTargetResolution && aspectRatioStage) {
     const targetResolutionControl = getStageControl(
-      aspectRatioStage?.controls,
+      aspectRatioStage.controls,
       "target_resolution",
     );
-    if (
-      aspectRatioStage &&
-      shouldExposePipelineControl(targetResolutionControl)
-    ) {
+    if (shouldExposePipelineControl(targetResolutionControl)) {
+      // Only a declared range becomes a ladder. A legacy `resolutions`
+      // whitelist keeps its dropdown, since its values genuinely are the only
+      // allowed ones and a custom field there would just be clamped away.
+      const ladder = getWorkflowResolutionLadder(rules);
       result.push(
         createPipelineWidgetInput(
           aspectRatioStage.id,
           targetResolutionControl,
           options.currentResolution,
+          ladder?.ladder
+            ? {
+                // The rungs drive a snapped slider and the value stays a plain
+                // int, so a custom override off the ladder is still legal.
+                //
+                // Deliberately no `min`/`max`: the session validates widget
+                // writes against them, so pinning the ladder's bounds here
+                // would reject exactly the off-ladder values the custom field
+                // exists to allow. The slider takes its bounds from the rungs.
+                valueType: "int",
+                options: undefined,
+                resolutionLadder: ladder.values,
+              }
+            : {},
         ),
       );
     }

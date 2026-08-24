@@ -7,6 +7,7 @@ import {
   getWorkflowStageControl,
 } from "../services/workflowRules";
 import type { WorkflowRules } from "../services/workflowRules";
+import { resolveAspectRatioSelection } from "../utils/aspectRatioSelection";
 import { runProcessors } from "./runner";
 import { FRONTEND_PREPROCESSORS } from "./preprocessors";
 import { throwIfAborted } from "./utils/abort";
@@ -78,6 +79,14 @@ export async function runFrontendPreprocess(
   syncedGraphData: Record<string, unknown> | null = null,
 ): Promise<GenerationRequest> {
   const projectConfig = options.projectConfig ?? useProjectStore.getState().config;
+  const requestedAspectRatio = resolveAspectRatioSelection(
+    options.aspectRatioSelection,
+  );
+  // Exact matching is an input-probing mode. Once the caller pins a ratio,
+  // that ratio must also drive normalization/cropping even if the user's Auto
+  // preference was previously set to exact.
+  const exactAspectRatio =
+    requestedAspectRatio === null && (options.exactAspectRatio ?? false);
 
   const ctx: FrontendPreprocessContext = {
     // Inputs
@@ -92,7 +101,8 @@ export async function runFrontendPreprocess(
       fps: projectConfig.fps,
       aspectRatio: projectConfig.aspectRatio,
     },
-    exactAspectRatio: options.exactAspectRatio ?? false,
+    exactAspectRatio,
+    requestedAspectRatio,
     targetResolution:
       options.targetResolution ?? DEFAULT_GENERATION_TARGET_RESOLUTION,
     clientId,

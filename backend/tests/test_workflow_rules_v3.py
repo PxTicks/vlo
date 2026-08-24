@@ -149,7 +149,7 @@ def test_vace_inpaint_collects_mask_crop_pairs():
     assert collect_mask_crop_pairs(rules) == [("118", "119")]
 
 
-def test_vace_inpaint_hidden_target_aspect_ratio_accepts_frontend_submission():
+def test_vace_inpaint_client_target_aspect_ratio_accepts_frontend_submission():
     rules_model, _ = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
         "vlo_VACE_inpaint.json",
@@ -162,7 +162,9 @@ def test_vace_inpaint_hidden_target_aspect_ratio_accepts_frontend_submission():
         for control in aspect_stage.controls
         if control.key == "target_aspect_ratio"
     )
-    assert target_aspect_ratio_control.expose == "none"
+    # The panel presents the selector; the value still arrives from the client
+    # rather than being read back off a workflow widget.
+    assert target_aspect_ratio_control.expose == "widget"
     assert target_aspect_ratio_control.source == "client"
 
     resolved, warnings = resolve_pipeline_control_values_with_warnings(
@@ -642,6 +644,41 @@ def test_pipeline_control_source_defaults_to_client_for_widget():
     assert control.expose == "widget"
     assert control.source == "client"
     assert not any(w.code.startswith("invalid_") for w in warnings)
+
+
+def test_aspect_ratio_resolution_ladder_rejects_ambiguous_or_excessive_rules():
+    for config, expected_message in (
+        (
+            {
+                "resolutions": [480, 720],
+                "resolution_ladder": {"min": 240, "max": 720, "steps": 5},
+            },
+            "either resolutions or resolution_ladder",
+        ),
+        (
+            {"resolution_ladder": {"min": 240, "max": 720, "steps": 21}},
+            "less than or equal to 20",
+        ),
+    ):
+        _, warnings = normalize_rules_model(
+            {
+                "version": 3,
+                "pipeline": [
+                    {
+                        "id": "aspect_ratio",
+                        "kind": "aspect_ratio",
+                        "config": config,
+                        "targets": [],
+                    }
+                ],
+            }
+        )
+
+        assert any(
+            warning.code == "invalid_workflow_rules"
+            and expected_message in warning.message
+            for warning in warnings
+        )
 
 
 def test_pipeline_control_source_required_when_not_widget():

@@ -28,6 +28,7 @@ import {
 } from "../utils/workflowInputs";
 import { throwIfAborted } from "./utils/abort";
 import { isMemoryLoaderClassType } from "../utils/workflowClassTypes";
+import type { GenerationAspectRatioSelection } from "../utils/aspectRatioSelection";
 import type {
   BatchInputOptions,
   DerivedMaskMapping,
@@ -51,6 +52,7 @@ interface CreateGenerationPlanOptions {
   slotValues: Record<string, SlotValue>;
   derivedMaskMappings: DerivedMaskMapping[];
   exactAspectRatio: boolean;
+  aspectRatioSelection: GenerationAspectRatioSelection;
   targetResolution: number;
   maskCropMode: import("../types").WorkflowMaskCroppingMode;
   maskCropDilation: number;
@@ -604,6 +606,7 @@ export function buildGenerationPreprocessCacheKey(
       plan.preprocess.derivedMaskMappings,
     ),
     exactAspectRatio: plan.preprocess.exactAspectRatio,
+    aspectRatioSelection: plan.preprocess.aspectRatioSelection,
     maskCropDilation: plan.preprocess.maskCropDilation,
     maskCropMode: plan.preprocess.maskCropMode,
     mediaSlots: buildMediaSlotCacheDescriptor(plan.preprocess.slotValues),
@@ -959,6 +962,7 @@ export function createGenerationPlan(
         aspectRatio: options.projectConfig.aspectRatio,
       },
       exactAspectRatio: options.exactAspectRatio,
+      aspectRatioSelection: options.aspectRatioSelection,
       targetResolution: options.targetResolution,
       maskCropDilation: options.maskCropDilation,
       maskCropMode: options.maskCropMode,
@@ -998,6 +1002,7 @@ export function createGenerationPlan(
             slotValues: options.slotValues,
             targetResolution: options.targetResolution,
             exactAspectRatio: options.exactAspectRatio,
+            aspectRatioSelection: options.aspectRatioSelection,
             maskCropMode: options.maskCropMode,
             maskCropDilation: options.maskCropDilation,
             frontendStateWidgetValues: options.frontendStateWidgetValues,
@@ -1050,6 +1055,7 @@ export async function prepareGenerationPlan(
           plan.preprocess.maskCropDilation,
           {
             exactAspectRatio: plan.preprocess.exactAspectRatio,
+            aspectRatioSelection: plan.preprocess.aspectRatioSelection,
             maskCropMode: plan.preprocess.maskCropMode,
             projectConfig: plan.preprocess.projectConfig,
             signal: options.signal,

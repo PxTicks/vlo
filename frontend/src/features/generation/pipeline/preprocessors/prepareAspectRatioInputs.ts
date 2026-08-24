@@ -11,9 +11,19 @@ import {
   probeVisualFileAspectRatio,
 } from "../utils/media";
 
+/**
+ * The aspect ratio this dispatch should target.
+ *
+ * A pinned selection wins outright; only "Auto" probes the supplied media,
+ * falling back to the project ratio when nothing can be probed.
+ */
 async function resolveRequestedTargetAspectRatio(
   ctx: FrontendPreprocessContext,
 ): Promise<string> {
+  if (ctx.requestedAspectRatio) {
+    return ctx.requestedAspectRatio;
+  }
+
   const inputById = buildWorkflowInputLookup(ctx.workflowInputs);
   const maskNodeIds = new Set(
     ctx.derivedMaskMappings.map((mapping) => mapping.maskNodeId),
@@ -109,6 +119,7 @@ export const prepareAspectRatioInputs: Processor<FrontendPreprocessContext> = {
       "derivedMaskMappings",
       "projectConfig",
       "exactAspectRatio",
+      "requestedAspectRatio",
       "imageInputs",
       "videoInputs",
     ],

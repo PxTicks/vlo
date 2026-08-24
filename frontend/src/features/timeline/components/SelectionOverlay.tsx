@@ -4,7 +4,9 @@ import {
   Button,
   Collapse,
   IconButton,
+  MenuItem,
   Paper,
+  Select,
   Typography,
 } from "@mui/material";
 import TuneIcon from "@mui/icons-material/Tune";
@@ -12,6 +14,10 @@ import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { useProjectStore } from "../../project";
+import {
+  DEFAULT_PROJECT_OUTPUT_RESOLUTION,
+  PROJECT_OUTPUT_RESOLUTIONS,
+} from "../../project/outputResolutionOptions";
 import { useTimelineStore } from "../useTimelineStore";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { BufferedTextInput } from "../../panelUI/components/BufferedTextInput";
@@ -32,6 +38,7 @@ import {
 import {
   getTicksPerFrame,
   resolveSelectionFps,
+  resolveSelectionRenderResolution,
   resolveSelectionFrameOffset,
   resolveSelectionFrameStep,
   snapFrameCountToStep,
@@ -123,6 +130,87 @@ function SelectionSetting({
   );
 }
 
+const RESOLUTION_LABELS: Readonly<Record<number, string>> = {
+  480: "480p",
+  720: "720p",
+  1080: "1080p",
+  2160: "4K",
+};
+
+interface SelectionResolutionSettingProps {
+  value: number | null;
+  projectResolution: number;
+  recommended: number | null;
+  onChange: (resolution: number | null) => void;
+}
+
+/**
+ * Short edge every render from this selection uses. Unlike its neighbours this
+ * is a fixed set rather than a free number: an arbitrary short edge would be
+ * accepted here and then rejected by the project resolution it falls back to.
+ */
+function SelectionResolutionSetting({
+  value,
+  projectResolution,
+  recommended,
+  onChange,
+}: SelectionResolutionSettingProps) {
+  const followsProject = value === null;
+  const inherited = recommended ?? projectResolution;
+
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+      <Typography variant="body2" sx={{ color: "#aaa" }}>
+        Res
+      </Typography>
+      <Select
+        value={followsProject ? "" : String(value)}
+        displayEmpty
+        onChange={(event) => {
+          const next = event.target.value;
+          onChange(next === "" ? null : Number(next));
+        }}
+        renderValue={(selected) =>
+          selected === ""
+            ? `Auto (${RESOLUTION_LABELS[inherited] ?? inherited})`
+            : (RESOLUTION_LABELS[Number(selected)] ?? String(selected))
+        }
+        inputProps={{ "aria-label": "Selection render resolution" }}
+        data-testid="selection-resolution-setting"
+        sx={{
+          minWidth: 96,
+          height: 24,
+          fontSize: "0.875rem",
+          color: "#aaa",
+          "& .MuiSelect-select": { py: 0, pl: 0.5 },
+          "& fieldset": {
+            border: "none",
+            borderBottom: "1px dotted",
+            borderColor: "#666",
+            borderRadius: 0,
+          },
+          "&:hover fieldset": { borderColor: "#aaa" },
+          "&.Mui-focused fieldset": { borderColor: "#fff" },
+        }}
+      >
+        <MenuItem value="">
+          {`Auto (${RESOLUTION_LABELS[inherited] ?? inherited})`}
+        </MenuItem>
+        {PROJECT_OUTPUT_RESOLUTIONS.map((option) => (
+          <MenuItem key={option} value={String(option)}>
+            {RESOLUTION_LABELS[option] ?? `${option}p`}
+          </MenuItem>
+        ))}
+      </Select>
+      {recommended !== null ? (
+        <Typography variant="body2" sx={{ color: "#777" }}>
+          {`rec ${RESOLUTION_LABELS[recommended] ?? recommended}`}
+        </Typography>
+      ) : null}
+    </Box>
+  );
+}
+
 export function SelectionOverlay({
   maxSelectionTicks = null,
   recommendedMaxTicks,
@@ -183,6 +271,15 @@ export function SelectionOverlay({
   const setSelectionFpsOverride = useTimelineSelectionStore(
     (s) => s.setSelectionFpsOverride,
   );
+  const selectionResolutionOverride = useTimelineSelectionStore(
+    (s) => s.selectionResolutionOverride,
+  );
+  const recommendedResolutionFromStore = useTimelineSelectionStore(
+    (s) => s.selectionRecommendedResolution,
+  );
+  const setSelectionResolutionOverride = useTimelineSelectionStore(
+    (s) => s.setSelectionResolutionOverride,
+  );
   const setSelectionFrameStep = useTimelineSelectionStore(
     (s) => s.setSelectionFrameStep,
   );
@@ -194,6 +291,9 @@ export function SelectionOverlay({
   const zoomScale = useTimelineViewStore((s) => s.zoomScale);
   const scrollContainer = useTimelineViewStore((s) => s.scrollContainer);
   const projectFps = useProjectStore((s) => s.config.fps);
+  const projectResolution = useProjectStore(
+    (s) => s.config.outputResolution ?? DEFAULT_PROJECT_OUTPUT_RESOLUTION,
+  );
   const tracks = useTimelineStore((s) => s.tracks);
   const snappingEnabled = useInteractionStore((s) => s.snappingEnabled);
   const interactionSnapTick = useInteractionStore((s) => s.snapTick);
@@ -648,8 +748,19 @@ export function SelectionOverlay({
 
   // What the collapsed row has to keep saying: the constraints a workflow put
   // on this selection are the reason a drag snaps the way it does.
+  const effectiveResolution = resolveSelectionRenderResolution({
+    override: selectionResolutionOverride,
+    recommended: recommendedResolutionFromStore,
+    project: projectResolution,
+  });
+
   const settingsSummary = [
     `${effectiveFps} fps`,
+    // Only when there is something to say: a workflow recommendation or a
+    // user override. Matching the project is the unremarkable case.
+    effectiveResolution !== projectResolution
+      ? (RESOLUTION_LABELS[effectiveResolution] ?? `${effectiveResolution}p`)
+      : null,
     effectiveFrameStep > 1 || effectiveFrameOffset > 1
       ? `step ${effectiveFrameStep}${
           effectiveFrameOffset > 1 ? `+${effectiveFrameOffset}` : ""
@@ -1005,6 +1116,12 @@ export function SelectionOverlay({
                       ? `rec ${resolvedRecommendedFps}`
                       : undefined
                   }
+                />
+                <SelectionResolutionSetting
+                  value={selectionResolutionOverride}
+                  projectResolution={projectResolution}
+                  recommended={recommendedResolutionFromStore}
+                  onChange={setSelectionResolutionOverride}
                 />
                 <SelectionSetting
                   label="Step"

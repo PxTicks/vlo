@@ -24,12 +24,14 @@ import {
 import {
   getTicksPerFrame,
   normalizeDetachedTimelineSelection,
+  resolveRegionRenderDimensions,
   resolveSelectionFps,
   resolveSelectionFrameOffset,
   resolveSelectionFrameStep,
   snapFrameCountToStep,
 } from "../../timelineSelection";
 import { prepareBrushMasksForTimelineRender } from "../../masks/api";
+import { useProjectStore } from "../../project";
 import { getAssetInput, getAssets } from "../../userAssets";
 import type {
   DerivedMaskMapping,
@@ -93,9 +95,99 @@ export interface RenderInputsOverride {
   brushMasksPrepared: true;
 }
 
+/**
+ * Requested output pixel size for a selection render.
+ *
+ * The generation pipeline uses this to render a source at the workflow's own
+ * strided target dimensions, so ComfyUI does not resample what vlo just
+ * rasterised. Omitted or invalid values leave the project's own resolution in
+ * place. A video and its derived mask must always be rendered at the *same*
+ * size, so callers pass one of these to both.
+ */
+export interface RequestedOutputDimensions {
+  outputWidth?: number;
+  outputHeight?: number;
+}
+
+/**
+ * Output size for a selection render.
+ *
+ * A selection carries the resolution it was created with, so honouring it here
+ * — rather than at each call site — is what makes *every* path render at the
+ * size the user chose: the panel's eager extraction, a restored session's
+ * re-prepare, and the dispatch itself all go through these helpers. Explicit
+ * `outputWidth`/`outputHeight` still win, for callers rendering something that
+ * is not the project's own geometry (an asset at its native size).
+ */
+export function resolveSelectionOutputDimensions(
+  timelineSelection: TimelineSelection | null | undefined,
+  options: RequestedOutputDimensions = {},
+): { outputWidth: number; outputHeight: number } {
+  const config = useProjectStore.getState().config;
+  const fromSelection = resolveRegionRenderDimensions(
+    config.aspectRatio,
+    timelineSelection,
+    config.outputResolution,
+  );
+  return {
+    outputWidth: options.outputWidth ?? fromSelection.width,
+    outputHeight: options.outputHeight ?? fromSelection.height,
+  };
+}
+
+/**
+ * Applies the resolved output dimensions on top of the project's render
+ * inputs. Returns the caller's own override untouched when one is supplied —
+ * a caller-built config already states its own output size.
+ */
+async function resolveSelectionRenderInputs(
+  timelineSelection: TimelineSelection,
+  options: RequestedOutputDimensions & {
+    renderInputs?: RenderInputsOverride;
+    includeTimelineMasks?: boolean;
+  },
+): Promise<{
+  renderInputs: RenderInputsOverride | undefined;
+  timelineSelection: TimelineSelection;
+}> {
+  if (options.renderInputs) {
+    return { renderInputs: options.renderInputs, timelineSelection };
+  }
+
+  const dimensions = resolveSelectionOutputDimensions(
+    timelineSelection,
+    options,
+  );
+
+  const prepared =
+    (await prepareBrushMasksForTimelineRender(timelineSelection, {
+      refreshSelectionClips: false,
+    })) ?? timelineSelection;
+  const { exportConfig, projectData } = buildProjectRenderInputs();
+
+  return {
+    renderInputs: {
+      exportConfig: {
+        ...exportConfig,
+        outputWidth: normalizeOutputDimension(
+          dimensions.outputWidth,
+          exportConfig.outputWidth,
+        ),
+        outputHeight: normalizeOutputDimension(
+          dimensions.outputHeight,
+          exportConfig.outputHeight,
+        ),
+      },
+      projectData,
+      brushMasksPrepared: true,
+    },
+    timelineSelection: prepared,
+  };
+}
+
 export async function renderTimelineSelectionToMp4(
   timelineSelection: TimelineSelection,
-  options: {
+  options: RequestedOutputDimensions & {
     includeTimelineMasks?: boolean;
     signal?: AbortSignal;
     /**
@@ -107,9 +199,14 @@ export async function renderTimelineSelectionToMp4(
   } = {},
 ): Promise<File> {
   throwIfAborted(options.signal);
+  const resolved = await resolveSelectionRenderInputs(
+    timelineSelection,
+    options,
+  );
+  throwIfAborted(options.signal);
   try {
-    const file = await renderSelectionToVideoFile(timelineSelection, {
-      renderInputs: options.renderInputs,
+    const file = await renderSelectionToVideoFile(resolved.timelineSelection, {
+      renderInputs: resolved.renderInputs,
       includeTimelineMasks: options.includeTimelineMasks,
       signal: options.signal,
       filenamePrefix: "generation-selection",
@@ -352,14 +449,18 @@ async function renderTimelineSelectionToOutputs(
   const normalizedSelection = normalizeDetachedTimelineSelection(
     preparedTimelineSelection,
   );
+  const dimensions = resolveSelectionOutputDimensions(
+    timelineSelection,
+    options,
+  );
   const renderConfig = {
     ...exportConfig,
     outputWidth: normalizeOutputDimension(
-      options.outputWidth,
+      dimensions.outputWidth,
       exportConfig.outputWidth,
     ),
     outputHeight: normalizeOutputDimension(
-      options.outputHeight,
+      dimensions.outputHeight,
       exportConfig.outputHeight,
     ),
   };
@@ -640,12 +741,19 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     | "maskSelection"
     | "sourceVideoTreatment"
   >[],
-  options: {
+  options: RequestedOutputDimensions & {
     signal?: AbortSignal;
     preparedVideoFile?: File;
     preparedMaskFile?: File | null;
   } = {},
 ): Promise<TimelineSelectionWithDerivedMasksResult> {
+  // The video and every *visual* mask must come out the same size: the mask
+  // crop stage reads bounds from the mask and applies them to the video, so a
+  // one-pixel drift between the pair misaligns the crop. Resolved once here,
+  // from the source selection, and passed down explicitly — the mask may be a
+  // different selection variant, which could otherwise resolve differently.
+  const requestedDimensions: RequestedOutputDimensions =
+    resolveSelectionOutputDimensions(timelineSelection, options);
   const sourceSelectionMode =
     resolveSharedSourceSelectionMode(derivedMaskMappings);
   const sourceVideoTreatment =
@@ -716,6 +824,7 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
         {
           signal: options.signal,
           sourceVideoTreatment,
+          ...requestedDimensions,
         },
       );
     masks[visualMaskKeys[0]] = mask;
@@ -729,6 +838,7 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
         includeTimelineMasks:
           sourceVideoTreatment === "remove_transparency" ? false : undefined,
         signal: options.signal,
+        ...requestedDimensions,
       });
 
   for (const key of requiredMaskKeys) {
@@ -745,10 +855,15 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     );
     if (getDerivedMaskPurpose(mapping) === "audio_timing") {
       // Audio timing masks are reduced to per-frame activity downstream, so
-      // shrinking them here can erase small active regions entirely.
+      // shrinking them here can erase small active regions entirely. That
+      // applies to the selection's render resolution too: `resolution` is
+      // dropped so this mask stays at the project's size however small the
+      // user made the visual pair. It is not uploaded alongside them, so
+      // nothing needs it to match.
       masks[key] = await renderTimelineSelectionToMaskMp4(
         {
           ...maskTimelineSelection,
+          resolution: undefined,
           fps: resolveAudioTimingMaskExportFps(mapping.renderFps),
           frameStep: 1,
         },
@@ -767,6 +882,7 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
         {
           signal: options.signal,
           trackRenderedMaskContent: true,
+          ...requestedDimensions,
         },
       );
     masks[key] = file;
@@ -795,14 +911,17 @@ export async function renderTimelineSelectionToMp4WithMask(
       })) ?? timelineSelection);
   const { exportConfig, projectData } =
     options.renderInputs ?? buildProjectRenderInputs();
+  const pairDimensions = options.renderInputs
+    ? options
+    : resolveSelectionOutputDimensions(timelineSelection, options);
   const renderConfig: ExportConfig = {
     ...exportConfig,
     outputWidth: normalizeOutputDimension(
-      options.outputWidth,
+      pairDimensions.outputWidth,
       exportConfig.outputWidth,
     ),
     outputHeight: normalizeOutputDimension(
-      options.outputHeight,
+      pairDimensions.outputHeight,
       exportConfig.outputHeight,
     ),
     // Encode the video over opaque black. The composite stays faithful — masks

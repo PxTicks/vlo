@@ -196,6 +196,82 @@ describe("useExportJobController runSelectionExport", () => {
     });
   });
 
+  // Extract Selection honours the resolution set on the selection itself, so
+  // an extracted file and one dispatched to a workflow are the same size.
+  it("renders a selection at the resolution the selection asked for", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "selection.mp4"),
+    );
+
+    const { result } = makeController({ projectOutputResolution: 1080 });
+    await act(async () => {
+      await result.current.runSelectionExport({
+        ...selectionOptions(),
+        selectionResolution: 480,
+      });
+    });
+
+    expect(resolveRenderOutputDimensions).toHaveBeenCalledWith("16:9", 480);
+    const [, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
+    expect(opts!.renderInputs!.exportConfig).toMatchObject({
+      outputWidth: 854,
+      outputHeight: 480,
+    });
+  });
+
+  // The extracted asset stores this selection as its creation metadata, so
+  // reopening it must reproduce the render it came from rather than pick up
+  // whatever the project resolution is by then.
+  it("records the resolution it rendered at on the stored selection", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "selection.mp4"),
+    );
+
+    const { result } = makeController({ projectOutputResolution: 1080 });
+    await act(async () => {
+      await result.current.runSelectionExport({
+        ...selectionOptions(),
+        selectionResolution: 480,
+      });
+    });
+
+    const [selection] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
+    expect(selection).toMatchObject({ resolution: 480 });
+  });
+
+  it("records the project resolution when the selection pins none", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "selection.mp4"),
+    );
+
+    const { result } = makeController({ projectOutputResolution: 720 });
+    await act(async () => {
+      await result.current.runSelectionExport({
+        ...selectionOptions(),
+        selectionResolution: null,
+      });
+    });
+
+    const [selection] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
+    expect(selection).toMatchObject({ resolution: 720 });
+  });
+
+  it("falls back to the project resolution when the selection has none", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "selection.mp4"),
+    );
+
+    const { result } = makeController({ projectOutputResolution: 720 });
+    await act(async () => {
+      await result.current.runSelectionExport({
+        ...selectionOptions(),
+        selectionResolution: null,
+      });
+    });
+
+    expect(resolveRenderOutputDimensions).toHaveBeenCalledWith("16:9", 720);
+  });
+
   it("renders a portrait selection and its project export at the same size", async () => {
     vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
       new File(["v"], "out.mp4"),

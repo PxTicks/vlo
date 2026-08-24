@@ -52,7 +52,11 @@ import { resolveWidgetInputs } from "../store/workflowState";
 import { parseInputsFromGraphData } from "../services/workflowBridge";
 import { parseInputsFromApiWorkflow } from "../services/apiWorkflowInputs";
 import { addLocalAsset, useAssetStore } from "../../userAssets";
-import { findWorkflowInputValidationFailures } from "../services/workflowRules";
+import {
+  findWorkflowInputValidationFailures,
+  getAspectRatioStage,
+  getWorkflowStageControl,
+} from "../services/workflowRules";
 import {
   buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
@@ -1454,8 +1458,29 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       timelineSelectionStore.setSelectionFrameOffset(
         recommendedFrameOffset ?? 1,
       );
+      // The dispatch's own target resolution, offered as the selection's
+      // default: rendering the source at the size the workflow will use skips
+      // a resample inside ComfyUI and the upload of pixels it discards. It is
+      // a recommendation, not a decision — the selection's own setting wins.
+      //
+      // Gated on the workflow actually declaring a `target_resolution`
+      // control, which is the same condition that decides whether the value is
+      // sent at all (`buildPipelineInputs`). A workflow that does no
+      // resolution processing has nothing to recommend, and would otherwise
+      // push the panel's own default onto every selection.
+      const generationState = useGenerationStore.getState();
+      const workflowUsesTargetResolution = Boolean(
+        getWorkflowStageControl(
+          getAspectRatioStage(generationState.activeWorkflowRules),
+          "target_resolution",
+        ),
+      );
+      const recommendedResolution = workflowUsesTargetResolution
+        ? generationState.targetResolution
+        : null;
       timelineSelectionStore.setSelectionRecommendations({
         fps: recommendedFps,
+        resolution: recommendedResolution,
         frameStep: recommendedFrameStep,
         frameOffset: recommendedFrameOffset,
         maxTicks: recommendedMaxTicks,

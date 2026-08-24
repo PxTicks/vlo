@@ -38,6 +38,58 @@ describe("useTimelineSelectionStore", () => {
     expect(result.current.selectionRecommendedFps).toBeNull();
     expect(result.current.selectionRecommendedFrameStep).toBeNull();
     expect(result.current.selectionRecommendedMaxTicks).toBeNull();
+    expect(result.current.selectionRecommendedResolution).toBeNull();
+  });
+
+  describe("render resolution", () => {
+    it("stores an offered rung as the override", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.setSelectionResolutionOverride(720);
+      });
+
+      expect(result.current.selectionResolutionOverride).toBe(720);
+    });
+
+    // Anything off the ladder would be accepted here and then rejected by the
+    // project config the selection falls back to.
+    it.each([1234, 0, -720, null])(
+      "clears the override for an unsupported value: %s",
+      (value) => {
+        const { result } = renderHook(() => useTimelineSelectionStore());
+
+        act(() => {
+          result.current.setSelectionResolutionOverride(1080);
+          result.current.setSelectionResolutionOverride(value);
+        });
+
+        expect(result.current.selectionResolutionOverride).toBeNull();
+      },
+    );
+
+    // A workflow's target is whatever its rules declare, so the recommendation
+    // is deliberately not held to the ladder.
+    it("accepts a non-rung recommendation", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.setSelectionRecommendations({ resolution: 832 });
+      });
+
+      expect(result.current.selectionRecommendedResolution).toBe(832);
+    });
+
+    it("clears an unusable recommendation", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.setSelectionRecommendations({ resolution: 832 });
+        result.current.setSelectionRecommendations({ resolution: 0 });
+      });
+
+      expect(result.current.selectionRecommendedResolution).toBeNull();
+    });
   });
 
   it("enters and updates selection mode", () => {
@@ -78,6 +130,7 @@ describe("useTimelineSelectionStore", () => {
       });
       result.current.setSelectionRecommendations({
         fps: 16,
+        resolution: 720,
         frameStep: 4,
         maxTicks: 12_345,
       });

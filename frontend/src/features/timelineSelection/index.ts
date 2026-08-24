@@ -26,6 +26,13 @@ export {
   getDefaultSelectionEnd,
 } from "./utils/createTimelineSelection";
 export type { CreateTimelineSelectionFromClipIdsOptions } from "./utils/createTimelineSelection";
+export {
+  resolveRegionRenderDimensions,
+  resolveRegionRenderResolution,
+  resolveSelectionRenderDimensions,
+  resolveSelectionRenderResolution,
+  type SelectionResolutionSources,
+} from "./utils/selectionRenderResolution";
 export { getTimelineSelectionFromAsset } from "./utils/assetSelection";
 export {
   selectionToCompositeContent,

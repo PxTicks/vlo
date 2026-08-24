@@ -15,6 +15,7 @@ import type {
   Transition,
 } from "../../../types/TimelineTypes";
 import { useTimelineSelectionStore } from "../useTimelineSelectionStore";
+import { resolveSelectionRenderResolution } from "./selectionRenderResolution";
 import {
   getReferencedSubordinateClipIds,
   getTicksPerFrame,
@@ -45,6 +46,8 @@ export function createTimelineSelection(
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
   const {
     selectionFpsOverride,
+    selectionResolutionOverride,
+    selectionRecommendedResolution,
     selectionFrameStep,
     selectionFrameOffset,
     selectionMessage,
@@ -56,6 +59,13 @@ export function createTimelineSelection(
     { fps: selectionFpsOverride },
     projectFps,
   );
+  // Resolved here, like fps: the region then renders the same way whatever the
+  // store or the project settings do afterwards.
+  const selectionResolution = resolveSelectionRenderResolution({
+    override: selectionResolutionOverride,
+    recommended: selectionRecommendedResolution,
+    project: useProjectStore.getState().config.outputResolution,
+  });
 
   const selectedClips = getTimelineClipsInPresentationRange(startTick, endTick);
   const selectedClipIds = new Set(selectedClips.map((clip) => clip.id));
@@ -73,6 +83,7 @@ export function createTimelineSelection(
     ...(selectedTransitions.length > 0
       ? { transitions: selectedTransitions }
       : {}),
+    resolution: selectionResolution,
     ...(selectionMessage ? { message: selectionMessage } : {}),
     ...(selectionIncludeModeEnabled && selectionIncludedTrackIds.length > 0
       ? { includedTrackIds: selectionIncludedTrackIds.slice() }

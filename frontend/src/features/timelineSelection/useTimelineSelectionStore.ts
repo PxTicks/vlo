@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { isProjectOutputResolution } from "../project/outputResolutionOptions";
 
 export type TimelineSelectionStage = "range" | "tracks";
 
@@ -12,9 +13,18 @@ export interface TimelineSelectionState {
   selectionAllowIncludeAll: boolean;
   selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
+  /**
+   * Short edge in pixels for every render this selection produces, or `null`
+   * to follow the project's own output resolution. Resolve it with
+   * `resolveSelectionRenderResolution` rather than reading it directly — the
+   * value a render should use also depends on the workflow's recommendation.
+   */
+  selectionResolutionOverride: number | null;
   selectionFrameStep: number;
   selectionFrameOffset: number;
   selectionRecommendedFps: number | null;
+  /** What the workflow asks for; the override still wins. */
+  selectionRecommendedResolution: number | null;
   selectionRecommendedFrameStep: number | null;
   selectionRecommendedFrameOffset: number | null;
   selectionRecommendedMaxTicks: number | null;
@@ -36,10 +46,12 @@ export interface TimelineSelectionState {
   toggleSelectionIncludedTrack: (trackId: string) => void;
   includeAllSelectionTracks: (trackIds: readonly string[]) => void;
   setSelectionFpsOverride: (fps: number | null) => void;
+  setSelectionResolutionOverride: (resolution: number | null) => void;
   setSelectionFrameStep: (step: number) => void;
   setSelectionFrameOffset: (offset: number) => void;
   setSelectionRecommendations: (options: {
     fps?: number | null;
+    resolution?: number | null;
     frameStep?: number | null;
     frameOffset?: number | null;
     maxTicks?: number | null;
@@ -58,9 +70,11 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
   selectionAllowIncludeAll: false,
   selectionIncludedTrackIds: [],
   selectionFpsOverride: null,
+  selectionResolutionOverride: null,
   selectionFrameStep: 1,
   selectionFrameOffset: 1,
   selectionRecommendedFps: null,
+  selectionRecommendedResolution: null,
   selectionRecommendedFrameStep: null,
   selectionRecommendedFrameOffset: null,
   selectionRecommendedMaxTicks: null,
@@ -137,6 +151,15 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
           ? Math.max(1, Math.round(fps))
           : null,
     }),
+  setSelectionResolutionOverride: (resolution) =>
+    set({
+      // Only the offered rungs are storable: an arbitrary short edge would be
+      // accepted here and then rejected by the project config it falls back
+      // to, so the two would disagree about what the selection renders at.
+      selectionResolutionOverride: isProjectOutputResolution(resolution)
+        ? resolution
+        : null,
+    }),
   setSelectionFrameStep: (step) =>
     set({
       selectionFrameStep:
@@ -151,8 +174,23 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
           ? Math.max(1, Math.round(offset))
           : 1,
     }),
-  setSelectionRecommendations: ({ fps, frameStep, frameOffset, maxTicks }) =>
+  setSelectionRecommendations: ({
+    fps,
+    resolution,
+    frameStep,
+    frameOffset,
+    maxTicks,
+  }) =>
     set({
+      // Unlike the override this is not restricted to the offered rungs: a
+      // workflow's declared target is whatever its rules say, and rounding it
+      // would defeat rendering at the size the workflow will actually use.
+      selectionRecommendedResolution:
+        typeof resolution === "number" &&
+        Number.isFinite(resolution) &&
+        resolution > 0
+          ? Math.round(resolution)
+          : null,
       selectionRecommendedFps:
         typeof fps === "number" && Number.isFinite(fps) && fps > 0
           ? Math.max(1, Math.round(fps))
@@ -176,6 +214,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
     }),
   clearSelectionRecommendations: () =>
     set({
+      selectionRecommendedResolution: null,
       selectionRecommendedFps: null,
       selectionRecommendedFrameStep: null,
       selectionRecommendedFrameOffset: null,
@@ -191,6 +230,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
       selectionIncludeModeEnabled: false,
       selectionAllowIncludeAll: false,
       selectionIncludedTrackIds: [],
+      selectionRecommendedResolution: null,
       selectionRecommendedFps: null,
       selectionRecommendedFrameStep: null,
       selectionRecommendedFrameOffset: null,

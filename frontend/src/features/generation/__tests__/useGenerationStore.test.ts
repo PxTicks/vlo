@@ -892,6 +892,9 @@ describe("useGenerationStore workflow rules", () => {
           end: 24,
           clips: [],
           fps: 24,
+          // Prepared files are only reused when the selection pins the
+          // resolution they were rendered at.
+          resolution: 1080,
         },
         preparedVideoFile,
         preparedMaskFile,

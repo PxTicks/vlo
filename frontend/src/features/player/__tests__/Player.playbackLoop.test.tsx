@@ -237,6 +237,8 @@ vi.mock("../../timelineSelection", async () => {
     selectionStartTick: number;
     selectionEndTick: number;
     selectionFpsOverride?: number | null;
+    selectionResolutionOverride?: number | null;
+    selectionRecommendedResolution?: number | null;
     selectionFrameStep: number;
     enterSelectionMode: (start: number, end: number) => void;
     exitSelectionMode: () => void;
@@ -247,6 +249,8 @@ vi.mock("../../timelineSelection", async () => {
     selectionStartTick: 0,
     selectionEndTick: 0,
     selectionFpsOverride: null,
+    selectionResolutionOverride: null,
+    selectionRecommendedResolution: null,
     selectionFrameStep: 1,
     enterSelectionMode: (selectionStartTick, selectionEndTick) =>
       set({
@@ -270,6 +274,15 @@ vi.mock("../../timelineSelection", async () => {
     }),
     getDefaultSelectionEnd: (startTick: number) => startTick + TICKS_PER_SECOND,
     getClipsInSelection: (clips: TimelineClip[]) => clips,
+    resolveSelectionRenderResolution: ({
+      override,
+      recommended,
+      project,
+    }: {
+      override?: number | null;
+      recommended?: number | null;
+      project?: number | null;
+    }) => override ?? recommended ?? project ?? 1080,
   };
 });
 

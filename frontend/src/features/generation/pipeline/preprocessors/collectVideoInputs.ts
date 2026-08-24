@@ -50,6 +50,20 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
     const inputById = buildWorkflowInputLookup(ctx.workflowInputs);
     const projectFps = Math.max(1, ctx.projectConfig.fps);
 
+    /**
+     * Whether a file prepared at extraction time is still the right size.
+     *
+     * The render helpers derive their output size from the selection's own
+     * `resolution`, so a prepared file rendered from a selection that carries
+     * one is reproducible: rendering again now yields the same dimensions.
+     * A selection *without* one follows the project resolution instead, which
+     * may have changed since — and a legacy or restored selection predating
+     * this field is exactly that case. Re-render rather than upload a file of
+     * unknown size.
+     */
+    const preparedFileIsCurrent = (selection: TimelineSelection): boolean =>
+      typeof selection.resolution === "number" && selection.resolution > 0;
+
     // Build lookup: sourceInputId/sourceNodeId → mask mappings
     const masksBySource = new Map<string, DerivedMaskMapping[]>();
     for (const mapping of ctx.derivedMaskMappings) {
@@ -69,7 +83,9 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       preparedVideoFile?: File,
       config?: WorkflowSelectionConfig,
     ): Promise<File> {
-      if (preparedVideoFile) return preparedVideoFile;
+      if (preparedVideoFile && preparedFileIsCurrent(selection)) {
+        return preparedVideoFile;
+      }
       throwIfAborted(ctx.signal);
       return renderTimelineSelectionToMp4(
         prepareNormalizedSelection(selection, projectFps, config),
@@ -89,7 +105,12 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       const expectedPreparedSignature =
         buildDerivedMaskRenderSignature(visualMasks);
       const hasMatchingPreparedSignature =
-        expectedPreparedSignature === (preparedDerivedMaskSignature ?? null);
+        expectedPreparedSignature === (preparedDerivedMaskSignature ?? null) &&
+        // Checked alongside the signature: the video and mask are reused as a
+        // pair, so a stale size disqualifies both. Without this an optional
+        // mask could be re-rendered at the selection's size while the video
+        // stayed at the project's.
+        preparedFileIsCurrent(selection);
       const reusablePreparedVideoFile = hasMatchingPreparedSignature
         ? preparedVideoFile
         : undefined;

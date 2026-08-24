@@ -20,15 +20,18 @@ interface MockSelectionState {
   selectionAllowIncludeAll: boolean;
   selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
+  selectionResolutionOverride: number | null;
   selectionFrameStep: number;
   selectionFrameOffset: number;
   selectionRecommendedFps: number | null;
+  selectionRecommendedResolution: number | null;
   selectionRecommendedFrameStep: number | null;
   selectionRecommendedFrameOffset: number | null;
   selectionRecommendedMaxTicks: number | null;
   updateSelectionStart: Mock;
   updateSelectionEnd: Mock;
   setSelectionFpsOverride: Mock;
+  setSelectionResolutionOverride: Mock;
   setSelectionFrameStep: Mock;
   setSelectionFrameOffset: Mock;
   enterTrackSelectionStage: Mock;
@@ -65,15 +68,18 @@ function createSelectionState(
     selectionAllowIncludeAll: false,
     selectionIncludedTrackIds: ["track-1", "track-2"],
     selectionFpsOverride: null,
+    selectionResolutionOverride: null,
     selectionFrameStep: 1,
     selectionFrameOffset: 1,
     selectionRecommendedFps: null,
+    selectionRecommendedResolution: null,
     selectionRecommendedFrameStep: null,
     selectionRecommendedFrameOffset: null,
     selectionRecommendedMaxTicks: null,
     updateSelectionStart: vi.fn(),
     updateSelectionEnd: vi.fn(),
     setSelectionFpsOverride: vi.fn(),
+    setSelectionResolutionOverride: vi.fn(),
     setSelectionFrameStep: vi.fn(),
     setSelectionFrameOffset: vi.fn(),
     enterTrackSelectionStage: vi.fn(),
@@ -231,7 +237,7 @@ describe("SelectionOverlay", () => {
     });
 
     (useProjectStore as unknown as Mock).mockImplementation((selector: unknown) => {
-      const state = { config: { fps: 60 } };
+      const state = { config: { fps: 60, outputResolution: 1080 } };
       if (typeof selector === "function") {
         return selector(state);
       }
@@ -308,12 +314,71 @@ describe("SelectionOverlay", () => {
     expect(settings).toBeInTheDocument();
     expect(screen.getByText("Max")).toBeInTheDocument();
     expect(screen.getByText("FPS")).toBeInTheDocument();
+    expect(screen.getByText("Res")).toBeInTheDocument();
     expect(screen.getByDisplayValue("17")).toBeInTheDocument();
     expect(screen.getByDisplayValue("5")).toBeInTheDocument();
 
     fireEvent.change(screen.getByDisplayValue("5"), { target: { value: "9" } });
     fireEvent.blur(screen.getByDisplayValue("9"));
     expect(selectionState.setSelectionFrameOffset).toHaveBeenCalledWith(9);
+  });
+
+  describe("render resolution", () => {
+    it("follows the project until something says otherwise", () => {
+      render(<SelectionOverlay />);
+      fireEvent.click(screen.getByTestId("selection-overlay-settings-toggle"));
+
+      // "Auto" names what it will actually use, so the row is never a mystery.
+      expect(
+        screen.getByTestId("selection-resolution-setting"),
+      ).toHaveTextContent("Auto (1080p)");
+      // Nothing to report while it matches the project.
+      expect(
+        screen.getByTestId("selection-overlay-settings-summary"),
+      ).not.toHaveTextContent("1080p");
+    });
+
+    it("shows a workflow recommendation and summarises it", () => {
+      selectionState = createSelectionState({
+        selectionRecommendedResolution: 720,
+      });
+
+      render(<SelectionOverlay />);
+      fireEvent.click(screen.getByTestId("selection-overlay-settings-toggle"));
+
+      expect(
+        screen.getByTestId("selection-resolution-setting"),
+      ).toHaveTextContent("Auto (720p)");
+      expect(screen.getByText("rec 720p")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("selection-overlay-settings-summary"),
+      ).toHaveTextContent("720p");
+    });
+
+    it("shows a non-rung workflow target as-is", () => {
+      selectionState = createSelectionState({
+        selectionRecommendedResolution: 832,
+      });
+
+      render(<SelectionOverlay />);
+      fireEvent.click(screen.getByTestId("selection-overlay-settings-toggle"));
+
+      expect(screen.getByText("rec 832")).toBeInTheDocument();
+    });
+
+    it("commits an explicit override", () => {
+      render(<SelectionOverlay />);
+      fireEvent.click(screen.getByTestId("selection-overlay-settings-toggle"));
+
+      fireEvent.mouseDown(
+        screen.getByLabelText("Selection render resolution"),
+      );
+      fireEvent.click(screen.getByRole("option", { name: "480p" }));
+
+      expect(selectionState.setSelectionResolutionOverride).toHaveBeenCalledWith(
+        480,
+      );
+    });
   });
 
   it("advances to track selection before final confirmation when include mode is enabled", () => {

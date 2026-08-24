@@ -79,6 +79,19 @@ export interface TimelineSelection extends TimelineRegionData {
   start: number;
   end?: number;
   /**
+   * Short edge in pixels for renders/extractions from this selection, resolved
+   * when it was created (the selection's own setting, else the workflow's
+   * recommendation, else the project's output resolution). Stored resolved
+   * rather than as an override so a render is reproducible from the selection
+   * alone; when omitted, consumers fall back to the project resolution.
+   *
+   * Deliberately on the selection rather than {@link TimelineRegionData}: a
+   * composite's raster size comes from its own policy
+   * (`renderer/utils/compositeRasterDimensions`), so this would be meaningless
+   * on `CompositeContent` — and silently part of its bake identity.
+   */
+  resolution?: number;
+  /**
    * Optional workflow-provided guidance shown while the selection is being made.
    */
   message?: string;

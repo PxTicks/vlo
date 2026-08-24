@@ -15,7 +15,68 @@ import {
   renderTimelineSelectionToMp4WithDerivedMasks,
   renderTimelineSelectionToMp4WithMask,
   resolveAudioTimingMaskExportFps,
+  resolveSelectionOutputDimensions,
 } from "../inputSelection";
+
+/**
+ * The render helpers derive their output size from the selection itself, which
+ * is what makes every path honour it — the panel's eager extraction, a restored
+ * session's re-prepare, and the dispatch alike, none of which pass dimensions.
+ */
+describe("resolveSelectionOutputDimensions", () => {
+  beforeEach(() => {
+    useProjectStore.setState({
+      config: {
+        aspectRatio: "16:9",
+        outputResolution: 1080,
+        fps: 24,
+        fitMode: "cover",
+        layoutMode: "compact",
+        assetBrowserDisplay: "grouped",
+      },
+    });
+  });
+
+  it("uses the resolution the selection carries", () => {
+    expect(
+      resolveSelectionOutputDimensions({ start: 0, clips: [], resolution: 720 }),
+    ).toEqual({ outputWidth: 1280, outputHeight: 720 });
+  });
+
+  it("falls back to the project resolution", () => {
+    expect(resolveSelectionOutputDimensions({ start: 0, clips: [] })).toEqual({
+      outputWidth: 1920,
+      outputHeight: 1080,
+    });
+  });
+
+  it("follows the project's aspect ratio", () => {
+    useProjectStore.setState({
+      config: { ...useProjectStore.getState().config, aspectRatio: "9:16" },
+    });
+
+    expect(
+      resolveSelectionOutputDimensions({ start: 0, clips: [], resolution: 720 }),
+    ).toEqual({ outputWidth: 720, outputHeight: 1280 });
+  });
+
+  // Explicit dimensions are for callers rendering something that is not the
+  // project's geometry — an asset at its native size.
+  it("lets an explicit override win", () => {
+    expect(
+      resolveSelectionOutputDimensions(
+        { start: 0, clips: [], resolution: 720 },
+        { outputWidth: 640, outputHeight: 480 },
+      ),
+    ).toEqual({ outputWidth: 640, outputHeight: 480 });
+  });
+
+  it("keeps a non-rung resolution the workflow asked for", () => {
+    expect(
+      resolveSelectionOutputDimensions({ start: 0, clips: [], resolution: 832 }),
+    ).toEqual({ outputWidth: 1480, outputHeight: 832 });
+  });
+});
 
 describe("inputSelection", () => {
   const SMALL_MASK_OUTPUT_SIZE = 64;

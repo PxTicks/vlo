@@ -87,6 +87,12 @@ export interface SelectionExportOptions {
   selectionMessage: string | null;
   selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
+  /**
+   * Short edge the selection asked for, or `null` to follow the project. The
+   * same value the generation pipeline renders this selection at, so an
+   * extracted file and a dispatched one are the same size.
+   */
+  selectionResolution?: number | null;
   selectionFrameStep: number;
   selectionFrameOffset?: number;
   onProgress?: (progress: number) => void;
@@ -208,6 +214,7 @@ export function useExportJobController({
         selectionMessage,
         selectionIncludedTrackIds,
         selectionFpsOverride,
+        selectionResolution,
         selectionFrameStep,
         selectionFrameOffset,
         onProgress,
@@ -223,7 +230,7 @@ export function useExportJobController({
         wakeLock = acquireExportWakeLock();
         const outputDimensions = resolveRenderOutputDimensions(
           projectAspectRatio,
-          projectOutputResolution,
+          selectionResolution ?? projectOutputResolution,
         );
 
         const exportConfig: ExportConfig = {
@@ -255,6 +262,11 @@ export function useExportJobController({
             ? { includedTrackIds: selectionIncludedTrackIds.slice() }
             : {}),
           fps: selectionFps,
+          // Recorded alongside fps for the same reason: this selection is
+          // stored as the extracted asset's creation metadata, and reopening
+          // it must reproduce the render it came from rather than pick up
+          // whatever the project resolution happens to be later.
+          resolution: selectionResolution ?? projectOutputResolution,
           frameStep: selectionFrameStep,
           ...(selectionFrameOffset && selectionFrameOffset > 1
             ? { frameOffset: selectionFrameOffset }

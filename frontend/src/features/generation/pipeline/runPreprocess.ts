@@ -100,6 +100,7 @@ export async function runFrontendPreprocess(
     projectConfig: {
       fps: projectConfig.fps,
       aspectRatio: projectConfig.aspectRatio,
+      outputResolution: projectConfig.outputResolution,
     },
     exactAspectRatio,
     requestedAspectRatio,

@@ -172,6 +172,11 @@ export interface ProcessorDescription {
 export interface ProjectConfig {
   fps: number;
   aspectRatio: string;
+  /**
+   * Short edge in pixels. Only a fallback here: a timeline selection carries
+   * the resolution it was created with, and that wins.
+   */
+  outputResolution?: number;
 }
 
 export interface GenerationWorkflowSnapshot {

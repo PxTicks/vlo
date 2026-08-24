@@ -64,6 +64,7 @@ import type { ExportFormatValue } from "./exportFormatsCatalogue";
 import {
   createPointTimelineSelection,
   getDefaultSelectionEnd,
+  resolveSelectionRenderResolution,
   useTimelineSelectionStore,
 } from "../timelineSelection";
 import {
@@ -780,10 +781,18 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
       selectionMessage,
       selectionIncludedTrackIds,
       selectionFpsOverride,
+      selectionResolutionOverride,
+      selectionRecommendedResolution,
       selectionFrameStep,
       selectionFrameOffset,
       exitSelectionMode,
     } = useTimelineSelectionStore.getState();
+    // Read before exiting selection mode, which clears the recommendations.
+    const selectionResolution = resolveSelectionRenderResolution({
+      override: selectionResolutionOverride,
+      recommended: selectionRecommendedResolution,
+      project: config.outputResolution,
+    });
 
     exitSelectionMode();
     openDialog();
@@ -798,6 +807,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
         selectionMessage,
         selectionIncludedTrackIds,
         selectionFpsOverride,
+        selectionResolution,
         selectionFrameStep,
         selectionFrameOffset,
         onProgress: (progress) => {
@@ -807,7 +817,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
     } finally {
       closeDialog();
     }
-  }, [runSelectionExport]);
+  }, [config.outputResolution, runSelectionExport]);
 
   const handleExtractSelection = useCallback(() => {
     const { closeDialog, setOnConfirmSelection } = useExtractStore.getState();

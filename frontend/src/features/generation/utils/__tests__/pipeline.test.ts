@@ -577,6 +577,10 @@ describe("generation pipeline", () => {
             end: 24,
             clips: [],
             fps: 24,
+            // A prepared file is only reused when its selection pins a
+            // resolution: without one the selection follows the project's,
+            // which may have changed since the file was prepared.
+            resolution: 1080,
           },
           preparedVideoFile,
           preparedMaskFile,
@@ -966,6 +970,10 @@ describe("generation pipeline", () => {
             end: 24,
             clips: [],
             fps: 24,
+            // A prepared file is only reused when its selection pins a
+            // resolution: without one the selection follows the project's,
+            // which may have changed since the file was prepared.
+            resolution: 1080,
           },
           preparedVideoFile,
           preparedMaskFile,

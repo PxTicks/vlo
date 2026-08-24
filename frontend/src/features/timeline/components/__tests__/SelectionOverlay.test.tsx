@@ -274,7 +274,7 @@ describe("SelectionOverlay", () => {
     expect(hasColResizeHandle).toBe(true);
   });
 
-  it("surfaces the workflow's frame-count grid, offset included", () => {
+  it("keeps the selection settings collapsed but summarises the grid", () => {
     selectionState = createSelectionState({
       selectionFrameStep: 17,
       selectionFrameOffset: 5,
@@ -284,8 +284,36 @@ describe("SelectionOverlay", () => {
 
     render(<SelectionOverlay />);
 
-    expect(screen.getByText("+5")).toBeInTheDocument();
-    expect(screen.getByText(/rec\s*17\+5/)).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("selection-overlay-settings"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("selection-overlay-settings-summary"),
+    ).toHaveTextContent("60 fps · step 17+5");
+    expect(screen.getByText("Confirm Selection")).toBeInTheDocument();
+  });
+
+  it("exposes fps and the frame-count grid once settings are expanded", () => {
+    selectionState = createSelectionState({
+      selectionFrameStep: 17,
+      selectionFrameOffset: 5,
+      selectionRecommendedFrameStep: 17,
+      selectionRecommendedFrameOffset: 5,
+    });
+
+    render(<SelectionOverlay />);
+    fireEvent.click(screen.getByTestId("selection-overlay-settings-toggle"));
+
+    const settings = screen.getByTestId("selection-overlay-settings");
+    expect(settings).toBeInTheDocument();
+    expect(screen.getByText("Max")).toBeInTheDocument();
+    expect(screen.getByText("FPS")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("17")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("5")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByDisplayValue("5"), { target: { value: "9" } });
+    fireEvent.blur(screen.getByDisplayValue("9"));
+    expect(selectionState.setSelectionFrameOffset).toHaveBeenCalledWith(9);
   });
 
   it("advances to track selection before final confirmation when include mode is enabled", () => {

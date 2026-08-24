@@ -1,5 +1,13 @@
 import { useCallback, useRef, useState, useEffect } from "react";
-import { Box, Button, Paper, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  Collapse,
+  IconButton,
+  Paper,
+  Typography,
+} from "@mui/material";
+import TuneIcon from "@mui/icons-material/Tune";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
@@ -47,6 +55,73 @@ export interface SelectionOverlayProps {
 
 const DEFAULT_TRACK_SELECTION_PROMPT =
   "Click timeline rows to choose which tracks to include in this selection.";
+
+interface SelectionSettingProps {
+  label: string;
+  value: string;
+  placeholder: string;
+  onCommit: (value: string) => void;
+  /** Field width in px; the numbers here are short, so they stay narrow. */
+  width: number;
+  /** Trailing unit or recommendation shown after the field. */
+  hint?: string;
+  invalid?: boolean;
+}
+
+/** One labelled number field in the collapsed settings row. */
+function SelectionSetting({
+  label,
+  value,
+  placeholder,
+  onCommit,
+  width,
+  hint,
+  invalid = false,
+}: SelectionSettingProps) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+      <Typography variant="body2" sx={{ color: "#aaa" }}>
+        {label}
+      </Typography>
+      <BufferedTextInput
+        label=""
+        value={value}
+        placeholder={placeholder}
+        onCommit={onCommit}
+        sx={{
+          width,
+          "& .MuiOutlinedInput-root": {
+            height: 24,
+            fontSize: "0.875rem",
+            color: "#aaa",
+            px: 0.5,
+            "& fieldset": {
+              border: "none",
+              borderBottom: invalid ? "1px solid" : "1px dotted",
+              borderColor: invalid ? "error.main" : "#666",
+              borderRadius: 0,
+            },
+            "&:hover fieldset": {
+              borderColor: invalid ? "error.main" : "#aaa",
+            },
+            "&.Mui-focused fieldset": {
+              borderColor: invalid ? "error.main" : "#fff",
+            },
+            "& input": {
+              textAlign: "center",
+              p: 0,
+            },
+          },
+        }}
+      />
+      {hint ? (
+        <Typography variant="body2" sx={{ color: "#777" }}>
+          {hint}
+        </Typography>
+      ) : null}
+    </Box>
+  );
+}
 
 export function SelectionOverlay({
   maxSelectionTicks = null,
@@ -111,6 +186,9 @@ export function SelectionOverlay({
   const setSelectionFrameStep = useTimelineSelectionStore(
     (s) => s.setSelectionFrameStep,
   );
+  const setSelectionFrameOffset = useTimelineSelectionStore(
+    (s) => s.setSelectionFrameOffset,
+  );
   const onConfirmSelection = useExtractStore((s) => s.onConfirmSelection);
   const onCancelSelection = useExtractStore((s) => s.onCancelSelection);
   const zoomScale = useTimelineViewStore((s) => s.zoomScale);
@@ -144,6 +222,9 @@ export function SelectionOverlay({
   const [localMaxTicksOverride, setLocalMaxTicksOverride] = useState<
     number | null | undefined
   >(undefined);
+  // The frame-rate and grid fields are workflow plumbing: most passes just drag
+  // a range and confirm, so they stay behind a toggle.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const localMaxTicks =
     localMaxTicksOverride !== undefined
       ? localMaxTicksOverride
@@ -495,6 +576,10 @@ export function SelectionOverlay({
     : null;
   const showRangeSelectionMessage =
     !!selectionMessage && !selectionIncludeModeEnabled;
+  // The confirm row sits beside the duration readout until something taller
+  // than a single line shares the paper.
+  const stackPaperContents =
+    isTrackSelectionStage || showRangeSelectionMessage || settingsOpen;
   const trackSelectionDialogTop = Math.max(
     8,
     (scrollContainer?.getBoundingClientRect().top ?? 0) + 8,
@@ -555,6 +640,27 @@ export function SelectionOverlay({
 
     setSelectionFrameStep(1);
   };
+
+  const handleFrameOffsetChange = (valStr: string) => {
+    const parsed = parseInt(valStr, 10);
+    setSelectionFrameOffset(!isNaN(parsed) && parsed > 0 ? parsed : 1);
+  };
+
+  // What the collapsed row has to keep saying: the constraints a workflow put
+  // on this selection are the reason a drag snaps the way it does.
+  const settingsSummary = [
+    `${effectiveFps} fps`,
+    effectiveFrameStep > 1 || effectiveFrameOffset > 1
+      ? `step ${effectiveFrameStep}${
+          effectiveFrameOffset > 1 ? `+${effectiveFrameOffset}` : ""
+        }`
+      : null,
+    localMaxTicks !== null
+      ? `max ${tickToMediaSeconds(localMaxTicks).toFixed(2)}s`
+      : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" · ");
 
   const dimSx = {
     position: "absolute" as const,
@@ -784,23 +890,13 @@ export function SelectionOverlay({
           px: 2,
           py: isTrackSelectionStage ? 0.75 : 1,
           display: "flex",
-          flexDirection:
-            isTrackSelectionStage || showRangeSelectionMessage
-              ? "column"
-              : "row",
-          gap: isTrackSelectionStage
-            ? 0.75
-            : showRangeSelectionMessage
-              ? 1
-              : 1.5,
-          alignItems:
-            isTrackSelectionStage || showRangeSelectionMessage
-              ? "stretch"
-              : "center",
+          flexDirection: stackPaperContents ? "column" : "row",
+          gap: isTrackSelectionStage ? 0.75 : stackPaperContents ? 1 : 1.5,
+          alignItems: stackPaperContents ? "stretch" : "center",
           borderRadius: 2,
           width: isTrackSelectionStage
             ? "auto"
-            : isTrackSelectionStage || showRangeSelectionMessage
+            : showRangeSelectionMessage
               ? "min(90vw, 920px)"
               : "max-content",
           maxWidth: isTrackSelectionStage
@@ -833,158 +929,117 @@ export function SelectionOverlay({
           <Box
             sx={{
               display: "flex",
-              gap: 1.5,
-              alignItems: "center",
-              flexWrap: showRangeSelectionMessage ? "wrap" : "nowrap",
+              flexDirection: "column",
+              gap: 0.75,
+              minWidth: 0,
             }}
           >
-            <Box sx={{ display: "flex", alignItems: "center", mr: 1 }}>
-              <Typography variant="body2" sx={{ color: "#aaa", mr: 0.5 }}>
+            <Box
+              sx={{
+                display: "flex",
+                gap: 1,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <Typography variant="body2" sx={{ color: "#aaa" }}>
                 Duration: {currentDurationSeconds.toFixed(2)}s (
                 {currentFrameCount}f)
               </Typography>
-              <BufferedTextInput
-                label=""
-                value={
-                  localMaxTicks !== null
-                    ? tickToMediaSeconds(localMaxTicks).toFixed(2)
-                    : ""
-                }
-                placeholder="∞"
-                onCommit={handleMaxLimitChange}
-                sx={{
-                  width: 50,
-                  "& .MuiOutlinedInput-root": {
-                    height: 24,
-                    fontSize: "0.875rem",
-                    color: "#aaa",
-                    px: 0.5,
-                    "& fieldset": {
-                      border: "none",
-                      borderBottom: isOverRecommended
-                        ? "1px solid"
-                        : "1px dotted",
-                      borderColor: isOverRecommended ? "error.main" : "#666",
-                      borderRadius: 0,
-                    },
-                    "&:hover fieldset": {
-                      borderColor: isOverRecommended ? "error.main" : "#aaa",
-                    },
-                    "&.Mui-focused fieldset": {
-                      borderColor: isOverRecommended ? "error.main" : "#fff",
-                    },
-                    "& input": {
-                      textAlign: "center",
-                      p: 0,
-                    },
-                  },
-                }}
-              />
-              <Typography variant="body2" sx={{ color: "#aaa", ml: 0.5 }}>
-                s max
+              <Typography
+                variant="body2"
+                data-testid="selection-overlay-settings-summary"
+                sx={{ color: "#777" }}
+              >
+                {settingsSummary}
               </Typography>
+              <IconButton
+                size="small"
+                onClick={() => setSettingsOpen((open) => !open)}
+                aria-expanded={settingsOpen}
+                aria-label="Selection settings"
+                data-testid="selection-overlay-settings-toggle"
+                sx={{ color: settingsOpen ? "#fff" : "#888", p: 0.25 }}
+              >
+                <TuneIcon fontSize="small" />
+              </IconButton>
             </Box>
 
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Typography variant="body2" sx={{ color: "#aaa" }}>
-                FPS
-              </Typography>
-              <BufferedTextInput
-                label=""
-                value={
-                  selectionFpsOverride !== null
-                    ? String(selectionFpsOverride)
-                    : ""
-                }
-                placeholder={String(resolvedRecommendedFps ?? projectFps)}
-                onCommit={handleFpsOverrideChange}
+            <Collapse in={settingsOpen} unmountOnExit>
+              <Box
+                data-testid="selection-overlay-settings"
                 sx={{
-                  width: 54,
-                  "& .MuiOutlinedInput-root": {
-                    height: 24,
-                    fontSize: "0.875rem",
-                    color: "#aaa",
-                    px: 0.5,
-                    "& fieldset": {
-                      border: "none",
-                      borderBottom: "1px dotted",
-                      borderColor: "#666",
-                      borderRadius: 0,
-                    },
-                    "&:hover fieldset": {
-                      borderColor: "#aaa",
-                    },
-                    "&.Mui-focused fieldset": {
-                      borderColor: "#fff",
-                    },
-                    "& input": {
-                      textAlign: "center",
-                      p: 0,
-                    },
-                  },
+                  display: "flex",
+                  gap: 1.5,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  pt: 0.5,
+                  borderTop: "1px solid #3a3a3a",
                 }}
-              />
-              {resolvedRecommendedFps !== null && (
-                <Typography variant="body2" sx={{ color: "#777" }}>
-                  (rec {resolvedRecommendedFps})
-                </Typography>
-              )}
-            </Box>
-
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Typography variant="body2" sx={{ color: "#aaa" }}>
-                Step
-              </Typography>
-              <BufferedTextInput
-                label=""
-                value={String(selectionFrameStep)}
-                placeholder={
-                  resolvedRecommendedFrameStep !== null
-                    ? String(resolvedRecommendedFrameStep)
-                    : "1"
-                }
-                onCommit={handleFrameStepChange}
-                sx={{
-                  width: 44,
-                  "& .MuiOutlinedInput-root": {
-                    height: 24,
-                    fontSize: "0.875rem",
-                    color: "#aaa",
-                    px: 0.5,
-                    "& fieldset": {
-                      border: "none",
-                      borderBottom: "1px dotted",
-                      borderColor: "#666",
-                      borderRadius: 0,
-                    },
-                    "&:hover fieldset": {
-                      borderColor: "#aaa",
-                    },
-                    "&.Mui-focused fieldset": {
-                      borderColor: "#fff",
-                    },
-                    "& input": {
-                      textAlign: "center",
-                      p: 0,
-                    },
-                  },
-                }}
-              />
-              {effectiveFrameOffset > 1 && (
-                <Typography variant="body2" sx={{ color: "#aaa" }}>
-                  +{effectiveFrameOffset}
-                </Typography>
-              )}
-              {resolvedRecommendedFrameStep !== null && (
-                <Typography variant="body2" sx={{ color: "#777" }}>
-                  rec {resolvedRecommendedFrameStep}
-                  {resolvedRecommendedFrameOffset !== null &&
-                  resolvedRecommendedFrameOffset > 1
-                    ? `+${resolvedRecommendedFrameOffset}`
-                    : ""}
-                </Typography>
-              )}
-            </Box>
+              >
+                <SelectionSetting
+                  label="Max"
+                  value={
+                    localMaxTicks !== null
+                      ? tickToMediaSeconds(localMaxTicks).toFixed(2)
+                      : ""
+                  }
+                  placeholder="∞"
+                  onCommit={handleMaxLimitChange}
+                  width={50}
+                  hint="s"
+                  invalid={isOverRecommended}
+                />
+                <SelectionSetting
+                  label="FPS"
+                  value={
+                    selectionFpsOverride !== null
+                      ? String(selectionFpsOverride)
+                      : ""
+                  }
+                  placeholder={String(resolvedRecommendedFps ?? projectFps)}
+                  onCommit={handleFpsOverrideChange}
+                  width={54}
+                  hint={
+                    resolvedRecommendedFps !== null
+                      ? `rec ${resolvedRecommendedFps}`
+                      : undefined
+                  }
+                />
+                <SelectionSetting
+                  label="Step"
+                  value={String(selectionFrameStep)}
+                  placeholder={
+                    resolvedRecommendedFrameStep !== null
+                      ? String(resolvedRecommendedFrameStep)
+                      : "1"
+                  }
+                  onCommit={handleFrameStepChange}
+                  width={44}
+                  hint={
+                    resolvedRecommendedFrameStep !== null
+                      ? `rec ${resolvedRecommendedFrameStep}`
+                      : undefined
+                  }
+                />
+                <SelectionSetting
+                  label="Offset"
+                  value={String(selectionFrameOffset)}
+                  placeholder={
+                    resolvedRecommendedFrameOffset !== null
+                      ? String(resolvedRecommendedFrameOffset)
+                      : "1"
+                  }
+                  onCommit={handleFrameOffsetChange}
+                  width={44}
+                  hint={
+                    resolvedRecommendedFrameOffset !== null
+                      ? `rec ${resolvedRecommendedFrameOffset}`
+                      : undefined
+                  }
+                />
+              </Box>
+            </Collapse>
           </Box>
         ) : null}
 

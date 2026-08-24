@@ -2,6 +2,7 @@
   "version": 3,
   "name": "MiniMax H3 inpaint and stitch",
   "sections": [
+    { "id": "references", "title": "References", "order": 3, "default_open": true },
     { "id": "advanced_settings", "title": "Advanced Settings", "order": 4, "default_open": false }
   ],
 
@@ -22,28 +23,70 @@
     },
     "1": {},
 
-    "48": {
+    "81": {
       "present": {
-        "label": "First frame",
-        "group_id": "frames",
-        "group_title": "Frames",
-        "group_order": 0,
-        "required": false,
-        "input_type": "image",
-        "param": "image",
-        "class_type": "vloMemoryLoadImage"
+        "label": "Prompt",
+        "input_type": "text",
+        "param": "prompt"
+      },
+      "widgets": {
+        "ref_image_size": {
+          "label": "Reference image size",
+          "value_type": "enum",
+          "options": ["match", "max"],
+          "default": "match",
+          "section_id": "references",
+          "group_id": "reference_options",
+          "group_title": "Reference Options",
+          "group_order": 3
+        }
       }
     },
-    "49": {
+    "83": {
       "present": {
-        "label": "Last frame",
-        "group_id": "frames",
-        "group_title": "Frames",
-        "group_order": 1,
-        "required": false,
+        "label": "Image inputs",
         "input_type": "image",
-        "param": "image",
-        "class_type": "vloMemoryLoadImage"
+        "param": "images",
+        "class_type": "vloMemoryLoadImageBatch",
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 9
+        },
+        "required": false
+      }
+    },
+    "84": {
+      "present": {
+        "label": "Video inputs",
+        "input_type": "video",
+        "param": "files",
+        "class_type": "vloMemoryLoadVideoBatch",
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 3,
+          "item_options": ["audio"]
+        },
+        "required": false
+      },
+      "selection": {
+        "export_fps": "project",
+        "frame_step": 4,
+        "max_frames": 360,
+        "message": "Select and prepare the reference video in vlo",
+        "include_tracks": true
+      }
+    },
+    "85": {
+      "present": {
+        "label": "Audio inputs",
+        "input_type": "audio",
+        "param": "audios",
+        "class_type": "vloMemoryLoadAudioBatch",
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 3
+        },
+        "required": false
       }
     },
 
@@ -155,9 +198,10 @@
   "validation": {
     "inputs": [
       { "kind": "required", "input": "53", "message": "A source video is required." },
-      { "kind": "required", "input": "33:prompt", "message": "A prompt is required." },
-      { "kind": "optional", "input": "48" },
-      { "kind": "optional", "input": "49" }
+      { "kind": "required", "input": "81:prompt", "message": "A prompt is required." },
+      { "kind": "optional", "input": "83" },
+      { "kind": "optional", "input": "84" },
+      { "kind": "optional", "input": "85" }
     ]
   },
 
@@ -177,12 +221,16 @@
 
   "rewrites": [
     {
-      "when": { "kind": "input_presence", "inputs": ["48"], "match": "all_missing" },
-      "bypass": ["48", "61"]
+      "when": { "kind": "input_presence", "inputs": ["83"], "match": "all_missing" },
+      "bypass": ["83"]
     },
     {
-      "when": { "kind": "input_presence", "inputs": ["49"], "match": "all_missing" },
-      "bypass": ["49", "62"]
+      "when": { "kind": "input_presence", "inputs": ["84"], "match": "all_missing" },
+      "bypass": ["84"]
+    },
+    {
+      "when": { "kind": "input_presence", "inputs": ["85"], "match": "all_missing" },
+      "bypass": ["85"]
     },
     {
       "when": {

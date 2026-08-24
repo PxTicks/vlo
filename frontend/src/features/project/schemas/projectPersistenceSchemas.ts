@@ -94,6 +94,11 @@ const trackTypeSchema = z.enum([
 export const projectDocumentConfigSchema = z
   .object({
     aspectRatio: z.enum(["16:9", "4:3", "1:1", "3:4", "9:16"]).optional(),
+    // Deliberately wider than `ProjectOutputResolution`: the manifest is
+    // parsed with `.parse()`, so pinning the rungs here would make a project
+    // written by a newer vlo (with a rung this build lacks) fail to open
+    // rather than degrade. The loader narrows to a supported rung instead.
+    outputResolution: z.number().positive().optional(),
     fps: z.number().positive().optional(),
     fitMode: z.enum(["contain", "cover"]).optional(),
     layoutMode: z.enum(["full-height", "compact"]).optional(),

@@ -49,6 +49,7 @@ vi.mock("../../userAssets", () => ({
 describe("useProjectStore", () => {
   const defaultConfig = {
     aspectRatio: "16:9" as const,
+    outputResolution: 1080 as const,
     fps: 30,
     fitMode: "cover" as const,
     layoutMode: "compact" as const,
@@ -345,6 +346,9 @@ describe("useProjectStore", () => {
 
     expect(useProjectStore.getState().config).toEqual({
       aspectRatio: "9:16",
+      // The manifest predates output resolution, so it defaults to 1080 —
+      // which is what such a project already rendered at.
+      outputResolution: 1080 as const,
       fps: 24,
       fitMode: "contain",
       layoutMode: "full-height",
@@ -380,11 +384,80 @@ describe("useProjectStore", () => {
     expect(writtenData.lastSavedWithVloVersion).toBe(VLO_APP_VERSION);
     expect(writtenData.config).toEqual({
       aspectRatio: "9:16",
+      outputResolution: 1080 as const,
       fps: 24,
       fitMode: "cover",
       layoutMode: "full-height",
       assetBrowserDisplay: "ungrouped",
     });
+  });
+
+  it("round-trips a non-default output resolution", async () => {
+    let persisted = "";
+
+    (fileSystemService.readFile as Mock).mockImplementation(async () => ({
+      text: async () => persisted,
+    }));
+    (fileSystemService.writeFile as Mock).mockImplementation(
+      async (_path: string, content: string) => {
+        persisted = content;
+      },
+    );
+
+    await useProjectStore.getState().createProject("Project", mockHandle);
+    await useProjectStore.getState().updateConfig({ outputResolution: 2160 });
+
+    expect(JSON.parse(persisted).config.outputResolution).toBe(2160);
+
+    // The schema strips unknown keys, so a field absent from it survives the
+    // write and is silently lost on read. Reload to prove it is not.
+    useProjectStore.setState({ config: { ...defaultConfig } });
+    mockSplitProjectReadFiles({
+      manifest: {
+        documentType: "vlo.project",
+        schemaVersion: PROJECT_MANIFEST_SCHEMA_VERSION,
+        id: "project-id",
+        title: "Loaded Project",
+        created_at: 1000,
+        last_modified: 1000,
+        config: { aspectRatio: "9:16", outputResolution: 2160 },
+        files: {
+          timeline: "timeline.json",
+          assets: "assets.json",
+          assetMetadataDir: "asset-metadata",
+        },
+      },
+    });
+    await useProjectStore.getState().loadProject(mockHandle);
+
+    expect(useProjectStore.getState().config.outputResolution).toBe(2160);
+  });
+
+  // A rung this build does not offer — a project written by a newer vlo, or a
+  // hand-edited manifest — must still open. The manifest is parsed with a
+  // throwing `.parse()`, so pinning the rungs in the schema would brick the
+  // whole project rather than degrade one field.
+  it("falls back to the default for an unsupported stored resolution", async () => {
+    mockSplitProjectReadFiles({
+      manifest: {
+        documentType: "vlo.project",
+        schemaVersion: PROJECT_MANIFEST_SCHEMA_VERSION,
+        id: "project-id",
+        title: "Loaded Project",
+        created_at: 1000,
+        last_modified: 1000,
+        config: { outputResolution: 1234 },
+        files: {
+          timeline: "timeline.json",
+          assets: "assets.json",
+          assetMetadataDir: "asset-metadata",
+        },
+      },
+    });
+
+    await useProjectStore.getState().loadProject(mockHandle);
+
+    expect(useProjectStore.getState().config.outputResolution).toBe(1080);
   });
 
   it("should migrate legacy projects and default timeline snapshot when legacy project.json has no timeline", async () => {

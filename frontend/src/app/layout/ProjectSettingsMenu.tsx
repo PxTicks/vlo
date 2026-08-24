@@ -13,9 +13,21 @@ import type {
   ProjectFitMode,
 } from "../../features/project";
 import { useProjectStore } from "../../features/project/useProjectStore";
+import {
+  DEFAULT_PROJECT_OUTPUT_RESOLUTION,
+  PROJECT_OUTPUT_RESOLUTIONS,
+} from "../../features/project/outputResolutionOptions";
 import { useDebugStore } from "../../shared/debug/useDebugStore";
 
 const FPS_OPTIONS = [16, 24, 25, 30, 60];
+
+/** Short edge, so one label reads correctly in both orientations. */
+const OUTPUT_RESOLUTION_LABELS: Readonly<Record<number, string>> = {
+  480: "480p (SD)",
+  720: "720p (HD)",
+  1080: "1080p (FHD)",
+  2160: "4K (UHD)",
+};
 
 const FIT_MODE_OPTIONS: Array<{ value: ProjectFitMode; label: string }> = [
   { value: "contain", label: "Contain (Letterbox)" },
@@ -34,6 +46,10 @@ const GROUP_LABELS: Readonly<Record<string, string>> = {
   "1_layout": "LAYOUT",
   "2_fps": "FPS",
   "3_aspect": "ASPECT RATIO",
+  // "OUTPUT RESOLUTION", not "RESOLUTION": generation has its own target
+  // resolution, which lives in the generation panel and is a different
+  // setting. See the ProjectSettingsMenu test that guards the separation.
+  "3b_resolution": "OUTPUT RESOLUTION",
   "4_fit": "FIT MODE",
   "5_browser": "ASSET BROWSER",
   // 6_extensions and 7_runtime moved to the landing page's `app.settings`
@@ -54,6 +70,8 @@ export function ProjectSettingsMenu() {
   const currentFps = config.fps || 30;
   const currentAspectRatio = config.aspectRatio || "16:9";
   const currentAssetBrowserDisplay = config.assetBrowserDisplay || "grouped";
+  const currentOutputResolution =
+    config.outputResolution || DEFAULT_PROJECT_OUTPUT_RESOLUTION;
 
   const subject = useMemo<HostMenuSubject<"app.project.settings">>(
     () => ({
@@ -61,6 +79,7 @@ export function ProjectSettingsMenu() {
       project: {
         fps: currentFps,
         aspectRatio: currentAspectRatio,
+        outputResolution: currentOutputResolution,
         fitMode: currentFitMode,
         layoutMode: currentLayout,
         assetBrowserDisplay: currentAssetBrowserDisplay,
@@ -69,6 +88,7 @@ export function ProjectSettingsMenu() {
     [
       currentFps,
       currentAspectRatio,
+      currentOutputResolution,
       currentFitMode,
       currentLayout,
       currentAssetBrowserDisplay,
@@ -130,6 +150,17 @@ export function ProjectSettingsMenu() {
         label: ratio.label,
         group: "3_aspect",
         selected: currentAspectRatio === ratio.value,
+      }),
+    ),
+    ...PROJECT_OUTPUT_RESOLUTIONS.map(
+      (resolution): HostMenuItemDescriptor => ({
+        kind: "command",
+        id: `resolution-${resolution}`,
+        command: "project.set-output-resolution",
+        subject: { outputResolution: resolution },
+        label: OUTPUT_RESOLUTION_LABELS[resolution] ?? `${resolution}p`,
+        group: "3b_resolution",
+        selected: currentOutputResolution === resolution,
       }),
     ),
     ...FIT_MODE_OPTIONS.map(

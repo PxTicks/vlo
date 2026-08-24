@@ -786,8 +786,25 @@ export interface ExtensionTimelineTransformInput {
 }
 
 export interface ExtensionTimelineProjectSnapshot {
+  /**
+   * Width of the project's logical coordinate space, in stage pixels. This is
+   * the space clip positions and paths are expressed in — not the size of a
+   * rendered frame. It is fixed-height (1080) and so does not change with the
+   * project's output resolution.
+   */
   readonly width: number;
+  /** Height of the logical coordinate space, in stage pixels. Always 1080. */
   readonly height: number;
+  /**
+   * Width in pixels of a frame this project renders — selection extraction,
+   * project export and frame capture alike. Derived from the aspect ratio and
+   * the project's output resolution, with the short edge pinned and both axes
+   * even. Equals {@link width} only when the two conventions coincide, which
+   * they do at 1080 in landscape and square, and never in portrait.
+   */
+  readonly outputWidth: number;
+  /** Height in pixels of a rendered frame. See {@link outputWidth}. */
+  readonly outputHeight: number;
   readonly fps: number;
   readonly fitMode: "contain" | "cover";
 }

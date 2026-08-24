@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AspectRatio } from "../../../project/useProjectStore";
 
-const projectConfig = { aspectRatio: "16:9" as AspectRatio, fps: 30 };
+const projectConfig = {
+  aspectRatio: "16:9" as AspectRatio,
+  outputResolution: 1080,
+  fps: 30,
+};
 
 vi.mock("../../../project", () => ({
   useProjectStore: {
@@ -29,9 +33,14 @@ const setAspectRatio = (ratio: AspectRatio) => {
   projectConfig.aspectRatio = ratio;
 };
 
+const setOutputResolution = (shortEdge: number) => {
+  projectConfig.outputResolution = shortEdge;
+};
+
 describe("buildProjectRenderInputs", () => {
   beforeEach(() => {
     setAspectRatio("16:9");
+    setOutputResolution(1080);
   });
 
   it("renders a portrait project at the true short-edge resolution", () => {
@@ -61,5 +70,42 @@ describe("buildProjectRenderInputs", () => {
     expect(exportConfig.logicalWidth).toBe(810);
     expect(exportConfig.outputWidth).toBe(1080);
     expect(exportConfig.outputHeight).toBe(1440);
+  });
+});
+
+describe("buildProjectRenderInputs output resolution", () => {
+  beforeEach(() => {
+    setAspectRatio("16:9");
+    setOutputResolution(1080);
+  });
+
+  it("renders at the project's chosen short edge", () => {
+    setOutputResolution(720);
+    const { exportConfig } = buildProjectRenderInputs();
+
+    expect(exportConfig.outputWidth).toBe(1280);
+    expect(exportConfig.outputHeight).toBe(720);
+  });
+
+  it("applies the project resolution in portrait too", () => {
+    setAspectRatio("9:16");
+    setOutputResolution(720);
+    const { exportConfig } = buildProjectRenderInputs();
+
+    expect(exportConfig.outputWidth).toBe(720);
+    expect(exportConfig.outputHeight).toBe(1280);
+  });
+
+  it("leaves the logical canvas untouched by the resolution", () => {
+    setAspectRatio("9:16");
+    const at1080 = buildProjectRenderInputs().exportConfig;
+    setOutputResolution(2160);
+    const at2160 = buildProjectRenderInputs().exportConfig;
+
+    // The coordinate space is fixed-height by definition; only output moves.
+    expect(at2160.logicalWidth).toBe(at1080.logicalWidth);
+    expect(at2160.logicalHeight).toBe(at1080.logicalHeight);
+    expect(at2160.outputWidth).toBe(2160);
+    expect(at2160.outputHeight).toBe(3840);
   });
 });

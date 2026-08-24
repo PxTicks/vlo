@@ -60,12 +60,14 @@ function abortError(): Error {
 function makeController(
   overrides: Partial<{
     projectAspectRatio: AspectRatio;
+    projectOutputResolution: number;
     logicalDimensions: { width: number; height: number };
   }> = {},
 ) {
   return renderHook(() =>
     useExportJobController({
       projectAspectRatio: "16:9",
+      projectOutputResolution: 1080,
       logicalDimensions: { width: 1920, height: 1080 },
       projectFps: 24,
       ...overrides,
@@ -76,10 +78,13 @@ function makeController(
 /** The logical canvas a 9:16 project carries — fixed height, derived width. */
 const PORTRAIT_LOGICAL_DIMENSIONS = { width: 608, height: 1080 };
 
-function makePortraitController() {
+function makePortraitController(
+  overrides: { projectOutputResolution?: number } = {},
+) {
   return makeController({
     projectAspectRatio: "9:16",
     logicalDimensions: PORTRAIT_LOGICAL_DIMENSIONS,
+    ...overrides,
   });
 }
 
@@ -158,7 +163,7 @@ describe("useExportJobController runSelectionExport", () => {
       await result.current.runSelectionExport(selectionOptions());
     });
 
-    expect(resolveRenderOutputDimensions).toHaveBeenCalledWith("9:16");
+    expect(resolveRenderOutputDimensions).toHaveBeenCalledWith("9:16", 1080);
     const [, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
     // The regression: output used to be copied from the logical canvas, so a
     // 9:16 selection encoded at 608x1080 while the same project exported at
@@ -168,6 +173,26 @@ describe("useExportJobController runSelectionExport", () => {
       logicalHeight: 1080,
       outputWidth: 1080,
       outputHeight: 1920,
+    });
+  });
+
+  it("renders a selection at the project's output resolution", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+      new File(["v"], "selection.mp4"),
+    );
+
+    const { result } = makeController({ projectOutputResolution: 720 });
+    await act(async () => {
+      await result.current.runSelectionExport(selectionOptions());
+    });
+
+    expect(resolveRenderOutputDimensions).toHaveBeenCalledWith("16:9", 720);
+    const [, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
+    // Selections had no resolution control at all before phase 2; the project
+    // value is what now reaches them.
+    expect(opts!.renderInputs!.exportConfig).toMatchObject({
+      outputWidth: 1280,
+      outputHeight: 720,
     });
   });
 

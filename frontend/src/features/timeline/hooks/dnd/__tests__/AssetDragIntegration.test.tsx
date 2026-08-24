@@ -163,6 +163,7 @@ describe("Asset Drag Integration", () => {
       ...state,
       config: {
         aspectRatio: "16:9",
+        outputResolution: 1080,
         fps: 30,
         fitMode: "cover",
         layoutMode: "compact",

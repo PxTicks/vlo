@@ -42,9 +42,12 @@ export function buildProjectRenderInputs(): ProjectRenderInputs {
   const projectStore = useProjectStore.getState();
   const assets = getAssets();
 
-  const { aspectRatio } = projectStore.config;
+  const { aspectRatio, outputResolution } = projectStore.config;
   const logicalDimensions = getProjectDimensions(aspectRatio);
-  const outputDimensions = resolveRenderOutputDimensions(aspectRatio);
+  const outputDimensions = resolveRenderOutputDimensions(
+    aspectRatio,
+    outputResolution,
+  );
 
   const exportConfig: ExportConfig = {
     logicalWidth: logicalDimensions.width,

@@ -170,6 +170,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
   const { cancel, runSelectionExport, runProjectExport } =
     useExportJobController({
       projectAspectRatio: config.aspectRatio,
+      projectOutputResolution: config.outputResolution,
       logicalDimensions,
       projectFps: config.fps,
     });

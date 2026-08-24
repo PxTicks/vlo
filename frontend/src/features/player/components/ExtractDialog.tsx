@@ -23,6 +23,12 @@ import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { CacheProvider, type EmotionCache } from "@emotion/react";
 import createCache from "@emotion/cache";
 import type { DialogView } from "../../../core/extract/useExtractStore";
+import { useProjectStore } from "../../project";
+import {
+  DEFAULT_PROJECT_OUTPUT_RESOLUTION,
+  PROJECT_OUTPUT_RESOLUTIONS,
+  isProjectOutputResolution,
+} from "../../project/outputResolutionOptions";
 import { hostContextKeys } from "../../../core/shell/contextKeys";
 import { hostOptionCatalog } from "../../../core/shell/optionCatalog";
 import {
@@ -34,6 +40,14 @@ import {
 } from "../exportFormatsCatalogue";
 
 declareExportFormats();
+
+/** Short edge, so one label reads correctly in both orientations. */
+const RESOLUTION_LABELS: Readonly<Record<number, string>> = {
+  480: "480p (SD)",
+  720: "720p (HD)",
+  1080: "1080p (FHD)",
+  2160: "4K (UHD)",
+};
 
 declare global {
   interface Window {
@@ -125,7 +139,12 @@ export function ExtractDialog({
   isProcessing,
   progress,
 }: ExtractDialogProps) {
-  const [resolution, setResolution] = useState(1080);
+  // The project resolution is the default; the dropdown is a per-export
+  // override that lasts as long as the dialog is open.
+  const projectResolution = useProjectStore(
+    (state) => state.config.outputResolution ?? DEFAULT_PROJECT_OUTPUT_RESOLUTION,
+  );
+  const [resolution, setResolution] = useState(projectResolution);
   const [formatOptionId, setFormatOptionId] = useState(
     DEFAULT_EXPORT_FORMAT_ID,
   );
@@ -150,6 +169,18 @@ export function ExtractDialog({
   );
 
   const exportInProgress = isProcessing && dialogView === "export";
+
+  // Seed on the open transition only — not on every project change — so an
+  // override the user picked is not yanked out from under them mid-dialog.
+  // Adjusted during render rather than in an effect: the dialog must never
+  // paint one resolution and then correct itself.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setResolution(projectResolution);
+    }
+  }
 
   useEffect(() => {
     if (!exportInProgress) return;
@@ -300,14 +331,22 @@ export function ExtractDialog({
                       labelId="export-resolution-label"
                       value={resolution}
                       label="Resolution"
-                      onChange={(event) =>
-                        setResolution(Number(event.target.value))
-                      }
+                      onChange={(event) => {
+                        const next = Number(event.target.value);
+                        // The options are the only source of values, so this
+                        // narrows rather than validates — but it keeps an
+                        // out-of-range value from reaching a config field that
+                        // would reject it on reload.
+                        if (isProjectOutputResolution(next)) {
+                          setResolution(next);
+                        }
+                      }}
                     >
-                      <MenuItem value={480}>480p (SD)</MenuItem>
-                      <MenuItem value={720}>720p (HD)</MenuItem>
-                      <MenuItem value={1080}>1080p (FHD)</MenuItem>
-                      <MenuItem value={2160}>4K (UHD)</MenuItem>
+                      {PROJECT_OUTPUT_RESOLUTIONS.map((option) => (
+                        <MenuItem key={option} value={option}>
+                          {RESOLUTION_LABELS[option] ?? `${option}p`}
+                        </MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
                 </>

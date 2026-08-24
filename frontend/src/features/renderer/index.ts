@@ -41,7 +41,10 @@ export type {
   RenderSelectionToVideoFileOptions,
 } from "./services/renderSelectionToVideoFile";
 export type { ProjectFrameCaptureOptions } from "./services/projectFrameCapture";
-export { getProjectDimensions } from "./utils/dimensions";
+export {
+  getProjectDimensions,
+  resolveRenderOutputDimensions,
+} from "./utils/dimensions";
 export {
   resolveCompositePreviewRasterDimensions,
 } from "./utils/compositeRasterDimensions";

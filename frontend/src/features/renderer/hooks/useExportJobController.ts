@@ -105,6 +105,8 @@ export interface ProjectExportOptions {
 
 export interface UseExportJobControllerOptions {
   projectAspectRatio: AspectRatio;
+  /** Short edge in pixels; the project's own render resolution. */
+  projectOutputResolution: number;
   logicalDimensions: { width: number; height: number };
   projectFps: number;
 }
@@ -121,6 +123,7 @@ export interface ExportJobController {
  */
 export function useExportJobController({
   projectAspectRatio,
+  projectOutputResolution,
   logicalDimensions,
   projectFps,
 }: UseExportJobControllerOptions): ExportJobController {
@@ -218,8 +221,10 @@ export function useExportJobController({
 
       try {
         wakeLock = acquireExportWakeLock();
-        const outputDimensions =
-          resolveRenderOutputDimensions(projectAspectRatio);
+        const outputDimensions = resolveRenderOutputDimensions(
+          projectAspectRatio,
+          projectOutputResolution,
+        );
 
         const exportConfig: ExportConfig = {
           logicalWidth: logicalDimensions.width,
@@ -309,6 +314,7 @@ export function useExportJobController({
       finalizeSession,
       logicalDimensions,
       projectAspectRatio,
+      projectOutputResolution,
       registerRenderer,
     ],
   );

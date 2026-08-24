@@ -98,6 +98,15 @@ async function exportSelectionDimensions(
     return outcome.result as ProbeDimensions;
 }
 
+async function setOutputResolution(
+    page: import('@playwright/test').Page,
+    label: string,
+): Promise<void> {
+    await page.getByTestId('project-settings-button').click();
+    await page.getByRole('menuitem', { name: label }).click();
+    await expect(page.getByRole('menu')).toBeHidden();
+}
+
 async function setAspectRatio(
     page: import('@playwright/test').Page,
     label: string,
@@ -155,5 +164,48 @@ test.describe('render resolution consistency', () => {
                 dimensions.encodedVideo!.height,
             ),
         ).toBe(1080);
+    });
+
+    // Phase 2: the project's own resolution, not a hard-coded 1080. Selections
+    // had no resolution control at all before it.
+    test('encodes a selection at the project output resolution', async ({
+        editorCurrent,
+    }, testInfo) => {
+        test.setTimeout(180000);
+        const page = editorCurrent.page;
+
+        await setOutputResolution(page, '720p (HD)');
+        await warmWindow(editorCurrent);
+
+        const dimensions = await exportSelectionDimensions(page);
+        await testInfo.attach('project-resolution-dimensions.json', {
+            body: JSON.stringify(dimensions, null, 2),
+            contentType: 'application/json',
+        });
+
+        expect(dimensions.encodedVideo).toEqual({ width: 1280, height: 720 });
+        expect(dimensions.frameWidth).toBe(1280);
+        expect(dimensions.frameHeight).toBe(720);
+    });
+
+    test('carries the project resolution into portrait', async ({
+        editorCurrent,
+    }, testInfo) => {
+        test.setTimeout(180000);
+        const page = editorCurrent.page;
+
+        await setAspectRatio(page, '9:16 (Story)');
+        await setOutputResolution(page, '480p (SD)');
+        await warmWindow(editorCurrent);
+
+        const dimensions = await exportSelectionDimensions(page);
+        await testInfo.attach('portrait-480-dimensions.json', {
+            body: JSON.stringify(dimensions, null, 2),
+            contentType: 'application/json',
+        });
+
+        // Short edge 480 pinned on the *width* in portrait — the whole point of
+        // the short-edge convention.
+        expect(dimensions.encodedVideo).toEqual({ width: 480, height: 854 });
     });
 });

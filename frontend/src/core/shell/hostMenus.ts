@@ -130,6 +130,8 @@ export interface HostMenuSubjectMap {
     readonly project: {
       readonly fps: number;
       readonly aspectRatio: string;
+      /** Short edge in pixels of every render this project produces. */
+      readonly outputResolution: number;
       readonly fitMode: string;
       readonly layoutMode: string;
       readonly assetBrowserDisplay: string;
@@ -352,6 +354,7 @@ function validateProjectSettingsSubject(subject: unknown): boolean {
   return (
     isRecord(project) &&
     typeof project.fps === "number" &&
+    typeof project.outputResolution === "number" &&
     hasStringFields(project, [
       "aspectRatio",
       "fitMode",

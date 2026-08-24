@@ -74,4 +74,45 @@ describe("project host commands", () => {
     registration.dispose();
     pageRegistration.dispose();
   });
+
+  describe("project.set-output-resolution", () => {
+    function openProjectTable() {
+      const keys = new HostContextKeyService();
+      keys.set("project.open", true);
+      const table = new HostCommandTable(keys);
+      return { table, registration: installProjectHostCommands(table) };
+    }
+
+    it("applies a supported short edge", () => {
+      const { table, registration } = openProjectTable();
+
+      expect(
+        table.executeCommand("project.set-output-resolution", {
+          source: "menu",
+          subject: { outputResolution: 720 },
+        }),
+      ).toBe(true);
+      expect(mocks.updateConfig).toHaveBeenCalledWith({ outputResolution: 720 });
+
+      registration.dispose();
+    });
+
+    // A settings command never partially applies: an unsupported or
+    // wrong-typed subject is a no-op, not a project rendering at 1234px.
+    it.each([
+      ["an unsupported value", 1234],
+      ["a numeric string", "720"],
+      ["a missing value", undefined],
+    ])("ignores %s", (_label, outputResolution) => {
+      const { table, registration } = openProjectTable();
+
+      table.executeCommand("project.set-output-resolution", {
+        source: "menu",
+        subject: outputResolution === undefined ? {} : { outputResolution },
+      });
+      expect(mocks.updateConfig).not.toHaveBeenCalled();
+
+      registration.dispose();
+    });
+  });
 });

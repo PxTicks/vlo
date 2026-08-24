@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const disposeBrushBuffer = vi.fn();
 vi.mock("../../../masks/runtime/brushBufferRegistry", () => ({
@@ -21,6 +21,7 @@ import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { createExtensionTimelineApi } from "../createExtensionTimelineApi";
 import { extensionTransitionRegistry } from "../../../transitions/extensions/ExtensionTransitionRegistry";
 import { useAssetStore } from "../../../userAssets";
+import { useProjectStore } from "../../../project";
 
 function createScope(extensionId: string): ExtensionApiScope {
   return {
@@ -821,6 +822,82 @@ describe("createExtensionTimelineApi", () => {
         .listClipMasks("shape-1")
         .find((mask) => mask.localId === maskId)?.parameters,
     ).toEqual({ baseWidth: 200, baseHeight: 100 });
+  });
+
+  describe("project snapshot dimensions", () => {
+    const baseConfig = () => useProjectStore.getState().config;
+
+    afterEach(() => {
+      useProjectStore.setState({
+        config: {
+          ...baseConfig(),
+          aspectRatio: "16:9",
+          outputResolution: 1080,
+        },
+      });
+    });
+
+    it("reports the rendered frame size alongside the logical canvas", () => {
+      const api = createExtensionTimelineApi(createScope("example.tracker"));
+
+      // 16:9 at 1080 is the case where the two conventions coincide.
+      expect(api.getProject()).toMatchObject({
+        width: 1920,
+        height: 1080,
+        outputWidth: 1920,
+        outputHeight: 1080,
+      });
+    });
+
+    it("keeps width/height logical when the output diverges", () => {
+      useProjectStore.setState({
+        config: { ...baseConfig(), aspectRatio: "9:16" },
+      });
+      const api = createExtensionTimelineApi(createScope("example.tracker"));
+
+      // The coordinate space an extension's geometry is expressed in must not
+      // move; only the reported frame size does.
+      expect(api.getProject()).toMatchObject({
+        width: 608,
+        height: 1080,
+        outputWidth: 1080,
+        outputHeight: 1920,
+      });
+      // Points are mapped centre-relative against the *logical* canvas: the
+      // source's top edge lands 540 above centre, half of the logical 1080 —
+      // not half of the 1920 the project now renders at.
+      expect(
+        api.sourcePointToProject(
+          { x: 640, y: 0 },
+          { width: 1280, height: 720 },
+        ),
+      ).toEqual({ x: 0, y: -540 });
+    });
+
+    it("tracks the project's output resolution", () => {
+      useProjectStore.setState({
+        config: { ...baseConfig(), outputResolution: 720 },
+      });
+      const api = createExtensionTimelineApi(createScope("example.tracker"));
+
+      expect(api.getProject()).toMatchObject({
+        outputWidth: 1280,
+        outputHeight: 720,
+      });
+    });
+
+    it("signals a revision change when the resolution changes", () => {
+      const api = createExtensionTimelineApi(createScope("example.tracker"));
+      const before = api.getRevision();
+
+      useProjectStore.setState({
+        config: { ...baseConfig(), outputResolution: 480 },
+      });
+
+      // An extension caching getProject() must be woken, or it renders at a
+      // stale size indefinitely.
+      expect(api.getRevision()).not.toBe(before);
+    });
   });
 
   it("maps source frames and pixels into canonical timeline/project domains", () => {

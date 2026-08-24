@@ -14,6 +14,7 @@ import {
 import { fileSystemService } from "./services/FileSystemService";
 import { recentProjectsService } from "./services/RecentProjectsService";
 import { projectPageActions } from "./services/ProjectPageActions";
+import { isProjectOutputResolution } from "./outputResolutionOptions";
 
 const ASPECT_RATIOS: readonly AspectRatio[] = [
   "16:9",
@@ -118,6 +119,16 @@ const projectHostCommands: readonly HostCommandDefinition[] = [
       );
       if (!aspectRatio) return;
       void useProjectStore.getState().updateConfig({ aspectRatio });
+    },
+  },
+  {
+    id: "project.set-output-resolution",
+    title: "Set output resolution",
+    when: { key: "project.open" },
+    run: ({ subject }) => {
+      const outputResolution = readSubjectValue(subject, "outputResolution");
+      if (!isProjectOutputResolution(outputResolution)) return;
+      void useProjectStore.getState().updateConfig({ outputResolution });
     },
   },
   {

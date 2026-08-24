@@ -26,6 +26,7 @@ describe("inputSelection", () => {
     useProjectStore.setState({
       config: {
         aspectRatio: "16:9",
+        outputResolution: 1080,
         fps: 24,
         fitMode: "cover",
         layoutMode: "compact",

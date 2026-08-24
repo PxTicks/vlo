@@ -12,6 +12,11 @@ import { projectTemporaryFileService } from "./services/ProjectTemporaryFileServ
 import { recentProjectsService } from "./services/RecentProjectsService";
 import { VLO_APP_VERSION } from "./constants";
 import { PROJECT_ASPECT_RATIOS } from "./aspectRatioOptions";
+import {
+  DEFAULT_PROJECT_OUTPUT_RESOLUTION,
+  isProjectOutputResolution,
+  type ProjectOutputResolution,
+} from "./outputResolutionOptions";
 import type {
   ProjectDocumentConfig,
   TimelineSnapshot,
@@ -23,6 +28,13 @@ export type ProjectFitMode = "contain" | "cover";
 
 export interface ProjectConfig {
   aspectRatio: AspectRatio;
+  /**
+   * Short edge, in pixels, of every render this project produces — selection
+   * extraction, project export and frame capture alike. Distinct from the
+   * logical canvas (`getProjectDimensions`), which is a fixed-height
+   * coordinate space and is not a resolution.
+   */
+  outputResolution: ProjectOutputResolution;
   fps: number;
   fitMode: ProjectFitMode;
   layoutMode?: "full-height" | "compact";
@@ -31,6 +43,7 @@ export interface ProjectConfig {
 
 const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   aspectRatio: "16:9",
+  outputResolution: DEFAULT_PROJECT_OUTPUT_RESOLUTION,
   fps: 30,
   fitMode: "cover",
   layoutMode: "compact",
@@ -67,6 +80,12 @@ const getProjectConfigFromDocument = (
       ? value.fps
       : DEFAULT_PROJECT_CONFIG.fps;
 
+  // Projects saved before output resolution existed rendered everything at a
+  // 1080 short edge, which is the default — so they reopen unchanged.
+  const outputResolution = isProjectOutputResolution(value?.outputResolution)
+    ? value.outputResolution
+    : DEFAULT_PROJECT_CONFIG.outputResolution;
+
   // Existing projects without fitMode default to "contain" for backwards compat
   const fitMode = VALID_FIT_MODES.has(value?.fitMode as ProjectFitMode)
     ? (value?.fitMode as ProjectFitMode)
@@ -80,6 +99,7 @@ const getProjectConfigFromDocument = (
 
   return {
     aspectRatio,
+    outputResolution,
     fps,
     fitMode,
     layoutMode,
@@ -92,6 +112,7 @@ const hasProjectConfigChanged = (
   next: ProjectConfig,
 ): boolean =>
   current.aspectRatio !== next.aspectRatio ||
+  current.outputResolution !== next.outputResolution ||
   current.fps !== next.fps ||
   current.fitMode !== next.fitMode ||
   current.layoutMode !== next.layoutMode ||

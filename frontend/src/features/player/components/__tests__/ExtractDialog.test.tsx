@@ -2,6 +2,8 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { ExtractDialog } from "../ExtractDialog";
+import { useProjectStore } from "../../../project";
+import type { ProjectOutputResolution } from "../../../project/outputResolutionOptions";
 
 const MP4_FORMAT = {
   format: "mp4",
@@ -28,8 +30,17 @@ describe("ExtractDialog", () => {
     progress: 0,
   };
 
+  const setProjectOutputResolution = (
+    outputResolution: ProjectOutputResolution,
+  ) => {
+    useProjectStore.setState({
+      config: { ...useProjectStore.getState().config, outputResolution },
+    });
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    setProjectOutputResolution(1080);
   });
 
   describe("Choose view", () => {
@@ -267,6 +278,74 @@ describe("ExtractDialog", () => {
         extension: "webm",
         mimeType: "video/webm",
       });
+    });
+  });
+
+  describe("Project output resolution", () => {
+    it("seeds the dropdown from the project rather than a hard-coded 1080", () => {
+      setProjectOutputResolution(720);
+      render(<ExtractDialog {...defaultProps} dialogView="export" />);
+
+      expect(screen.getByLabelText("Resolution")).toHaveTextContent(
+        "720p (HD)",
+      );
+    });
+
+    it("exports at the project resolution when the user does not override it", () => {
+      setProjectOutputResolution(2160);
+      render(<ExtractDialog {...defaultProps} dialogView="export" />);
+
+      fireEvent.click(screen.getByRole("button", { name: /^Export$/i }));
+
+      expect(mockOnExport).toHaveBeenCalledWith(2160, MP4_FORMAT);
+    });
+
+    it("keeps a per-export override that differs from the project", () => {
+      setProjectOutputResolution(720);
+      render(<ExtractDialog {...defaultProps} dialogView="export" />);
+
+      fireEvent.mouseDown(screen.getByLabelText("Resolution"));
+      fireEvent.click(screen.getByRole("option", { name: "480p (SD)" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Export$/i }));
+
+      expect(mockOnExport).toHaveBeenCalledWith(480, MP4_FORMAT);
+    });
+
+    // Re-seeding on every project change would yank an override out from
+    // under a user who is mid-dialog.
+    it("does not overwrite an override while the dialog stays open", () => {
+      setProjectOutputResolution(720);
+      const { rerender } = render(
+        <ExtractDialog {...defaultProps} dialogView="export" />,
+      );
+
+      fireEvent.mouseDown(screen.getByLabelText("Resolution"));
+      fireEvent.click(screen.getByRole("option", { name: "480p (SD)" }));
+      rerender(<ExtractDialog {...defaultProps} dialogView="export" />);
+
+      expect(
+        screen.getByRole("combobox", { name: "Resolution" }),
+      ).toHaveTextContent("480p (SD)");
+    });
+
+    it("re-seeds from the project when the dialog is reopened", () => {
+      setProjectOutputResolution(720);
+      const { rerender } = render(
+        <ExtractDialog {...defaultProps} dialogView="export" />,
+      );
+
+      fireEvent.mouseDown(screen.getByLabelText("Resolution"));
+      fireEvent.click(screen.getByRole("option", { name: "480p (SD)" }));
+
+      rerender(
+        <ExtractDialog {...defaultProps} dialogView="export" open={false} />,
+      );
+      setProjectOutputResolution(2160);
+      rerender(<ExtractDialog {...defaultProps} dialogView="export" />);
+
+      expect(
+        screen.getByRole("combobox", { name: "Resolution" }),
+      ).toHaveTextContent("4K (UHD)");
     });
   });
 });

@@ -423,6 +423,7 @@ describe("Player playback loop", () => {
         config: {
           fps: 30,
           aspectRatio: "16:9",
+          outputResolution: 1080,
           fitMode: "cover",
           assetBrowserDisplay: "grouped",
         },

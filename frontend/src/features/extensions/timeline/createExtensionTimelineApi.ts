@@ -39,7 +39,11 @@ import {
 import { extensionPayloadProviderRegistry } from "../persistence/ExtensionPayloadProviderRegistry";
 import { TICKS_PER_SECOND } from "../../../core/time/constants";
 import { useProjectStore } from "../../project";
-import { getProjectDimensions, mediaSecondsToTick } from "../../renderer";
+import {
+  getProjectDimensions,
+  mediaSecondsToTick,
+  resolveRenderOutputDimensions,
+} from "../../renderer";
 import {
   clipSourceTimeToVisual,
   clipVisualToSourceTime,
@@ -84,6 +88,7 @@ const timelineModelRelay = getTimelineModelRevisionSource();
 // of this API and must not signal.
 const projectSnapshotRelay = createRevisionRelay(useProjectStore, (state) => [
   state.config.aspectRatio,
+  state.config.outputResolution,
   state.config.fps,
   state.config.fitMode,
 ]);
@@ -99,11 +104,24 @@ function assertPositiveFinite(value: number, label: string): void {
   }
 }
 
+/**
+ * `width`/`height` stay the *logical* canvas: they are the space every
+ * coordinate this API takes and returns is expressed in, so redefining them
+ * would silently reinterpret extension geometry. The rendered frame size is
+ * additive — `outputWidth`/`outputHeight` — and is what an extension sizing a
+ * raster or choosing a generation target wants.
+ */
 function getExtensionProjectSnapshot() {
   const config = useProjectStore.getState().config;
   const dimensions = getProjectDimensions(config.aspectRatio);
+  const output = resolveRenderOutputDimensions(
+    config.aspectRatio,
+    config.outputResolution,
+  );
   return Object.freeze({
     ...dimensions,
+    outputWidth: output.width,
+    outputHeight: output.height,
     fps: config.fps,
     fitMode: config.fitMode,
   });

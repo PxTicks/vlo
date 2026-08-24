@@ -270,6 +270,8 @@ function createConformanceApi() {
       getProject: () => ({
         width: 1920,
         height: 1080,
+        outputWidth: 1920,
+        outputHeight: 1080,
         fps: 30,
         fitMode: "cover",
       }),

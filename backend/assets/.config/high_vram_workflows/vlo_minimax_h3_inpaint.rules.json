@@ -98,7 +98,7 @@
           "value_type": "int",
           "group_id": "video_generation",
           "group_title": "Video Generation",
-          "group_order": 2
+          "group_order": 3
         }
       }
     },
@@ -116,6 +116,19 @@
           "group_id": "video_generation",
           "group_title": "Video Generation",
           "group_order": 1
+        },
+        "denoise": {
+          "label": "Denoise",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "default": 1,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 2
         },
         "scheduler": {
           "label": "Scheduler",
@@ -155,9 +168,7 @@
           "label": "Blank the masked area first",
           "value_type": "boolean",
           "default": true,
-          "group_id": "retake",
-          "group_title": "Retake",
-          "group_order": 1
+          "hidden": true
         }
       }
     },
@@ -240,6 +251,32 @@
         "value": false
       },
       "bypass": ["45"]
+    }
+  ],
+
+  "effect_switches": [
+    {
+      "id": "blank_masked_area_on_full_denoise",
+      "cases": [
+        {
+          "when": {
+            "kind": "compare",
+            "ref": { "kind": "workflow_param", "node_id": "37", "param": "denoise" },
+            "operator": "eq",
+            "value": 1
+          },
+          "set_widgets": [{ "node_id": "29", "widget": "switch", "value": true }]
+        },
+        {
+          "when": {
+            "kind": "compare",
+            "ref": { "kind": "workflow_param", "node_id": "37", "param": "denoise" },
+            "operator": "lt",
+            "value": 1
+          },
+          "set_widgets": [{ "node_id": "29", "widget": "switch", "value": false }]
+        }
+      ]
     }
   ],
 

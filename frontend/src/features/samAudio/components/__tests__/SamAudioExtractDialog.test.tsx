@@ -193,6 +193,25 @@ describe("SamAudioExtractDialog", () => {
     });
   });
 
+  it("shows the backend diagnostic when SAM-Audio cannot be imported", async () => {
+    const diagnostic =
+      "Failed to import SAM-Audio. Install the optional SAM-Audio requirements " +
+      "with `python -m pip install -r backend/requirements-sam-audio.txt`. " +
+      "Underlying error: No module named 'sam_audio'";
+    samAudioDialogMocks.mockRunSamAudioSeparation.mockRejectedValueOnce(
+      new Error(diagnostic),
+    );
+    await openConfigureWithAvailableModel();
+
+    fireEvent.change(screen.getByLabelText("Text prompt"), {
+      target: { value: "man speaking" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Isolate Sound" }));
+
+    expect(await screen.findByText(diagnostic)).toBeInTheDocument();
+    expect(screen.getByLabelText("Text prompt")).toHaveValue("man speaking");
+  });
+
   it("shows validation when no text prompt or range is selected", async () => {
     await openConfigureWithAvailableModel();
 

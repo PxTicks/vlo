@@ -322,12 +322,14 @@ export function SamAudioExtractDialog() {
         showConfigure();
         return;
       }
+      // Returning to configuration clears stale errors, so transition first and
+      // then expose the backend's actionable model/dependency diagnostic.
+      showConfigure();
       setError(
         separationError instanceof Error
           ? separationError.message
           : "SAM-Audio separation failed.",
       );
-      showConfigure();
     } finally {
       operationAbortRef.current = null;
       activeJobIdRef.current = null;

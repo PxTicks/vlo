@@ -205,13 +205,26 @@ def package_check(
             remediation=remediation,
         )
 
-    detail = None if deep is not None else "Import not verified out-of-process"
+    installed = f"{module} {version}" if version else f"{module} is installed"
+
+    if deep is None:
+        # Presence is not importability. Claiming a pass here would let a
+        # capability whose package is installed-but-broken read as fine
+        # whenever no probe has run, so this reports only what was actually
+        # established: it is on disk, and nothing has tried to import it.
+        return Check(
+            id=check_id,
+            status=CheckStatus.SKIPPED,
+            stage=stage,
+            summary=f"{installed}; import not verified",
+            detail="No out-of-process import probe has run for this capability.",
+        )
+
     return Check(
         id=check_id,
         status=CheckStatus.PASS,
         stage=stage,
-        summary=f"{module} {version}" if version else f"{module} is installed",
-        detail=detail,
+        summary=installed,
     )
 
 
@@ -311,18 +324,30 @@ def device_check(
             fallback=fallback,
         )
 
-    if probe is None or (probe.torch_version is None and probe.error):
+    if probe is None:
+        # Nothing was asked, so nothing is known — including whether an
+        # explicitly requested CUDA device exists on this machine.
+        return (
+            Check(
+                id=check_id,
+                status=CheckStatus.SKIPPED,
+                stage=stage,
+                summary=f"Device {requested} was not checked",
+                detail="No out-of-process device probe has run.",
+            ),
+            report(None),
+        )
+
+    if probe.torch_version is None and probe.error:
+        # The probe ran and torch itself would not load: evaluated, but with
+        # nothing conclusive to say about individual devices.
         return (
             Check(
                 id=check_id,
                 status=CheckStatus.WARN,
                 stage=stage,
                 summary="Could not determine which compute devices are available",
-                detail=(
-                    sanitize_message(probe.error) or None
-                    if probe is not None
-                    else None
-                ),
+                detail=sanitize_message(probe.error) or None,
             ),
             report(None),
         )

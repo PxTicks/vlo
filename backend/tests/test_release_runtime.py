@@ -7,6 +7,16 @@ from starlette.datastructures import FormData
 
 import main
 from routers import comfyui
+from services.ai_models import health
+from services.ai_models.capabilities import (
+    Capability,
+    CapabilityState,
+    Check,
+    CheckStatus,
+    FailureCode,
+    VerificationStage,
+)
+from services.ai_models.capabilities.contract import utc_now
 from services.hardware import VramInfo
 
 
@@ -37,6 +47,35 @@ class FailingClient:
             "ComfyUI offline",
             request=httpx.Request("GET", "http://127.0.0.1:8188/system_stats"),
         )
+
+
+def fake_capability(
+    capability_id: str,
+    *,
+    state: CapabilityState,
+    checks: tuple[Check, ...] = (),
+) -> Capability:
+    return Capability(
+        id=capability_id,
+        label=capability_id,
+        state=state,
+        checked_at=utc_now(),
+        checks=checks,
+    )
+
+
+def stub_capabilities(monkeypatch, capabilities: dict[str, Capability]) -> None:
+    """Answer /app/status from a fixed capability set.
+
+    The status fields are derived from the capability registry now, so the seam
+    a status test stubs is the registry lookup — not each service's health.
+    """
+
+    monkeypatch.setattr(
+        health,
+        "get_capability",
+        lambda capability_id, **_kwargs: capabilities.get(capability_id),
+    )
 
 
 def fake_settings_payload(_vram_info=None):
@@ -125,20 +164,17 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
     monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
     monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
-    monkeypatch.setattr(
-        main.sam2_service,
-        "get_health",
-        lambda: {"runtime": {"ready": True}},
-    )
-    monkeypatch.setattr(
-        main.beats_service,
-        "get_health",
-        lambda: {"runtime": {"ready": True}},
-    )
-    monkeypatch.setattr(
-        main.sam_audio_service,
-        "get_health",
-        lambda: {"runtime": {"ready": True}},
+    stub_capabilities(
+        monkeypatch,
+        {
+            "sam2": fake_capability(
+                "sam2", state=CapabilityState.AVAILABLE_UNVERIFIED
+            ),
+            "sam-audio": fake_capability("sam-audio", state=CapabilityState.READY),
+            "beat-this": fake_capability(
+                "beat-this", state=CapabilityState.AVAILABLE_UNVERIFIED
+            ),
+        },
     )
 
     status = asyncio.run(main.get_app_status())
@@ -186,16 +222,25 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
     monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
     monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
-    monkeypatch.setattr(
-        main.sam2_service,
-        "get_health",
-        lambda: {"runtime": {"ready": False}},
-    )
-    monkeypatch.setattr(main, "get_available_sam2_models", lambda: [])
-    monkeypatch.setattr(
-        main.beats_service,
-        "get_health",
-        lambda: {"runtime": {"ready": False, "error": "Beat This offline"}},
+    stub_capabilities(
+        monkeypatch,
+        {
+            # No failing check: the field falls back to the legacy message.
+            "sam2": fake_capability("sam2", state=CapabilityState.UNAVAILABLE),
+            "sam-audio": fake_capability("sam-audio", state=CapabilityState.READY),
+            "beat-this": fake_capability(
+                "beat-this",
+                state=CapabilityState.BLOCKED,
+                checks=(
+                    Check(
+                        id="package.beat_this",
+                        status=CheckStatus.FAIL,
+                        code=FailureCode.PACKAGE_MISSING,
+                        summary="The beat_this package is not installed",
+                    ),
+                ),
+            ),
+        },
     )
 
     status = asyncio.run(main.get_app_status())
@@ -208,16 +253,26 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
         "status": "unavailable",
         "error": "No SAM2 models discovered",
     }
+    # The reason comes from the failing check, not from a static string that
+    # was the same regardless of what actually went wrong.
     assert status["beat_this"] == {
         "status": "unavailable",
-        "error": "Beat This offline",
+        "error": "The beat_this package is not installed",
     }
 
 
-def test_app_status_uses_installed_sam2_model_inventory(
+def test_app_status_ignores_installed_model_inventory(
     monkeypatch,
     reset_hardware_probe_cache,
 ):
+    """Installed model files must not, on their own, mean "available".
+
+    This is the false positive the capability registry exists to remove: the
+    old adapter reported ``available`` whenever the registry listed an
+    installed model, which is the same file-existence signal as discovery —
+    ``or``-ing it with readiness could only widen the lie.
+    """
+
     async def fake_get_http_client():
         return DummyClient()
 
@@ -227,39 +282,37 @@ def test_app_status_uses_installed_sam2_model_inventory(
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
     monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
     monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
-    monkeypatch.setattr(
-        main.sam2_service,
-        "get_health",
-        lambda: {"runtime": {"ready": False}},
-    )
-    monkeypatch.setattr(
-        main,
-        "get_available_sam2_models",
-        lambda: [
-            {
-                "key": "sam2.1_hiera_small",
-                "label": "SAM2.1 Small",
-                "description": "Faster",
-                "installed": True,
-            }
-        ],
-    )
-    monkeypatch.setattr(
-        main.beats_service,
-        "get_health",
-        lambda: {"runtime": {"ready": True}},
-    )
-    monkeypatch.setattr(
-        main.sam_audio_service,
-        "get_health",
-        lambda: {"runtime": {"ready": True}},
+    stub_capabilities(
+        monkeypatch,
+        {
+            "sam2": fake_capability(
+                "sam2",
+                state=CapabilityState.BLOCKED,
+                checks=(
+                    Check(
+                        id="model.checkpoint",
+                        status=CheckStatus.PASS,
+                        stage=VerificationStage.DISCOVERED,
+                        summary="1 SAM2 checkpoint found",
+                    ),
+                    Check(
+                        id="package.sam2",
+                        status=CheckStatus.FAIL,
+                        code=FailureCode.PACKAGE_MISSING,
+                        summary="The sam2 package is not installed",
+                    ),
+                ),
+            ),
+            "sam-audio": fake_capability("sam-audio", state=CapabilityState.READY),
+            "beat-this": fake_capability("beat-this", state=CapabilityState.READY),
+        },
     )
 
     status = asyncio.run(main.get_app_status())
 
     assert status["sam2"] == {
-        "status": "available",
-        "error": None,
+        "status": "unavailable",
+        "error": "The sam2 package is not installed",
     }
 
 

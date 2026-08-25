@@ -25,6 +25,8 @@ from services.ai_models.capabilities import (
     VerificationStage,
     capabilities_payload,
     derive_state,
+    derive_verified_through,
+    evaluated_stages,
     get_capability,
     list_capabilities,
     list_capability_ids,
@@ -37,6 +39,7 @@ from services.ai_models.capabilities.probes import (
     python_version_check,
 )
 from services.ai_models.capabilities.subprocess_probe import (
+    PROBE_CACHE_TTL_SECONDS,
     DeviceProbe,
     ModuleProbe,
     ProbeModule,
@@ -170,6 +173,20 @@ def _write_sam_audio_model(
     for filename in files:
         (model_dir / filename).write_text("{}")
     return model_dir
+
+
+def _age_probe_cache(seconds: float) -> None:
+    """Pretend every cached probe result was observed ``seconds`` ago.
+
+    Reaches into the cache on purpose: these tests are *about* what survives
+    expiry, and the alternative is a real wait.
+    """
+
+    with subprocess_probe._CACHE_LOCK:
+        for key, (observed_at, fingerprint, result) in list(
+            subprocess_probe._CACHE.items()
+        ):
+            subprocess_probe._CACHE[key] = (observed_at - seconds, fingerprint, result)
 
 
 def _check(capability, check_id: str) -> Check:
@@ -474,16 +491,11 @@ def test_every_capability_serialises(
 def test_listing_capabilities_imports_no_optional_ml_package(
     fake_environment: _FakeEnvironment,
     capability_dirs: dict[str, Path],
+    import_spy: _ImportSpy,
 ) -> None:
-    optional = ("sam2", "sam_audio", "beat_this", "madmom", "torch")
-    already_imported = {name for name in optional if name in sys.modules}
-
     list_capabilities()
 
-    newly_imported = {
-        name for name in optional if name in sys.modules
-    } - already_imported
-    assert newly_imported == set()
+    assert import_spy.attempts == []
 
 
 def test_sam2_discovery_finds_packaged_configs_without_importing_sam2(
@@ -860,3 +872,340 @@ async def test_endpoint_404s_on_an_unknown_capability(
         await runtime_capabilities.get_runtime_capability("nope", refresh=False)
 
     assert raised.value.status_code == 404
+
+
+# --------------------------------------------------------------------------
+# Legacy surfaces derived from the contract
+# --------------------------------------------------------------------------
+
+
+class _ImportSpy:
+    """Records every attempt to import the named top-level packages.
+
+    Checking ``sys.modules`` after the fact is vacuous when an earlier test has
+    already imported the package, so this watches the import machinery instead:
+    the entries are dropped for the duration and a meta-path finder notes any
+    attempt to bring them back. It records and defers, so a legitimate import
+    still succeeds.
+    """
+
+    def __init__(self, names: tuple[str, ...]) -> None:
+        self.names = names
+        self.attempts: list[str] = []
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] in self.names:
+            self.attempts.append(fullname)
+        return None
+
+
+@pytest.fixture
+def import_spy(monkeypatch: pytest.MonkeyPatch) -> _ImportSpy:
+    names = ("sam2", "sam_audio", "beat_this", "madmom")
+    for name in list(sys.modules):
+        if name.split(".")[0] in names:
+            monkeypatch.delitem(sys.modules, name, raising=False)
+
+    spy = _ImportSpy(names)
+    monkeypatch.setattr(sys, "meta_path", [spy, *sys.meta_path])
+    return spy
+
+
+@pytest.fixture
+def offline_app_status(monkeypatch: pytest.MonkeyPatch):
+    """Stub everything ``/app/status`` touches except the AI capabilities.
+
+    ComfyUI is answered offline and the hardware/settings payloads are fixed,
+    so what the test observes is exactly the capability-derived half.
+    """
+
+    import httpx
+
+    import main
+    from services.hardware import VramInfo
+
+    class OfflineClient:
+        async def get(self, _path, timeout=None):
+            raise httpx.RequestError(
+                "offline",
+                request=httpx.Request("GET", "http://127.0.0.1:8188/system_stats"),
+            )
+
+    async def fake_get_http_client():
+        return OfflineClient()
+
+    monkeypatch.setattr(main, "detect_local_vram", lambda: VramInfo(total_mb=24576))
+    monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
+    monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
+    monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
+    monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
+    monkeypatch.setattr(
+        main,
+        "build_public_settings_payload",
+        lambda _vram: {"settings": {}, "hardware": {}, "recommendations": {}},
+    )
+    return main
+
+
+@pytest.mark.anyio
+async def test_app_status_reports_unavailable_for_a_checkpoint_without_its_package(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+    offline_app_status,
+) -> None:
+    _write_sam_audio_model(capability_dirs["sam_audio_models"])
+    fake_environment.set_package("sam_audio", installed=False, importable=False)
+
+    status = await offline_app_status.get_app_status()
+
+    assert status["sam_audio"] == {
+        "status": "unavailable",
+        "error": "The sam_audio package is not installed",
+    }
+
+
+@pytest.mark.anyio
+async def test_app_status_imports_no_optional_ml_package(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+    offline_app_status,
+    import_spy: _ImportSpy,
+) -> None:
+    # Optional ML imports can hang, abort the process, or claim global CUDA
+    # state. A status request is the last place that may happen — the import
+    # question is answered in a subprocess or not at all.
+    await offline_app_status.get_app_status()
+
+    assert import_spy.attempts == []
+
+
+@pytest.mark.anyio
+async def test_app_status_never_spawns_a_probe(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+    offline_app_status,
+) -> None:
+    # /app/status is on the startup path: it may read a warm probe result but
+    # must never pay for one.
+    fake_environment.probe_calls.clear()
+
+    await offline_app_status.get_app_status()
+
+    assert fake_environment.probe_calls == []
+
+
+def test_beats_health_answers_from_the_capability_not_an_import(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+    import_spy: _ImportSpy,
+) -> None:
+    from services.beats import beats_service
+
+    fake_environment.set_package("beat_this", installed=False, importable=False)
+
+    runtime = beats_service.get_health()["runtime"]
+
+    assert runtime["ready"] is False
+    assert runtime["code"] == "package_missing"
+    assert runtime["error"] == "The beat_this package is not installed"
+    assert import_spy.attempts == []
+
+
+def test_sam_audio_health_explains_why_it_is_not_ready(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+) -> None:
+    from services.sam_audio import sam_audio_service
+
+    _write_sam_audio_model(capability_dirs["sam_audio_models"])
+    fake_environment.set_package("sam_audio", installed=False, importable=False)
+
+    runtime = sam_audio_service.get_health()["runtime"]
+
+    # The old payload had no error key at all, so every failure rendered as
+    # "No SAM-Audio model configured" — including this one, where the model is
+    # right there on disk.
+    assert runtime["ready"] is False
+    assert runtime["error"] == "The sam_audio package is not installed"
+    assert runtime["code"] == "package_missing"
+    assert runtime["discoveredModels"][0]["key"] == SAM_AUDIO_MODEL
+
+
+def test_sam2_health_does_not_equate_checkpoints_with_readiness(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+) -> None:
+    from services.sam2 import sam2_service
+
+    (capability_dirs["sam2_models"] / "sam2.1_hiera_large.pt").write_bytes(b"weights")
+    fake_environment.set_package("sam2", installed=False, importable=False)
+
+    runtime = sam2_service.get_health()["runtime"]
+
+    assert runtime["discoveredModels"]
+    assert runtime["ready"] is False
+    assert runtime["code"] == "package_missing"
+
+
+def test_health_reports_ready_once_nothing_is_failing(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+) -> None:
+    from services.sam_audio import sam_audio_service
+
+    _write_sam_audio_model(capability_dirs["sam_audio_models"])
+
+    runtime = sam_audio_service.get_health()["runtime"]
+
+    assert runtime["ready"] is True
+    assert runtime["error"] is None
+    assert runtime["code"] is None
+    assert runtime["state"] == "available_unverified"
+
+
+# --------------------------------------------------------------------------
+# Evidence, and the absence of it
+# --------------------------------------------------------------------------
+
+
+def test_an_unprobed_import_is_skipped_not_passed(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+) -> None:
+    _write_sam_audio_model(capability_dirs["sam_audio_models"])
+
+    capability = get_capability("sam-audio", deep_probe=False)
+
+    assert fake_environment.probe_calls == []
+    package = _check(capability, "package.sam_audio")
+    assert package.status is CheckStatus.SKIPPED
+    assert package.code is None
+    # Installed, and honestly not claimed to be more than that.
+    assert capability.verified_through is VerificationStage.DISCOVERED
+    assert capability.state is CapabilityState.AVAILABLE_UNVERIFIED
+    assert capability.can_attempt is True
+
+
+def test_an_unprobed_device_is_skipped_even_when_cuda_is_demanded(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import config
+
+    # Every current service raises when CUDA is explicitly requested and
+    # missing, so calling this device "fine" before anything looked would be
+    # the same false positive one layer down.
+    monkeypatch.setattr(config, "SAM_AUDIO_DEVICE", "cuda")
+    _write_sam_audio_model(capability_dirs["sam_audio_models"])
+
+    device = _check(get_capability("sam-audio", deep_probe=False), "device.requested")
+
+    assert device.status is CheckStatus.SKIPPED
+    assert device.code is None
+
+
+def test_device_check_without_a_probe_reports_nothing_established() -> None:
+    check, report = device_check(
+        check_id="device.requested",
+        requested="cuda",
+        probe=None,
+        env_var="SAM2_DEVICE",
+        label="SAM2",
+    )
+
+    assert check.status is CheckStatus.SKIPPED
+    assert report.resolved is None
+    assert report.proven is False
+
+
+def test_a_stage_with_a_skipped_check_is_not_evaluated() -> None:
+    checks = (
+        Check(
+            id="model.default",
+            status=CheckStatus.PASS,
+            stage=VerificationStage.DISCOVERED,
+            summary="found",
+        ),
+        Check(
+            id="package.thing",
+            status=CheckStatus.SKIPPED,
+            stage=VerificationStage.ENVIRONMENT,
+            summary="not verified",
+        ),
+    )
+
+    assert evaluated_stages(checks) == (VerificationStage.DISCOVERED,)
+    assert derive_verified_through(checks) is VerificationStage.DISCOVERED
+
+
+def test_a_failed_import_survives_the_cache_ttl(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+) -> None:
+    """The TTL means "worth re-running", not "forget what was seen".
+
+    Expiring the evidence instead would make an installed-but-unimportable
+    package flip back to looking fine once a minute — available on a cold
+    cache, blocked once diagnostics ran, available again sixty seconds later.
+    """
+
+    _write_sam_audio_model(capability_dirs["sam_audio_models"])
+    fake_environment.set_package("sam_audio", installed=True, importable=False)
+
+    # Nothing has looked yet: installed, unverified, attemptable.
+    cold = get_capability("sam-audio", deep_probe=False)
+    assert cold.state is CapabilityState.AVAILABLE_UNVERIFIED
+    assert _check(cold, "package.sam_audio").status is CheckStatus.SKIPPED
+
+    # The diagnostics path pays for the probe and learns the import is broken.
+    assert get_capability("sam-audio").state is CapabilityState.BLOCKED
+
+    _age_probe_cache(seconds=10 * PROBE_CACHE_TTL_SECONDS)
+
+    aged = get_capability("sam-audio", deep_probe=False)
+    assert aged.state is CapabilityState.BLOCKED
+    assert _check(aged, "package.sam_audio").code is FailureCode.PACKAGE_IMPORT_FAILED
+
+
+def test_a_changed_probe_question_does_discard_the_old_answer(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Age is not a reason to forget; asking something different is.
+    spec = ProbeSpec(modules=(ProbeModule("json"),))
+    probe_environment("sam-audio", spec)
+    _age_probe_cache(seconds=10 * PROBE_CACHE_TTL_SECONDS)
+
+    assert subprocess_probe.cached_probe("sam-audio", spec) is not None
+    assert (
+        subprocess_probe.cached_probe(
+            "sam-audio", ProbeSpec(modules=(ProbeModule("other"),))
+        )
+        is None
+    )
+
+
+@pytest.mark.anyio
+async def test_app_status_does_not_flip_back_to_available_as_the_probe_ages(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+    offline_app_status,
+) -> None:
+    _write_sam_audio_model(capability_dirs["sam_audio_models"])
+    fake_environment.set_package("sam_audio", installed=True, importable=False)
+
+    before = await offline_app_status.get_app_status()
+    assert before["sam_audio"]["status"] == "available"
+
+    get_capability("sam-audio")  # the diagnostics view runs the deep probe
+    after = await offline_app_status.get_app_status()
+    assert after["sam_audio"] == {
+        "status": "unavailable",
+        "error": "The sam_audio package is installed but failed to import",
+    }
+
+    _age_probe_cache(seconds=10 * PROBE_CACHE_TTL_SECONDS)
+
+    assert await offline_app_status.get_app_status() == after

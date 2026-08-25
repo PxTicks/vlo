@@ -37,7 +37,11 @@ class ComfyUIProvider(CapabilityProvider):
     id = CAPABILITY_ID
     label = "ComfyUI"
 
-    def inspect(self) -> ProviderReport:
+    def inspect(self, *, deep_probe: bool = True) -> ProviderReport:
+        # ComfyUI has no local runtime to import, so the switch changes
+        # nothing here; it exists to satisfy the provider contract.
+        del deep_probe
+
         from config import COMFYUI_INSTALL_DIR
         from services.comfyui.comfyui_client import (
             get_comfyui_url,
@@ -70,10 +74,12 @@ class ComfyUIProvider(CapabilityProvider):
 
     def _install_dir_check(self, install_dir: Path | None) -> Check:
         if install_dir is None:
+            # Not applicable rather than unchecked: ComfyUI is reached over
+            # HTTP, and no local install directory is a complete answer.
             return Check(
                 id="install.directory",
-                status=CheckStatus.SKIPPED,
-                summary="No local ComfyUI install directory is configured",
+                status=CheckStatus.PASS,
+                summary="ComfyUI is used as an external service",
             )
         if not install_dir.is_dir():
             return Check(

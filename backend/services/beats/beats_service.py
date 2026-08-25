@@ -13,6 +13,8 @@ from config import (
     BEATTHIS_DEFAULT_MODEL,
     BEATTHIS_DEVICE,
 )
+from services.ai_models.capabilities import BEATS_CAPABILITY_ID
+from services.ai_models.health import capability_runtime_health
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
 from services.model_work.local_inference import run_local_inference
 
@@ -253,21 +255,16 @@ class _BeatThisRuntime:
         return self._predictor
 
     def health(self) -> dict[str, Any]:
-        try:
-            import beat_this  # type: ignore  # noqa: F401
-
-            ready = True
-            error: str | None = None
-        except Exception as exc:
-            ready = False
-            error = str(exc)
+        # Readiness comes from the capability registry, which probes the import
+        # in a short-lived subprocess. Importing beat_this here would run an
+        # optional ML dependency graph inside the serving process on every
+        # /app/status request — it can hang, abort, or claim CUDA state.
         return {
-            "ready": ready,
+            **capability_runtime_health(BEATS_CAPABILITY_ID),
             "device": BEATTHIS_DEVICE,
             "resolvedDevice": self._resolved_device,
             "predictorLoaded": self._predictor is not None,
             "defaultModel": BEATTHIS_DEFAULT_MODEL,
-            "error": error,
         }
 
 

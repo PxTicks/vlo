@@ -20,6 +20,8 @@ from config import (
     SAM2_CACHE_DIR,
     SAM2_DEVICE,
 )
+from services.ai_models.capabilities import SAM2_CAPABILITY_ID
+from services.ai_models.health import capability_runtime_health
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
 from services.model_work.local_inference import run_local_inference
 from services.sam2.sam2_encoding import Sam2EncodingError, encode_binary_masks_to_red_mp4
@@ -485,13 +487,14 @@ class _Sam2PredictorRuntime:
         return self._predictor
 
     def health(self) -> dict[str, Any]:
-        discovered_models = discover_sam2_models()
-        ready = len(discovered_models) > 0
+        # Discovered checkpoints are inventory, not readiness: the package can
+        # be missing or unimportable while the files sit right there. The
+        # capability registry is what decides whether a job may be started.
         return {
-            "ready": ready,
+            **capability_runtime_health(SAM2_CAPABILITY_ID),
             "device": SAM2_DEVICE,
             "resolvedDevice": self._resolved_device,
-            "discoveredModels": discovered_models,
+            "discoveredModels": discover_sam2_models(),
             "predictorLoaded": self._predictor is not None,
         }
 

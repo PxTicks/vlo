@@ -24,11 +24,15 @@ from .subprocess_probe import (
     ProbeModule,
     ProbeResult,
     ProbeSpec,
+    cached_probe,
     probe_environment,
 )
 
 
 ENVIRONMENT_PROBE_KEY = "environment"
+
+#: The one probe every capability shares: torch plus the device inventory.
+_ENVIRONMENT_SPEC = ProbeSpec(modules=(ProbeModule("torch"),), device=True)
 
 #: Packages worth reporting a version for. Versions come from installed
 #: distribution metadata, so listing one here never imports it.
@@ -64,15 +68,16 @@ def environment_probe(*, refresh: bool = False) -> ProbeResult:
     so a cold cache costs one torch import rather than one per capability.
     """
 
-    return probe_environment(
-        ENVIRONMENT_PROBE_KEY,
-        ProbeSpec(modules=(ProbeModule("torch"),), device=True),
-        refresh=refresh,
-    )
+    return probe_environment(ENVIRONMENT_PROBE_KEY, _ENVIRONMENT_SPEC, refresh=refresh)
 
 
-def device_probe(*, refresh: bool = False) -> DeviceProbe | None:
-    return environment_probe(refresh=refresh).device
+def device_probe(*, deep_probe: bool = True) -> DeviceProbe | None:
+    """The shared device report, or ``None`` when nothing is known cheaply."""
+
+    if deep_probe:
+        return environment_probe().device
+    warm = cached_probe(ENVIRONMENT_PROBE_KEY, _ENVIRONMENT_SPEC)
+    return warm.device if warm is not None else None
 
 
 def display_path(path: Path | str) -> str:

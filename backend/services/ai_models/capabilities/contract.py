@@ -12,7 +12,7 @@ serialises them. No probing lives in this module.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -250,9 +250,29 @@ class Capability:
         }
 
 
+def evaluated_stages(checks: Iterable[Check]) -> tuple[VerificationStage, ...]:
+    """The leading stages whose checks were all actually carried out.
+
+    A stage is evaluated only if it has checks and none of them is ``SKIPPED``.
+    This is read off the checks rather than declared by the provider, because a
+    provider cannot know in advance whether the probe it asked for produced an
+    answer — on the cheap path it may not have run at all.
+    """
+
+    checks = tuple(checks)
+    stages: list[VerificationStage] = []
+    for stage in STAGE_ORDER:
+        at_stage = [check for check in checks if check.stage is stage]
+        if not at_stage:
+            break
+        if any(check.status is CheckStatus.SKIPPED for check in at_stage):
+            break
+        stages.append(stage)
+    return tuple(stages)
+
+
 def derive_verified_through(
     checks: Iterable[Check],
-    evaluated_stages: Sequence[VerificationStage],
 ) -> VerificationStage | None:
     """Highest stage that was both evaluated and free of failures.
 
@@ -261,7 +281,7 @@ def derive_verified_through(
     """
 
     checks = tuple(checks)
-    evaluated = set(evaluated_stages)
+    evaluated = set(evaluated_stages(checks))
     verified: VerificationStage | None = None
     for stage in STAGE_ORDER:
         if stage not in evaluated:

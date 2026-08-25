@@ -26,8 +26,8 @@ from ..probes import (
     package_check,
     python_version_check,
 )
-from ..subprocess_probe import ProbeModule, ProbeSpec
-from .base import CapabilityProvider, ProviderReport
+from ..subprocess_probe import ModuleProbe, ProbeModule, ProbeSpec
+from .base import CapabilityProvider, ProviderReport, probed_module
 
 
 CAPABILITY_ID = "beat-this"
@@ -65,7 +65,7 @@ class BeatsProvider(CapabilityProvider):
     id = CAPABILITY_ID
     label = "Beat This!"
 
-    def inspect(self) -> ProviderReport:
+    def inspect(self, *, deep_probe: bool = True) -> ProviderReport:
         from config import BEATTHIS_CACHE_DIR, BEATTHIS_DEFAULT_MODEL, BEATTHIS_DEVICE
 
         probe = self.probe(
@@ -76,6 +76,7 @@ class BeatsProvider(CapabilityProvider):
                 ),
                 extra_sys_path=(str(BACKEND_ROOT),),
             ),
+            deep_probe=deep_probe,
         )
 
         checks: list[Check] = [
@@ -86,16 +87,16 @@ class BeatsProvider(CapabilityProvider):
                 module="beat_this",
                 label="Beat This!",
                 distribution="beat-this",
-                deep=probe.module(_IMPORT_TARGET),
+                deep=probed_module(probe, _IMPORT_TARGET),
                 remediation=INSTALL_REMEDIATION,
             ),
-            self._madmom_check(probe.module("madmom").imported),
+            self._madmom_check(probed_module(probe, "madmom")),
         ]
 
         device, device_report = device_check(
             check_id="device.requested",
             requested=BEATTHIS_DEVICE,
-            probe=device_probe(),
+            probe=device_probe(deep_probe=deep_probe),
             env_var="BEATTHIS_DEVICE",
             label="Beat This!",
         )
@@ -135,8 +136,14 @@ class BeatsProvider(CapabilityProvider):
             detail=display_path(cache_dir),
         )
 
-    def _madmom_check(self, imported: bool) -> Check:
-        if imported:
+    def _madmom_check(self, madmom: ModuleProbe | None) -> Check:
+        if madmom is None:
+            return Check(
+                id="package.madmom",
+                status=CheckStatus.SKIPPED,
+                summary="madmom availability was not checked",
+            )
+        if madmom.imported:
             return Check(
                 id="package.madmom",
                 status=CheckStatus.PASS,

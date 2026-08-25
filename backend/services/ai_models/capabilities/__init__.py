@@ -31,6 +31,7 @@ from .contract import (
     VerificationStage,
     derive_state,
     derive_verified_through,
+    evaluated_stages,
     utc_now,
 )
 from .environment import ENVIRONMENT_PROBE_KEY, describe_environment
@@ -51,6 +52,10 @@ from .providers import (
     Sam2Provider,
     SamAudioProvider,
 )
+from .providers.beats import CAPABILITY_ID as BEATS_CAPABILITY_ID
+from .providers.comfyui import CAPABILITY_ID as COMFYUI_CAPABILITY_ID
+from .providers.sam2 import CAPABILITY_ID as SAM2_CAPABILITY_ID
+from .providers.sam_audio import CAPABILITY_ID as SAM_AUDIO_CAPABILITY_ID
 from .subprocess_probe import invalidate_probe_cache
 
 
@@ -79,16 +84,32 @@ def get_provider(capability_id: str) -> CapabilityProvider | None:
     return _PROVIDERS_BY_ID.get(capability_id)
 
 
-def get_capability(capability_id: str, *, refresh: bool = False) -> Capability | None:
+def get_capability(
+    capability_id: str,
+    *,
+    refresh: bool = False,
+    deep_probe: bool = True,
+) -> Capability | None:
+    """One capability's cheap-stage report.
+
+    ``deep_probe=False`` guarantees no subprocess is spawned — the caller gets
+    the static checks plus whatever import result is already warm. That is what
+    makes this safe to call from ``/app/status``, which is on the startup path.
+    """
+
     provider = _PROVIDERS_BY_ID.get(capability_id)
     if provider is None:
         return None
     if refresh:
         invalidate_capability_cache(capability_id)
-    return provider.build()
+    return provider.build(deep_probe=deep_probe)
 
 
-def list_capabilities(*, refresh: bool = False) -> list[Capability]:
+def list_capabilities(
+    *,
+    refresh: bool = False,
+    deep_probe: bool = True,
+) -> list[Capability]:
     if refresh:
         invalidate_capability_cache()
 
@@ -99,7 +120,9 @@ def list_capabilities(*, refresh: bool = False) -> list[Capability]:
         max_workers=min(_PROBE_FAN_OUT, len(_PROVIDERS)),
         thread_name_prefix="capability-probe",
     ) as pool:
-        return list(pool.map(lambda provider: provider.build(), _PROVIDERS))
+        return list(
+            pool.map(lambda provider: provider.build(deep_probe=deep_probe), _PROVIDERS)
+        )
 
 
 def invalidate_capability_cache(capability_id: str | None = None) -> None:
@@ -139,6 +162,10 @@ def capabilities_payload(*, refresh: bool = False) -> dict[str, Any]:
 
 __all__ = [
     "ATTEMPTABLE_STATES",
+    "BEATS_CAPABILITY_ID",
+    "COMFYUI_CAPABILITY_ID",
+    "SAM2_CAPABILITY_ID",
+    "SAM_AUDIO_CAPABILITY_ID",
     "STAGE_ORDER",
     "Capability",
     "CapabilityProvider",
@@ -157,6 +184,7 @@ __all__ = [
     "clear_failures",
     "derive_state",
     "derive_verified_through",
+    "evaluated_stages",
     "describe_environment",
     "get_capability",
     "get_last_failure",

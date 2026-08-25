@@ -29,7 +29,7 @@ from ..probes import (
     python_version_check,
 )
 from ..subprocess_probe import ProbeModule, ProbeSpec
-from .base import CapabilityProvider, ProviderReport
+from .base import CapabilityProvider, ProviderReport, probed_module
 
 
 CAPABILITY_ID = "sam2"
@@ -74,7 +74,7 @@ class Sam2Provider(CapabilityProvider):
     id = CAPABILITY_ID
     label = "SAM2"
 
-    def inspect(self) -> ProviderReport:
+    def inspect(self, *, deep_probe: bool = True) -> ProviderReport:
         from config import SAM2_CACHE_DIR, SAM2_DEVICE
 
         extra_paths = _extra_sys_paths()
@@ -83,6 +83,7 @@ class Sam2Provider(CapabilityProvider):
                 modules=(ProbeModule(_IMPORT_TARGET, distribution="sam2"),),
                 extra_sys_path=extra_paths,
             ),
+            deep_probe=deep_probe,
         )
 
         models = _discover_models()
@@ -98,7 +99,7 @@ class Sam2Provider(CapabilityProvider):
                 label="SAM2",
                 distribution="sam2",
                 extra_paths=extra_paths,
-                deep=probe.module(_IMPORT_TARGET),
+                deep=probed_module(probe, _IMPORT_TARGET),
                 remediation=INSTALL_REMEDIATION,
             ),
         ]
@@ -107,7 +108,7 @@ class Sam2Provider(CapabilityProvider):
         device, device_report = device_check(
             check_id="device.requested",
             requested=SAM2_DEVICE,
-            probe=device_probe(),
+            probe=device_probe(deep_probe=deep_probe),
             env_var="SAM2_DEVICE",
             label="SAM2",
         )

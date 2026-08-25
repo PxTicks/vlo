@@ -23,6 +23,8 @@ from config import (
     SAM_AUDIO_LOAD_OPTIONAL_MODELS,
     SAM_AUDIO_SEARCH_PATHS,
 )
+from services.ai_models.capabilities import SAM_AUDIO_CAPABILITY_ID
+from services.ai_models.health import capability_runtime_health
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
 from services.jobs import (
     BackendJobContext,
@@ -582,14 +584,15 @@ class _SamAudioRuntime:
         )
 
     def health(self) -> dict[str, Any]:
-        discovered_models = discover_sam_audio_models()
+        # A checkpoint on disk says nothing about whether sam_audio imports;
+        # the capability registry checks both and explains which one failed.
         return {
-            "ready": len(discovered_models) > 0,
+            **capability_runtime_health(SAM_AUDIO_CAPABILITY_ID),
             "device": SAM_AUDIO_DEVICE,
             "resolvedDevice": self._resolved_device,
             "selectedModel": SAM_AUDIO_DEFAULT_MODEL,
             "selectedModelRef": self._selected_model_ref,
-            "discoveredModels": discovered_models,
+            "discoveredModels": discover_sam_audio_models(),
             "modelLoaded": self._model is not None,
         }
 

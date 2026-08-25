@@ -276,6 +276,28 @@ def probe_environment(
         return result
 
 
+def cached_probe(cache_key: str, spec: ProbeSpec) -> ProbeResult | None:
+    """The last probe result for this key, or ``None`` — never a subprocess.
+
+    For callers that must stay cheap no matter what. ``/app/status`` is polled
+    on startup and cannot afford to spawn interpreters, but it can honestly use
+    an answer the diagnostics view already paid for.
+
+    Age deliberately does not disqualify a result. The TTL means "this is worth
+    re-running", not "forget what was observed": expiring the evidence would
+    make an installed-but-unimportable package flip back to looking fine every
+    sixty seconds. Only a spec change discards a result, because then the
+    cached answer is to a different question.
+    """
+
+    fingerprint = spec.fingerprint()
+    with _CACHE_LOCK:
+        cached = _CACHE.get(cache_key)
+    if cached is None or cached[1] != fingerprint:
+        return None
+    return cached[2]
+
+
 def invalidate_probe_cache(cache_key: str | None = None) -> None:
     with _CACHE_LOCK:
         if cache_key is None:

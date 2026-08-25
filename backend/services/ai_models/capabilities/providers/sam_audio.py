@@ -29,7 +29,7 @@ from ..probes import (
     python_version_check,
 )
 from ..subprocess_probe import ProbeModule, ProbeSpec
-from .base import CapabilityProvider, ProviderReport
+from .base import CapabilityProvider, ProviderReport, probed_module
 
 
 CAPABILITY_ID = "sam-audio"
@@ -103,7 +103,7 @@ class SamAudioProvider(CapabilityProvider):
     id = CAPABILITY_ID
     label = "SAM-Audio"
 
-    def inspect(self) -> ProviderReport:
+    def inspect(self, *, deep_probe: bool = True) -> ProviderReport:
         from config import (
             SAM_AUDIO_CACHE_DIR,
             SAM_AUDIO_DEFAULT_MODEL,
@@ -118,6 +118,7 @@ class SamAudioProvider(CapabilityProvider):
                 extra_sys_path=extra_paths,
                 stub_modules=_IMPORT_STUBS,
             ),
+            deep_probe=deep_probe,
         )
 
         models = _scan_model_dirs(SAM_AUDIO_SEARCH_PATHS)
@@ -130,7 +131,7 @@ class SamAudioProvider(CapabilityProvider):
             label="SAM-Audio",
             distribution="sam-audio",
             extra_paths=extra_paths,
-            deep=probe.module("sam_audio"),
+            deep=probed_module(probe, "sam_audio"),
             remediation=INSTALL_REMEDIATION,
         )
         checks.append(python_version_check((3, 11)))
@@ -138,7 +139,7 @@ class SamAudioProvider(CapabilityProvider):
         device, device_report = device_check(
             check_id="device.requested",
             requested=SAM_AUDIO_DEVICE,
-            probe=device_probe(),
+            probe=device_probe(deep_probe=deep_probe),
             env_var="SAM_AUDIO_DEVICE",
             label="SAM-Audio",
         )

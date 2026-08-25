@@ -43,17 +43,16 @@ from services.comfyui.comfyui_client import (
     get_http_client,
 )
 from services.hardware import detect_local_vram, detect_vram_from_system_stats
-from services.ai_models.health import AppStatusProvider
-from services.model_registry import (
-    get_available_sam2_models,
-    get_available_sam_audio_models,
-    is_comfyui_model_downloads_enabled,
+from services.ai_models.capabilities import (
+    BEATS_CAPABILITY_ID,
+    SAM2_CAPABILITY_ID,
+    SAM_AUDIO_CAPABILITY_ID,
 )
+from services.ai_models.health import AppStatusProvider
+from services.model_registry import is_comfyui_model_downloads_enabled
 from services.generation_delivery import generation_holding_service
 from services.model_work import get_model_work_coordinator
-from services.sam2 import sam2_service
 from services.sam_audio import sam_audio_service
-from services.beats import beats_service
 
 
 MODEL_WORK_RESTORE_RETRY_BASE_SECONDS = 5.0
@@ -142,25 +141,23 @@ PROJECTS_DIR = BASE_DIR / "projects"
 FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
 FRONTEND_INDEX_FILE = FRONTEND_DIST_DIR / "index.html"
 
+# Legacy status fields, derived from the runtime-capability registry rather
+# than from model inventory: a checkpoint on disk is discovery, not readiness.
 AI_APP_STATUS_PROVIDERS = [
     AppStatusProvider(
         response_key="sam2",
-        health_fn=lambda: sam2_service.get_health(),
+        capability_id=SAM2_CAPABILITY_ID,
         unavailable_message="No SAM2 models discovered",
-        installed_models_fn=lambda: get_available_sam2_models(),
     ),
     AppStatusProvider(
         response_key="sam_audio",
-        health_fn=lambda: sam_audio_service.get_health(),
+        capability_id=SAM_AUDIO_CAPABILITY_ID,
         unavailable_message="No SAM-Audio model configured",
-        use_runtime_error=True,
-        installed_models_fn=lambda: get_available_sam_audio_models(),
     ),
     AppStatusProvider(
         response_key="beat_this",
-        health_fn=lambda: beats_service.get_health(),
+        capability_id=BEATS_CAPABILITY_ID,
         unavailable_message="Beat This! is not installed",
-        use_runtime_error=True,
     ),
 ]
 

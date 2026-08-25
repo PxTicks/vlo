@@ -19,15 +19,24 @@ from ..contract import (
     utc_now,
 )
 from ..failures import get_last_failure, sanitize_message
-from ..subprocess_probe import ProbeResult, ProbeSpec, probe_environment
-
-
-#: What the cheap path can evaluate. ``loaded``/``operational`` are established
-#: by an explicit runtime probe or a real job, never by a status request.
-CHEAP_STAGES: tuple[VerificationStage, ...] = (
-    VerificationStage.DISCOVERED,
-    VerificationStage.ENVIRONMENT,
+from ..subprocess_probe import (
+    ModuleProbe,
+    ProbeResult,
+    ProbeSpec,
+    cached_probe,
+    probe_environment,
 )
+
+
+def probed_module(probe: ProbeResult | None, name: str) -> ModuleProbe | None:
+    """One module's out-of-process result, or ``None`` when no probe ran.
+
+    ``None`` means the import was never attempted — neither a pass nor a
+    failure. The check downgrades to ``skipped`` on it, which is what keeps an
+    unexamined package from reading as a healthy one.
+    """
+
+    return probe.module(name) if probe is not None else None
 
 
 @dataclass(frozen=True)
@@ -37,7 +46,6 @@ class ProviderReport:
     checks: tuple[Check, ...]
     expected: bool
     device: DeviceReport | None = None
-    evaluated_stages: tuple[VerificationStage, ...] = CHEAP_STAGES
     selected_model: str | None = None
     models: tuple[Mapping[str, Any], ...] = ()
     loaded: bool = False
@@ -49,22 +57,34 @@ class CapabilityProvider:
     id: str = ""
     label: str = ""
 
-    def inspect(self) -> ProviderReport:
+    def inspect(self, *, deep_probe: bool = True) -> ProviderReport:
         raise NotImplementedError
 
-    def probe(self, spec: ProbeSpec) -> ProbeResult:
-        """Run this capability's out-of-process probe, cached per capability.
+    def probe(
+        self,
+        spec: ProbeSpec,
+        *,
+        deep_probe: bool = True,
+    ) -> ProbeResult | None:
+        """This capability's out-of-process probe, cached per capability.
 
         Freshness is not a parameter here: a recheck invalidates the cache at
         the registry boundary, so no code path can ask four providers to each
         re-run the same probe.
+
+        ``deep_probe=False`` promises never to spawn: it returns the last
+        result for this key if there is one — stale or not, since an observed
+        failure does not stop being true — and ``None`` otherwise, which marks
+        the import checks unevaluated rather than passed.
         """
 
-        return probe_environment(self.id, spec)
+        if deep_probe:
+            return probe_environment(self.id, spec)
+        return cached_probe(self.id, spec)
 
-    def build(self) -> Capability:
+    def build(self, *, deep_probe: bool = True) -> Capability:
         try:
-            report = self.inspect()
+            report = self.inspect(deep_probe=deep_probe)
         except Exception as exc:  # pragma: no cover - defensive: a broken provider
             # A status endpoint that 500s teaches the user nothing. Report the
             # provider's own breakage as the capability's blocking failure.
@@ -98,9 +118,10 @@ class CapabilityProvider:
             state=state,
             checked_at=utc_now(),
             device=report.device,
-            verified_through=derive_verified_through(
-                report.checks, report.evaluated_stages
-            ),
+            # How far the evidence actually goes is read off the checks: a
+            # stage with a skipped check was not evaluated, so verification
+            # stops below it.
+            verified_through=derive_verified_through(report.checks),
             checks=tuple(report.checks),
             selected_model=report.selected_model,
             models=tuple(report.models),

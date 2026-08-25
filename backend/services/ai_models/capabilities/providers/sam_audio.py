@@ -42,12 +42,14 @@ CAPABILITY_ID = "sam-audio"
 
 MODEL_FILES: tuple[str, ...] = ("config.json", "checkpoint.pt")
 
-#: The optional accelerator modules the real load path fakes when they are
-#: absent. The probe stubs them too, so an importability check answers the same
-#: question the service does.
+#: The optional modules the real load path fakes when they are absent. The
+#: probe stubs them too, so an importability check answers the same question
+#: the service does — the accelerator shims, plus wandb, which SAM-Audio's
+#: dependency chain imports at module scope and uses only for training.
 _IMPORT_STUBS: tuple[str, ...] = (
     "xformers.ops.fmha",
     "torchcodec.decoders",
+    "wandb",
 )
 
 DOWNLOAD_REMEDIATION = Remediation(

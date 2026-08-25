@@ -358,6 +358,56 @@ class _SamAudioRuntime:
         sys.modules["xformers.ops"] = ops_module
         sys.modules["xformers.ops.fmha"] = fmha_module
 
+    def _ensure_wandb_importable(self) -> None:
+        """Let SAM-Audio import when ``wandb`` cannot.
+
+        perception-models' ``core`` package imports wandb at module scope
+        (``core/metrics.py``, ``core/profiling.py``) but only ever *uses* it
+        inside training and profiling entry points — ``wandb.init``,
+        ``wandb.log``, ``wandb.finish``, ``wandb.Html``. Separation calls none
+        of them, so a telemetry library that cannot import has been able to
+        take the whole feature down.
+
+        ``Exception`` rather than ``ImportError`` is deliberate. wandb picks
+        its generated protobuf modules by the installed protobuf's major
+        version, and all but two of those dispatchers fall through silently on
+        a major they do not ship. The failure then surfaces from *inside* the
+        import as ``AttributeError: module 'wandb.proto.wandb_internal_pb2'
+        has no attribute 'Result'`` — not as an ImportError.
+
+        Attribute access raises rather than returning a dummy: nothing on this
+        path should reach wandb, so if something does, it must say so instead
+        of silently discarding whatever it meant to log.
+        """
+
+        try:
+            import wandb  # type: ignore  # noqa: F401
+
+            return
+        except Exception:
+            pass
+
+        wandb_module = ModuleType("wandb")
+        wandb_module.__spec__ = ModuleSpec("wandb", loader=None, is_package=True)
+        # Submodule imports fail as ModuleNotFoundError rather than something
+        # stranger; nothing on the load path does one today.
+        wandb_module.__path__ = []  # type: ignore[attr-defined]
+
+        def __getattr__(attr: str) -> Any:  # noqa: N807 - module protocol
+            # Dunders must stay absent. Answering ``__file__`` with an object
+            # breaks anything that introspects sys.modules, which the probe
+            # worker's own stub learned the hard way.
+            if attr.startswith("__") and attr.endswith("__"):
+                raise AttributeError(attr)
+            raise SamAudioConfigError(
+                "SAM-Audio tried to use wandb, but wandb could not be imported "
+                "in this backend environment. Reinstall wandb and a protobuf "
+                "release its generated modules support."
+            )
+
+        wandb_module.__getattr__ = __getattr__  # type: ignore[attr-defined]
+        sys.modules["wandb"] = wandb_module
+
     def _ensure_torchcodec_decoders_importable(self) -> None:
         try:
             from torchcodec.decoders import AudioDecoder, VideoDecoder  # type: ignore  # noqa: F401
@@ -501,6 +551,7 @@ class _SamAudioRuntime:
         self._ensure_sam_audio_pythonpath(include_default_checkout=False)
         self._ensure_xformers_ops_importable()
         self._ensure_torchcodec_decoders_importable()
+        self._ensure_wandb_importable()
         try:
             SAMAudio, SAMAudioProcessor = self._import_sam_audio_classes()
             _record_timing(timings, "dependencyImportSec", dependency_started_at)

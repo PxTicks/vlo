@@ -1,4 +1,8 @@
 import asyncio
+import importlib
+import importlib.abc
+import importlib.util
+import sys
 import threading
 from io import BytesIO
 from pathlib import Path
@@ -511,3 +515,110 @@ def test_runtime_load_cancellation_is_not_recorded(
         failures.clear_failures(sam_audio_service.SAM_AUDIO_CAPABILITY_ID)
 
     assert recorded is None
+
+
+# --------------------------------------------------------------------------
+# Importing SAM-Audio without a working wandb
+# --------------------------------------------------------------------------
+
+
+class _BrokenWandbFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """A wandb whose failure surfaces the way the real one does.
+
+    wandb selects its generated protobuf modules by the installed protobuf's
+    major version, and most of those dispatchers fall through silently on a
+    major they do not ship. The import then fails with an AttributeError raised
+    from inside it, not an ImportError — so a handler that only caught
+    ImportError would not catch this at all.
+    """
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname != "wandb":
+            return None
+        return importlib.util.spec_from_loader(fullname, self)
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        raise AttributeError(
+            "module 'wandb.proto.wandb_internal_pb2' has no attribute 'Result'"
+        )
+
+
+@pytest.fixture
+def broken_wandb():
+    """Make ``import wandb`` fail, and leave sys.modules as it was found."""
+
+    saved = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "wandb" or name.startswith("wandb.")
+    }
+    for name in saved:
+        del sys.modules[name]
+    finder = _BrokenWandbFinder()
+    sys.meta_path.insert(0, finder)
+    try:
+        yield
+    finally:
+        sys.meta_path.remove(finder)
+        for name in [
+            name
+            for name in sys.modules
+            if name == "wandb" or name.startswith("wandb.")
+        ]:
+            del sys.modules[name]
+        sys.modules.update(saved)
+
+
+def test_a_broken_wandb_does_not_block_the_sam_audio_import(broken_wandb: None) -> None:
+    # The dependency chain imports wandb at module scope (core/metrics.py,
+    # core/profiling.py) and uses it only for training. Separation must not
+    # inherit that as a hard requirement.
+    runtime = sam_audio_service._SamAudioRuntime()
+    with pytest.raises(AttributeError):
+        importlib.import_module("wandb")
+
+    runtime._ensure_wandb_importable()
+
+    import wandb  # noqa: F401 - the point is that this now succeeds
+
+    assert sys.modules["wandb"].__name__ == "wandb"
+
+
+def test_the_wandb_stand_in_refuses_to_be_used(broken_wandb: None) -> None:
+    runtime = sam_audio_service._SamAudioRuntime()
+    runtime._ensure_wandb_importable()
+    import wandb
+
+    # Nothing on this path should reach wandb. If something does, it has to say
+    # so rather than silently discarding whatever it meant to log.
+    with pytest.raises(sam_audio_service.SamAudioConfigError):
+        wandb.init(project="anything")
+    with pytest.raises(sam_audio_service.SamAudioConfigError):
+        _ = wandb.run
+
+    # Dunders stay absent: answering __file__ with an object breaks anything
+    # that introspects sys.modules.
+    with pytest.raises(AttributeError):
+        _ = wandb.__file__
+
+
+def test_a_working_wandb_is_left_alone() -> None:
+    pytest.importorskip("wandb")
+    runtime = sam_audio_service._SamAudioRuntime()
+    before = sys.modules["wandb"]
+
+    runtime._ensure_wandb_importable()
+
+    assert sys.modules["wandb"] is before
+
+
+def test_the_probe_stubs_every_module_the_service_fakes() -> None:
+    # The stub list lives in two places — the service that loads the model and
+    # the probe that reports whether it could. If they drift, the diagnostics
+    # panel reports SAM-Audio as blocked while separation works fine.
+    from services.ai_models.capabilities.providers.sam_audio import _IMPORT_STUBS
+
+    assert "wandb" in _IMPORT_STUBS

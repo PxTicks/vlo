@@ -100,9 +100,14 @@
       "order": 0
     },
     {
-      "workflow_id": "vlo_wan_animate.json",
+      "workflow_id": "vlo_minimax_h3_ttm.json",
       "parent_id": "video.control",
       "order": 1
+    },
+    {
+      "workflow_id": "vlo_wan_animate.json",
+      "parent_id": "video.control",
+      "order": 2
     },
     {
       "workflow_id": "vlo_SeedVR2_video.json",

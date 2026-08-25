@@ -1,0 +1,274 @@
+{
+  "version": 3,
+  "name": "MiniMax H3 Time-to-Move",
+  "sections": [
+    { "id": "lora_loaders", "title": "LoRA loaders", "order": 3, "default_open": true },
+    { "id": "advanced_settings", "title": "Advanced Settings", "order": 4, "default_open": false }
+  ],
+
+  "nodes": {
+    "1": {
+      "present": {
+        "label": "Reference video",
+        "required": true,
+        "input_type": "video",
+        "param": "file",
+        "class_type": "vloMemoryLoadVideo"
+      },
+      "selection": {
+        "export_fps": 24,
+        "frame_step": 17,
+        "frame_offset": 5,
+        "max_frames": 719,
+        "message": "Select which track(s) contain the moving object(s)",
+        "include_tracks": true
+      }
+    },
+    "2": {},
+
+    "16": {
+      "present": {
+        "label": "Prompt",
+        "input_type": "text",
+        "param": "prompt"
+      },
+      "widgets": {
+        "width": { "value_type": "int", "hidden": true },
+        "height": { "value_type": "int", "hidden": true },
+        "length": { "value_type": "int", "hidden": true }
+      }
+    },
+
+    "20": { "widgets": { "value": { "label": "Width", "value_type": "int", "hidden": true } } },
+    "21": { "widgets": { "value": { "label": "Height", "value_type": "int", "hidden": true } } },
+
+    "26": {
+      "widgets": {
+        "start_step": {
+          "label": "Motion lock-in",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 20,
+          "step": 1,
+          "default": 1,
+          "group_id": "time_to_move",
+          "group_title": "Time-to-Move",
+          "group_order": 0
+        },
+        "end_step": {
+          "label": "Motion hold",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 20,
+          "step": 1,
+          "default": 2,
+          "group_id": "time_to_move",
+          "group_title": "Time-to-Move",
+          "group_order": 1
+        }
+      }
+    },
+
+    "28": {
+      "widgets": {
+        "steps": {
+          "label": "Steps",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 60,
+          "step": 1,
+          "default": 20,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 2
+        },
+        "denoise": { "value_type": "float", "hidden": true },
+        "scheduler": {
+          "label": "Scheduler",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 1
+        }
+      }
+    },
+    "29": {
+      "widgets": {
+        "sampler_name": {
+          "label": "Sampler",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 0
+        }
+      }
+    },
+    "30": {
+      "widgets": {
+        "noise_seed": {
+          "label": "Noise seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 3
+        }
+      }
+    },
+    "23": {
+      "widgets": {
+        "lora_name": {
+          "label": "Model",
+          "discover_when_bypassed": true,
+          "default_node_bypass": true,
+          "section_id": "lora_loaders",
+          "group_id": "lora_model",
+          "group_title": "Model LoRA"
+        }
+      }
+    },
+    "24": {
+      "widgets": {
+        "attention": {
+          "label": "Attention backend",
+          "section_id": "advanced_settings",
+          "group_id": "model_patches",
+          "group_title": "Model",
+          "group_order": 0
+        }
+      }
+    }
+  },
+
+  "frontend_controls": {
+    "spectrum_enabled": {
+      "label": "MiniMax Spectrum",
+      "value_type": "boolean",
+      "default": true,
+      "section_id": "advanced_settings",
+      "group_id": "model_patches",
+      "group_title": "Model",
+      "group_order": 1
+    }
+  },
+
+  "validation": {
+    "inputs": [
+      { "kind": "required", "input": "1", "message": "A reference video is required." },
+      { "kind": "required", "input": "16:prompt", "message": "A prompt is required." }
+    ]
+  },
+
+  "derived_widgets": [],
+
+  "rewrites": [
+    {
+      "when": {
+        "kind": "compare",
+        "ref": { "kind": "frontend_control", "control_id": "spectrum_enabled" },
+        "operator": "eq",
+        "value": false
+      },
+      "bypass": ["25"]
+    }
+  ],
+
+  "slots": {},
+
+  "pipeline": [
+    {
+      "id": "mask_processing",
+      "kind": "mask_processing",
+      "after": ["aspect_ratio"],
+      "targets": [
+        {
+          "source": { "node_id": "1", "param": "file" },
+          "mask": { "node_id": "2", "param": "file" },
+          "mask_type": "binary",
+          "purpose": "video",
+          "source_selection": "full_selection",
+          "mask_selection": "input_selection",
+          "source_video_treatment": "preserve_transparency"
+        }
+      ],
+      "controls": [
+        {
+          "key": "crop_mode",
+          "label": "Mask crop mode",
+          "value_type": "enum",
+          "expose": "none",
+          "source": "client",
+          "options": ["crop", "full"],
+          "default": "full"
+        },
+        {
+          "key": "crop_dilation",
+          "label": "Mask crop padding",
+          "value_type": "float",
+          "expose": "none",
+          "source": "client",
+          "control": "slider",
+          "slider_display": "percent",
+          "min": 0,
+          "max": 0.5,
+          "step": 0.01,
+          "default": 0.1
+        }
+      ]
+    },
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolution_ladder": { "min": 240, "max": 720, "steps": 5 },
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
+        {
+          "width": { "node_id": "20", "param": "value" },
+          "height": { "node_id": "21", "param": "value" }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "default": 720,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "label": "Aspect ratio",
+          "expose": "widget",
+          "source": "client",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 1
+        }
+      ]
+    },
+    {
+      "id": "output_assembly",
+      "kind": "output_assembly",
+      "config": { "attach_generation_mask": false }
+    }
+  ]
+}

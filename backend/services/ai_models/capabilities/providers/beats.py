@@ -1,0 +1,153 @@
+"""Beat This! capability provider.
+
+Beat This! ships in the base backend requirements, so a missing package here is
+a broken install rather than a feature nobody asked for. Its checkpoints are
+fetched by ``torch.hub`` on first use, which makes the cache directory — not a
+model file — the thing worth checking on disk.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from ..contract import (
+    Check,
+    CheckStatus,
+    FailureCode,
+    Remediation,
+    RemediationKind,
+    VerificationStage,
+)
+from ..environment import device_probe, display_path
+from ..probes import (
+    BACKEND_ROOT,
+    device_check,
+    directory_check,
+    package_check,
+    python_version_check,
+)
+from ..subprocess_probe import ProbeModule, ProbeSpec
+from .base import CapabilityProvider, ProviderReport
+
+
+CAPABILITY_ID = "beat-this"
+_IMPORT_TARGET = "beat_this.inference"
+
+INSTALL_REMEDIATION = Remediation(
+    kind=RemediationKind.COMMAND,
+    summary="Reinstall the backend requirements",
+    command=(
+        "uv pip install --python backend/.venv/bin/python "
+        "-r backend/requirements.txt"
+    ),
+    requires_restart=True,
+)
+
+MADMOM_REMEDIATION = Remediation(
+    kind=RemediationKind.COMMAND,
+    summary="Install madmom to enable DBN post-processing",
+    command=(
+        "uv pip install --python backend/.venv/bin/python "
+        "git+https://github.com/CPJKU/madmom.git"
+    ),
+    requires_restart=True,
+)
+
+
+def _cached_checkpoints(cache_dir: Path, model: str) -> list[Path]:
+    checkpoints = cache_dir / "torch" / "hub" / "checkpoints"
+    if not checkpoints.is_dir():
+        return []
+    return [path for path in checkpoints.glob(f"*{model}*") if path.is_file()]
+
+
+class BeatsProvider(CapabilityProvider):
+    id = CAPABILITY_ID
+    label = "Beat This!"
+
+    def inspect(self) -> ProviderReport:
+        from config import BEATTHIS_CACHE_DIR, BEATTHIS_DEFAULT_MODEL, BEATTHIS_DEVICE
+
+        probe = self.probe(
+            ProbeSpec(
+                modules=(
+                    ProbeModule(_IMPORT_TARGET, distribution="beat-this"),
+                    ProbeModule("madmom", distribution="madmom"),
+                ),
+                extra_sys_path=(str(BACKEND_ROOT),),
+            ),
+        )
+
+        checks: list[Check] = [
+            self._model_check(BEATTHIS_CACHE_DIR, BEATTHIS_DEFAULT_MODEL),
+            python_version_check((3, 10)),
+            package_check(
+                check_id="package.beat_this",
+                module="beat_this",
+                label="Beat This!",
+                distribution="beat-this",
+                deep=probe.module(_IMPORT_TARGET),
+                remediation=INSTALL_REMEDIATION,
+            ),
+            self._madmom_check(probe.module("madmom").imported),
+        ]
+
+        device, device_report = device_check(
+            check_id="device.requested",
+            requested=BEATTHIS_DEVICE,
+            probe=device_probe(),
+            env_var="BEATTHIS_DEVICE",
+            label="Beat This!",
+        )
+        checks.append(device)
+        checks.append(
+            directory_check(
+                check_id="cache.directory",
+                path=BEATTHIS_CACHE_DIR,
+                label="The Beat This! cache directory",
+            )
+        )
+
+        return ProviderReport(
+            checks=tuple(checks),
+            # Part of the base backend requirements: always wanted, so a
+            # missing package is a blocked capability, not an absent one.
+            expected=True,
+            device=device_report,
+            selected_model=BEATTHIS_DEFAULT_MODEL,
+        )
+
+    def _model_check(self, cache_dir: Path, model: str) -> Check:
+        cached = _cached_checkpoints(cache_dir, model)
+        if cached:
+            return Check(
+                id="model.default",
+                status=CheckStatus.PASS,
+                stage=VerificationStage.DISCOVERED,
+                summary=f"Checkpoint {model} is cached locally",
+                detail=display_path(cached[0]),
+            )
+        return Check(
+            id="model.default",
+            status=CheckStatus.PASS,
+            stage=VerificationStage.DISCOVERED,
+            summary=f"Checkpoint {model} downloads on first use",
+            detail=display_path(cache_dir),
+        )
+
+    def _madmom_check(self, imported: bool) -> Check:
+        if imported:
+            return Check(
+                id="package.madmom",
+                status=CheckStatus.PASS,
+                summary="madmom is installed, DBN post-processing is available",
+            )
+        # Optional: only the DBN path needs it, so this must not block the
+        # capability.
+        return Check(
+            id="package.madmom",
+            status=CheckStatus.WARN,
+            code=FailureCode.PACKAGE_MISSING,
+            summary="madmom is not installed, so DBN post-processing is unavailable",
+            remediation=MADMOM_REMEDIATION,
+        )

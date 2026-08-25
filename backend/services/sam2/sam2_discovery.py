@@ -1,8 +1,10 @@
 import glob
+import importlib.util
 from pathlib import Path
 from typing import TypedDict
 
 from config import SAM2_SEARCH_PATHS
+
 
 class Sam2ModelInfo(TypedDict):
     name: str
@@ -11,15 +13,35 @@ class Sam2ModelInfo(TypedDict):
 
 
 def _find_sam2_package_config_dir() -> Path | None:
+    """Locate packaged configs without importing the optional SAM2 runtime.
+
+    Discovery runs on status request paths. Importing SAM2 there can execute a
+    large optional ML dependency graph in the serving process, so inspect its
+    module spec instead. The second candidate covers a source checkout exposed
+    as a namespace package (``backend/sam2/sam2/configs``).
+    """
+
     try:
-        import sam2
-    except ImportError:
+        spec = importlib.util.find_spec("sam2")
+    except (ImportError, ValueError):
         return None
 
-    pkg_path = Path(sam2.__file__).parent
-    config_dir = pkg_path / "configs"
-    if config_dir.exists() and config_dir.is_dir():
-        return config_dir
+    if spec is None:
+        return None
+
+    package_roots: list[Path] = []
+    if spec.submodule_search_locations is not None:
+        package_roots.extend(Path(entry) for entry in spec.submodule_search_locations)
+    elif spec.origin:
+        package_roots.append(Path(spec.origin).parent)
+
+    for package_root in package_roots:
+        for config_dir in (
+            package_root / "configs",
+            package_root / "sam2" / "configs",
+        ):
+            if config_dir.is_dir():
+                return config_dir
     return None
 
 
@@ -87,7 +109,7 @@ def discover_sam2_models() -> list[Sam2ModelInfo]:
     """
     models: list[Sam2ModelInfo] = []
     seen_names: set[str] = set()
-    
+
     valid_extensions = {".pt", ".pth", ".safetensors"}
 
     for search_dir in SAM2_SEARCH_PATHS:
@@ -99,15 +121,17 @@ def discover_sam2_models() -> list[Sam2ModelInfo]:
             for model_path in glob.glob(str(search_dir / f"*{ext}")):
                 model_file = Path(model_path)
                 model_name = model_file.name
-                
+
                 if model_name in seen_names:
                     continue
-                
-                models.append({
-                    "name": model_name,
-                    "checkpoint_path": str(model_file),
-                    "config_path": _resolve_config_path(model_file),
-                })
+
+                models.append(
+                    {
+                        "name": model_name,
+                        "checkpoint_path": str(model_file),
+                        "config_path": _resolve_config_path(model_file),
+                    }
+                )
                 seen_names.add(model_name)
 
     # Sort alphabetically by name

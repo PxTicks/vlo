@@ -25,6 +25,7 @@ from routers.sam_audio import router as sam_audio_router
 from routers.beats import router as beats_router
 from routers.downloads import router as downloads_router
 from routers.generation_delivery import router as generation_delivery_router
+from routers.runtime_capabilities import router as runtime_capabilities_router
 from routers.app_settings import (
     build_public_settings_payload,
     router as app_settings_router,
@@ -133,6 +134,7 @@ app.include_router(downloads_router)
 app.include_router(generation_delivery_router)
 app.include_router(extensions_router)
 app.include_router(app_settings_router)
+app.include_router(runtime_capabilities_router)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent

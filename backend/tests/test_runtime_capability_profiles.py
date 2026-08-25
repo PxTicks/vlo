@@ -13,7 +13,9 @@ fails with "command not found" for exactly the people who need it most.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -137,6 +139,87 @@ def test_package_remediation_shares_the_same_uv_resolution(without_uv: None) -> 
     assert remediation.url == profiles.UV_INSTALL_DOCS
     assert remediation.command is None
     assert "git+https://example.test/x" in remediation.summary
+
+
+# --------------------------------------------------------------------------
+# The interpreter the command targets
+# --------------------------------------------------------------------------
+
+
+def _fake_interpreter(tmp_path: Path, prefix_name: str) -> tuple[Path, Path]:
+    """An interpreter that exists on disk, outside the repository."""
+
+    prefix = tmp_path / prefix_name
+    executable = prefix / "bin" / "python"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\n")
+    executable.chmod(0o755)
+    return prefix, executable
+
+
+def test_the_command_targets_a_conda_environment_it_is_running_in(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    with_uv: str,
+) -> None:
+    # A conda environment is a full installation: sys.prefix and sys.base_prefix
+    # are equal, so a venv-only test sends the user to install into a
+    # backend/.venv that nothing is running from — and that may not exist.
+    prefix, executable = _fake_interpreter(tmp_path, "conda-env")
+    monkeypatch.setattr(sys, "executable", str(executable))
+    monkeypatch.setattr(sys, "prefix", str(prefix))
+    monkeypatch.setattr(sys, "base_prefix", str(prefix))
+
+    remediation = install_remediation(SAM_AUDIO_PROFILE_ID)
+
+    assert remediation is not None
+    assert remediation.command == (
+        f"uv pip install --python {executable} "
+        "-r backend/requirements-sam-audio.txt"
+    )
+    assert ".venv" not in (remediation.command or "")
+
+
+def test_the_command_targets_a_system_interpreter_it_is_running_in(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    with_uv: str,
+) -> None:
+    prefix, executable = _fake_interpreter(tmp_path, "usr")
+    monkeypatch.setattr(sys, "executable", str(executable))
+    monkeypatch.setattr(sys, "prefix", str(prefix))
+    monkeypatch.setattr(sys, "base_prefix", str(prefix))
+
+    assert profiles.backend_python() == str(executable)
+    # The ad-hoc single-package command resolves the interpreter the same way,
+    # or madmom would install somewhere the backend cannot see it.
+    ad_hoc = package_remediation("Install madmom", "madmom")
+    assert str(executable) in (ad_hoc.command or "")
+
+
+def test_an_interpreter_inside_the_repository_stays_pasteable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The documented case. The rest of the command is repository-relative, so
+    # an absolute path here would read as though the two halves disagreed.
+    venv_python = REPO_ROOT / "backend" / ".venv" / "bin" / "python"
+    if not venv_python.is_file():  # pragma: no cover - depends on the checkout
+        pytest.skip("no backend/.venv in this checkout")
+    monkeypatch.setattr(sys, "executable", str(venv_python))
+
+    assert profiles.backend_python() == "backend/.venv/bin/python"
+
+
+def test_an_interpreter_that_cannot_name_itself_falls_back_to_the_venv_layout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A frozen or embedded build leaves sys.executable empty. The venv layout
+    # uv sync produces is then the only answer left worth printing.
+    monkeypatch.setattr(sys, "executable", "")
+
+    assert profiles.backend_python().endswith(
+        "python.exe" if os.name == "nt" else "backend/.venv/bin/python"
+    )
 
 
 def test_meta_profiles_have_no_command_of_their_own(with_uv: str) -> None:

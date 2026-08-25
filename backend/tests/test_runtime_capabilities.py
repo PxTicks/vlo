@@ -32,6 +32,9 @@ from services.ai_models.capabilities import (
     list_capabilities,
     list_capability_ids,
 )
+from services.ai_models.capabilities import (
+    environment as environment_module,
+)
 from services.ai_models.capabilities import failures, probes, subprocess_probe
 from services.ai_models.capabilities.contract import Check, RemediationKind
 from services.ai_models.capabilities.probes import (
@@ -1378,3 +1381,47 @@ def test_a_recheck_drops_the_recorded_failure(
 )
 def test_durability_of_each_code(code: FailureCode, durable: bool) -> None:
     assert failures.is_durable(code) is durable
+
+
+# --------------------------------------------------------------------------
+# Which environment the snapshot says it is in
+# --------------------------------------------------------------------------
+
+
+def test_a_venv_is_reported_as_a_virtual_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "prefix", "/somewhere/.venv")
+    monkeypatch.setattr(sys, "base_prefix", "/usr")
+
+    assert environment_module._in_virtual_env() is True
+
+
+def test_a_conda_environment_is_not_reported_as_a_bare_system_python(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Conda environments are full installations, so the prefixes match. The
+    # card used to label the environment the backend runs in as a system
+    # Python, contradicting the install command printed beside it.
+    prefix = tmp_path / "conda-env"
+    prefix.mkdir()
+    monkeypatch.setattr(sys, "prefix", str(prefix))
+    monkeypatch.setattr(sys, "base_prefix", str(prefix))
+    monkeypatch.setenv("CONDA_PREFIX", str(prefix))
+
+    assert environment_module._in_virtual_env() is True
+
+
+def test_an_inherited_activation_does_not_claim_someone_elses_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An activated shell exports VIRTUAL_ENV to every child, including one
+    # launched from a different interpreter entirely. Only a variable that
+    # agrees with sys.prefix describes *this* process.
+    running = tmp_path / "system"
+    running.mkdir()
+    monkeypatch.setattr(sys, "prefix", str(running))
+    monkeypatch.setattr(sys, "base_prefix", str(running))
+    monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "someone-elses"))
+
+    assert environment_module._in_virtual_env() is False

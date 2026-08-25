@@ -410,12 +410,25 @@ def _quote(command: str) -> str:
 def backend_python() -> str:
     """The interpreter an install must target.
 
-    While the backend is running, that is this process. Otherwise fall back to
-    the venv layout ``uv sync`` produces, per platform.
+    That is *this* process, unconditionally: whatever is serving the request is
+    the environment the missing package has to land in, so the command and the
+    thing it is meant to repair cannot disagree.
+
+    This used to be gated on ``sys.prefix != sys.base_prefix``, which only
+    recognises PEP 405 venvs. A conda environment is a full installation and
+    reports the two as equal, as does a system interpreter with the backend's
+    dependencies installed beside it — both were handed the ``backend/.venv``
+    guess instead of the interpreter they were actually running, and that guess
+    was printed whether or not the path existed on the machine.
+
+    The venv layout ``uv sync`` produces survives only as the fallback for an
+    interpreter that cannot name itself: a frozen or embedded build leaves
+    ``sys.executable`` empty.
     """
 
-    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
-        return _project_relative(sys.executable)
+    executable = sys.executable
+    if executable and Path(executable).is_file():
+        return _project_relative(executable)
 
     venv = BACKEND_ROOT / ".venv"
     candidate = (

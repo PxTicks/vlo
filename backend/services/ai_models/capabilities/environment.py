@@ -82,6 +82,38 @@ def device_probe(*, deep_probe: bool = True) -> DeviceProbe | None:
     return warm.device if warm is not None else None
 
 
+def _resolved(path: Path | str) -> Path | None:
+    try:
+        return Path(path).resolve()
+    except OSError:
+        return None
+
+
+def _in_virtual_env() -> bool:
+    """Is this interpreter isolated from a base system installation?
+
+    ``sys.prefix != sys.base_prefix`` recognises PEP 405 venvs only: a conda
+    environment is a full installation and reports the two as equal, so the
+    card would label the very environment the backend runs in as a bare system
+    Python. The environment variables are cross-checked against ``sys.prefix``
+    rather than trusted on their own, because an activated shell exports them
+    to every child process — including one launched from a different
+    interpreter entirely, where they describe someone else's environment.
+    """
+
+    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        return True
+
+    prefix = _resolved(sys.prefix)
+    if prefix is None:
+        return False
+    for name in ("VIRTUAL_ENV", "CONDA_PREFIX"):
+        raw = os.environ.get(name, "").strip()
+        if raw and _resolved(raw) == prefix:
+            return True
+    return False
+
+
 def display_path(path: Path | str) -> str:
     return sanitize_message(str(path))
 
@@ -174,7 +206,7 @@ def describe_environment(*, refresh: bool = False) -> dict[str, Any]:
             "version": platform.python_version(),
             "implementation": platform.python_implementation(),
             "prefix": display_path(sys.prefix),
-            "virtualEnv": sys.prefix != getattr(sys, "base_prefix", sys.prefix),
+            "virtualEnv": _in_virtual_env(),
         },
         "platform": {
             "system": platform.system(),

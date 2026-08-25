@@ -15,7 +15,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from services.ai_models.capabilities import (
     capabilities_payload,
-    get_capability,
+    capability_payload,
     list_capability_ids,
 )
 
@@ -35,10 +35,10 @@ async def get_runtime_capability(
     capability_id: str,
     refresh: bool = False,
 ) -> dict[str, Any]:
-    capability = await run_in_threadpool(
-        get_capability, capability_id, refresh=refresh
+    payload = await run_in_threadpool(
+        capability_payload, capability_id, refresh=refresh
     )
-    if capability is None:
+    if payload is None:
         raise HTTPException(
             status_code=404,
             detail=(
@@ -46,4 +46,4 @@ async def get_runtime_capability(
                 f"Known capabilities: {', '.join(list_capability_ids())}"
             ),
         )
-    return capability.to_json()
+    return payload

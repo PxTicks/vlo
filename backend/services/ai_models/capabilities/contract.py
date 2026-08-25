@@ -99,8 +99,11 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _iso(moment: datetime) -> str:
+def iso_timestamp(moment: datetime) -> str:
     return moment.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+_iso = iso_timestamp
 
 
 @dataclass(frozen=True)

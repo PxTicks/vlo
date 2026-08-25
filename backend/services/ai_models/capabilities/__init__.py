@@ -143,7 +143,12 @@ def invalidate_capability_cache(capability_id: str | None = None) -> None:
 
 
 def capabilities_payload(*, refresh: bool = False) -> dict[str, Any]:
-    """The full cheap-stage response: every capability plus the environment."""
+    """The full cheap-stage response: every capability plus the environment.
+
+    There is deliberately no payload-level timestamp. Capabilities can be
+    rechecked one at a time, so each object carries the time it was checked and
+    nothing claims to cover the whole response.
+    """
 
     capabilities = list_capabilities(refresh=refresh)
     return {
@@ -151,12 +156,28 @@ def capabilities_payload(*, refresh: bool = False) -> dict[str, Any]:
         # ``list_capabilities`` has already invalidated and re-run the probes,
         # so this reads the warm cache rather than spawning another round.
         "environment": describe_environment(),
-        "checkedAt": max(
-            (capability.checked_at for capability in capabilities),
-            default=utc_now(),
-        )
-        .isoformat()
-        .replace("+00:00", "Z"),
+    }
+
+
+def capability_payload(
+    capability_id: str,
+    *,
+    refresh: bool = False,
+) -> dict[str, Any] | None:
+    """One capability, in the same envelope as the listing.
+
+    The environment travels with it because a recheck drops the shared
+    torch/device probe as well: returning the capability alone would leave a
+    caller showing a freshly checked feature beside device information from
+    before the recheck.
+    """
+
+    capability = get_capability(capability_id, refresh=refresh)
+    if capability is None:
+        return None
+    return {
+        "capability": capability.to_json(),
+        "environment": describe_environment(),
     }
 
 
@@ -180,6 +201,7 @@ __all__ = [
     "RemediationKind",
     "VerificationStage",
     "capabilities_payload",
+    "capability_payload",
     "classify_exception",
     "clear_failures",
     "derive_state",

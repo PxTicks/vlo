@@ -1,6 +1,8 @@
 import { API_BASE_URL } from "../config";
 import type {
   ComfyuiInstallVerification,
+  RuntimeCapabilitiesPayload,
+  RuntimeCapabilityPayload,
   RuntimeSettingsPatch,
   RuntimeSettingsPayload,
   RuntimeStatus,
@@ -108,6 +110,52 @@ export async function getRuntimeStatus(
     throw new Error(await parseErrorMessage(response));
   }
   return (await response.json()) as RuntimeStatus;
+}
+
+export interface RuntimeCapabilityRequestOptions {
+  signal?: AbortSignal;
+  /**
+   * Drop cached probe results and re-run the checks. A cold or refreshed
+   * request runs out-of-process import probes and can take many seconds, so
+   * callers should surface a checking state rather than block on it.
+   */
+  refresh?: boolean;
+}
+
+const CAPABILITIES_PATH = `${APP_API}/runtime-capabilities`;
+
+function capabilityUrl(path: string, refresh: boolean | undefined): string {
+  return refresh ? `${path}?refresh=true` : path;
+}
+
+export async function getRuntimeCapabilities(
+  options: RuntimeCapabilityRequestOptions = {},
+): Promise<RuntimeCapabilitiesPayload> {
+  const response = await fetch(
+    capabilityUrl(CAPABILITIES_PATH, options.refresh),
+    { signal: options.signal },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as RuntimeCapabilitiesPayload;
+}
+
+export async function getRuntimeCapability(
+  capabilityId: string,
+  options: RuntimeCapabilityRequestOptions = {},
+): Promise<RuntimeCapabilityPayload> {
+  const response = await fetch(
+    capabilityUrl(
+      `${CAPABILITIES_PATH}/${encodeURIComponent(capabilityId)}`,
+      options.refresh,
+    ),
+    { signal: options.signal },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as RuntimeCapabilityPayload;
 }
 
 export async function getRuntimeSettings(

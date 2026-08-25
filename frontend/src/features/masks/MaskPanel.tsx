@@ -184,6 +184,7 @@ export const MaskPanel = memo(function MaskPanel() {
     isSam2Available,
     isSam2Checking,
     sam2AvailabilityError,
+    sam2AvailabilityFailure,
     ensureSam2Available,
     sam2CurrentFramePointsCount,
     clearSam2Points,
@@ -349,7 +350,9 @@ export const MaskPanel = memo(function MaskPanel() {
   );
 
   const handleModelsInstalled = useCallback(() => {
-    void ensureSam2Available();
+    // The environment just changed, so a cached probe result is exactly the
+    // wrong thing to trust here.
+    void ensureSam2Available({ refresh: true });
   }, [ensureSam2Available]);
 
   const handleSharedMaskEdgeInvertChange = useCallback(
@@ -818,6 +821,7 @@ export const MaskPanel = memo(function MaskPanel() {
                 isSam2Available={isSam2Available}
                 isSam2Checking={isSam2Checking}
                 sam2AvailabilityError={sam2AvailabilityError}
+                sam2AvailabilityFailure={sam2AvailabilityFailure}
                 onClearPoints={clearSam2Points}
                 onClearCurrentFramePoints={clearSam2CurrentFramePoints}
                 onGenerateFramePreview={generateSam2FramePreview}

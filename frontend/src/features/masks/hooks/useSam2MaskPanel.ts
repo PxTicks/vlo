@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getRuntimeStatus } from "../../../services/runtimeApi";
+import {
+  blockingCheck,
+  useRuntimeCapability,
+  useRuntimeCapabilityStore,
+} from "../../runtimeCapabilities";
+import {
+  RUNTIME_CAPABILITY_IDS,
+  type CapabilityCheck,
+} from "../../../types/RuntimeStatus";
 import type {
   ClipMaskMode,
   ClipMaskPoint,
@@ -123,7 +131,9 @@ export interface UseSam2MaskPanelResult {
   isSam2Available: boolean;
   isSam2Checking: boolean;
   sam2AvailabilityError: string | null;
-  ensureSam2Available: () => Promise<boolean>;
+  /** The classified failure, so surfaces can branch on the code, not prose. */
+  sam2AvailabilityFailure: CapabilityCheck | null;
+  ensureSam2Available: (options?: { refresh?: boolean }) => Promise<boolean>;
   clearSam2Points: () => void;
   clearSam2CurrentFramePoints: () => void;
   generateSam2FramePreview: () => Promise<void>;
@@ -152,12 +162,11 @@ export function useSam2MaskPanel({
   const [sam2FramePreviewError, setSam2FramePreviewError] = useState<
     string | null
   >(null);
-  const [sam2AvailabilityStatus, setSam2AvailabilityStatus] = useState<
-    "idle" | "checking" | "available" | "unavailable"
-  >("idle");
-  const [sam2AvailabilityError, setSam2AvailabilityError] = useState<
-    string | null
-  >(null);
+  // The generate paths await the availability check and then report why it
+  // failed. Reading the subscribed value there would give them the previous
+  // render's — the reason the classified cause never used to reach the user,
+  // who got "install or configure SAM2 models" for a missing package.
+  const sam2AvailabilityMessageRef = useRef<string | null>(null);
   const activeSam2SessionRef = useRef<{
     sourceId: string;
     maskId: string;
@@ -262,44 +271,44 @@ export function useSam2MaskPanel({
     sam2EditorMaskId === selectedMaskId;
   const isSam2Selected = selectedMask?.maskType === "sam2";
 
-  const ensureSam2Available = useCallback(async (): Promise<boolean> => {
-    setSam2AvailabilityStatus((previous) =>
-      previous === "available" ? "available" : "checking",
-    );
-    try {
-      const runtimeStatus = await getRuntimeStatus();
-      if (runtimeStatus.sam2.status === "available") {
-        setSam2AvailabilityStatus("available");
-        setSam2AvailabilityError(null);
+  // Subscribed, not copied. A recheck from the diagnostics view has to reach
+  // an already-mounted panel; a local mirror of the store would only catch up
+  // the next time someone ran a SAM2 action.
+  const sam2Runtime = useRuntimeCapability(RUNTIME_CAPABILITY_IDS.sam2, {
+    enabled: isMaskTabActive && isSam2Selected,
+  });
+  const sam2AvailabilityError = sam2Runtime.canAttempt
+    ? null
+    : (sam2Runtime.message ??
+      "SAM2 is unavailable. Install or configure SAM2 models first.");
+
+  // Generation still needs an awaitable gate: it must know the answer before
+  // it starts, not on the render after.
+  const ensureSam2Available = useCallback(
+    async (options: { refresh?: boolean } = {}): Promise<boolean> => {
+      const store = useRuntimeCapabilityStore.getState();
+      if (options.refresh) {
+        await store.refreshCapability(RUNTIME_CAPABILITY_IDS.sam2);
+      } else {
+        await store.ensureLoaded();
+      }
+
+      const settled = useRuntimeCapabilityStore.getState();
+      const capability = settled.capabilities[RUNTIME_CAPABILITY_IDS.sam2] ?? null;
+
+      if (capability?.canAttempt) {
+        sam2AvailabilityMessageRef.current = null;
         return true;
       }
 
-      const message =
-        runtimeStatus.sam2.error ??
+      sam2AvailabilityMessageRef.current =
+        blockingCheck(capability)?.summary ??
+        settled.error ??
         "SAM2 is unavailable. Install or configure SAM2 models first.";
-      setSam2AvailabilityStatus("unavailable");
-      setSam2AvailabilityError(message);
       return false;
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to check SAM2 availability";
-      setSam2AvailabilityStatus("unavailable");
-      setSam2AvailabilityError(message);
-      return false;
-    }
-  }, []);
-
-  // Async availability probe when the SAM2 tab becomes visible. Fetch-from-
-  // effect is the documented escape hatch for the set-state-in-effect rule
-  // when no data-fetching library is in play. See
-  // https://react.dev/reference/react/useEffect#fetching-data-with-effects
-  useEffect(() => {
-    if (!isMaskTabActive || !isSam2Selected) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void ensureSam2Available();
-  }, [ensureSam2Available, isMaskTabActive, isSam2Selected]);
+    },
+    [],
+  );
 
   const isSam2Dirty = useMemo(() => {
     if (!selectedMask || selectedMask.maskType !== "sam2") return false;
@@ -597,10 +606,7 @@ export function useSam2MaskPanel({
       sourceFps: number;
       targetFrameIndex: number;
     } | null> => {
-      if (sam2AvailabilityStatus === "unavailable") {
-        return null;
-      }
-      if (sam2AvailabilityStatus !== "available") {
+      if (!sam2Runtime.canAttempt) {
         const available = await ensureSam2Available();
         if (!available) return null;
       }
@@ -667,7 +673,7 @@ export function useSam2MaskPanel({
     [
       ensureSam2Available,
       ensureSam2EditorSession,
-      sam2AvailabilityStatus,
+      sam2Runtime.canAttempt,
       sam2Points,
       selectedClipId,
       selectedMask,
@@ -683,7 +689,7 @@ export function useSam2MaskPanel({
     if (!selectedClipId || !selectedMaskId) return;
     if (!(await ensureSam2Available())) {
       setSam2FramePreviewError(
-        sam2AvailabilityError ??
+        sam2AvailabilityMessageRef.current ??
           "SAM2 is unavailable. Install or configure SAM2 models first.",
       );
       return;
@@ -728,7 +734,6 @@ export function useSam2MaskPanel({
     applySam2FramePreview,
     ensureSam2Available,
     fetchSam2FramePreview,
-    sam2AvailabilityError,
     sam2Points.length,
     sam2PointsHash,
     selectedClipId,
@@ -747,7 +752,7 @@ export function useSam2MaskPanel({
     try {
       if (!(await ensureSam2Available())) {
         throw new Error(
-          sam2AvailabilityError ??
+          sam2AvailabilityMessageRef.current ??
             "SAM2 is unavailable. Install or configure SAM2 models first.",
         );
       }
@@ -874,7 +879,6 @@ export function useSam2MaskPanel({
     assets,
     deleteAsset,
     ensureSam2Available,
-    sam2AvailabilityError,
     sam2Points,
     selectedClip,
     selectedClipId,
@@ -889,10 +893,10 @@ export function useSam2MaskPanel({
     sam2Points,
     sam2CurrentFramePointsCount,
     isSam2EditorOpen,
-    isSam2Available: sam2AvailabilityStatus === "available",
-    isSam2Checking:
-      sam2AvailabilityStatus === "idle" || sam2AvailabilityStatus === "checking",
+    isSam2Available: sam2Runtime.canAttempt,
+    isSam2Checking: sam2Runtime.checking,
     sam2AvailabilityError,
+    sam2AvailabilityFailure: sam2Runtime.failure,
     ensureSam2Available,
     clearSam2Points,
     clearSam2CurrentFramePoints,

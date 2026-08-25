@@ -8,6 +8,11 @@ import {
   Slider,
 } from "@mui/material";
 import type { ClipMaskPoint } from "../../../types/TimelineTypes";
+import type { CapabilityCheck } from "../../../types/RuntimeStatus";
+import {
+  CapabilityFailureNotice,
+  isModelProblem,
+} from "../../runtimeCapabilities";
 import { Sam2ModelDownloadOverlay } from "./Sam2ModelDownloadOverlay";
 
 const connectedButtonSx = {
@@ -45,6 +50,7 @@ interface Sam2MaskPanelProps {
   isSam2Available: boolean;
   isSam2Checking: boolean;
   sam2AvailabilityError: string | null;
+  sam2AvailabilityFailure?: CapabilityCheck | null;
   onClearPoints: () => void;
   onClearCurrentFramePoints: () => void;
   onGenerateFramePreview: () => void | Promise<void>;
@@ -73,6 +79,7 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
   isSam2Available,
   isSam2Checking,
   sam2AvailabilityError,
+  sam2AvailabilityFailure = null,
   onClearPoints,
   onClearCurrentFramePoints,
   onGenerateFramePreview,
@@ -100,7 +107,14 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
   );
 
   const showRegenerate = hasMaskAsset && isDirty;
-  const showDownloadPanel = !isSam2Available && !isSam2Checking;
+  // Only a missing or incomplete model can be fixed by downloading one.
+  // Offering the download for, say, an uninstalled sam2 package is the false
+  // affordance the runtime-capability contract exists to remove.
+  const isBlocked = !isSam2Available && !isSam2Checking;
+  const showDownloadPanel =
+    isBlocked && isModelProblem(sam2AvailabilityFailure?.code);
+  const showFailureNotice =
+    isBlocked && !isModelProblem(sam2AvailabilityFailure?.code);
 
   return (
     <Box
@@ -159,6 +173,16 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
         {showDownloadPanel ? (
           <Box sx={{ mb: 1.5 }}>
             <Sam2ModelDownloadOverlay onModelsInstalled={onModelsInstalled} />
+          </Box>
+        ) : null}
+        {showFailureNotice ? (
+          <Box sx={{ mb: 1.5 }}>
+            <CapabilityFailureNotice
+              capabilityLabel="SAM2"
+              failure={sam2AvailabilityFailure}
+              fallbackMessage={sam2AvailabilityError}
+              dense
+            />
           </Box>
         ) : null}
         <Typography

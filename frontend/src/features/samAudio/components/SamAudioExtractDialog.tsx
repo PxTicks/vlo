@@ -35,7 +35,12 @@ import { useTimelineSelectionStore } from "../../timelineSelection";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import { revealAssetInBrowser } from "../../userAssets/useAssetBrowserRevealStore";
 import { extractTimelineClipAudioAsset } from "../../timeline/utils/clipAudioExtraction";
-import { cancelSeparationJob, getSamAudioHealth } from "../services/samAudioApi";
+import { cancelSeparationJob } from "../services/samAudioApi";
+import {
+  CapabilityFailureNotice,
+  useRuntimeCapability,
+} from "../../runtimeCapabilities";
+import { RUNTIME_CAPABILITY_IDS } from "../../../types/RuntimeStatus";
 import {
   isSamAudioAbortError,
   runSamAudioSeparation,
@@ -46,8 +51,6 @@ import {
 } from "../services/extractionTimelinePlacement";
 import { useSamAudioExtractDialogStore } from "../store/useSamAudioExtractDialogStore";
 import { SamAudioModelDownloadOverlay } from "./SamAudioModelDownloadOverlay";
-
-type AvailabilityState = "idle" | "checking" | "available" | "unavailable";
 
 const SUCCESS_TOAST_DURATION_MS = 2_500;
 
@@ -137,8 +140,6 @@ export function SamAudioExtractDialog() {
       setCancelRequested: state.setCancelRequested,
     })),
   );
-  const [availability, setAvailability] = useState<AvailabilityState>("idle");
-  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [isExtractingAll, setIsExtractingAll] = useState(false);
   const operationAbortRef = useRef<AbortController | null>(null);
   const activeJobIdRef = useRef<string | null>(null);
@@ -153,6 +154,19 @@ export function SamAudioExtractDialog() {
         : null,
     [clip, timelineTracks],
   );
+  // One shared source of runtime truth. The dialog used to read
+  // /sam-audio/health and fall back to `runtime.error`, a key the backend
+  // never set — so every failure rendered as "No SAM-Audio model configured",
+  // including the ones where the model was present and the package was not.
+  const samAudio = useRuntimeCapability(RUNTIME_CAPABILITY_IDS.samAudio, {
+    enabled: open && view === "configure",
+  });
+  const availability = samAudio.checking
+    ? "checking"
+    : samAudio.canAttempt
+      ? "available"
+      : "unavailable";
+
   const hasPrompt = promptText.trim().length > 0;
   const hasRange = range !== null;
   const canRunSeparation =
@@ -165,38 +179,6 @@ export function SamAudioExtractDialog() {
   useEffect(() => {
     activeJobIdRef.current = activeJobId;
   }, [activeJobId]);
-
-  const checkAvailability = useCallback(async (): Promise<boolean> => {
-    setAvailability("checking");
-    setAvailabilityError(null);
-    try {
-      const health = await getSamAudioHealth();
-      const runtime = health.runtime;
-      if (runtime?.ready) {
-        setAvailability("available");
-        return true;
-      }
-      setAvailability("unavailable");
-      setAvailabilityError(runtime?.error ?? "No SAM-Audio model configured.");
-      return false;
-    } catch (availabilityCheckError) {
-      setAvailability("unavailable");
-      setAvailabilityError(
-        availabilityCheckError instanceof Error
-          ? availabilityCheckError.message
-          : "Unable to check SAM-Audio availability.",
-      );
-      return false;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!open || view !== "configure" || availability !== "idle") {
-      return;
-    }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void checkAvailability();
-  }, [availability, checkAvailability, open, view]);
 
   useEffect(
     () => () => {
@@ -434,30 +416,35 @@ export function SamAudioExtractDialog() {
 
           {view === "configure" ? (
             <>
-              {availability === "idle" || availability === "checking" ? (
+              {availability === "checking" ? (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
                   <LinearProgress />
                   <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    Checking local SAM-Audio model files
+                    Checking the SAM-Audio runtime
                   </Typography>
                 </Box>
               ) : null}
 
-              {/* Without a runtime there is nothing to configure, so the
-                  download panel replaces the prompt form rather than sharing
-                  the dialog with controls that cannot be used yet. */}
+              {/* Without a runtime there is nothing to configure, so this
+                  replaces the prompt form rather than sharing the dialog with
+                  controls that cannot be used yet. Which remedy is offered
+                  depends on the classified failure: the download panel appears
+                  only for missing model files, never for a missing package it
+                  could not install. */}
               {availability === "unavailable" ? (
-                <>
-                  {availabilityError ? (
-                    <Alert severity="warning">{availabilityError}</Alert>
-                  ) : null}
-                  <SamAudioModelDownloadOverlay
-                    onModelsInstalled={() => {
-                      setAvailability("idle");
-                      void checkAvailability();
-                    }}
-                  />
-                </>
+                <CapabilityFailureNotice
+                  capabilityLabel="SAM-Audio"
+                  failure={samAudio.failure}
+                  lastFailure={samAudio.capability?.lastFailure ?? null}
+                  fallbackMessage={
+                    samAudio.message ?? "SAM-Audio is not available."
+                  }
+                  downloadSurface={
+                    <SamAudioModelDownloadOverlay
+                      onModelsInstalled={samAudio.recheck}
+                    />
+                  }
+                />
               ) : null}
 
               {availability === "available" ? (

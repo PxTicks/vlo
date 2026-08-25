@@ -96,19 +96,48 @@ class AppStatusProvider:
     unavailable_message: str
 
     def to_app_status(self) -> dict[str, str | None]:
+        """The legacy two-state field, plus how far the evidence goes.
+
+        ``status`` alone cannot distinguish "checked and fine" from "nothing is
+        known to be wrong yet", and this route never spawns a probe — so it
+        carries ``verifiedThrough`` too. Additive: existing readers of
+        ``status``/``error`` are unaffected.
+        """
+
         try:
             capability = get_capability(self.capability_id, deep_probe=False)
         except Exception as exc:  # pragma: no cover - defensive status fallback
-            return {"status": "unavailable", "error": sanitize_message(str(exc))}
+            return {
+                "status": "unavailable",
+                "error": sanitize_message(str(exc)),
+                "state": "blocked",
+                "verifiedThrough": None,
+            }
 
         if capability is None:  # pragma: no cover - registry/id mismatch
-            return {"status": "unavailable", "error": self.unavailable_message}
+            return {
+                "status": "unavailable",
+                "error": self.unavailable_message,
+                "state": "unavailable",
+                "verifiedThrough": None,
+            }
+
+        verified_through = (
+            capability.verified_through.value if capability.verified_through else None
+        )
 
         if capability.can_attempt:
-            return {"status": "available", "error": None}
+            return {
+                "status": "available",
+                "error": None,
+                "state": capability.state.value,
+                "verifiedThrough": verified_through,
+            }
 
         failure = _first_failure(capability)
         return {
             "status": "unavailable",
             "error": failure.summary if failure is not None else self.unavailable_message,
+            "state": capability.state.value,
+            "verifiedThrough": verified_through,
         }

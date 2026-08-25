@@ -92,7 +92,7 @@ describe("AppSettingsMenu", () => {
     fireEvent.click(screen.getByText("Runtime settings"));
 
     expect(
-      await screen.findByRole("heading", { name: "Runtime Settings" }),
+      await screen.findByRole("heading", { name: "Runtime & Diagnostics" }),
     ).toBeInTheDocument();
   });
 

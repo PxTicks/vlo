@@ -12,18 +12,69 @@ import { NotificationHostMount } from "../../../../core/shell/NotificationHostMo
 import { hostNotificationCenter } from "../../../../core/shell/notificationCenter";
 import { SamAudioExtractDialog } from "../SamAudioExtractDialog";
 import { useSamAudioExtractDialogStore } from "../../store/useSamAudioExtractDialogStore";
+import { useRuntimeCapabilityStore } from "../../../runtimeCapabilities";
+import type {
+  CapabilityCheck,
+  RuntimeCapability,
+} from "../../../../types/RuntimeStatus";
+
+function samAudioCapability(
+  overrides: Partial<RuntimeCapability> = {},
+): RuntimeCapability {
+  return {
+    id: "sam-audio",
+    label: "SAM-Audio",
+    state: "available_unverified",
+    canAttempt: true,
+    verifiedThrough: "environment",
+    checkedAt: "2026-08-25T12:00:00Z",
+    selectedModel: "sam-audio-large-tv",
+    device: { requested: "auto", resolved: "cuda", proven: false, fallback: false },
+    models: [],
+    checks: [],
+    lastFailure: null,
+    ...overrides,
+  };
+}
+
+function blockedBy(check: CapabilityCheck): RuntimeCapability {
+  return samAudioCapability({
+    state: "blocked",
+    canAttempt: false,
+    verifiedThrough: "discovered",
+    checks: [check],
+  });
+}
+
+function stubCapabilities(capability: RuntimeCapability): void {
+  samAudioDialogMocks.mockGetRuntimeCapabilities.mockResolvedValue({
+    capabilities: [capability],
+    environment: null,
+  });
+  samAudioDialogMocks.mockGetRuntimeCapability.mockResolvedValue({
+    capability,
+    environment: null,
+  });
+}
 
 const samAudioDialogMocks = vi.hoisted(() => ({
   mockCancelSeparationJob: vi.fn(),
   mockExtractTimelineClipAudioAsset: vi.fn(),
-  mockGetSamAudioHealth: vi.fn(),
+  mockGetRuntimeCapabilities: vi.fn(),
+  mockGetRuntimeCapability: vi.fn(),
   mockRevealAssetInBrowser: vi.fn(),
   mockRunSamAudioSeparation: vi.fn(),
 }));
 
 vi.mock("../../services/samAudioApi", () => ({
   cancelSeparationJob: samAudioDialogMocks.mockCancelSeparationJob,
-  getSamAudioHealth: samAudioDialogMocks.mockGetSamAudioHealth,
+}));
+
+// Availability now comes from the shared runtime-capability store rather than
+// /sam-audio/health, so the seam these tests drive is the capability endpoint.
+vi.mock("../../../../services/runtimeApi", () => ({
+  getRuntimeCapabilities: samAudioDialogMocks.mockGetRuntimeCapabilities,
+  getRuntimeCapability: samAudioDialogMocks.mockGetRuntimeCapability,
 }));
 
 vi.mock("../../services/runSamAudioSeparation", () => ({
@@ -94,13 +145,11 @@ function openDialog() {
 }
 
 async function openConfigureWithAvailableModel() {
-  samAudioDialogMocks.mockGetSamAudioHealth.mockResolvedValue({
-    runtime: { ready: true },
-  });
+  stubCapabilities(samAudioCapability());
   openDialog();
   fireEvent.click(screen.getByRole("button", { name: "Extract Selection" }));
   await waitFor(() => {
-    expect(samAudioDialogMocks.mockGetSamAudioHealth).toHaveBeenCalled();
+    expect(samAudioDialogMocks.mockGetRuntimeCapabilities).toHaveBeenCalled();
   });
 }
 
@@ -112,6 +161,7 @@ describe("SamAudioExtractDialog", () => {
       hostNotificationCenter.dismiss(entry.id);
     }
     useSamAudioExtractDialogStore.getState().close();
+    useRuntimeCapabilityStore.getState().reset();
     useTimelineSelectionStore.getState().exitSelectionMode();
     useExtractStore.getState().setOnConfirmSelection(null);
     samAudioDialogMocks.mockExtractTimelineClipAudioAsset.mockResolvedValue({
@@ -259,10 +309,16 @@ describe("SamAudioExtractDialog", () => {
     });
   });
 
-  it("shows the SAM-Audio model download UI when the runtime is unavailable", async () => {
-    samAudioDialogMocks.mockGetSamAudioHealth.mockResolvedValue({
-      runtime: { ready: false, error: "Model missing" },
-    });
+  it("shows the SAM-Audio model download UI when model files are missing", async () => {
+    stubCapabilities(
+      blockedBy({
+        id: "model.default",
+        status: "fail",
+        stage: "discovered",
+        code: "model_missing",
+        summary: "No local sam-audio-large-tv model was found",
+      }),
+    );
     openDialog();
 
     fireEvent.click(screen.getByRole("button", { name: "Extract Selection" }));
@@ -270,7 +326,9 @@ describe("SamAudioExtractDialog", () => {
     expect(
       await screen.findByTestId("sam-audio-download-overlay"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Model missing")).toBeInTheDocument();
+    expect(
+      screen.getByText("No local sam-audio-large-tv model was found"),
+    ).toBeInTheDocument();
     // Nothing in the prompt form can be used until a runtime exists, so the
     // download panel owns the dialog on its own.
     expect(screen.queryByLabelText("Text prompt")).not.toBeInTheDocument();
@@ -285,10 +343,86 @@ describe("SamAudioExtractDialog", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("cancels the active SAM-Audio backend job during processing", async () => {
-    samAudioDialogMocks.mockGetSamAudioHealth.mockResolvedValue({
-      runtime: { ready: true },
+  it("offers the install command, not a download, when the package is missing", async () => {
+    // The governing case: the checkpoint is on disk and `sam_audio` is not
+    // installed. Re-downloading the model cannot fix that, so the download
+    // panel must not appear — it was the only recovery this dialog used to
+    // offer, for every failure alike.
+    stubCapabilities(
+      blockedBy({
+        id: "package.sam_audio",
+        status: "fail",
+        stage: "environment",
+        code: "package_missing",
+        summary: "The sam_audio package is not installed",
+        remediation: {
+          kind: "command",
+          summary:
+            "Install the SAM-Audio package into the backend virtual environment",
+          command:
+            "uv pip install --python backend/.venv/bin/python " +
+            "-r backend/requirements-sam-audio.txt",
+          requiresRestart: true,
+        },
+      }),
+    );
+    openDialog();
+
+    fireEvent.click(screen.getByRole("button", { name: "Extract Selection" }));
+
+    expect(
+      await screen.findByText("The sam_audio package is not installed"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "uv pip install --python backend/.venv/bin/python " +
+          "-r backend/requirements-sam-audio.txt",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Restart the backend afterwards/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("sam-audio-download-overlay"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the runtime unresolved while the first check is in flight", async () => {
+    // A cold capability read runs out-of-process probes and can take seconds.
+    // Reporting "unavailable" in the meantime would send the user off to fix
+    // something that may be perfectly fine.
+    let resolveCapabilities: (value: unknown) => void = () => {};
+    samAudioDialogMocks.mockGetRuntimeCapabilities.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCapabilities = resolve;
+      }),
+    );
+    openDialog();
+
+    fireEvent.click(screen.getByRole("button", { name: "Extract Selection" }));
+
+    expect(
+      await screen.findByText("Checking the SAM-Audio runtime"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("sam-audio-download-overlay"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("capability-failure-alert"),
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveCapabilities({
+        capabilities: [samAudioCapability()],
+        environment: null,
+      });
     });
+
+    expect(await screen.findByLabelText("Text prompt")).toBeInTheDocument();
+  });
+
+  it("cancels the active SAM-Audio backend job during processing", async () => {
+    stubCapabilities(samAudioCapability());
     samAudioDialogMocks.mockRunSamAudioSeparation.mockImplementation(
       ({ onJobStatus, signal }) =>
         new Promise((_resolve, reject) => {
@@ -312,7 +446,7 @@ describe("SamAudioExtractDialog", () => {
     openDialog();
     fireEvent.click(screen.getByRole("button", { name: "Extract Selection" }));
     await waitFor(() => {
-      expect(samAudioDialogMocks.mockGetSamAudioHealth).toHaveBeenCalled();
+      expect(samAudioDialogMocks.mockGetRuntimeCapabilities).toHaveBeenCalled();
     });
     fireEvent.change(screen.getByLabelText("Text prompt"), {
       target: { value: "drums" },

@@ -18,6 +18,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from .contract import iso_timestamp, utc_now
 from .failures import sanitize_message
 from .subprocess_probe import (
     DeviceProbe,
@@ -164,6 +165,9 @@ def describe_environment(*, refresh: bool = False) -> dict[str, Any]:
     ]
 
     return {
+        # The snapshot carries its own time. A single top-level timestamp
+        # would be a lie the moment one capability is rechecked on its own.
+        "checkedAt": iso_timestamp(utc_now()),
         "python": {
             "executable": display_path(sys.executable),
             "version": platform.python_version(),

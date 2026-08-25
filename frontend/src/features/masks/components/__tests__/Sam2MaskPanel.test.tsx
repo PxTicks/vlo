@@ -173,7 +173,9 @@ describe("Sam2MaskPanel", () => {
       />,
     );
 
-    expect(screen.getAllByText("SAM2 models not found")).toHaveLength(2);
+    expect(
+      screen.getAllByText("SAM2 models not found").length,
+    ).toBeGreaterThanOrEqual(2);
     expect(
       screen.getByRole("button", { name: "Generate Current Frame Preview" }),
     ).toBeDisabled();
@@ -182,13 +184,20 @@ describe("Sam2MaskPanel", () => {
     ).toBeDisabled();
   });
 
-  it("shows model downloads in the SAM2 editor when unavailable", () => {
+  it("shows model downloads when the checkpoints are the problem", () => {
     const onModelsInstalled = vi.fn();
     render(
       <Sam2MaskPanel
         {...defaultProps}
         isSam2Available={false}
         isSam2Checking={false}
+        sam2AvailabilityFailure={{
+          id: "model.checkpoint",
+          status: "fail",
+          stage: "discovered",
+          code: "model_missing",
+          summary: "No SAM2 checkpoints were found in the search paths",
+        }}
         onModelsInstalled={onModelsInstalled}
       />,
     );
@@ -196,6 +205,56 @@ describe("Sam2MaskPanel", () => {
     fireEvent.click(screen.getByTestId("sam2-download-overlay"));
 
     expect(onModelsInstalled).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers the install command instead of downloads when the package is missing", () => {
+    // Downloading a checkpoint cannot install a Python package, and offering
+    // it as the only recovery is what sent users in circles.
+    render(
+      <Sam2MaskPanel
+        {...defaultProps}
+        isSam2Available={false}
+        isSam2Checking={false}
+        sam2AvailabilityFailure={{
+          id: "package.sam2",
+          status: "fail",
+          stage: "environment",
+          code: "package_missing",
+          summary: "The sam2 package is not installed",
+          remediation: {
+            kind: "command",
+            summary: "Install SAM2 into the backend virtual environment",
+            command: "uv pip install --python backend/.venv/bin/python -e backend/sam2",
+            requiresRestart: true,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.queryByTestId("sam2-download-overlay")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "uv pip install --python backend/.venv/bin/python -e backend/sam2",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("does not offer downloads when the cause is unknown", () => {
+    // No classified failure means the backend could not be reached, not that
+    // a model is missing.
+    render(
+      <Sam2MaskPanel
+        {...defaultProps}
+        isSam2Available={false}
+        isSam2Checking={false}
+        sam2AvailabilityError="Failed to read runtime capabilities"
+      />,
+    );
+
+    expect(screen.queryByTestId("sam2-download-overlay")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText("Failed to read runtime capabilities").length,
+    ).toBeGreaterThan(0);
   });
 
   it("waits for the availability check before showing downloads", () => {

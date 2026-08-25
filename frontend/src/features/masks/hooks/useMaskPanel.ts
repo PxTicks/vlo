@@ -17,6 +17,7 @@ import {
   type MaskCompositionAlgebra,
   type RangeMaskComponent,
 } from "../../../types/Components";
+import type { CapabilityCheck } from "../../../types/RuntimeStatus";
 import {
   useTimelineClip,
   parseMaskClipId,
@@ -89,7 +90,8 @@ export interface UseMaskPanelResult {
     isSam2Available: boolean;
     isSam2Checking: boolean;
     sam2AvailabilityError: string | null;
-    ensureSam2Available: () => Promise<boolean>;
+    sam2AvailabilityFailure: CapabilityCheck | null;
+    ensureSam2Available: (options?: { refresh?: boolean }) => Promise<boolean>;
     clearSam2Points: () => void;
     clearSam2CurrentFramePoints: () => void;
     generateSam2FramePreview: () => Promise<void>;
@@ -193,6 +195,7 @@ export function useMaskPanel(): UseMaskPanelResult {
     isSam2Available,
     isSam2Checking,
     sam2AvailabilityError,
+    sam2AvailabilityFailure,
     ensureSam2Available,
     clearSam2Points,
     clearSam2CurrentFramePoints,
@@ -472,6 +475,7 @@ export function useMaskPanel(): UseMaskPanelResult {
       isSam2Available,
       isSam2Checking,
       sam2AvailabilityError,
+      sam2AvailabilityFailure,
       ensureSam2Available,
       clearSam2Points,
       clearSam2CurrentFramePoints,

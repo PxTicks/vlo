@@ -856,8 +856,12 @@ async def test_endpoint_returns_one_capability(
         "sam-audio", refresh=False
     )
 
-    assert payload["state"] == "blocked"
-    assert payload["canAttempt"] is False
+    assert payload["capability"]["state"] == "blocked"
+    assert payload["capability"]["canAttempt"] is False
+    # The environment travels with it: a recheck drops the shared device probe
+    # too, so returning the capability alone would leave a caller pairing fresh
+    # capability data with pre-recheck device information.
+    assert payload["environment"]["checkedAt"]
 
 
 @pytest.mark.anyio
@@ -961,6 +965,10 @@ async def test_app_status_reports_unavailable_for_a_checkpoint_without_its_packa
     assert status["sam_audio"] == {
         "status": "unavailable",
         "error": "The sam_audio package is not installed",
+        # The legacy field is two-state, so it carries the evidence depth
+        # alongside: discovery passed, the environment stage is what failed.
+        "state": "blocked",
+        "verifiedThrough": "discovered",
     }
 
 
@@ -1204,6 +1212,8 @@ async def test_app_status_does_not_flip_back_to_available_as_the_probe_ages(
     assert after["sam_audio"] == {
         "status": "unavailable",
         "error": "The sam_audio package is installed but failed to import",
+        "state": "blocked",
+        "verifiedThrough": "discovered",
     }
 
     _age_probe_cache(seconds=10 * PROBE_CACHE_TTL_SECONDS)

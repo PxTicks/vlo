@@ -20,10 +20,48 @@ import {
   paintBrushDot,
 } from "../../runtime/brushBufferRegistry";
 import { useMaskPanel } from "../useMaskPanel";
-import { getRuntimeStatus } from "../../../../services/runtimeApi";
+import {
+  getRuntimeCapabilities,
+  getRuntimeCapability,
+  getRuntimeStatus,
+} from "../../../../services/runtimeApi";
+import { useRuntimeCapabilityStore } from "../../../runtimeCapabilities";
+import type { RuntimeCapability } from "../../../../types/RuntimeStatus";
+
+function sam2Capability(
+  overrides: Partial<RuntimeCapability> = {},
+): RuntimeCapability {
+  return {
+    id: "sam2",
+    label: "SAM2",
+    state: "available_unverified",
+    canAttempt: true,
+    verifiedThrough: "environment",
+    checkedAt: "2026-08-25T12:00:00Z",
+    selectedModel: "sam2.1_hiera_large.pt",
+    device: { requested: "auto", resolved: "cuda", proven: false, fallback: false },
+    models: [],
+    checks: [],
+    lastFailure: null,
+    ...overrides,
+  };
+}
+
+function stubSam2Capability(capability = sam2Capability()): void {
+  vi.mocked(getRuntimeCapabilities).mockResolvedValue({
+    capabilities: [capability],
+    environment: null as never,
+  });
+  vi.mocked(getRuntimeCapability).mockResolvedValue({
+    capability,
+    environment: null as never,
+  });
+}
 
 vi.mock("../../../../services/runtimeApi", () => ({
   getRuntimeStatus: vi.fn(),
+  getRuntimeCapabilities: vi.fn(),
+  getRuntimeCapability: vi.fn(),
 }));
 
 vi.mock("../../services/sam2Api", () => ({
@@ -163,6 +201,10 @@ describe("useMaskPanel", () => {
     useAssetStore.setState({
       assets: [],
     });
+    // The capability store is a module singleton: without a reset, one test's
+    // answer leaks into the next.
+    useRuntimeCapabilityStore.getState().reset();
+    stubSam2Capability();
     vi.mocked(getRuntimeStatus).mockResolvedValue({
       backend: {
         status: "ok",
@@ -209,6 +251,7 @@ describe("useMaskPanel", () => {
   });
 
   it("generates a PNG SAM2 mask asset for image clips", async () => {
+    stubSam2Capability();
     vi.mocked(getRuntimeStatus).mockResolvedValue({
       backend: {
         status: "ok",
@@ -331,11 +374,84 @@ describe("useMaskPanel", () => {
     expect(updatedMask?.maskPoints).toEqual(canonicalMaskPoints);
   });
 
+  it("follows a diagnostics recheck without another SAM2 action", async () => {
+    // The panel subscribes to the shared store rather than copying it: a
+    // recheck from the Runtime & Diagnostics view has to reach an
+    // already-mounted panel, not wait for the next SAM2 action.
+    stubSam2Capability(
+      sam2Capability({
+        state: "blocked",
+        canAttempt: false,
+        verifiedThrough: "discovered",
+        checks: [
+          {
+            id: "package.sam2",
+            status: "fail",
+            stage: "environment",
+            code: "package_missing",
+            summary: "The sam2 package is not installed",
+          },
+        ],
+      }),
+    );
+
+    const parent = createParentClip("clip_live", "image");
+    const mask = createSam2MaskClip(parent, "mask_live", "apply");
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.setState({
+      selectedMaskByClipId: { [parent.id]: "mask_live" },
+      isMaskTabActive: true,
+    });
+
+    const { result } = renderHook(() => useMaskPanel());
+
+    await waitFor(() => {
+      expect(result.current.sam2.isSam2Available).toBe(false);
+    });
+    expect(result.current.sam2.sam2AvailabilityFailure?.code).toBe(
+      "package_missing",
+    );
+
+    // Someone installs the package and rechecks from the diagnostics view.
+    vi.mocked(getRuntimeCapability).mockResolvedValue({
+      capability: sam2Capability(),
+      environment: null as never,
+    });
+    await act(async () => {
+      await useRuntimeCapabilityStore.getState().refreshCapability("sam2");
+    });
+
+    expect(result.current.sam2.isSam2Available).toBe(true);
+    expect(result.current.sam2.sam2AvailabilityError).toBeNull();
+  });
+
   it("marks SAM2 mask generation busy while availability is pending", async () => {
-    let resolveStatus: (status: RuntimeStatus) => void = () => undefined;
-    vi.mocked(getRuntimeStatus).mockReturnValue(
-      new Promise<RuntimeStatus>((resolve) => {
-        resolveStatus = resolve;
+    let resolveCapabilities: () => void = () => undefined;
+    vi.mocked(getRuntimeCapabilities).mockReturnValue(
+      new Promise((resolve) => {
+        resolveCapabilities = () =>
+          resolve({
+            capabilities: [
+              sam2Capability({
+                state: "blocked",
+                canAttempt: false,
+                verifiedThrough: "discovered",
+                checks: [
+                  {
+                    id: "package.sam2",
+                    status: "fail",
+                    stage: "environment",
+                    code: "package_missing",
+                    summary: "The sam2 package is not installed",
+                  },
+                ],
+              }),
+            ],
+            environment: null as never,
+          });
       }),
     );
 
@@ -378,27 +494,18 @@ describe("useMaskPanel", () => {
     expect(result.current.sam2.isSam2Generating).toBe(true);
 
     await act(async () => {
-      resolveStatus({
-        backend: {
-          status: "ok",
-          mode: "development",
-          frontendBuildPresent: true,
-        },
-        comfyui: {
-          status: "disconnected",
-          url: "",
-          error: null,
-        },
-        sam2: {
-          status: "unavailable",
-          error: "SAM2 disabled in tests",
-        },
-      });
+      resolveCapabilities();
       await generatePromise;
     });
 
     expect(result.current.sam2.isSam2Generating).toBe(false);
-    expect(result.current.sam2.sam2GenerateError).toBeTruthy();
+    // The classified cause reaches the surface, not a generic "unavailable".
+    expect(result.current.sam2.sam2GenerateError).toBe(
+      "The sam2 package is not installed",
+    );
+    expect(result.current.sam2.sam2AvailabilityFailure?.code).toBe(
+      "package_missing",
+    );
   });
 
   it("drops the mask preview target when leaving the mask tab", async () => {
@@ -455,7 +562,7 @@ describe("useMaskPanel", () => {
   });
 
   it("treats unsaved live brush strokes as clearable content", async () => {
-    vi.mocked(getRuntimeStatus).mockImplementation(
+    vi.mocked(getRuntimeCapabilities).mockImplementation(
       () => new Promise(() => undefined),
     );
     const consoleErrorSpy = vi

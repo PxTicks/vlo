@@ -54,6 +54,7 @@ def fake_capability(
     *,
     state: CapabilityState,
     checks: tuple[Check, ...] = (),
+    verified_through: VerificationStage | None = None,
 ) -> Capability:
     return Capability(
         id=capability_id,
@@ -61,6 +62,7 @@ def fake_capability(
         state=state,
         checked_at=utc_now(),
         checks=checks,
+        verified_through=verified_through,
     )
 
 
@@ -197,14 +199,20 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
         "sam2": {
             "status": "available",
             "error": None,
+            "state": "available_unverified",
+            "verifiedThrough": None,
         },
         "sam_audio": {
             "status": "available",
             "error": None,
+            "state": "ready",
+            "verifiedThrough": None,
         },
         "beat_this": {
             "status": "available",
             "error": None,
+            "state": "available_unverified",
+            "verifiedThrough": None,
         },
     }
 
@@ -252,12 +260,16 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
     assert status["sam2"] == {
         "status": "unavailable",
         "error": "No SAM2 models discovered",
+        "state": "unavailable",
+        "verifiedThrough": None,
     }
     # The reason comes from the failing check, not from a static string that
     # was the same regardless of what actually went wrong.
     assert status["beat_this"] == {
         "status": "unavailable",
         "error": "The beat_this package is not installed",
+        "state": "blocked",
+        "verifiedThrough": None,
     }
 
 
@@ -288,6 +300,7 @@ def test_app_status_ignores_installed_model_inventory(
             "sam2": fake_capability(
                 "sam2",
                 state=CapabilityState.BLOCKED,
+                verified_through=VerificationStage.DISCOVERED,
                 checks=(
                     Check(
                         id="model.checkpoint",
@@ -313,6 +326,10 @@ def test_app_status_ignores_installed_model_inventory(
     assert status["sam2"] == {
         "status": "unavailable",
         "error": "The sam2 package is not installed",
+        # The checkpoint check passed, so discovery is genuinely established —
+        # what failed is the stage above it.
+        "state": "blocked",
+        "verifiedThrough": "discovered",
     }
 
 

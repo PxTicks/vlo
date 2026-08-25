@@ -13,9 +13,12 @@ import {
   InputLabel,
   MenuItem,
   Select,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
+import { RuntimeDiagnosticsPanel } from "../../features/runtimeCapabilities";
 import type {
   RuntimeSettingsPayload,
   WorkflowMode,
@@ -54,6 +57,7 @@ export function RuntimeSettingsDialog({
   const [saving, setSaving] = useState(false);
   const [pickingDirectory, setPickingDirectory] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"settings" | "diagnostics">("settings");
 
   useEffect(() => {
     if (!open) return;
@@ -139,9 +143,32 @@ export function RuntimeSettingsDialog({
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Runtime Settings</DialogTitle>
+      <DialogTitle>Runtime &amp; Diagnostics</DialogTitle>
+      <Tabs
+        value={view}
+        onChange={(_event, next: "settings" | "diagnostics") => setView(next)}
+        sx={{ px: 3, borderBottom: 1, borderColor: "divider" }}
+      >
+        <Tab value="settings" label="Settings" sx={{ textTransform: "none" }} />
+        <Tab
+          value="diagnostics"
+          label="Diagnostics"
+          sx={{ textTransform: "none" }}
+        />
+      </Tabs>
       <DialogContent>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+        {/* Mounted only when selected: the panel probes on mount, and those
+            probes are the expensive path this whole design keeps off the
+            startup route. */}
+        {view === "diagnostics" ? <RuntimeDiagnosticsPanel /> : null}
+        <Box
+          sx={{
+            display: view === "settings" ? "flex" : "none",
+            flexDirection: "column",
+            gap: 2,
+            pt: 1,
+          }}
+        >
           {error ? <Alert severity="error">{error}</Alert> : null}
           <FormControl fullWidth size="small" disabled={loading || saving}>
             <InputLabel id="workflow-mode-label">Workflow mode</InputLabel>
@@ -207,15 +234,17 @@ export function RuntimeSettingsDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={saving}>
-          Cancel
+          {view === "settings" ? "Cancel" : "Close"}
         </Button>
-        <Button
-          variant="contained"
-          onClick={() => void handleSave()}
-          disabled={loading || saving}
-        >
-          Save
-        </Button>
+        {view === "settings" ? (
+          <Button
+            variant="contained"
+            onClick={() => void handleSave()}
+            disabled={loading || saving}
+          >
+            Save
+          </Button>
+        ) : null}
       </DialogActions>
     </Dialog>
   );

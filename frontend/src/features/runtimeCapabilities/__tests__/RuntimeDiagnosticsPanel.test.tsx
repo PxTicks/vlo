@@ -1,8 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getRuntimeCapabilities,
   getRuntimeCapability,
+  downloadRuntimeDiagnostics,
+  getRuntimeCapabilityProbe,
+  startRuntimeCapabilityProbe,
 } from "../../../services/runtimeApi";
 import type {
   RuntimeCapability,
@@ -14,6 +17,9 @@ import { useRuntimeCapabilityStore } from "../useRuntimeCapabilityStore";
 vi.mock("../../../services/runtimeApi", () => ({
   getRuntimeCapabilities: vi.fn(),
   getRuntimeCapability: vi.fn(),
+  downloadRuntimeDiagnostics: vi.fn(),
+  getRuntimeCapabilityProbe: vi.fn(),
+  startRuntimeCapabilityProbe: vi.fn(),
 }));
 
 const environment: RuntimeEnvironmentSnapshot = {
@@ -97,6 +103,8 @@ describe("RuntimeDiagnosticsPanel", () => {
 
   afterEach(() => {
     useRuntimeCapabilityStore.getState().reset();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("shows the state, how far it was verified, and the remedy", async () => {
@@ -256,5 +264,83 @@ describe("RuntimeDiagnosticsPanel", () => {
     ).toHaveTextContent("package_missing");
     expect(screen.getByTestId("environment-card")).toHaveTextContent("3.11.9");
     expect(screen.getByTestId("environment-card")).toHaveTextContent("RTX 4090");
+  });
+
+  it("runs an explicit load test from an attemptable card", async () => {
+    vi.mocked(getRuntimeCapabilities).mockResolvedValue({
+      capabilities: [
+        {
+          ...blockedSamAudio,
+          state: "available_unverified",
+          canAttempt: true,
+          verifiedThrough: "environment",
+          checks: [blockedSamAudio.checks[0]],
+        },
+      ],
+      environment,
+    });
+    vi.mocked(startRuntimeCapabilityProbe).mockResolvedValue({ jobId: "probe-1" });
+    vi.mocked(getRuntimeCapabilityProbe).mockResolvedValue({
+      jobId: "probe-1",
+      jobType: "load-runtime",
+      status: "succeeded",
+      progress: 1,
+      message: "Succeeded",
+    });
+    vi.mocked(getRuntimeCapability).mockResolvedValue({
+      capability: {
+        ...blockedSamAudio,
+        state: "ready",
+        canAttempt: true,
+        verifiedThrough: "loaded",
+        checks: [
+          blockedSamAudio.checks[0],
+          {
+            id: "runtime.loaded",
+            status: "pass",
+            stage: "loaded",
+            summary: "The runtime loaded successfully",
+          },
+        ],
+      },
+      environment,
+    });
+
+    render(<RuntimeDiagnosticsPanel />);
+    await screen.findByTestId("capability-card-sam-audio");
+    fireEvent.click(screen.getByRole("button", { name: "Test runtime" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("capability-state-sam-audio")).toHaveTextContent(
+        "Ready",
+      );
+    });
+  });
+
+  it("downloads the server-sanitized diagnostics export", async () => {
+    const blob = new Blob(["{}"], { type: "application/json" });
+    vi.mocked(downloadRuntimeDiagnostics).mockResolvedValue(blob);
+    const createObjectURL = vi.fn(() => "blob:diagnostics");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+
+    render(<RuntimeDiagnosticsPanel />);
+    await screen.findByTestId("capability-card-sam-audio");
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Export diagnostics" }));
+    });
+
+    expect(downloadRuntimeDiagnostics).toHaveBeenCalled();
+    expect(createObjectURL).toHaveBeenCalledWith(blob);
+    expect(click).toHaveBeenCalled();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+
+    act(() => vi.runOnlyPendingTimers());
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:diagnostics");
+
   });
 });

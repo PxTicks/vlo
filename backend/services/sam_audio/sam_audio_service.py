@@ -651,6 +651,15 @@ class _SamAudioRuntime:
 
 _runtime = _SamAudioRuntime()
 
+
+def probe_runtime_load(
+    on_progress: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    """Load the same model and processor real separation jobs use."""
+
+    _model, _processor, resolved_device = _runtime.get(on_progress=on_progress)
+    return {"resolvedDevice": resolved_device}
+
 SAM_AUDIO_JOB_OWNER = "vlo.sam-audio"
 SAM_AUDIO_JOB_OWNER_VERSION = "1"
 SAM_AUDIO_SEPARATION_JOB_TYPE = "separate"

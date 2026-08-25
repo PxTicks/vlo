@@ -84,6 +84,10 @@ ATTEMPTABLE_STATES: frozenset[CapabilityState] = frozenset(
         CapabilityState.AVAILABLE_UNVERIFIED,
         CapabilityState.READY,
         CapabilityState.DEGRADED,
+        # An explicit probe is evidence-gathering, not a known failure. The
+        # feature remains attemptable while that job waits for or holds the
+        # runtime lease; real work will follow the same admission rules.
+        CapabilityState.CHECKING,
     }
 )
 
@@ -225,6 +229,7 @@ class Capability:
     selected_model: str | None = None
     models: tuple[Mapping[str, Any], ...] = ()
     last_failure: FailureRecord | None = None
+    last_successful_load: datetime | None = None
 
     @property
     def can_attempt(self) -> bool:
@@ -249,6 +254,11 @@ class Capability:
             "checks": [check.to_json() for check in self.checks],
             "lastFailure": (
                 self.last_failure.to_json() if self.last_failure else None
+            ),
+            "lastSuccessfulLoad": (
+                _iso(self.last_successful_load)
+                if self.last_successful_load is not None
+                else None
             ),
         }
 

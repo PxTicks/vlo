@@ -49,6 +49,7 @@ from .failures import (
     sanitize_message,
     sanitize_url,
 )
+from .observations import is_capability_checking
 from .providers import (
     BeatsProvider,
     CapabilityProvider,
@@ -106,7 +107,9 @@ def get_capability(
         return None
     if refresh:
         invalidate_capability_cache(capability_id)
-    return provider.build(deep_probe=deep_probe)
+    return provider.build(
+        deep_probe=deep_probe and not is_capability_checking(capability_id)
+    )
 
 
 def list_capabilities(
@@ -125,7 +128,14 @@ def list_capabilities(
         thread_name_prefix="capability-probe",
     ) as pool:
         return list(
-            pool.map(lambda provider: provider.build(deep_probe=deep_probe), _PROVIDERS)
+            pool.map(
+                lambda provider: provider.build(
+                    deep_probe=(
+                        deep_probe and not is_capability_checking(provider.id)
+                    )
+                ),
+                _PROVIDERS,
+            )
         )
 
 

@@ -8,7 +8,9 @@ model file — the thing worth checking on disk.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from ..contract import (
     Check,
@@ -64,6 +66,17 @@ def _cached_checkpoints(cache_dir: Path, model: str) -> list[Path]:
 class BeatsProvider(CapabilityProvider):
     id = CAPABILITY_ID
     label = "Beat This!"
+    uses_local_gpu = True
+
+    def load_runtime(
+        self,
+        report_progress: Callable[[float, str], None] | None = None,
+    ) -> dict[str, Any]:
+        from services.beats.beats_service import probe_runtime_load
+
+        if report_progress is not None:
+            report_progress(0.2, "Loading the Beat This! predictor")
+        return probe_runtime_load()
 
     def remediation_for(self, code: FailureCode) -> Remediation | None:
         # A failure reported by a real load carries no remedy of its own; for

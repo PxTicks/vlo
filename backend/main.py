@@ -48,6 +48,9 @@ from services.ai_models.capabilities import (
     SAM2_CAPABILITY_ID,
     SAM_AUDIO_CAPABILITY_ID,
 )
+from services.ai_models.capabilities.load_probes import (
+    shutdown_runtime_capability_probe_jobs,
+)
 from services.ai_models.health import AppStatusProvider
 from services.model_registry import is_comfyui_model_downloads_enabled
 from services.generation_delivery import generation_holding_service
@@ -114,12 +117,15 @@ async def application_lifespan(application: FastAPI):
             with suppress(asyncio.CancelledError):
                 await restore_retry
         try:
-            await sam_audio_service.shutdown_jobs()
+            await shutdown_runtime_capability_probe_jobs()
         finally:
             try:
-                await runtime.stop()
+                await sam_audio_service.shutdown_jobs()
             finally:
-                await close_http_client()
+                try:
+                    await runtime.stop()
+                finally:
+                    await close_http_client()
 
 
 app = FastAPI(lifespan=application_lifespan)

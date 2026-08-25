@@ -191,6 +191,29 @@ export interface RuntimeCapability {
   models: Record<string, unknown>[];
   checks: CapabilityCheck[];
   lastFailure: CapabilityFailureRecord | null;
+  /** Present after this backend process has loaded the runtime successfully. */
+  lastSuccessfulLoad?: string | null;
+}
+
+export type RuntimeCapabilityProbeStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export interface RuntimeCapabilityProbeJob {
+  jobId: string;
+  jobType: string;
+  status: RuntimeCapabilityProbeStatus;
+  progress: number;
+  message: string;
+  error?: string;
+  result?: {
+    capabilityId: string;
+    loaded: boolean;
+    details: Record<string, unknown>;
+  };
 }
 
 export interface RuntimeEnvironmentSnapshot {

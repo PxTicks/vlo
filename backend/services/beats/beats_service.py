@@ -216,6 +216,11 @@ class _BeatThisRuntime:
             )
         return requested_device.strip()
 
+    @property
+    def resolved_device(self) -> str | None:
+        with self._lock:
+            return self._resolved_device
+
     def _build_predictor(
         self,
         checkpoint: str,
@@ -268,6 +273,8 @@ class _BeatThisRuntime:
         return {
             **capability_runtime_health(BEATS_CAPABILITY_ID),
             "device": BEATTHIS_DEVICE,
+            # Health stays non-blocking while another thread loads the model;
+            # an atomic snapshot is sufficient for this advisory field.
             "resolvedDevice": self._resolved_device,
             "predictorLoaded": self._predictor is not None,
             "defaultModel": BEATTHIS_DEFAULT_MODEL,
@@ -275,6 +282,13 @@ class _BeatThisRuntime:
 
 
 _runtime = _BeatThisRuntime()
+
+
+def probe_runtime_load() -> dict[str, Any]:
+    """Load the default predictor without running it against an audio file."""
+
+    _runtime.get_predictor(checkpoint=BEATTHIS_DEFAULT_MODEL, dbn=False)
+    return {"resolvedDevice": _runtime.resolved_device}
 
 
 def _detect_beats_with_predictor(

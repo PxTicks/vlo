@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getRuntimeCapabilities,
   getRuntimeCapability,
+  getRuntimeCapabilityProbe,
+  startRuntimeCapabilityProbe,
 } from "../../../services/runtimeApi";
 import type { RuntimeCapability } from "../../../types/RuntimeStatus";
 import { blockingCheck, failureHeadline, isModelProblem } from "../failureCodes";
@@ -10,6 +12,9 @@ import { useRuntimeCapabilityStore } from "../useRuntimeCapabilityStore";
 vi.mock("../../../services/runtimeApi", () => ({
   getRuntimeCapabilities: vi.fn(),
   getRuntimeCapability: vi.fn(),
+  getRuntimeCapabilityProbe: vi.fn(),
+  startRuntimeCapabilityProbe: vi.fn(),
+  downloadRuntimeDiagnostics: vi.fn(),
 }));
 
 function capability(overrides: Partial<RuntimeCapability> = {}): RuntimeCapability {
@@ -173,6 +178,146 @@ describe("useRuntimeCapabilityStore", () => {
     expect(useRuntimeCapabilityStore.getState().environment).toEqual({
       checkedAt: "12:05",
     });
+  });
+
+  it("follows a load-test job and replaces the card with loaded evidence", async () => {
+    vi.mocked(startRuntimeCapabilityProbe).mockResolvedValue({ jobId: "probe-1" });
+    vi.mocked(getRuntimeCapabilityProbe).mockResolvedValue({
+      jobId: "probe-1",
+      jobType: "load-runtime",
+      status: "succeeded",
+      progress: 1,
+      message: "Succeeded",
+      result: {
+        capabilityId: "sam-audio",
+        loaded: true,
+        details: { resolvedDevice: "cuda" },
+      },
+    });
+    vi.mocked(getRuntimeCapability).mockResolvedValue(
+      singlePayload(
+        capability({
+          state: "ready",
+          verifiedThrough: "loaded",
+          lastSuccessfulLoad: "2026-08-25T12:10:00Z",
+        }),
+      ),
+    );
+
+    await useRuntimeCapabilityStore.getState().testCapability("sam-audio");
+
+    expect(startRuntimeCapabilityProbe).toHaveBeenCalledWith("sam-audio", {
+      signal: expect.any(AbortSignal),
+    });
+    expect(getRuntimeCapabilityProbe).toHaveBeenCalledWith(
+      "sam-audio",
+      "probe-1",
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(getRuntimeCapability).toHaveBeenCalledWith("sam-audio", {
+      signal: expect.any(AbortSignal),
+    });
+    expect(
+      useRuntimeCapabilityStore.getState().capabilities["sam-audio"]?.state,
+    ).toBe("ready");
+    expect(useRuntimeCapabilityStore.getState().testing).toEqual([]);
+  });
+
+  it("reloads classified evidence after a failed load test", async () => {
+    vi.mocked(startRuntimeCapabilityProbe).mockResolvedValue({ jobId: "probe-2" });
+    vi.mocked(getRuntimeCapabilityProbe).mockResolvedValue({
+      jobId: "probe-2",
+      jobType: "load-runtime",
+      status: "failed",
+      progress: 1,
+      message: "Failed",
+      error: "The sam_audio package is not installed",
+    });
+    vi.mocked(getRuntimeCapability).mockResolvedValue(
+      singlePayload(
+        capability({
+          state: "blocked",
+          canAttempt: false,
+          lastFailure: {
+            code: "package_missing",
+            summary: "The sam_audio package is not installed",
+            stage: "loaded",
+            occurredAt: "2026-08-25T12:10:00Z",
+          },
+        }),
+      ),
+    );
+
+    await useRuntimeCapabilityStore.getState().testCapability("sam-audio");
+
+    const state = useRuntimeCapabilityStore.getState();
+    expect(state.capabilities["sam-audio"]?.state).toBe("blocked");
+    expect(state.error).toBe("The sam_audio package is not installed");
+  });
+
+  it("does not repopulate the store when reset stops an in-flight poll", async () => {
+    let finishPoll: (value: unknown) => void = () => {};
+    vi.mocked(startRuntimeCapabilityProbe).mockResolvedValue({ jobId: "probe-3" });
+    vi.mocked(getRuntimeCapabilityProbe).mockReturnValue(
+      new Promise((resolve) => {
+        finishPoll = resolve;
+      }) as never,
+    );
+
+    const test = useRuntimeCapabilityStore
+      .getState()
+      .testCapability("sam-audio");
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+    useRuntimeCapabilityStore.getState().reset();
+    finishPoll({
+      jobId: "probe-3",
+      jobType: "load-runtime",
+      status: "succeeded",
+      progress: 1,
+      message: "Succeeded",
+    });
+    await test;
+
+    const state = useRuntimeCapabilityStore.getState();
+    expect(state.status).toBe("idle");
+    expect(state.capabilities).toEqual({});
+    expect(state.testing).toEqual([]);
+    expect(getRuntimeCapability).not.toHaveBeenCalled();
+  });
+
+  it("serialises the post-probe read behind an in-flight refresh", async () => {
+    let finishRefresh: (value: unknown) => void = () => {};
+    vi.mocked(getRuntimeCapabilities).mockReturnValue(
+      new Promise((resolve) => {
+        finishRefresh = resolve;
+      }) as never,
+    );
+    vi.mocked(startRuntimeCapabilityProbe).mockResolvedValue({ jobId: "probe-4" });
+    vi.mocked(getRuntimeCapabilityProbe).mockResolvedValue({
+      jobId: "probe-4",
+      jobType: "load-runtime",
+      status: "succeeded",
+      progress: 1,
+      message: "Succeeded",
+    });
+    vi.mocked(getRuntimeCapability).mockResolvedValue(
+      singlePayload(capability({ state: "ready", verifiedThrough: "loaded" })),
+    );
+
+    const refresh = useRuntimeCapabilityStore.getState().refreshAll();
+    const test = useRuntimeCapabilityStore
+      .getState()
+      .testCapability("sam-audio");
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+    expect(getRuntimeCapability).not.toHaveBeenCalled();
+
+    finishRefresh(payload(capability()));
+    await Promise.all([refresh, test]);
+
+    expect(getRuntimeCapability).toHaveBeenCalledTimes(1);
+    expect(
+      useRuntimeCapabilityStore.getState().capabilities["sam-audio"]?.state,
+    ).toBe("ready");
   });
 
   it("serialises a full refresh against a per-capability recheck", async () => {

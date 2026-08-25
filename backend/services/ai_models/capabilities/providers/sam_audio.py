@@ -9,7 +9,7 @@ model re-download, which could never fix it.
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -102,6 +102,15 @@ def _scan_model_dirs(search_paths: Sequence[Path]) -> dict[str, dict[str, Any]]:
 class SamAudioProvider(CapabilityProvider):
     id = CAPABILITY_ID
     label = "SAM-Audio"
+    uses_local_gpu = True
+
+    def load_runtime(
+        self,
+        report_progress: Callable[[float, str], None] | None = None,
+    ) -> dict[str, Any]:
+        from services.sam_audio.sam_audio_service import probe_runtime_load
+
+        return probe_runtime_load(on_progress=report_progress)
 
     def remediation_for(self, code: FailureCode) -> Remediation | None:
         # A failure reported by a real load carries no remedy of its own; for

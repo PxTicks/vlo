@@ -82,6 +82,7 @@ def sanitize_message(text: str | None) -> str:
         return ""
 
     cleaned = str(text).strip()
+    cleaned = _URL_USERINFO.sub(r"\1[redacted]@", cleaned)
     cleaned = cleaned.replace(str(_PROJECT_ROOT), _PROJECT_PLACEHOLDER)
 
     home = str(Path.home())
@@ -398,11 +399,23 @@ def record_load_failures(
         raise
 
 
-def note_capability_success(capability_id: str) -> None:
+def note_capability_success(
+    capability_id: str,
+    *,
+    resolved_device: str | None = None,
+    detail: str | None = None,
+) -> None:
     """Forget a recorded failure because the runtime just loaded.
 
     A successful load is the strongest evidence available, and it outranks
     anything an earlier attempt observed.
     """
 
+    from .observations import note_load_success
+
     clear_failures(capability_id)
+    note_load_success(
+        capability_id,
+        resolved_device=resolved_device,
+        detail=detail,
+    )

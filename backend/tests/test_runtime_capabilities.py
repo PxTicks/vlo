@@ -788,6 +788,16 @@ def test_url_sanitisation_redacts_credentials_and_signed_query_values() -> None:
     assert "mode=local" in cleaned
 
 
+def test_message_sanitisation_redacts_url_credentials() -> None:
+    cleaned = failures.sanitize_message(
+        "401 for http://alice:secret@example.test:8188/system_stats"
+    )
+
+    assert "alice" not in cleaned
+    assert "secret" not in cleaned
+    assert "http://[redacted]@example.test:8188/system_stats" in cleaned
+
+
 def test_device_probe_errors_are_sanitised_before_becoming_checks() -> None:
     check, _report = device_check(
         check_id="device.requested",
@@ -837,6 +847,26 @@ async def test_endpoint_returns_capabilities_and_environment(
 
     payload = await runtime_capabilities.get_runtime_capabilities(refresh=False)
 
+    assert {capability["id"] for capability in payload["capabilities"]} == set(
+        list_capability_ids()
+    )
+    assert "environment" in payload
+
+
+@pytest.mark.anyio
+async def test_diagnostics_export_is_the_same_sanitised_payload(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+) -> None:
+    from routers import runtime_capabilities
+
+    response = await runtime_capabilities.export_runtime_diagnostics()
+    payload = json.loads(response.body)
+
+    assert response.media_type == "application/json"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="vlo-runtime-diagnostics.json"'
+    )
     assert {capability["id"] for capability in payload["capabilities"]} == set(
         list_capability_ids()
     )

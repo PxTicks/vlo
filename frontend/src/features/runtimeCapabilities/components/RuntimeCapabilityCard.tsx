@@ -20,7 +20,9 @@ import { CapabilityFailureNotice } from "./CapabilityFailureNotice";
 interface RuntimeCapabilityCardProps {
   capability: RuntimeCapability;
   refreshing: boolean;
+  testing: boolean;
   onRecheck: (capabilityId: string) => void;
+  onTest: (capabilityId: string) => void;
 }
 
 const STATE_LABELS: Record<CapabilityState, string> = {
@@ -79,7 +81,9 @@ function deviceLabel(capability: RuntimeCapability): string | null {
 export function RuntimeCapabilityCard({
   capability,
   refreshing,
+  testing,
   onRecheck,
+  onTest,
 }: RuntimeCapabilityCardProps) {
   const [expanded, setExpanded] = useState(false);
   const failure = capability.checks.find((check) => check.status === "fail") ?? null;
@@ -114,6 +118,14 @@ export function RuntimeCapabilityCard({
             sx={{ textTransform: "none" }}
           >
             {refreshing ? "Rechecking…" : "Recheck"}
+          </Button>
+          <Button
+            size="small"
+            onClick={() => onTest(capability.id)}
+            disabled={!capability.canAttempt || refreshing || testing}
+            sx={{ textTransform: "none" }}
+          >
+            {testing ? "Testing…" : "Test runtime"}
           </Button>
         </Box>
 

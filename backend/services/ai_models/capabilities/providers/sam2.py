@@ -9,6 +9,7 @@ this provider reports them separately.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,17 @@ def _discover_models() -> list[dict[str, Any]]:
 class Sam2Provider(CapabilityProvider):
     id = CAPABILITY_ID
     label = "SAM2"
+    uses_local_gpu = True
+
+    def load_runtime(
+        self,
+        report_progress: Callable[[float, str], None] | None = None,
+    ) -> dict[str, Any]:
+        from services.sam2.sam2_service import probe_runtime_load
+
+        if report_progress is not None:
+            report_progress(0.2, "Loading the SAM2 predictor")
+        return probe_runtime_load()
 
     def remediation_for(self, code: FailureCode) -> Remediation | None:
         # A failure reported by a real load carries no remedy of its own; for

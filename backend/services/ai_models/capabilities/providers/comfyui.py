@@ -8,7 +8,11 @@ a status request — ``/app/status`` already pays for that call once.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
+
+import httpx
 
 from ..contract import (
     Check,
@@ -36,6 +40,22 @@ SETTINGS_REMEDIATION = Remediation(
 class ComfyUIProvider(CapabilityProvider):
     id = CAPABILITY_ID
     label = "ComfyUI"
+
+    def load_runtime(
+        self,
+        report_progress: Callable[[float, str], None] | None = None,
+    ) -> dict[str, Any]:
+        from services.comfyui.comfyui_client import get_comfyui_url
+
+        if report_progress is not None:
+            report_progress(0.2, "Contacting ComfyUI")
+        url = get_comfyui_url().rstrip("/")
+        response = httpx.get(
+            f"{url}/system_stats",
+            timeout=httpx.Timeout(10.0, connect=3.0),
+        )
+        response.raise_for_status()
+        return {"endpoint": sanitize_url(url), "reachable": True}
 
     def inspect(self, *, deep_probe: bool = True) -> ProviderReport:
         # ComfyUI has no local runtime to import, so the switch changes

@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockResponse, stubFetch } from "../../testUtils/fetch";
 import {
+  downloadRuntimeDiagnostics,
+  getRuntimeCapabilityProbe,
   getRuntimeSettings,
   getRuntimeStatus,
   launchComfyui,
   prepareComfyuiEnvironment,
+  startRuntimeCapabilityProbe,
   updateRuntimeSettings,
 } from "../runtimeApi";
 
@@ -102,6 +105,48 @@ describe("getRuntimeStatus", () => {
       headers: undefined,
       body: undefined,
     });
+  });
+
+  it("starts and reads an explicit runtime load probe", async () => {
+    const submitted = { jobId: "probe-1" };
+    const job = {
+      jobId: "probe-1",
+      jobType: "load-runtime",
+      status: "running",
+      progress: 0.5,
+      message: "Loading",
+    };
+    const fetchMock = stubFetch(
+      createMockResponse({ json: submitted }),
+      createMockResponse({ json: job }),
+    );
+
+    await expect(startRuntimeCapabilityProbe("sam-audio")).resolves.toEqual(
+      submitted,
+    );
+    await expect(
+      getRuntimeCapabilityProbe("sam-audio", "probe-1"),
+    ).resolves.toEqual(job);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/app/runtime-capabilities/sam-audio/probe",
+      { method: "POST", signal: undefined },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/app/runtime-capabilities/sam-audio/probe/probe-1",
+      { signal: undefined },
+    );
+  });
+
+  it("downloads the diagnostics JSON produced by the backend", async () => {
+    const blob = new Blob(["{}"], { type: "application/json" });
+    const fetchMock = stubFetch(createMockResponse({ blob }));
+
+    await expect(downloadRuntimeDiagnostics()).resolves.toBe(blob);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/app/runtime-capabilities/diagnostics/export",
+    );
   });
 
   it.each([

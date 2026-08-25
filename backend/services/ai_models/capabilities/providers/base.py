@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ..contract import (
@@ -21,6 +21,7 @@ from ..contract import (
     utc_now,
 )
 from ..failures import get_last_failure, is_durable, sanitize_message
+from ..observations import get_load_success, is_capability_checking
 from ..subprocess_probe import (
     ModuleProbe,
     ProbeResult,
@@ -41,6 +42,21 @@ def probed_module(probe: ProbeResult | None, name: str) -> ModuleProbe | None:
     return probe.module(name) if probe is not None else None
 
 
+def devices_equivalent(requested: str, resolved: str) -> bool:
+    """Whether two torch-style device names identify the same device.
+
+    Torch commonly resolves the default CUDA device as ``cuda`` even when the
+    configuration spells it ``cuda:0`` (or vice versa). That is proof of the
+    requested device, not a CPU-style fallback.
+    """
+
+    def normalize(value: str) -> str:
+        normalized = value.strip().lower()
+        return "cuda" if normalized in {"cuda", "cuda:0"} else normalized
+
+    return normalize(requested) == normalize(resolved)
+
+
 @dataclass(frozen=True)
 class ProviderReport:
     """A provider's raw evidence, before it is collapsed into a state."""
@@ -58,6 +74,7 @@ class CapabilityProvider:
 
     id: str = ""
     label: str = ""
+    uses_local_gpu: bool = False
 
     def inspect(self, *, deep_probe: bool = True) -> ProviderReport:
         raise NotImplementedError
@@ -70,6 +87,19 @@ class CapabilityProvider:
         """
 
         return None
+
+    def load_runtime(
+        self,
+        report_progress: Callable[[float, str], None] | None = None,
+    ) -> Mapping[str, Any]:
+        """Load the selected runtime for an explicit probe job.
+
+        Implementations call the same lazy singleton used by real work. The
+        job adapter supplies admission, failure recording, and single-flight.
+        """
+
+        del report_progress
+        raise NotImplementedError
 
     def probe(
         self,
@@ -122,12 +152,46 @@ class CapabilityProvider:
         # whatever the filesystem says. Cleared by a successful load or an
         # explicit recheck.
         last_failure = get_last_failure(self.id)
+        last_success = get_load_success(self.id)
+        success_is_current = last_success is not None and (
+            last_failure is None
+            or last_success.occurred_at >= last_failure.occurred_at
+        )
         checks = tuple(report.checks)
         if last_failure is not None and is_durable(last_failure.code):
             # Put the direct runtime evidence first. Consumers that need one
             # explanation should cite what the real attempt proved, not an
             # incidental inventory failure found by the later status read.
             checks = (self._failure_check(last_failure), *checks)
+
+        if success_is_current:
+            checks = (
+                *checks,
+                Check(
+                    id="runtime.loaded",
+                    status=CheckStatus.PASS,
+                    stage=VerificationStage.LOADED,
+                    summary="The runtime loaded successfully in this backend process",
+                    detail=last_success.detail,
+                ),
+            )
+
+        device = report.device
+        if (
+            device is not None
+            and success_is_current
+            and last_success.resolved_device is not None
+        ):
+            resolved = last_success.resolved_device
+            device = replace(
+                device,
+                resolved=resolved,
+                proven=True,
+                fallback=(
+                    device.requested.strip().lower() not in {"", "auto"}
+                    and not devices_equivalent(device.requested, resolved)
+                ),
+            )
 
         state = derive_state(
             # A real attempt is direct evidence that the capability is wanted,
@@ -136,23 +200,33 @@ class CapabilityProvider:
             # not collapsed back to "intentionally unavailable".
             expected=report.expected or last_failure is not None,
             checks=checks,
-            loaded=report.loaded,
-            degraded=report.device.fallback if report.device else False,
+            loaded=report.loaded or success_is_current,
+            degraded=device.fallback if device else False,
         )
+        if is_capability_checking(self.id):
+            state = CapabilityState.CHECKING
         return Capability(
             id=self.id,
             label=self.label,
             state=state,
             checked_at=utc_now(),
-            device=report.device,
+            device=device,
             # How far the evidence actually goes is read off the checks: a
             # stage with a skipped check was not evaluated, so verification
             # stops below it.
-            verified_through=derive_verified_through(checks),
+            verified_through=(
+                VerificationStage.LOADED
+                if success_is_current
+                and not any(check.failed for check in checks)
+                else derive_verified_through(checks)
+            ),
             checks=checks,
             selected_model=report.selected_model,
             models=tuple(report.models),
             last_failure=last_failure,
+            last_successful_load=(
+                last_success.occurred_at if last_success is not None else None
+            ),
         )
 
     def _failure_check(self, failure: FailureRecord) -> Check:

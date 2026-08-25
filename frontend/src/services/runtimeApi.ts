@@ -3,6 +3,7 @@ import type {
   ComfyuiInstallVerification,
   RuntimeCapabilitiesPayload,
   RuntimeCapabilityPayload,
+  RuntimeCapabilityProbeJob,
   RuntimeSettingsPatch,
   RuntimeSettingsPayload,
   RuntimeStatus,
@@ -156,6 +157,43 @@ export async function getRuntimeCapability(
     throw new Error(await parseErrorMessage(response));
   }
   return (await response.json()) as RuntimeCapabilityPayload;
+}
+
+export async function startRuntimeCapabilityProbe(
+  capabilityId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<{ jobId: string }> {
+  const response = await fetch(
+    `${CAPABILITIES_PATH}/${encodeURIComponent(capabilityId)}/probe`,
+    { method: "POST", signal: options.signal },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as { jobId: string };
+}
+
+export async function getRuntimeCapabilityProbe(
+  capabilityId: string,
+  jobId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<RuntimeCapabilityProbeJob> {
+  const response = await fetch(
+    `${CAPABILITIES_PATH}/${encodeURIComponent(capabilityId)}/probe/${encodeURIComponent(jobId)}`,
+    { signal: options.signal },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as RuntimeCapabilityProbeJob;
+}
+
+export async function downloadRuntimeDiagnostics(): Promise<Blob> {
+  const response = await fetch(`${CAPABILITIES_PATH}/diagnostics/export`);
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return response.blob();
 }
 
 export async function getRuntimeSettings(

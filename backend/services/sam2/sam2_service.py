@@ -420,6 +420,11 @@ class _Sam2PredictorRuntime:
 
         return [raw]
 
+    @property
+    def resolved_device(self) -> str | None:
+        with self._lock:
+            return self._resolved_device
+
     def _load_predictor(self) -> Any:
         discovered_models = discover_sam2_models()
         if not discovered_models:
@@ -513,6 +518,8 @@ class _Sam2PredictorRuntime:
         return {
             **capability_runtime_health(SAM2_CAPABILITY_ID),
             "device": SAM2_DEVICE,
+            # Health stays non-blocking while another thread loads the model;
+            # an atomic snapshot is sufficient for this advisory field.
             "resolvedDevice": self._resolved_device,
             "discoveredModels": discover_sam2_models(),
             "predictorLoaded": self._predictor is not None,
@@ -520,6 +527,13 @@ class _Sam2PredictorRuntime:
 
 
 _runtime = _Sam2PredictorRuntime()
+
+
+def probe_runtime_load() -> dict[str, Any]:
+    """Load the same predictor real SAM2 requests use, without inference."""
+
+    _runtime.get_predictor()
+    return {"resolvedDevice": _runtime.resolved_device}
 
 
 SOURCES_DIR = SAM2_CACHE_DIR / "sources"

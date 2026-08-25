@@ -2,6 +2,8 @@ import { create } from "zustand";
 import {
   getRuntimeCapabilities,
   getRuntimeCapability,
+  getRuntimeCapabilityProbe,
+  startRuntimeCapabilityProbe,
 } from "../../services/runtimeApi";
 import type {
   RuntimeCapability,
@@ -29,12 +31,18 @@ export interface RuntimeCapabilityStoreState {
   error: string | null;
   /** Ids with a recheck in flight, so a card can spin without blanking. */
   refreshing: string[];
+  /** Ids with an explicit model-load job queued or running. */
+  testing: string[];
   /** Fetch once. Concurrent callers join the in-flight request. */
   ensureLoaded: () => Promise<void>;
   /** Drop the backend's probe cache and re-run every check. */
   refreshAll: () => Promise<void>;
   /** Re-run one capability's checks. */
   refreshCapability: (capabilityId: string) => Promise<void>;
+  /** Queue and follow an explicit runtime load test. */
+  testCapability: (capabilityId: string) => Promise<void>;
+  /** Stop client-side probe polling without cancelling the backend job. */
+  cancelTests: () => void;
   /**
    * Re-read what the backend knows, without asking it to re-probe.
    *
@@ -58,6 +66,34 @@ function messageFor(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+const MAX_PROBE_POLLS = 2_400;
+
+function waitForPoll(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(
+        new DOMException("Runtime probe polling was cancelled", "AbortError"),
+      );
+      return;
+    }
+    const timer = globalThis.setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, 500);
+    function abort() {
+      globalThis.clearTimeout(timer);
+      reject(
+        new DOMException("Runtime probe polling was cancelled", "AbortError"),
+      );
+    }
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
   (set, get) => {
     // Module-local singletons rather than store state: neither is rendered,
@@ -70,6 +106,16 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
     // probe cache, so overlapping them would have each re-run the other's
     // probes and land results in whichever order they finished.
     let queue: Promise<unknown> = Promise.resolve();
+    let probeGeneration = 0;
+    const probeControllers = new Map<string, AbortController>();
+
+    function cancelProbePolling() {
+      probeGeneration += 1;
+      for (const controller of probeControllers.values()) {
+        controller.abort();
+      }
+      probeControllers.clear();
+    }
 
     function serialize<T>(task: () => Promise<T>): Promise<T> {
       const next = queue.then(task, task);
@@ -100,6 +146,7 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
       environment: null,
       error: null,
       refreshing: [],
+      testing: [],
 
       ensureLoaded: async () => {
         const { status } = get();
@@ -169,7 +216,90 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
         });
       },
 
+      testCapability: async (capabilityId) => {
+        if (get().testing.includes(capabilityId)) return;
+        const controller = new AbortController();
+        const generation = probeGeneration;
+        probeControllers.set(capabilityId, controller);
+        const cancelled = () =>
+          controller.signal.aborted || generation !== probeGeneration;
+        set((state) => ({
+          testing: [...state.testing, capabilityId],
+          error: null,
+        }));
+        try {
+          const requestOptions = { signal: controller.signal };
+          const { jobId } = await startRuntimeCapabilityProbe(
+            capabilityId,
+            requestOptions,
+          );
+          if (cancelled()) return;
+          let job = await getRuntimeCapabilityProbe(
+            capabilityId,
+            jobId,
+            requestOptions,
+          );
+          let polls = 0;
+          while (job.status === "queued" || job.status === "running") {
+            if (polls >= MAX_PROBE_POLLS) {
+              throw new Error(
+                "Runtime load test did not finish within 20 minutes",
+              );
+            }
+            polls += 1;
+            await waitForPoll(controller.signal);
+            job = await getRuntimeCapabilityProbe(
+              capabilityId,
+              jobId,
+              requestOptions,
+            );
+          }
+          if (cancelled()) return;
+
+          // Success and failure both update the registry. Read that evidence
+          // before surfacing the terminal job message so the card and alert
+          // cannot disagree.
+          const payload = await serialize(() =>
+            getRuntimeCapability(capabilityId, requestOptions),
+          );
+          if (cancelled()) return;
+          set((state) => ({
+            status: "ready",
+            capabilities: {
+              ...state.capabilities,
+              [payload.capability.id]: payload.capability,
+            },
+            environment: payload.environment,
+            error:
+              job.status === "succeeded"
+                ? null
+                : job.error ?? `${payload.capability.label} load test failed`,
+          }));
+        } catch (error) {
+          if (!cancelled() && !isAbortError(error)) {
+            set({
+              error: messageFor(error, `Failed to test ${capabilityId}`),
+            });
+          }
+        } finally {
+          if (probeControllers.get(capabilityId) === controller) {
+            probeControllers.delete(capabilityId);
+          }
+          if (generation === probeGeneration) {
+            set((state) => ({
+              testing: state.testing.filter((id) => id !== capabilityId),
+            }));
+          }
+        }
+      },
+
+      cancelTests: () => {
+        cancelProbePolling();
+        set({ testing: [] });
+      },
+
       reset: () => {
+        cancelProbePolling();
         inFlightLoad = null;
         queue = Promise.resolve();
         set({
@@ -178,6 +308,7 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
           environment: null,
           error: null,
           refreshing: [],
+          testing: [],
         });
       },
     };

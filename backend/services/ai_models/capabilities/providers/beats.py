@@ -17,7 +17,6 @@ from ..contract import (
     CheckStatus,
     FailureCode,
     Remediation,
-    RemediationKind,
     VerificationStage,
 )
 from ..environment import device_probe, display_path
@@ -28,6 +27,7 @@ from ..probes import (
     package_check,
     python_version_check,
 )
+from ..profiles import BASE_PROFILE_ID, install_remediation, package_remediation
 from ..subprocess_probe import ModuleProbe, ProbeModule, ProbeSpec
 from .base import CapabilityProvider, ProviderReport, probed_module
 
@@ -35,25 +35,12 @@ from .base import CapabilityProvider, ProviderReport, probed_module
 CAPABILITY_ID = "beat-this"
 _IMPORT_TARGET = "beat_this.inference"
 
-INSTALL_REMEDIATION = Remediation(
-    kind=RemediationKind.COMMAND,
-    summary="Reinstall the backend requirements",
-    command=(
-        "uv pip install --python backend/.venv/bin/python "
-        "-r backend/requirements.txt"
-    ),
-    requires_restart=True,
-)
 
-MADMOM_REMEDIATION = Remediation(
-    kind=RemediationKind.COMMAND,
-    summary="Install madmom to enable DBN post-processing",
-    command=(
-        "uv pip install --python backend/.venv/bin/python "
-        "git+https://github.com/CPJKU/madmom.git"
-    ),
-    requires_restart=True,
-)
+def _madmom_remediation() -> Remediation:
+    return package_remediation(
+        "Install madmom to enable DBN post-processing",
+        "git+https://github.com/CPJKU/madmom.git",
+    )
 
 
 def _cached_checkpoints(cache_dir: Path, model: str) -> list[Path]:
@@ -86,7 +73,7 @@ class BeatsProvider(CapabilityProvider):
             FailureCode.PACKAGE_IMPORT_FAILED,
             FailureCode.DEPENDENCY_INCOMPATIBLE,
         }:
-            return INSTALL_REMEDIATION
+            return install_remediation(BASE_PROFILE_ID)
         return None
 
     def inspect(self, *, deep_probe: bool = True) -> ProviderReport:
@@ -112,7 +99,7 @@ class BeatsProvider(CapabilityProvider):
                 label="Beat This!",
                 distribution="beat-this",
                 deep=probed_module(probe, _IMPORT_TARGET),
-                remediation=INSTALL_REMEDIATION,
+                remediation=install_remediation(BASE_PROFILE_ID),
             ),
             self._madmom_check(probed_module(probe, "madmom")),
         ]
@@ -180,5 +167,5 @@ class BeatsProvider(CapabilityProvider):
             status=CheckStatus.WARN,
             code=FailureCode.PACKAGE_MISSING,
             summary="madmom is not installed, so DBN post-processing is unavailable",
-            remediation=MADMOM_REMEDIATION,
+            remediation=_madmom_remediation(),
         )

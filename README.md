@@ -110,9 +110,29 @@ run.bat
   install VLO-managed copies. Those are per-user, and change neither your PATH
   nor your shell profile;
 - installs the npm and Python dependencies and builds the frontend;
-- offers to install SAM2 for segmentation and masking, along with PyTorch with
-  CUDA 13.0. Answer yes if you have an Nvidia GPU and want masking. To add it
-  afterwards, rerun the installer.
+- offers the optional local-AI profiles — SAM2 for segmentation and masking,
+  SAM-Audio for prompted audio separation — along with PyTorch with CUDA 13.0.
+  Answer yes if you have an Nvidia GPU and want masking. To add one afterwards,
+  rerun the installer.
+
+To install without prompts, name the profiles:
+
+```bash
+./install.sh --profiles sam2,sam-audio     # or: --profiles local-ai
+./install.sh --no-optional                 # base backend only
+```
+
+`sam2`, `sam-audio`, `local-ai` (both), `all`, and `none` are accepted, and
+`--cuda-torch` / `--no-cuda-torch` settle the PyTorch question the same way. The
+installer runs non-interactively whenever it is given `--profiles`,
+`--no-optional`, or a stdin that is not a terminal, so it works from a
+provisioning script.
+
+Whichever way it runs, it records what it was asked for and how each profile
+went in `backend/runtime/install-profiles.json`. That is what lets **Runtime &
+Diagnostics** tell an optional feature you never wanted apart from one whose
+install failed — the optional steps warn and continue rather than aborting the
+whole install, and without the marker that warning is lost with the terminal.
 
 `run.sh` / `run.bat` starts vlo and opens `http://127.0.0.1:6332`. Pass
 `--no-browser` to skip opening the browser.
@@ -232,12 +252,22 @@ fetch from the mask editor than by hand.
 First make sure that torch with CUDA is installed in the backend venv, e.g.
 
 ```bash
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+uv pip install --python backend/.venv/bin/python torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 ```
 
 Being sure to install the version for your correct cuda environment, see <https://pytorch.org/>.
 
-Then follow the official instructions at <https://github.com/facebookresearch/sam2> and install it into the same active backend virtual environment.
+Then install SAM2 as one unit:
+
+```bash
+uv pip install --python backend/.venv/bin/python -r backend/requirements-sam2.txt
+```
+
+The venv `uv sync` creates does not contain `pip`, which is why these go through
+`uv pip --python` rather than `python -m pip`. Runtime & Diagnostics shows this
+exact command against a failing SAM2 check, so you can copy it from the app
+instead of from here. See <https://github.com/facebookresearch/sam2> for the
+upstream project.
 
 Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/models/sams`. Models can be found on Hugging Face, for example <https://huggingface.co/facebook/sam2.1-hiera-large>. Use the native `.pt` checkpoint from the official repository, such as `sam2.1_hiera_large.pt`. Do not use the repository's `model.safetensors` file with vlo's native SAM2 runtime, because that artifact uses Hugging Face Transformers parameter naming and is not compatible with `facebookresearch/sam2`.
 
@@ -246,7 +276,7 @@ Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/
 SAM-Audio is optional and requires Python 3.11 or newer. It is intentionally not part of `backend/requirements.txt` because Meta's package owns VCS-only dependencies such as `dacvae`, ImageBind, and perception-models. Install SAM-Audio into the backend virtual environment as one unit:
 
 ```bash
-python -m pip install -r backend/requirements-sam-audio.txt
+uv pip install --python backend/.venv/bin/python -r backend/requirements-sam-audio.txt
 ```
 
 If you are working from a local checkout, install that checkout into the backend virtual environment, or set `SAM_AUDIO_PYTHONPATH` to a path such as `~/sam-audio` after installing its dependencies.

@@ -266,6 +266,63 @@ describe("RuntimeDiagnosticsPanel", () => {
     expect(screen.getByTestId("environment-card")).toHaveTextContent("RTX 4090");
   });
 
+  it("reports what the installer was asked for once a marker exists", async () => {
+    vi.mocked(getRuntimeCapabilities).mockResolvedValue({
+      capabilities: [blockedSamAudio],
+      environment: {
+        ...environment,
+        installProfiles: {
+          markerPath: "backend/runtime/install-profiles.json",
+          markerPresent: true,
+          recordedAt: "2026-08-25T11:00:00Z",
+          installer: "install.sh",
+          uvAvailable: true,
+          backendPython: "backend/.venv/bin/python",
+          profiles: [
+            {
+              id: "sam-audio",
+              label: "SAM-Audio",
+              summary: "Prompted audio separation",
+              optional: true,
+              capabilities: ["sam-audio"],
+              requirements: "backend/requirements-sam-audio.txt",
+              includes: [],
+              record: {
+                id: "sam-audio",
+                status: "failed",
+                requested: true,
+              },
+            },
+            {
+              id: "sam2",
+              label: "SAM2",
+              summary: "Video segmentation and masking",
+              optional: true,
+              capabilities: ["sam2"],
+              requirements: "backend/requirements-sam2.txt",
+              includes: [],
+              // No marker record: nothing to say, not "declined".
+              record: null,
+            },
+          ],
+        },
+      },
+    });
+
+    render(<RuntimeDiagnosticsPanel />);
+
+    const card = await screen.findByTestId("environment-card");
+    expect(card).toHaveTextContent("SAM-Audio: failed");
+    expect(card).not.toHaveTextContent("SAM2:");
+  });
+
+  it("says nothing about profiles when no installer marker exists", async () => {
+    render(<RuntimeDiagnosticsPanel />);
+
+    const card = await screen.findByTestId("environment-card");
+    expect(card).not.toHaveTextContent("Installed");
+  });
+
   it("runs an explicit load test from an attemptable card", async () => {
     vi.mocked(getRuntimeCapabilities).mockResolvedValue({
       capabilities: [

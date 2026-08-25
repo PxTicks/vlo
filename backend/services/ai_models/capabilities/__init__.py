@@ -50,6 +50,23 @@ from .failures import (
     sanitize_url,
 )
 from .observations import is_capability_checking
+from .profiles import (
+    INSTALLABLE_PROFILE_IDS,
+    PROFILES,
+    CapabilityProfile,
+    capability_install_remediation,
+    capability_was_requested,
+    describe_profiles,
+    expand_profile_ids,
+    get_profile,
+    install_command,
+    install_remediation,
+    invalidate_install_marker_cache,
+    profile_for_capability,
+    read_install_marker,
+    uv_command,
+    write_install_marker,
+)
 from .providers import (
     BeatsProvider,
     CapabilityProvider,
@@ -151,6 +168,11 @@ def invalidate_capability_cache(capability_id: str | None = None) -> None:
     # recorded is dropped along with the cached probes. Anything still broken
     # is caught again by the checks or by the next real attempt; anything the
     # user has since fixed is no longer held against them.
+    #
+    # The installer marker is read from disk and cached on its mtime, so a user
+    # who reruns the installer and then hits Recheck sees the new record rather
+    # than the one this process happened to parse first.
+    invalidate_install_marker_cache()
     if capability_id is None:
         invalidate_probe_cache()
         clear_failures()
@@ -204,12 +226,15 @@ def capability_payload(
 __all__ = [
     "ATTEMPTABLE_STATES",
     "DURABLE_FAILURE_CODES",
+    "INSTALLABLE_PROFILE_IDS",
+    "PROFILES",
     "BEATS_CAPABILITY_ID",
     "COMFYUI_CAPABILITY_ID",
     "SAM2_CAPABILITY_ID",
     "SAM_AUDIO_CAPABILITY_ID",
     "STAGE_ORDER",
     "Capability",
+    "CapabilityProfile",
     "CapabilityProvider",
     "CapabilityState",
     "Check",
@@ -222,24 +247,36 @@ __all__ = [
     "RemediationKind",
     "VerificationStage",
     "capabilities_payload",
+    "capability_install_remediation",
     "capability_payload",
+    "capability_was_requested",
     "classify_exception",
     "clear_failures",
     "derive_state",
     "derive_verified_through",
     "evaluated_stages",
     "describe_environment",
+    "describe_profiles",
+    "expand_profile_ids",
     "get_capability",
     "get_last_failure",
+    "get_profile",
     "get_provider",
+    "install_command",
+    "install_remediation",
     "invalidate_capability_cache",
+    "invalidate_install_marker_cache",
     "is_durable",
     "note_capability_success",
     "list_capabilities",
     "list_capability_ids",
+    "profile_for_capability",
+    "read_install_marker",
     "record_exception",
     "record_failure",
     "record_load_failures",
     "sanitize_message",
     "sanitize_url",
+    "uv_command",
+    "write_install_marker",
 ]

@@ -247,6 +247,44 @@ export interface RuntimeEnvironmentSnapshot {
   searchPaths: Record<string, string[]>;
   huggingFace: { tokenPresent: boolean; tokenSource: string | null };
   offline: { hfHubOffline: boolean; transformersOffline: boolean };
+  /**
+   * What the installer was asked for, and what it managed to do.
+   *
+   * Optional because a backend from before the installer wrote a marker still
+   * answers these routes. `record: null` means no marker covers that profile —
+   * which is "no record", never "declined".
+   */
+  installProfiles?: RuntimeInstallProfiles;
+}
+
+export type InstallProfileStatus = "installed" | "failed" | "skipped";
+
+export interface RuntimeInstallProfile {
+  id: string;
+  label: string;
+  summary: string;
+  optional: boolean;
+  capabilities: string[];
+  requirements: string | null;
+  includes: string[];
+  record: {
+    id: string;
+    status: InstallProfileStatus;
+    requested: boolean;
+    detail?: string;
+    recordedAt?: string;
+  } | null;
+}
+
+export interface RuntimeInstallProfiles {
+  markerPath: string;
+  markerPresent: boolean;
+  recordedAt: string | null;
+  installer: string | null;
+  /** Presence only — the path to the user's uv is not in the payload. */
+  uvAvailable: boolean;
+  backendPython: string;
+  profiles: RuntimeInstallProfile[];
 }
 
 export interface RuntimeCapabilitiesPayload {

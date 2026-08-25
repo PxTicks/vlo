@@ -28,6 +28,12 @@ from ..probes import (
     package_check,
     python_version_check,
 )
+from ..profiles import (
+    SAM_AUDIO_PROFILE_ID,
+    capability_was_requested,
+    failed_install_check,
+    install_remediation,
+)
 from ..subprocess_probe import ProbeModule, ProbeSpec
 from .base import CapabilityProvider, ProviderReport, probed_module
 
@@ -42,16 +48,6 @@ MODEL_FILES: tuple[str, ...] = ("config.json", "checkpoint.pt")
 _IMPORT_STUBS: tuple[str, ...] = (
     "xformers.ops.fmha",
     "torchcodec.decoders",
-)
-
-INSTALL_REMEDIATION = Remediation(
-    kind=RemediationKind.COMMAND,
-    summary="Install the SAM-Audio package into the backend virtual environment",
-    command=(
-        "uv pip install --python backend/.venv/bin/python "
-        "-r backend/requirements-sam-audio.txt"
-    ),
-    requires_restart=True,
 )
 
 DOWNLOAD_REMEDIATION = Remediation(
@@ -120,7 +116,7 @@ class SamAudioProvider(CapabilityProvider):
             FailureCode.PACKAGE_IMPORT_FAILED,
             FailureCode.DEPENDENCY_INCOMPATIBLE,
         }:
-            return INSTALL_REMEDIATION
+            return install_remediation(SAM_AUDIO_PROFILE_ID)
         if code in {FailureCode.MODEL_MISSING, FailureCode.MODEL_INVALID}:
             return DOWNLOAD_REMEDIATION
         return None
@@ -154,7 +150,7 @@ class SamAudioProvider(CapabilityProvider):
             distribution="sam-audio",
             extra_paths=extra_paths,
             deep=probed_module(probe, "sam_audio"),
-            remediation=INSTALL_REMEDIATION,
+            remediation=install_remediation(SAM_AUDIO_PROFILE_ID),
         )
         checks.append(python_version_check((3, 11)))
         checks.append(package)
@@ -173,6 +169,17 @@ class SamAudioProvider(CapabilityProvider):
                 label="The SAM-Audio cache directory",
             )
         )
+        # Only present when the installer recorded this profile as having
+        # failed *and* the package is still missing — the soft
+        # warn-and-continue that otherwise leaves no trace. Gating on the live
+        # check matters: repairing the install by hand does not rewrite the
+        # marker, and a check that fired on the marker alone would keep a
+        # working capability blocked.
+        install_failure = failed_install_check(
+            CAPABILITY_ID, package_failing=package.failed
+        )
+        if install_failure is not None:
+            checks.append(install_failure)
 
         return ProviderReport(
             checks=tuple(checks),
@@ -180,8 +187,12 @@ class SamAudioProvider(CapabilityProvider):
             # "blocked": the capability counts as wanted once either half of it
             # (package or model) is on the machine. A package that is installed
             # but fails to import is wanted-and-broken, not deliberately absent.
+            # The installer's marker adds the third way to be wanted: asked for
+            # at install time and never successfully installed.
             expected=(
-                bool(models) or package.code is not FailureCode.PACKAGE_MISSING
+                bool(models)
+                or package.code is not FailureCode.PACKAGE_MISSING
+                or capability_was_requested(CAPABILITY_ID)
             ),
             device=device_report,
             selected_model=selected,

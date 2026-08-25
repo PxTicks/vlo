@@ -1,0 +1,14 @@
+# Optional SAM2 install for the backend virtual environment.
+# SAM2 is not published to PyPI, so it is installed from the upstream git
+# repository rather than listed as a bare requirement in
+# backend/requirements.txt. Keeping it here means SAM2 can be installed
+# non-interactively, the same way SAM-Audio can, instead of depending on the
+# installer's clone-and-editable-install shell logic.
+#
+# The packaged configs (sam2/configs/*.yaml) ship with the installed package,
+# which is what backend/services/sam2/sam2_discovery.py resolves against.
+#
+# Requires Python >=3.10, and a CUDA-enabled torch for GPU acceleration:
+#   uv pip install torch torchvision torchaudio \
+#     --index-url https://download.pytorch.org/whl/cu130
+sam2 @ git+https://github.com/facebookresearch/sam2.git

@@ -505,13 +505,26 @@ class _SamAudioRuntime:
             SAMAudio, SAMAudioProcessor = self._import_sam_audio_classes()
             _record_timing(timings, "dependencyImportSec", dependency_started_at)
         except Exception as exc:  # pragma: no cover - environment dependent
+            # The command comes from the profile table rather than being spelled
+            # out here: the venv `uv sync` builds has no pip, so the old
+            # `python -m pip` hint was an instruction that could not work.
+            from services.ai_models.capabilities.profiles import (
+                SAM_AUDIO_PROFILE_ID,
+                install_remediation,
+            )
+
+            remediation = install_remediation(SAM_AUDIO_PROFILE_ID)
+            command = (
+                f"`{remediation.command}`"
+                if remediation is not None and remediation.command
+                else "the optional SAM-Audio requirements"
+            )
             raise SamAudioConfigError(
                 "Failed to import SAM-Audio. Install the optional SAM-Audio "
                 "requirements into the backend virtual environment with "
-                "`python -m pip install -r backend/requirements-sam-audio.txt`, "
-                "set SAM_AUDIO_PYTHONPATH to a checkout with its dependencies "
-                "installed, or fix the failing transitive dependency. "
-                f"Underlying error: {exc}"
+                f"{command}, set SAM_AUDIO_PYTHONPATH to a checkout with its "
+                "dependencies installed, or fix the failing transitive "
+                f"dependency. Underlying error: {exc}"
             ) from exc
 
         model_ref_started_at = time.perf_counter()

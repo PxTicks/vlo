@@ -52,115 +52,14 @@ from services.ai_models.capabilities.subprocess_probe import (
 )
 
 
-SAM_AUDIO_MODEL = "sam-audio-large-tv"
-
-
-@dataclass
-class _FakePackage:
-    installed: bool = True
-    importable: bool = True
-    version: str | None = "1.0.0"
-    error: str | None = None
-    missing_module: str | None = None
-
-
-@dataclass
-class _FakeEnvironment:
-    """Declarative stand-in for "what is installed on this machine".
-
-    Both halves of the real signal are faked together — ``find_spec`` presence
-    and the out-of-process import — because a capability's state is exactly the
-    disagreement between them.
-    """
-
-    packages: dict[str, _FakePackage] = field(default_factory=dict)
-    device: DeviceProbe = field(
-        default_factory=lambda: DeviceProbe(torch_version="2.4.0")
-    )
-    probe_calls: list[ProbeSpec] = field(default_factory=list)
-
-    def set_package(self, name: str, **kwargs: object) -> None:
-        self.packages[name] = _FakePackage(**kwargs)  # type: ignore[arg-type]
-
-    def entry(self, name: str) -> _FakePackage:
-        if name in self.packages:
-            return self.packages[name]
-        top_level = name.split(".")[0]
-        return self.packages.get(top_level, _FakePackage())
-
-
-@pytest.fixture
-def fake_environment(monkeypatch: pytest.MonkeyPatch) -> _FakeEnvironment:
-    environment = _FakeEnvironment()
-
-    def fake_find_package(module: str, *, distribution=None, extra_paths=()):
-        del distribution, extra_paths
-        entry = environment.entry(module)
-        return probes.PackagePresence(
-            found=entry.installed,
-            origin=f"/fake/{module}/__init__.py" if entry.installed else None,
-            version=entry.version if entry.installed else None,
-        )
-
-    def fake_run_probe(spec: ProbeSpec, *, timeout: float = 0.0) -> ProbeResult:
-        del timeout
-        environment.probe_calls.append(spec)
-        modules = {}
-        for module in spec.modules:
-            entry = environment.entry(module.name)
-            modules[module.name] = ModuleProbe(
-                name=module.name,
-                imported=entry.installed and entry.importable,
-                version=entry.version,
-                error=entry.error,
-                missing_module=entry.missing_module,
-            )
-        return ProbeResult(
-            ok=True,
-            python={"version": "3.11.9"},
-            modules=modules,
-            device=environment.device if spec.device else None,
-        )
-
-    monkeypatch.setattr(probes, "find_package", fake_find_package)
-    monkeypatch.setattr(subprocess_probe, "run_probe", fake_run_probe)
-    invalidate_probe_cache()
-    yield environment
-    invalidate_probe_cache()
-
-
-@pytest.fixture
-def capability_dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Path]:
-    """Point every configured model/cache directory at a temporary one."""
-
-    import config
-    from services.sam2 import sam2_discovery
-
-    directories = {
-        "sam2_models": tmp_path / "sam2-models",
-        "sam2_cache": tmp_path / "sam2-cache",
-        "sam_audio_models": tmp_path / "sam-audio-models",
-        "sam_audio_cache": tmp_path / "sam-audio-cache",
-        "beats_cache": tmp_path / "beats-cache",
-    }
-    for path in directories.values():
-        path.mkdir(parents=True, exist_ok=True)
-
-    monkeypatch.setattr(config, "SAM2_SEARCH_PATHS", [directories["sam2_models"]])
-    # ``sam2_discovery`` binds the search paths at import time, so patching the
-    # config module alone would not reach it.
-    monkeypatch.setattr(
-        sam2_discovery, "SAM2_SEARCH_PATHS", [directories["sam2_models"]]
-    )
-    monkeypatch.setattr(config, "SAM2_CACHE_DIR", directories["sam2_cache"])
-    monkeypatch.setattr(
-        config, "SAM_AUDIO_SEARCH_PATHS", [directories["sam_audio_models"]]
-    )
-    monkeypatch.setattr(config, "SAM_AUDIO_MODEL_DIR", directories["sam_audio_models"])
-    monkeypatch.setattr(config, "SAM_AUDIO_CACHE_DIR", directories["sam_audio_cache"])
-    monkeypatch.setattr(config, "SAM_AUDIO_DEFAULT_MODEL", SAM_AUDIO_MODEL)
-    monkeypatch.setattr(config, "BEATTHIS_CACHE_DIR", directories["beats_cache"])
-    return directories
+# ``fake_environment`` / ``capability_dirs`` and the declarative environment
+# they build live in ``tests/conftest.py``: the profile tests need exactly the
+# same "what is installed on this machine" stand-in.
+from conftest import (  # noqa: E402
+    SAM_AUDIO_MODEL,
+    _FakeEnvironment,
+    _FakePackage,
+)
 
 
 def _write_sam_audio_model(

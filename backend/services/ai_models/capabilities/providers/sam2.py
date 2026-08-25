@@ -1,9 +1,10 @@
 """SAM2 capability provider.
 
-SAM2 is installed by the shell installer as a git clone plus an editable
-install, with every step a soft warn-and-continue. Checkpoints, meanwhile, are
-downloaded from the app independently. The two halves come apart routinely, so
-this provider reports them separately.
+SAM2 installs from ``backend/requirements-sam2.txt``; checkpoints are
+downloaded from the app independently. The two halves come apart routinely —
+historically because every installer step was a soft warn-and-continue — so
+this provider reports them separately, and the install remediation comes from
+the profile table rather than being spelled out here.
 """
 
 from __future__ import annotations
@@ -29,6 +30,12 @@ from ..probes import (
     package_check,
     python_version_check,
 )
+from ..profiles import (
+    SAM2_PROFILE_ID,
+    capability_was_requested,
+    failed_install_check,
+    install_remediation,
+)
 from ..subprocess_probe import ProbeModule, ProbeSpec
 from .base import CapabilityProvider, ProviderReport, probed_module
 
@@ -40,16 +47,6 @@ CAPABILITY_ID = "sam2"
 #: ``import sam2`` succeed as an empty namespace package even when nothing was
 #: installed into the venv.
 _IMPORT_TARGET = "sam2.build_sam"
-
-INSTALL_REMEDIATION = Remediation(
-    kind=RemediationKind.COMMAND,
-    summary="Install SAM2 into the backend virtual environment",
-    command=(
-        "git clone https://github.com/facebookresearch/sam2.git backend/sam2 && "
-        "uv pip install --python backend/.venv/bin/python -e backend/sam2"
-    ),
-    requires_restart=True,
-)
 
 DOWNLOAD_REMEDIATION = Remediation(
     kind=RemediationKind.DOWNLOAD,
@@ -94,7 +91,7 @@ class Sam2Provider(CapabilityProvider):
             FailureCode.PACKAGE_IMPORT_FAILED,
             FailureCode.DEPENDENCY_INCOMPATIBLE,
         }:
-            return INSTALL_REMEDIATION
+            return install_remediation(SAM2_PROFILE_ID)
         if code in {FailureCode.MODEL_MISSING, FailureCode.MODEL_INVALID}:
             return DOWNLOAD_REMEDIATION
         return None
@@ -125,7 +122,7 @@ class Sam2Provider(CapabilityProvider):
                 distribution="sam2",
                 extra_paths=extra_paths,
                 deep=probed_module(probe, _IMPORT_TARGET),
-                remediation=INSTALL_REMEDIATION,
+                remediation=install_remediation(SAM2_PROFILE_ID),
             ),
         ]
         package = checks[-1]
@@ -145,13 +142,27 @@ class Sam2Provider(CapabilityProvider):
                 label="The SAM2 cache directory",
             )
         )
+        # Only present when the installer recorded this profile as having
+        # failed *and* the package is still missing — the soft
+        # warn-and-continue that otherwise leaves no trace. Gating on the live
+        # check matters: repairing the install by hand does not rewrite the
+        # marker, and a check that fired on the marker alone would keep a
+        # working capability blocked.
+        install_failure = failed_install_check(
+            CAPABILITY_ID, package_failing=package.failed
+        )
+        if install_failure is not None:
+            checks.append(install_failure)
 
         return ProviderReport(
             checks=tuple(checks),
             # Import failure proves the package is present but broken. Treat it
             # as a blocked requested capability even when no checkpoint exists.
+            # So does an installer marker: asked for, and still not installed.
             expected=(
-                bool(models) or package.code is not FailureCode.PACKAGE_MISSING
+                bool(models)
+                or package.code is not FailureCode.PACKAGE_MISSING
+                or capability_was_requested(CAPABILITY_ID)
             ),
             device=device_report,
             selected_model=str(selected["name"]) if selected else None,

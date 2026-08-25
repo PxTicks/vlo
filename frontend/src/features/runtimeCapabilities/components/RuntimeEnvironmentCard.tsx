@@ -47,6 +47,30 @@ function describeDevices(environment: RuntimeEnvironmentSnapshot): string {
   return "CPU only";
 }
 
+/**
+ * What the installer was asked for, and how it went.
+ *
+ * Only reports profiles the marker actually covers. A backend without a marker
+ * says nothing here rather than implying every optional feature was declined —
+ * "no record" and "you said no" are exactly the two things this is meant to
+ * keep apart.
+ */
+function describeInstallProfiles(
+  environment: RuntimeEnvironmentSnapshot,
+): string | null {
+  const snapshot = environment.installProfiles;
+  if (!snapshot?.markerPresent) return null;
+
+  const recorded = snapshot.profiles.filter(
+    (profile) => profile.record !== null,
+  );
+  if (recorded.length === 0) return null;
+
+  return recorded
+    .map((profile) => `${profile.label}: ${profile.record!.status}`)
+    .join(", ");
+}
+
 export function RuntimeEnvironmentCard({
   environment,
 }: RuntimeEnvironmentCardProps) {
@@ -54,6 +78,7 @@ export function RuntimeEnvironmentCard({
   const unwritable = environment.directories.filter(
     (directory) => !directory.writable,
   );
+  const installProfiles = describeInstallProfiles(environment);
 
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }} data-testid="environment-card">
@@ -93,6 +118,9 @@ export function RuntimeEnvironmentCard({
               : "no token"
           }
         />
+        {installProfiles ? (
+          <Row label="Installed" value={installProfiles} />
+        ) : null}
         {unwritable.length > 0 ? (
           <Row
             label="Not writable"

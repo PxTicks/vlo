@@ -20,6 +20,7 @@ from typing import Any
 
 from .contract import iso_timestamp, utc_now
 from .failures import sanitize_message
+from .profiles import describe_profiles
 from .subprocess_probe import (
     DeviceProbe,
     ProbeModule,
@@ -194,4 +195,8 @@ def describe_environment(*, refresh: bool = False) -> dict[str, Any]:
         },
         "huggingFace": _hugging_face_snapshot(),
         "offline": _offline_snapshot(),
+        # What the installer was asked for and what it managed to do. Without
+        # this, a support export cannot tell "never installed" from "install
+        # failed and warned into a scrollback nobody kept".
+        "installProfiles": describe_profiles(),
     }

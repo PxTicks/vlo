@@ -253,7 +253,8 @@ describe("SamAudioExtractDialog", () => {
   it("shows the backend diagnostic when SAM-Audio cannot be imported", async () => {
     const diagnostic =
       "Failed to import SAM-Audio. Install the optional SAM-Audio requirements " +
-      "with `python -m pip install -r backend/requirements-sam-audio.txt`. " +
+      "with `uv pip install --python backend/.venv/bin/python " +
+      "-r backend/requirements-sam-audio.txt`. " +
       "Underlying error: No module named 'sam_audio'";
     samAudioDialogMocks.mockRunSamAudioSeparation.mockRejectedValueOnce(
       new Error(diagnostic),

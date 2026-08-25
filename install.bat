@@ -27,13 +27,173 @@ set "VLO_PYTHON_VERSION=3.13.12"
 set "VLO_PYTHON_MINOR=3.13"
 set "VLO_PYTHON_INSTALL_DIR=%VLO_HOME%\python"
 
-:: Parse arguments
+:: Optional capability profiles. PROFILES_EXPLICIT=1 means the caller already
+:: decided, so nothing is prompted for and the run is non-interactive.
+set "PROFILES_EXPLICIT=0"
+set "WANT_SAM2=0"
+set "WANT_SAM_AUDIO=0"
+set "CUDA_TORCH_CHOICE="
+set "ASSUME_YES=0"
+set "PROFILE_STATUS_BASE=skipped"
+set "PROFILE_STATUS_SAM2=skipped"
+set "PROFILE_STATUS_SAM_AUDIO=skipped"
+
+:: Parse arguments. Every branch either consumes the argument or rejects it:
+:: silently ignoring an unknown option would let a provisioning run "succeed"
+:: having installed none of the optional capabilities it was asked for.
 :parse_args
 if "%~1"=="" goto :done_args
-if /I "%~1"=="--update-node" set "FORCE_INSTALL_VLO_NODE=1"
+if /I "%~1"=="--update-node" goto :arg_ok_update_node
+if /I "%~1"=="--no-optional" goto :arg_ok_no_optional
+if /I "%~1"=="--cuda-torch" goto :arg_ok_cuda_torch
+if /I "%~1"=="--no-cuda-torch" goto :arg_ok_no_cuda_torch
+if /I "%~1"=="-y" goto :arg_ok_yes
+if /I "%~1"=="--yes" goto :arg_ok_yes
+if /I "%~1"=="-h" goto :usage
+if /I "%~1"=="--help" goto :usage
+:: Not folded into the loop body: every %~1 inside a parenthesised block is
+:: expanded when the block is parsed, so an in-block `shift` would still hand
+:: :add_profiles the flag rather than its value.
+if /I "%~1"=="--profiles" goto :take_profiles
+echo [ERROR] Unknown option: %~1
+goto :usage_error
+
+:arg_ok_update_node
+set "FORCE_INSTALL_VLO_NODE=1"
 shift
 goto :parse_args
+
+:arg_ok_no_optional
+set "PROFILES_EXPLICIT=1"
+shift
+goto :parse_args
+
+:arg_ok_cuda_torch
+set "CUDA_TORCH_CHOICE=yes"
+shift
+goto :parse_args
+
+:arg_ok_no_cuda_torch
+set "CUDA_TORCH_CHOICE=no"
+shift
+goto :parse_args
+
+:arg_ok_yes
+set "ASSUME_YES=1"
+shift
+goto :parse_args
+
+:take_profiles
+set "PROFILES_EXPLICIT=1"
+shift
+if "%~1"=="" (
+    echo [ERROR] --profiles needs a value
+    goto :usage_error
+)
+call :add_profiles "%~1"
+if errorlevel 1 goto :usage_error
+shift
+goto :parse_args
+
 :done_args
+goto :after_profile_helpers
+
+:usage_error
+call :print_usage
+endlocal
+exit /b 1
+
+:usage
+call :print_usage
+endlocal
+goto :eof
+
+:print_usage
+echo Usage: install.bat [options]
+echo.
+echo   --update-node          Reinstall the VLO-managed Node.js runtime.
+echo   --profiles ^<list^>      Install these optional capability profiles without
+echo                          prompting. Comma-separated; one or more of:
+echo                              sam2, sam-audio, local-ai, all, none
+echo   --no-optional          Install nothing optional.
+echo   --cuda-torch           Install CUDA-enabled PyTorch without prompting.
+echo   --no-cuda-torch        Keep the existing PyTorch build.
+echo   -y, --yes              Accept the default answer to every prompt.
+echo   -h, --help             Show this message.
+echo.
+echo Whatever the installer was asked for is recorded in
+echo backend\runtime\install-profiles.json, which is how the app later tells
+echo "never installed" apart from "asked for, and the install failed".
+exit /b 0
+
+:add_profiles
+set "PROFILE_LIST=%~1"
+if "%PROFILE_LIST%"=="" exit /b 1
+set "PROFILE_LIST=%PROFILE_LIST:,= %"
+for %%P in (%PROFILE_LIST%) do (
+    call :add_profile "%%P"
+    if errorlevel 1 exit /b 1
+)
+exit /b 0
+
+:: An unknown profile name is rejected rather than ignored, matching
+:: install.sh. Dropping it would install nothing and still report success.
+:add_profile
+if /I "%~1"=="sam2" (
+    set "WANT_SAM2=1"
+    exit /b 0
+)
+if /I "%~1"=="sam-audio" (
+    set "WANT_SAM_AUDIO=1"
+    exit /b 0
+)
+if /I "%~1"=="local-ai" (
+    set "WANT_SAM2=1"
+    set "WANT_SAM_AUDIO=1"
+    exit /b 0
+)
+if /I "%~1"=="all" (
+    set "WANT_SAM2=1"
+    set "WANT_SAM_AUDIO=1"
+    exit /b 0
+)
+if /I "%~1"=="none" exit /b 0
+echo [ERROR] Unknown profile: %~1
+exit /b 1
+
+:: One line per profile, written once at the end. The registry reads this to
+:: distinguish an optional feature nobody asked for from one that was requested
+:: and whose install failed.
+:write_profile_marker
+set "MARKER_DIR=%SCRIPT_DIR%backend\runtime"
+set "MARKER=%MARKER_DIR%\install-profiles.json"
+if not exist "%MARKER_DIR%" mkdir "%MARKER_DIR%"
+set "MARKER_REQUESTED_SAM2=false"
+set "MARKER_REQUESTED_SAM_AUDIO=false"
+if "%WANT_SAM2%"=="1" set "MARKER_REQUESTED_SAM2=true"
+if "%WANT_SAM_AUDIO%"=="1" set "MARKER_REQUESTED_SAM_AUDIO=true"
+for /f "usebackq delims=" %%T in (`powershell -NoProfile -Command "(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')"`) do set "MARKER_NOW=%%T"
+set "MARKER_UV=%UV_BIN:\=\\%"
+set "MARKER_PY=%SCRIPT_DIR%backend\.venv\Scripts\python.exe"
+set "MARKER_PY=%MARKER_PY:\=\\%"
+(
+    echo {
+    echo   "version": 1,
+    echo   "recordedAt": "!MARKER_NOW!",
+    echo   "installer": "install.bat",
+    echo   "uv": "!MARKER_UV!",
+    echo   "python": "!MARKER_PY!",
+    echo   "profiles": {
+    echo     "base": { "status": "!PROFILE_STATUS_BASE!", "requested": true, "recordedAt": "!MARKER_NOW!" },
+    echo     "sam2": { "status": "!PROFILE_STATUS_SAM2!", "requested": !MARKER_REQUESTED_SAM2!, "recordedAt": "!MARKER_NOW!" },
+    echo     "sam-audio": { "status": "!PROFILE_STATUS_SAM_AUDIO!", "requested": !MARKER_REQUESTED_SAM_AUDIO!, "recordedAt": "!MARKER_NOW!" }
+    echo   }
+    echo }
+) > "%MARKER%"
+echo [INFO]  Recorded installed profiles in %MARKER%
+goto :eof
+
+:after_profile_helpers
 
 echo [INFO]  VLO Installer
 echo.
@@ -160,67 +320,104 @@ echo [INFO]  Installing backend Python dependencies...
 cd /d "%SCRIPT_DIR%backend"
 call "%UV_BIN%" sync --frozen --python "%PYTHON_CMD%"
 if %errorlevel% neq 0 (
+    set "PROFILE_STATUS_BASE=failed"
+    call :write_profile_marker
     call :fail "uv sync failed"
     goto :eof
 )
+set "PROFILE_STATUS_BASE=installed"
 
-:: -- 7. Install SAM2 (Optional) -------------------------------------
+:: The backend venv is created by `uv sync` and does NOT contain pip, so every
+:: optional install goes through `uv pip` targeting that venv rather than
+:: `python -m pip`.
+set "VENV_PY=%SCRIPT_DIR%backend\.venv\Scripts\python.exe"
+
+:: -- 7. Optional capability profiles --------------------------------
+
+if "%PROFILES_EXPLICIT%"=="1" goto :profiles_chosen
+if "%ASSUME_YES%"=="1" goto :profiles_chosen
 
 echo.
 set "INSTALL_SAM2="
-set /p INSTALL_SAM2=Would you like to install SAM2 for video segmentation and masking? (Requires CUDA for GPU acceleration) [y/N]: 
-if /I "!INSTALL_SAM2!"=="Y" goto :do_install_sam2
-if /I "!INSTALL_SAM2!"=="YES" goto :do_install_sam2
-echo [INFO]  Skipping SAM2 installation.
-goto :skip_sam2
+set /p INSTALL_SAM2=Would you like to install SAM2 for video segmentation and masking? (Requires CUDA for GPU acceleration) [y/N]:
+if /I "!INSTALL_SAM2!"=="Y" set "WANT_SAM2=1"
+if /I "!INSTALL_SAM2!"=="YES" set "WANT_SAM2=1"
 
-:do_install_sam2
+set "INSTALL_SAM_AUDIO="
+set /p INSTALL_SAM_AUDIO=Would you like to install SAM-Audio for prompted audio separation? (Requires Python 3.11+) [y/N]:
+if /I "!INSTALL_SAM_AUDIO!"=="Y" set "WANT_SAM_AUDIO=1"
+if /I "!INSTALL_SAM_AUDIO!"=="YES" set "WANT_SAM_AUDIO=1"
+
+:profiles_chosen
+if "%WANT_SAM2%"=="0" if "%WANT_SAM_AUDIO%"=="0" goto :skip_optional
+
+if /I "%CUDA_TORCH_CHOICE%"=="no" goto :skip_cuda_torch
+if /I "%CUDA_TORCH_CHOICE%"=="yes" goto :do_cuda_torch
+if "%PROFILES_EXPLICIT%"=="1" goto :do_cuda_torch
+if "%ASSUME_YES%"=="1" goto :do_cuda_torch
 set "INSTALL_CUDA_TORCH="
-set /p INSTALL_CUDA_TORCH=Would you like to install PyTorch with CUDA 13.0 support? (Highly recommended for SAM2 on Nvidia GPUs) [Y/n]: 
+set /p INSTALL_CUDA_TORCH=Would you like to install PyTorch with CUDA 13.0 support? (Highly recommended on Nvidia GPUs) [Y/n]:
 if /I "!INSTALL_CUDA_TORCH!"=="N" goto :skip_cuda_torch
 if /I "!INSTALL_CUDA_TORCH!"=="NO" goto :skip_cuda_torch
 
+:do_cuda_torch
 echo [INFO]  Installing CUDA PyTorch...
-:: The backend venv is created by `uv sync` and does NOT contain pip, so install
-:: through `uv pip` targeting that venv rather than `python -m pip`.
-call "%UV_BIN%" pip install --python "%SCRIPT_DIR%backend\.venv\Scripts\python.exe" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+call "%UV_BIN%" pip install --python "%VENV_PY%" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 if %errorlevel% neq 0 (
     echo [WARN]  CUDA PyTorch installation failed. Attempting to proceed anyway...
 )
-goto :clone_sam2
+goto :install_sam2
 
 :skip_cuda_torch
 echo [INFO]  Skipping CUDA PyTorch installation, using existing PyTorch.
 
-:clone_sam2
-where git >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] git was not found; cannot clone SAM2. Skipping SAM2 install.
-    goto :skip_sam2
+:install_sam2
+if "%WANT_SAM2%"=="0" (
+    echo [INFO]  Skipping SAM2 installation. Rerun with --profiles sam2 to add it later.
+    goto :install_sam_audio
 )
-if not exist "%SCRIPT_DIR%backend\sam2" (
-    echo [INFO]  Cloning facebookresearch/sam2...
-    git clone https://github.com/facebookresearch/sam2.git "%SCRIPT_DIR%backend\sam2"
-    if %errorlevel% neq 0 (
-        echo [ERROR] Failed to clone SAM2 repository.
-        goto :skip_sam2
-    )
+
+:: A checkout from an earlier installer. Install that one rather than fetching
+:: a second copy, so an existing setup keeps working.
+if exist "%SCRIPT_DIR%backend\sam2" (
+    echo [INFO]  Installing SAM2 from the existing backend\sam2 checkout...
+    call "%UV_BIN%" pip install --python "%VENV_PY%" -e "%SCRIPT_DIR%backend\sam2"
 ) else (
-    echo [INFO]  sam2 directory already exists, skipping clone.
+    echo [INFO]  Installing SAM2 into the backend virtual environment...
+    call "%UV_BIN%" pip install --python "%VENV_PY%" -r "%SCRIPT_DIR%backend\requirements-sam2.txt"
 )
-
-echo [INFO]  Installing SAM2 into the backend virtual environment...
-call "%UV_BIN%" pip install --python "%SCRIPT_DIR%backend\.venv\Scripts\python.exe" -e "%SCRIPT_DIR%backend\sam2"
 if %errorlevel% neq 0 (
-    echo [ERROR] SAM2 installation failed.
+    set "PROFILE_STATUS_SAM2=failed"
+    echo [WARN]  SAM2 installation failed. The app will report it as blocked, with the command to retry.
+) else (
+    set "PROFILE_STATUS_SAM2=installed"
+    echo [INFO]  SAM2 installed.
 )
 
-:skip_sam2
+:install_sam_audio
+if "%WANT_SAM_AUDIO%"=="0" (
+    echo [INFO]  Skipping SAM-Audio installation. Rerun with --profiles sam-audio to add it later.
+    goto :skip_optional
+)
+
+echo [INFO]  Installing SAM-Audio into the backend virtual environment...
+call "%UV_BIN%" pip install --python "%VENV_PY%" -r "%SCRIPT_DIR%backend\requirements-sam-audio.txt"
+if %errorlevel% neq 0 (
+    set "PROFILE_STATUS_SAM_AUDIO=failed"
+    echo [WARN]  SAM-Audio installation failed. The app will report it as blocked, with the command to retry.
+) else (
+    set "PROFILE_STATUS_SAM_AUDIO=installed"
+    echo [INFO]  SAM-Audio installed.
+)
+
+:skip_optional
 
 :: -- 8. Projects & Models directories -------------------------------
 
 if not exist "%SCRIPT_DIR%projects" mkdir "%SCRIPT_DIR%projects"
 if not exist "%SCRIPT_DIR%backend\assets\models\sams" mkdir "%SCRIPT_DIR%backend\assets\models\sams"
+
+call :write_profile_marker
 
 :: -- Done -----------------------------------------------------------
 

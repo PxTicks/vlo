@@ -13,7 +13,11 @@ from config import (
     BEATTHIS_DEFAULT_MODEL,
     BEATTHIS_DEVICE,
 )
-from services.ai_models.capabilities import BEATS_CAPABILITY_ID
+from services.ai_models.capabilities import (
+    BEATS_CAPABILITY_ID,
+    note_capability_success,
+    record_load_failures,
+)
 from services.ai_models.health import capability_runtime_health
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
 from services.model_work.local_inference import run_local_inference
@@ -243,15 +247,17 @@ class _BeatThisRuntime:
             ) from exc
 
     def get_predictor(self, checkpoint: str, dbn: bool) -> Any:
-        device = self._resolve_device(BEATTHIS_DEVICE)
-        key = (checkpoint, device, dbn)
-        if self._predictor is not None and self._predictor_key == key:
-            return self._predictor
         with self._lock:
-            if self._predictor is None or self._predictor_key != key:
-                self._predictor = self._build_predictor(checkpoint, device, dbn)
-                self._predictor_key = key
-                self._resolved_device = device
+            with record_load_failures(BEATS_CAPABILITY_ID):
+                # Device resolution is part of whether this runtime can load,
+                # not setup performed before the recorded boundary.
+                device = self._resolve_device(BEATTHIS_DEVICE)
+                key = (checkpoint, device, dbn)
+                if self._predictor is None or self._predictor_key != key:
+                    self._predictor = self._build_predictor(checkpoint, device, dbn)
+                    self._predictor_key = key
+                    self._resolved_device = device
+                note_capability_success(BEATS_CAPABILITY_ID)
         return self._predictor
 
     def health(self) -> dict[str, Any]:

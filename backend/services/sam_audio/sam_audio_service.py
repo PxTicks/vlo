@@ -7,6 +7,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from importlib.machinery import ModuleSpec
 from types import ModuleType
@@ -23,10 +24,18 @@ from config import (
     SAM_AUDIO_LOAD_OPTIONAL_MODELS,
     SAM_AUDIO_SEARCH_PATHS,
 )
-from services.ai_models.capabilities import SAM_AUDIO_CAPABILITY_ID
+from services.ai_models.capabilities import (
+    SAM_AUDIO_CAPABILITY_ID,
+    ClassifiedFailure,
+    classify_exception,
+    note_capability_success,
+    record_load_failures,
+    sanitize_message,
+)
 from services.ai_models.health import capability_runtime_health
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
 from services.jobs import (
+    BackendJobCancelledError,
     BackendJobContext,
     BackendJobDefinition,
     BackendJobManager,
@@ -77,6 +86,14 @@ SKIPPABLE_SAM_AUDIO_MISSING_PREFIXES = (
 
 class SamAudioConfigError(RuntimeError):
     """Raised when SAM-Audio runtime configuration is invalid."""
+
+
+class SamAudioRuntimeLoadError(SamAudioConfigError):
+    """A classified failure confined to the model-load boundary."""
+
+    def __init__(self, failure: ClassifiedFailure) -> None:
+        super().__init__(failure.summary)
+        self.failure = failure
 
 
 class SamAudioRuntimeError(RuntimeError):
@@ -180,6 +197,7 @@ class SamAudioJob:
     progress: float
     message: str | None
     error: str | None
+    error_code: str | None
     created_at: float
     updated_at: float
     result: SamAudioJobResult | None
@@ -193,6 +211,9 @@ class SamAudioJob:
             "progress": self.progress,
             "message": self.message,
             "error": self.error,
+            # The classified cause, so the queue toast can say what went wrong
+            # instead of echoing the last progress message.
+            "errorCode": self.error_code,
             "cancelRequested": self.cancel_requested,
             "sourceId": self.source_id,
             "startTicks": self.start_ticks,
@@ -557,31 +578,62 @@ class _SamAudioRuntime:
         if self._model is not None and self._processor is not None:
             return self._model, self._processor, self._resolved_device or "cpu"
 
+        try:
+            return self._load(timings=timings, on_progress=on_progress)
+        except BackendJobCancelledError:
+            raise
+        except Exception as exc:
+            # This marker lets the job adapter distinguish a model-load failure
+            # from source extraction, inference, or artifact-write failures.
+            raise SamAudioRuntimeLoadError(classify_exception(exc)) from exc
+
+    def _load(
+        self,
+        timings: dict[str, float] | None = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> tuple[Any, Any, str]:
         with self._lock:
             if self._model is not None and self._processor is not None:
                 return self._model, self._processor, self._resolved_device or "cpu"
 
-            requested_device = SAM_AUDIO_DEVICE.strip() or "auto"
-            candidate_devices = self._resolve_candidate_devices(requested_device)
-            errors: list[str] = []
-            for device in candidate_devices:
-                try:
-                    model, processor, model_ref = self._load_for_device(
-                        device,
-                        timings=timings,
-                        on_progress=on_progress,
-                    )
-                    self._model = model
-                    self._processor = processor
-                    self._resolved_device = device
-                    self._selected_model_ref = model_ref
-                    return model, processor, device
-                except Exception as exc:  # pragma: no cover - environment dependent
-                    errors.append(f"{device}: {exc}")
+            with record_load_failures(
+                SAM_AUDIO_CAPABILITY_ID,
+                ignore=(BackendJobCancelledError,),
+            ):
+                requested_device = SAM_AUDIO_DEVICE.strip() or "auto"
+                candidate_devices = self._resolve_candidate_devices(requested_device)
+                errors: list[tuple[str, Exception]] = []
+                for device in candidate_devices:
+                    try:
+                        model, processor, model_ref = self._load_for_device(
+                            device,
+                            timings=timings,
+                            on_progress=on_progress,
+                        )
+                        self._model = model
+                        self._processor = processor
+                        self._resolved_device = device
+                        self._selected_model_ref = model_ref
+                        note_capability_success(SAM_AUDIO_CAPABILITY_ID)
+                        return model, processor, device
+                    except BackendJobCancelledError:
+                        raise
+                    except Exception as exc:  # pragma: no cover - environment dependent
+                        errors.append((device, exc))
 
-        raise SamAudioConfigError(
-            f"Failed to initialize SAM-Audio runtime ({'; '.join(errors) or 'unknown error'})"
-        )
+                summary = (
+                    "; ".join(f"{device}: {exc}" for device, exc in errors)
+                    if errors
+                    else "unknown error"
+                )
+                error = SamAudioConfigError(
+                    f"Failed to initialize SAM-Audio runtime ({summary})"
+                )
+                if errors:
+                    # Keep the exception chain intact so package/import/model
+                    # failures survive fallback-device aggregation.
+                    raise error from errors[-1][1]
+                raise error
 
     def health(self) -> dict[str, Any]:
         # A checkpoint on disk says nothing about whether sam_audio imports;
@@ -1175,9 +1227,15 @@ class _LiveTimings(dict[str, float]):
     def __init__(self, context: BackendJobContext) -> None:
         super().__init__()
         self._context = context
+        self._mirror: dict[str, float] | None = None
+
+    def mirror_into(self, target: dict[str, float]) -> None:
+        self._mirror = target
 
     def __setitem__(self, key: str, value: float) -> None:
         super().__setitem__(key, value)
+        if self._mirror is not None:
+            self._mirror[key] = value
         self._context.report_runtime_metadata({"timings": dict(self)})
 
 
@@ -1224,12 +1282,51 @@ def _run_separation_job_under_lease(
     value: object,
     lease: Lease | None,
 ) -> object:
+    timings_for_failure: dict[str, float] = {}
+    try:
+        return _separate_under_lease(context, value, lease, timings_for_failure)
+    except BackendJobCancelledError:
+        raise
+    except SamAudioRuntimeLoadError as exc:
+        # Only a failure emitted at the model-load boundary is a capability
+        # failure. Request validation, source decoding, inference, and artifact
+        # writes keep their own errors and must not poison runtime readiness.
+        classified = exc.failure
+        if lease is not None:
+            # The shared model-work queue turns this entry's final message into
+            # its failure toast. Replace the last progress line before release
+            # marks it terminal, so the toast cites the classified cause too.
+            with suppress(Exception):
+                lease.report(message=classified.summary)
+        with suppress(Exception):
+            context.report_runtime_metadata(
+                {
+                    "timings": dict(timings_for_failure),
+                    "failure": {
+                        "code": classified.code.value,
+                        "summary": classified.summary,
+                    },
+                }
+            )
+        raise
+
+
+def _separate_under_lease(
+    context: BackendJobContext,
+    value: object,
+    lease: Lease | None,
+    timings_out: dict[str, float],
+) -> object:
     payload = cast(dict[str, object], value)
     source_id = cast(str, payload["sourceId"])
     start_ticks = cast(int, payload["startTicks"])
     duration_ticks = cast(int, payload["durationTicks"])
     prompt = cast(SamAudioPrompt, payload["prompt"])
     timings = _LiveTimings(context)
+    # Shared with the failure handler so a failed job keeps the timings it had
+    # already reported rather than replacing them with an empty set.
+    timings_out.clear()
+    timings.mirror_into(timings_out)
 
     logger.info("SAM-Audio job %s started", context.identity.job_id)
 
@@ -1367,6 +1464,12 @@ def _to_sam_audio_job(snapshot: BackendJobSnapshot) -> SamAudioJob:
         else {}
     )
     timings = metadata.get("timings", {})
+    failure = metadata.get("failure")
+    failure_payload = failure if isinstance(failure, dict) else {}
+    error_code = failure_payload.get("code")
+    # Prefer the classified summary: the raw exception text is a chain of
+    # device attempts, and the client has one line to show.
+    error_summary = failure_payload.get("summary")
     return SamAudioJob(
         job_id=snapshot.identity.job_id,
         source_id=cast(str, payload["sourceId"]),
@@ -1376,7 +1479,12 @@ def _to_sam_audio_job(snapshot: BackendJobSnapshot) -> SamAudioJob:
         status=status,
         progress=snapshot.progress,
         message=message,
-        error=snapshot.error,
+        error=(
+            cast(str, error_summary)
+            if isinstance(error_summary, str) and error_summary
+            else sanitize_message(snapshot.error) or None
+        ),
+        error_code=cast(str, error_code) if isinstance(error_code, str) else None,
         created_at=snapshot.created_at,
         updated_at=snapshot.updated_at,
         result=result,

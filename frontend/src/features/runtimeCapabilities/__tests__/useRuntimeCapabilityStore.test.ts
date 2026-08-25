@@ -89,6 +89,45 @@ describe("useRuntimeCapabilityStore", () => {
     expect(getRuntimeCapabilities).toHaveBeenLastCalledWith({ refresh: true });
   });
 
+  it("reloads after an older read so a new runtime failure cannot be missed", async () => {
+    let releaseFirst: () => void = () => {};
+    vi.mocked(getRuntimeCapabilities)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseFirst = () => resolve(payload(capability()));
+          }) as never,
+      )
+      .mockResolvedValueOnce(
+        payload(
+          capability({
+            state: "blocked",
+            canAttempt: false,
+            lastFailure: {
+              code: "package_missing",
+              summary: "The sam_audio package is not installed",
+              stage: "loaded",
+              occurredAt: "2026-08-25T12:03:00Z",
+            },
+          }),
+        ),
+      );
+
+    const olderRead = useRuntimeCapabilityStore.getState().refreshAll();
+    const failureReload = useRuntimeCapabilityStore.getState().reload();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getRuntimeCapabilities).toHaveBeenCalledTimes(1);
+
+    releaseFirst();
+    await Promise.all([olderRead, failureReload]);
+
+    expect(getRuntimeCapabilities).toHaveBeenCalledTimes(2);
+    expect(getRuntimeCapabilities).toHaveBeenLastCalledWith({ refresh: false });
+    expect(
+      useRuntimeCapabilityStore.getState().capabilities["sam-audio"]?.state,
+    ).toBe("blocked");
+  });
+
   it("rechecks one capability without dropping the others", async () => {
     vi.mocked(getRuntimeCapabilities).mockResolvedValue(
       payload(capability(), capability({ id: "sam2", label: "SAM2" })),

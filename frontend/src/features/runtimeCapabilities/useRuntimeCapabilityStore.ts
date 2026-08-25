@@ -35,6 +35,14 @@ export interface RuntimeCapabilityStoreState {
   refreshAll: () => Promise<void>;
   /** Re-run one capability's checks. */
   refreshCapability: (capabilityId: string) => Promise<void>;
+  /**
+   * Re-read what the backend knows, without asking it to re-probe.
+   *
+   * For when something happened that the registry has already recorded — a
+   * real load failure, say. A refresh would be wrong here: it would discard
+   * the very failure we want to pick up.
+   */
+  reload: () => Promise<void>;
   reset: () => void;
 }
 
@@ -111,6 +119,20 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
         if (inFlightLoad) return inFlightLoad;
         set({ status: "checking", error: null });
         inFlightLoad = serialize(() => load(true)).finally(() => {
+          inFlightLoad = null;
+        });
+        return inFlightLoad;
+      },
+
+      reload: async () => {
+        // Unlike ensureLoaded, this request is ordered *after* any read already
+        // in flight: it is asking for evidence a just-failed job recorded. If
+        // we merely joined an older read, its response could predate the
+        // failure and leave the UI claiming the runtime is still available.
+        if (inFlightLoad) await inFlightLoad;
+        if (inFlightLoad) return inFlightLoad;
+        set({ status: "checking", error: null });
+        inFlightLoad = serialize(() => load(false)).finally(() => {
           inFlightLoad = null;
         });
         return inFlightLoad;

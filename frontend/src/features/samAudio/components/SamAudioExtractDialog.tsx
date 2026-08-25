@@ -38,12 +38,15 @@ import { extractTimelineClipAudioAsset } from "../../timeline/utils/clipAudioExt
 import { cancelSeparationJob } from "../services/samAudioApi";
 import {
   CapabilityFailureNotice,
+  failureHeadline,
   useRuntimeCapability,
+  useRuntimeCapabilityStore,
 } from "../../runtimeCapabilities";
 import { RUNTIME_CAPABILITY_IDS } from "../../../types/RuntimeStatus";
 import {
   isSamAudioAbortError,
   runSamAudioSeparation,
+  samAudioFailureCode,
 } from "../services/runSamAudioSeparation";
 import {
   insertExtractedAudioClipBelowSource,
@@ -307,11 +310,20 @@ export function SamAudioExtractDialog() {
       // Returning to configuration clears stale errors, so transition first and
       // then expose the backend's actionable model/dependency diagnostic.
       showConfigure();
-      setError(
-        separationError instanceof Error
-          ? separationError.message
-          : "SAM-Audio separation failed.",
-      );
+      const failureCode = samAudioFailureCode(separationError);
+      if (failureCode) {
+        // The runtime failed, not this request. The registry has already
+        // recorded it, so re-reading turns the configure view into the same
+        // classified failure and remedy the diagnostics view shows.
+        void useRuntimeCapabilityStore.getState().reload();
+        setError(`SAM-Audio unavailable: ${failureHeadline(failureCode)}.`);
+      } else {
+        setError(
+          separationError instanceof Error
+            ? separationError.message
+            : "SAM-Audio separation failed.",
+        );
+      }
     } finally {
       operationAbortRef.current = null;
       activeJobIdRef.current = null;

@@ -13,12 +13,14 @@ from ..contract import (
     CheckStatus,
     DeviceReport,
     FailureCode,
+    FailureRecord,
+    Remediation,
     VerificationStage,
     derive_state,
     derive_verified_through,
     utc_now,
 )
-from ..failures import get_last_failure, sanitize_message
+from ..failures import get_last_failure, is_durable, sanitize_message
 from ..subprocess_probe import (
     ModuleProbe,
     ProbeResult,
@@ -59,6 +61,15 @@ class CapabilityProvider:
 
     def inspect(self, *, deep_probe: bool = True) -> ProviderReport:
         raise NotImplementedError
+
+    def remediation_for(self, code: FailureCode) -> Remediation | None:
+        """What to do about a failure a real load reported.
+
+        A recorded failure arrives with a code but no remedy — the load path
+        does not know how this capability is installed. The provider does.
+        """
+
+        return None
 
     def probe(
         self,
@@ -106,9 +117,25 @@ class CapabilityProvider:
                 last_failure=get_last_failure(self.id),
             )
 
+        # A real load attempt outranks any static check: if the runtime failed
+        # for a reason that will not fix itself, the capability is blocked
+        # whatever the filesystem says. Cleared by a successful load or an
+        # explicit recheck.
+        last_failure = get_last_failure(self.id)
+        checks = tuple(report.checks)
+        if last_failure is not None and is_durable(last_failure.code):
+            # Put the direct runtime evidence first. Consumers that need one
+            # explanation should cite what the real attempt proved, not an
+            # incidental inventory failure found by the later status read.
+            checks = (self._failure_check(last_failure), *checks)
+
         state = derive_state(
-            expected=report.expected,
-            checks=report.checks,
+            # A real attempt is direct evidence that the capability is wanted,
+            # even if inventory no longer finds either half of an optional
+            # install. In particular, a durable load failure must be blocked,
+            # not collapsed back to "intentionally unavailable".
+            expected=report.expected or last_failure is not None,
+            checks=checks,
             loaded=report.loaded,
             degraded=report.device.fallback if report.device else False,
         )
@@ -121,9 +148,20 @@ class CapabilityProvider:
             # How far the evidence actually goes is read off the checks: a
             # stage with a skipped check was not evaluated, so verification
             # stops below it.
-            verified_through=derive_verified_through(report.checks),
-            checks=tuple(report.checks),
+            verified_through=derive_verified_through(checks),
+            checks=checks,
             selected_model=report.selected_model,
             models=tuple(report.models),
-            last_failure=get_last_failure(self.id),
+            last_failure=last_failure,
+        )
+
+    def _failure_check(self, failure: FailureRecord) -> Check:
+        return Check(
+            id="runtime.lastFailure",
+            status=CheckStatus.FAIL,
+            stage=failure.stage,
+            code=failure.code,
+            summary=failure.summary,
+            detail=failure.detail,
+            remediation=self.remediation_for(failure.code),
         )

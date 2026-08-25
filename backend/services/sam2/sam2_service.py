@@ -20,7 +20,11 @@ from config import (
     SAM2_CACHE_DIR,
     SAM2_DEVICE,
 )
-from services.ai_models.capabilities import SAM2_CAPABILITY_ID
+from services.ai_models.capabilities import (
+    SAM2_CAPABILITY_ID,
+    note_capability_success,
+    record_load_failures,
+)
 from services.ai_models.health import capability_runtime_health
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
 from services.model_work.local_inference import run_local_inference
@@ -443,7 +447,7 @@ class _Sam2PredictorRuntime:
         requested_device = SAM2_DEVICE.strip() or "auto"
         candidate_devices = self._resolve_candidate_devices(requested_device)
 
-        errors_by_device: list[str] = []
+        errors_by_device: list[tuple[str, Exception]] = []
         for device in candidate_devices:
             try:
                 with self._torch_load_compat_context():
@@ -471,19 +475,35 @@ class _Sam2PredictorRuntime:
                 self._resolved_device = device
                 return predictor
             except Exception as exc:  # pragma: no cover - environment dependent
-                errors_by_device.append(f"{device}: {exc}")
+                errors_by_device.append((device, exc))
 
-        errors_summary = "; ".join(errors_by_device) if errors_by_device else "unknown error"
-        raise Sam2ConfigError(
+        errors_summary = (
+            "; ".join(f"{device}: {exc}" for device, exc in errors_by_device)
+            if errors_by_device
+            else "unknown error"
+        )
+        error = Sam2ConfigError(
             f"Failed to initialize SAM2 predictor ({errors_summary})"
         )
+        if errors_by_device:
+            # Preserve the typed cause for the shared classifier. Turning the
+            # attempts into prose alone loses ModuleNotFoundError/ImportError
+            # and incorrectly downgrades a durable install failure to an
+            # unclassified transient one.
+            raise error from errors_by_device[-1][1]
+        raise error
 
     def get_predictor(self) -> Any:
         if self._predictor is not None:
             return self._predictor
         with self._lock:
             if self._predictor is None:
-                self._predictor = self._load_predictor()
+                # Every real load feeds the same registry the probes do, so a
+                # genuine failure and a probe can never disagree about the
+                # cause — and the capability stops claiming to be attemptable.
+                with record_load_failures(SAM2_CAPABILITY_ID):
+                    self._predictor = self._load_predictor()
+                note_capability_success(SAM2_CAPABILITY_ID)
         return self._predictor
 
     def health(self) -> dict[str, Any]:

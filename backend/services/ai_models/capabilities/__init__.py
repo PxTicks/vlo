@@ -36,12 +36,16 @@ from .contract import (
 )
 from .environment import ENVIRONMENT_PROBE_KEY, describe_environment
 from .failures import (
+    DURABLE_FAILURE_CODES,
     ClassifiedFailure,
     classify_exception,
     clear_failures,
     get_last_failure,
+    is_durable,
+    note_capability_success,
     record_exception,
     record_failure,
+    record_load_failures,
     sanitize_message,
     sanitize_url,
 )
@@ -133,10 +137,16 @@ def invalidate_capability_cache(capability_id: str | None = None) -> None:
     environment after the user has fixed it.
     """
 
+    # A recheck re-evaluates from scratch, so a failure a previous run
+    # recorded is dropped along with the cached probes. Anything still broken
+    # is caught again by the checks or by the next real attempt; anything the
+    # user has since fixed is no longer held against them.
     if capability_id is None:
         invalidate_probe_cache()
+        clear_failures()
         return
     invalidate_probe_cache(capability_id)
+    clear_failures(capability_id)
     # The shared torch/device probe backs every capability's device check, so a
     # single recheck has to drop it too or the "fixed" answer stays stale.
     invalidate_probe_cache(ENVIRONMENT_PROBE_KEY)
@@ -183,6 +193,7 @@ def capability_payload(
 
 __all__ = [
     "ATTEMPTABLE_STATES",
+    "DURABLE_FAILURE_CODES",
     "BEATS_CAPABILITY_ID",
     "COMFYUI_CAPABILITY_ID",
     "SAM2_CAPABILITY_ID",
@@ -212,10 +223,13 @@ __all__ = [
     "get_last_failure",
     "get_provider",
     "invalidate_capability_cache",
+    "is_durable",
+    "note_capability_success",
     "list_capabilities",
     "list_capability_ids",
     "record_exception",
     "record_failure",
+    "record_load_failures",
     "sanitize_message",
     "sanitize_url",
 ]

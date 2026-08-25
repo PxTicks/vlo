@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -1219,3 +1220,232 @@ async def test_app_status_does_not_flip_back_to_available_as_the_probe_ages(
     _age_probe_cache(seconds=10 * PROBE_CACHE_TTL_SECONDS)
 
     assert await offline_app_status.get_app_status() == after
+
+
+# --------------------------------------------------------------------------
+# Real failures feeding the registry
+# --------------------------------------------------------------------------
+
+
+def test_a_durable_load_failure_blocks_the_capability(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+) -> None:
+    """A real load outranks the static checks that said everything was fine.
+
+    The files are there and the package is importable as far as anything cheap
+    can tell — and the runtime still failed to import it. Continuing to report
+    the feature as attemptable would send the user straight back into the same
+    failure.
+    """
+
+    _write_sam_audio_model(capability_dirs["sam_audio_models"])
+    failures.clear_failures()
+    assert get_capability("sam-audio").can_attempt is True
+
+    with pytest.raises(ImportError):
+        with failures.record_load_failures("sam-audio"):
+            raise ImportError("libcudart.so.12: cannot open shared object file")
+
+    capability = get_capability("sam-audio")
+
+    assert capability.state is CapabilityState.BLOCKED
+    assert capability.can_attempt is False
+    recorded = _check(capability, "runtime.lastFailure")
+    assert recorded.code is FailureCode.PACKAGE_IMPORT_FAILED
+    assert recorded.stage is VerificationStage.LOADED
+    # The load path knows nothing about how this capability is installed; the
+    # provider supplies the remedy.
+    assert recorded.remediation is not None
+    assert "requirements-sam-audio.txt" in recorded.remediation.command
+    # Verification cannot claim the loaded stage it just failed at.
+    assert capability.verified_through is VerificationStage.ENVIRONMENT
+    failures.clear_failures()
+
+
+def test_a_real_attempt_makes_an_absent_optional_capability_expected(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+) -> None:
+    del fake_environment, capability_dirs
+    failures.clear_failures()
+    failures.record_exception(
+        "sam-audio",
+        ModuleNotFoundError("No module named 'sam_audio'", name="sam_audio"),
+    )
+
+    try:
+        capability = get_capability("sam-audio", deep_probe=False)
+    finally:
+        failures.clear_failures()
+
+    assert capability is not None
+    assert capability.state is CapabilityState.BLOCKED
+    assert capability.can_attempt is False
+    assert _check(capability, "runtime.lastFailure").code is FailureCode.PACKAGE_MISSING
+
+
+def test_a_transient_load_failure_is_recorded_but_does_not_block(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+) -> None:
+    # Running out of memory says something about the moment, not the install.
+    # Locking the feature out on it would be a false negative of its own.
+    _write_sam_audio_model(capability_dirs["sam_audio_models"])
+    failures.clear_failures()
+    try:
+        failures.record_exception(
+            "sam-audio", RuntimeError("CUDA out of memory"), stage=VerificationStage.LOADED
+        )
+        capability = get_capability("sam-audio")
+    finally:
+        failures.clear_failures()
+
+    assert capability.can_attempt is True
+    assert capability.last_failure is not None
+    assert capability.last_failure.code is FailureCode.OUT_OF_MEMORY
+    assert all(check.id != "runtime.lastFailure" for check in capability.checks)
+
+
+def test_cancellation_is_not_recorded_as_a_failure() -> None:
+    class Cancelled(Exception):
+        pass
+
+    failures.clear_failures()
+    with pytest.raises(Cancelled):
+        with failures.record_load_failures("sam-audio", ignore=(Cancelled,)):
+            raise Cancelled()
+
+    assert failures.get_last_failure("sam-audio") is None
+
+
+def test_a_real_load_attempt_invalidates_its_cached_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalidated: list[str | None] = []
+    monkeypatch.setattr(
+        subprocess_probe,
+        "invalidate_probe_cache",
+        lambda capability_id=None: invalidated.append(capability_id),
+    )
+
+    with failures.record_load_failures("sam-audio"):
+        pass
+
+    assert invalidated == ["sam-audio"]
+
+
+def test_beat_this_records_device_resolution_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.beats import beats_service
+
+    runtime = beats_service._BeatThisRuntime()
+
+    def fail_device_resolution(requested: str) -> str:
+        del requested
+        raise beats_service.BeatThisConfigError(
+            "BEATTHIS_DEVICE was set to cuda, but "
+            "torch.cuda.is_available() is false"
+        )
+
+    monkeypatch.setattr(runtime, "_resolve_device", fail_device_resolution)
+    failures.clear_failures(beats_service.BEATS_CAPABILITY_ID)
+    try:
+        with pytest.raises(beats_service.BeatThisConfigError):
+            runtime.get_predictor("model", False)
+        recorded = failures.get_last_failure(beats_service.BEATS_CAPABILITY_ID)
+    finally:
+        failures.clear_failures(beats_service.BEATS_CAPABILITY_ID)
+
+    assert recorded is not None
+    assert recorded.code is FailureCode.DEVICE_UNAVAILABLE
+
+
+def test_sam2_preserves_an_import_failure_across_device_aggregation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import builtins
+
+    from services.sam2 import sam2_service
+
+    checkpoint = tmp_path / "sam2.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    monkeypatch.setattr(
+        sam2_service,
+        "discover_sam2_models",
+        lambda: [
+            {
+                "checkpoint_path": str(checkpoint),
+                "config_path": "sam2.yaml",
+            }
+        ],
+    )
+    runtime = sam2_service._Sam2PredictorRuntime()
+    monkeypatch.setattr(runtime, "_resolve_candidate_devices", lambda requested: ["cpu"])
+    monkeypatch.setattr(runtime, "_torch_load_compat_context", nullcontext)
+    real_import = builtins.__import__
+
+    def fail_sam2_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "sam2.build_sam":
+            raise ModuleNotFoundError("No module named 'sam2'", name="sam2")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fail_sam2_import)
+    failures.clear_failures(sam2_service.SAM2_CAPABILITY_ID)
+    try:
+        with pytest.raises(sam2_service.Sam2ConfigError):
+            runtime.get_predictor()
+        recorded = failures.get_last_failure(sam2_service.SAM2_CAPABILITY_ID)
+    finally:
+        failures.clear_failures(sam2_service.SAM2_CAPABILITY_ID)
+
+    assert recorded is not None
+    assert recorded.code is FailureCode.PACKAGE_MISSING
+
+
+def test_a_successful_load_clears_the_recorded_failure() -> None:
+    failures.clear_failures()
+    failures.record_exception("sam-audio", ImportError("broken"))
+    assert failures.get_last_failure("sam-audio") is not None
+
+    failures.note_capability_success("sam-audio")
+
+    assert failures.get_last_failure("sam-audio") is None
+
+
+def test_a_recheck_drops_the_recorded_failure(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+) -> None:
+    # "Recheck" means "I have changed something, look again" — holding a
+    # previous failure against the new evidence would make the button useless.
+    _write_sam_audio_model(capability_dirs["sam_audio_models"])
+    failures.record_exception("sam-audio", ImportError("was broken"))
+    assert get_capability("sam-audio").can_attempt is False
+
+    try:
+        rechecked = get_capability("sam-audio", refresh=True)
+    finally:
+        failures.clear_failures()
+
+    assert rechecked.can_attempt is True
+    assert rechecked.last_failure is None
+
+
+@pytest.mark.parametrize(
+    ("code", "durable"),
+    [
+        (FailureCode.PACKAGE_MISSING, True),
+        (FailureCode.PACKAGE_IMPORT_FAILED, True),
+        (FailureCode.MODEL_INVALID, True),
+        (FailureCode.AUTHENTICATION_REQUIRED, True),
+        (FailureCode.OUT_OF_MEMORY, False),
+        (FailureCode.DEPENDENCY_DOWNLOAD_FAILED, False),
+        # Never invent a block from a failure we could not classify.
+        (FailureCode.RUNTIME_LOAD_FAILED, False),
+    ],
+)
+def test_durability_of_each_code(code: FailureCode, durable: bool) -> None:
+    assert failures.is_durable(code) is durable

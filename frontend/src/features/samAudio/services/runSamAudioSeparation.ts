@@ -1,3 +1,4 @@
+import type { CapabilityFailureCode } from "../../../types/RuntimeStatus";
 import type { Asset } from "../../../types/Asset";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import {
@@ -30,6 +31,29 @@ import {
 import { muteSourceClipAudio } from "./extractionTimelinePlacement";
 
 const POLL_INTERVAL_MS = 1000;
+
+/**
+ * A separation that failed with a cause the backend classified.
+ *
+ * Carrying the code rather than only the message is what lets the surface say
+ * "Python package not installed" instead of echoing whatever progress line the
+ * job happened to be on when it died.
+ */
+export class SamAudioRuntimeFailure extends Error {
+  readonly code: CapabilityFailureCode | null;
+
+  constructor(message: string, code: CapabilityFailureCode | null) {
+    super(message);
+    this.name = "SamAudioRuntimeFailure";
+    this.code = code;
+  }
+}
+
+export function samAudioFailureCode(
+  error: unknown,
+): CapabilityFailureCode | null {
+  return error instanceof SamAudioRuntimeFailure ? error.code : null;
+}
 
 const samAudioSourceRegistrationCache = new Map<string, Promise<string>>();
 
@@ -332,7 +356,10 @@ export async function runSamAudioSeparation(
   });
 
   if (status.status === "error") {
-    throw new Error(status.error ?? "SAM-Audio separation failed.");
+    throw new SamAudioRuntimeFailure(
+      status.error ?? "SAM-Audio separation failed.",
+      status.errorCode ?? null,
+    );
   }
   if (status.status === "cancelled") {
     throw createAbortError();

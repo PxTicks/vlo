@@ -11,6 +11,7 @@ from services.sam_audio import sam_audio_service
 from services.sam_audio.sam_audio_encoding import encode_wav_bytes
 from services.sam_audio.sam_audio_service import (
     SAM_AUDIO_SAMPLE_RATE,
+    SamAudioRuntimeLoadError,
     SamAudioSeparationResult,
     SamAudioSourceMetadata,
 )
@@ -225,6 +226,9 @@ async def test_failed_job_retains_live_timings(
             await asyncio.sleep(0.01)
         assert current.status == "error"
         assert current.timings == {"modelLoadSec": 0.5}
+        # Inference failed after the runtime boundary. It must not be dressed
+        # up as a capability/load failure in the queue response.
+        assert current.error_code is None
     finally:
         release.set()
         await sam_audio_service.shutdown_jobs()
@@ -343,3 +347,167 @@ async def test_cancel_queued_job_preserves_serial_execution(
                 break
             await asyncio.sleep(0.01)
         await asyncio.wait_for(sam_audio_service.shutdown_jobs(), timeout=2)
+
+
+def test_failed_job_reports_the_classified_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed separation names what went wrong, not the last progress line.
+
+    The queue toast used to echo whatever message the job happened to be on
+    when it died, which is how "Running separation" ended up standing in for
+    "the Python package is not installed".
+    """
+
+    from services.jobs.manager import BackendJobIdentity, BackendJobSnapshot
+
+    snapshot = BackendJobSnapshot(
+        identity=BackendJobIdentity(
+            job_id="job-1",
+            job_type=sam_audio_service.SAM_AUDIO_SEPARATION_JOB_TYPE,
+            owner_id=sam_audio_service.SAM_AUDIO_JOB_OWNER,
+            owner_version=sam_audio_service.SAM_AUDIO_JOB_OWNER_VERSION,
+        ),
+        status="failed",
+        progress=1.0,
+        message="Failed",
+        cancel_requested=False,
+        created_at=0.0,
+        updated_at=1.0,
+        result=None,
+        error="Failed to initialize SAM-Audio runtime (cuda: No module named 'sam_audio')",
+        artifacts=(),
+        diagnostics=(),
+        runtime_metadata={
+            "timings": {"modelLoadSec": 1.5},
+            "failure": {
+                "code": "package_missing",
+                "summary": "The sam_audio package is not installed",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        sam_audio_service._get_job_manager(),
+        "get_input",
+        lambda owner, job_id: {
+            "sourceId": "source-1",
+            "startTicks": 0,
+            "durationTicks": 10,
+            "prompt": {},
+        },
+    )
+
+    job = sam_audio_service._to_sam_audio_job(snapshot)
+    payload = job.to_dict()
+
+    assert payload["errorCode"] == "package_missing"
+    assert payload["error"] == "The sam_audio package is not installed"
+    # The timings the job had already reported survive the failure.
+    assert payload["timings"] == {"modelLoadSec": 1.5}
+
+
+def test_runtime_load_failure_updates_job_and_queue_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.ai_models.capabilities import ClassifiedFailure, FailureCode
+
+    classified = ClassifiedFailure(
+        code=FailureCode.PACKAGE_MISSING,
+        summary="The sam_audio package is not installed",
+    )
+    metadata: list[object] = []
+    queue_messages: list[str | None] = []
+
+    class FakeContext:
+        def report_runtime_metadata(self, value: object) -> None:
+            metadata.append(value)
+
+    class FakeLease:
+        def report(self, *, message: str | None = None) -> None:
+            queue_messages.append(message)
+
+    def fail_separation(*args, **kwargs):
+        del args, kwargs
+        raise SamAudioRuntimeLoadError(classified)
+
+    monkeypatch.setattr(sam_audio_service, "_separate_under_lease", fail_separation)
+
+    with pytest.raises(SamAudioRuntimeLoadError):
+        sam_audio_service._run_separation_job_under_lease(
+            FakeContext(),
+            {},
+            FakeLease(),
+        )
+
+    assert queue_messages == ["The sam_audio package is not installed"]
+    assert metadata == [
+        {
+            "timings": {},
+            "failure": {
+                "code": "package_missing",
+                "summary": "The sam_audio package is not installed",
+            },
+        }
+    ]
+
+
+def test_runtime_load_preserves_an_aggregated_missing_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.ai_models.capabilities import failures
+
+    runtime = sam_audio_service._SamAudioRuntime()
+    monkeypatch.setattr(
+        runtime,
+        "_resolve_candidate_devices",
+        lambda requested: ["cpu"],
+    )
+
+    def fail_load(*args, **kwargs):
+        del args, kwargs
+        raise ModuleNotFoundError("No module named 'sam_audio'", name="sam_audio")
+
+    monkeypatch.setattr(runtime, "_load_for_device", fail_load)
+    failures.clear_failures(sam_audio_service.SAM_AUDIO_CAPABILITY_ID)
+    try:
+        with pytest.raises(SamAudioRuntimeLoadError) as exc_info:
+            runtime.get()
+        recorded = failures.get_last_failure(
+            sam_audio_service.SAM_AUDIO_CAPABILITY_ID
+        )
+    finally:
+        failures.clear_failures(sam_audio_service.SAM_AUDIO_CAPABILITY_ID)
+
+    assert exc_info.value.failure.code.value == "package_missing"
+    assert recorded is not None
+    assert recorded.code.value == "package_missing"
+
+
+def test_runtime_load_cancellation_is_not_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.ai_models.capabilities import failures
+
+    runtime = sam_audio_service._SamAudioRuntime()
+    monkeypatch.setattr(
+        runtime,
+        "_resolve_candidate_devices",
+        lambda requested: ["cpu"],
+    )
+
+    def cancel_load(*args, **kwargs):
+        del args, kwargs
+        raise sam_audio_service.BackendJobCancelledError("cancelled")
+
+    monkeypatch.setattr(runtime, "_load_for_device", cancel_load)
+    failures.clear_failures(sam_audio_service.SAM_AUDIO_CAPABILITY_ID)
+    try:
+        with pytest.raises(sam_audio_service.BackendJobCancelledError):
+            runtime.get()
+        recorded = failures.get_last_failure(
+            sam_audio_service.SAM_AUDIO_CAPABILITY_ID
+        )
+    finally:
+        failures.clear_failures(sam_audio_service.SAM_AUDIO_CAPABILITY_ID)
+
+    assert recorded is None

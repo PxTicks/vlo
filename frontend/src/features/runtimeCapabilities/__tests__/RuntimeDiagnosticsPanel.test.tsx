@@ -215,6 +215,36 @@ describe("RuntimeDiagnosticsPanel", () => {
     expect(card).not.toHaveTextContent("CPU only");
   });
 
+  it("shows a recorded failure that is not blocking", async () => {
+    vi.mocked(getRuntimeCapabilities).mockResolvedValue({
+      capabilities: [
+        {
+          ...blockedSamAudio,
+          state: "available_unverified",
+          canAttempt: true,
+          checks: [blockedSamAudio.checks[0]],
+          lastFailure: {
+            code: "out_of_memory",
+            summary: "Ran out of memory while loading the model",
+            stage: "loaded",
+            occurredAt: "2026-08-25T12:03:00Z",
+          },
+        },
+      ],
+      environment,
+    });
+
+    render(<RuntimeDiagnosticsPanel />);
+
+    expect(
+      await screen.findByTestId("capability-last-failure-sam-audio"),
+    ).toHaveTextContent("Out of memory");
+    // Recorded, not held against the feature.
+    expect(screen.getByTestId("capability-state-sam-audio")).toHaveTextContent(
+      "Installed, unverified",
+    );
+  });
+
   it("lists every check, including the ones that were skipped", async () => {
     render(<RuntimeDiagnosticsPanel />);
     await screen.findByTestId("capability-card-sam-audio");

@@ -74,6 +74,19 @@ class Sam2Provider(CapabilityProvider):
     id = CAPABILITY_ID
     label = "SAM2"
 
+    def remediation_for(self, code: FailureCode) -> Remediation | None:
+        # A failure reported by a real load carries no remedy of its own; for
+        # the package-shaped ones this capability's install command is it.
+        if code in {
+            FailureCode.PACKAGE_MISSING,
+            FailureCode.PACKAGE_IMPORT_FAILED,
+            FailureCode.DEPENDENCY_INCOMPATIBLE,
+        }:
+            return INSTALL_REMEDIATION
+        if code in {FailureCode.MODEL_MISSING, FailureCode.MODEL_INVALID}:
+            return DOWNLOAD_REMEDIATION
+        return None
+
     def inspect(self, *, deep_probe: bool = True) -> ProviderReport:
         from config import SAM2_CACHE_DIR, SAM2_DEVICE
 

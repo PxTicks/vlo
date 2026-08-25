@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -20,6 +22,32 @@ from .contract import FailureCode, FailureRecord, VerificationStage, utc_now
 
 
 MAX_MESSAGE_LENGTH = 600
+
+#: Failures that will not resolve on their own, so a capability that hit one is
+#: reported as blocked until something changes. The rest — an out-of-memory
+#: under load, a network blip, and anything we could not classify — are
+#: recorded and shown but never used to lock a feature out: refusing the next
+#: attempt on evidence that may have been circumstantial is its own false
+#: negative.
+DURABLE_FAILURE_CODES: frozenset[FailureCode] = frozenset(
+    {
+        FailureCode.PYTHON_VERSION_UNSUPPORTED,
+        FailureCode.PACKAGE_MISSING,
+        FailureCode.PACKAGE_IMPORT_FAILED,
+        FailureCode.DEPENDENCY_INCOMPATIBLE,
+        FailureCode.MODEL_MISSING,
+        FailureCode.MODEL_INVALID,
+        FailureCode.CONFIG_MISSING,
+        FailureCode.DEVICE_UNAVAILABLE,
+        FailureCode.CACHE_UNWRITABLE,
+        FailureCode.AUTHENTICATION_REQUIRED,
+    }
+)
+
+
+def is_durable(code: FailureCode) -> bool:
+    return code in DURABLE_FAILURE_CODES
+
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[4]
 _PROJECT_PLACEHOLDER = "\x00project\x00"
@@ -332,3 +360,49 @@ def get_last_failure(capability_id: str) -> FailureRecord | None:
 
 def clear_failures(capability_id: str | None = None) -> None:
     _STORE.clear(capability_id)
+
+
+@contextmanager
+def record_load_failures(
+    capability_id: str,
+    *,
+    stage: VerificationStage = VerificationStage.LOADED,
+    ignore: tuple[type[BaseException], ...] = (),
+) -> Iterator[None]:
+    """Classify and record whatever a real runtime load raises, then re-raise.
+
+    This is the other half of the probe path: the same classifier runs over a
+    genuine failure, so a probe and a real job can never disagree about what
+    went wrong. The exception is never swallowed — the caller still fails as it
+    would have.
+
+    Cancellation is not failure, so ``ignore`` (plus the interpreter's own
+    control-flow exceptions) passes straight through unrecorded.
+    """
+
+    # A genuine attempt is newer evidence than the cached import probe. Drop
+    # that capability's probe before loading so a fixed environment cannot
+    # remain blocked by the old answer. Do not clear the failure record here:
+    # it is replaced on failure and cleared only once the load succeeds.
+    from .subprocess_probe import invalidate_probe_cache
+
+    invalidate_probe_cache(capability_id)
+    try:
+        yield
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except ignore:
+        raise
+    except Exception as exc:
+        record_exception(capability_id, exc, stage=stage)
+        raise
+
+
+def note_capability_success(capability_id: str) -> None:
+    """Forget a recorded failure because the runtime just loaded.
+
+    A successful load is the strongest evidence available, and it outranks
+    anything an earlier attempt observed.
+    """
+
+    clear_failures(capability_id)

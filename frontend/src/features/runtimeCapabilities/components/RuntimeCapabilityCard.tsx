@@ -14,6 +14,7 @@ import type {
   CapabilityState,
   RuntimeCapability,
 } from "../../../types/RuntimeStatus";
+import { failureHeadline } from "../failureCodes";
 import { CapabilityFailureNotice } from "./CapabilityFailureNotice";
 
 interface RuntimeCapabilityCardProps {
@@ -82,6 +83,9 @@ export function RuntimeCapabilityCard({
 }: RuntimeCapabilityCardProps) {
   const [expanded, setExpanded] = useState(false);
   const failure = capability.checks.find((check) => check.status === "fail") ?? null;
+  const hasBlockingLastFailure = capability.checks.some(
+    (check) => check.id === "runtime.lastFailure",
+  );
   const device = deviceLabel(capability);
 
   return (
@@ -127,6 +131,22 @@ export function RuntimeCapabilityCard({
           failure={failure}
           lastFailure={capability.lastFailure}
         />
+
+        {/* A failure that is not blocking is still worth seeing: an
+            out-of-memory under load says nothing about the install, so it
+            never becomes a failing check — and would otherwise be recorded
+            where nobody looks. */}
+        {!hasBlockingLastFailure && capability.lastFailure ? (
+          <Typography
+            variant="caption"
+            sx={{ color: "warning.main" }}
+            data-testid={`capability-last-failure-${capability.id}`}
+          >
+            Last failure {new Date(capability.lastFailure.occurredAt).toLocaleTimeString()}:{" "}
+            {failureHeadline(capability.lastFailure.code)} —{" "}
+            {capability.lastFailure.detail ?? capability.lastFailure.summary}
+          </Typography>
+        ) : null}
 
         <Button
           size="small"

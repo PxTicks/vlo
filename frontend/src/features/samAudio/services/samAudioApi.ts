@@ -1,3 +1,4 @@
+import type { CapabilityFailureCode } from "../../../types/RuntimeStatus";
 import { API_BASE_URL } from "../../../config";
 import { pollBackendJob } from "../../../core/backendJobs";
 
@@ -33,6 +34,8 @@ export interface SamAudioJobStatus {
   progress: number;
   message?: string | null;
   error: string | null;
+  /** The classified cause, when the runtime rather than the request failed. */
+  errorCode?: CapabilityFailureCode | null;
   cancelRequested?: boolean;
   sourceId: string;
   startTicks: number;

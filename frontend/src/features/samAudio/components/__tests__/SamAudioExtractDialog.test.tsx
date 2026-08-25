@@ -77,11 +77,18 @@ vi.mock("../../../../services/runtimeApi", () => ({
   getRuntimeCapability: samAudioDialogMocks.mockGetRuntimeCapability,
 }));
 
-vi.mock("../../services/runSamAudioSeparation", () => ({
-  isSamAudioAbortError: (error: unknown) =>
-    error instanceof Error && error.name === "AbortError",
-  runSamAudioSeparation: samAudioDialogMocks.mockRunSamAudioSeparation,
-}));
+vi.mock("../../services/runSamAudioSeparation", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../services/runSamAudioSeparation")
+  >("../../services/runSamAudioSeparation");
+  return {
+    isSamAudioAbortError: (error: unknown) =>
+      error instanceof Error && error.name === "AbortError",
+    SamAudioRuntimeFailure: actual.SamAudioRuntimeFailure,
+    samAudioFailureCode: actual.samAudioFailureCode,
+    runSamAudioSeparation: samAudioDialogMocks.mockRunSamAudioSeparation,
+  };
+});
 
 vi.mock("../../../timeline/utils/clipAudioExtraction", () => ({
   extractTimelineClipAudioAsset:
@@ -461,5 +468,124 @@ describe("SamAudioExtractDialog", () => {
         "job-1",
       );
     });
+  });
+});
+
+
+describe("SamAudioExtractDialog runtime failures", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedTimeline();
+    useSamAudioExtractDialogStore.getState().close();
+    useRuntimeCapabilityStore.getState().reset();
+  });
+
+  it("names the classified cause instead of the last progress message", async () => {
+    // The job died inside model load. The toast used to read "Running
+    // separation" — the last thing it had said before it failed.
+    const { SamAudioRuntimeFailure } = await import(
+      "../../services/runSamAudioSeparation"
+    );
+    stubCapabilities(samAudioCapability());
+    samAudioDialogMocks.mockRunSamAudioSeparation.mockRejectedValue(
+      new SamAudioRuntimeFailure(
+        "The sam_audio package is not installed",
+        "package_missing",
+      ),
+    );
+
+    openDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Extract Selection" }));
+    await waitFor(() => {
+      expect(samAudioDialogMocks.mockGetRuntimeCapabilities).toHaveBeenCalled();
+    });
+    fireEvent.change(screen.getByLabelText("Text prompt"), {
+      target: { value: "drums" },
+    });
+
+    // The registry has recorded the failure by now, so the re-read comes back
+    // blocked with the remedy attached.
+    stubCapabilities(
+      blockedBy({
+        id: "runtime.lastFailure",
+        status: "fail",
+        stage: "loaded",
+        code: "package_missing",
+        summary: "The sam_audio package is not installed",
+        remediation: {
+          kind: "command",
+          summary: "Install the SAM-Audio package",
+          command: "uv pip install --python backend/.venv/bin/python -r backend/requirements-sam-audio.txt",
+          requiresRestart: true,
+        },
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Isolate Sound" }));
+
+    // The re-read lands blocked, so the configure view becomes the classified
+    // failure and its remedy — the same thing the diagnostics card shows.
+    expect(
+      await screen.findByText(
+        "SAM-Audio unavailable: Python package not installed",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "uv pip install --python backend/.venv/bin/python -r backend/requirements-sam-audio.txt",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("sam-audio-download-overlay"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("names a transient cause without locking the feature out", async () => {
+    // Running out of memory says nothing about the install, so the capability
+    // stays attemptable and the message is all the user gets.
+    const { SamAudioRuntimeFailure } = await import(
+      "../../services/runSamAudioSeparation"
+    );
+    stubCapabilities(samAudioCapability());
+    samAudioDialogMocks.mockRunSamAudioSeparation.mockRejectedValue(
+      new SamAudioRuntimeFailure("Ran out of memory", "out_of_memory"),
+    );
+
+    openDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Extract Selection" }));
+    await waitFor(() => {
+      expect(samAudioDialogMocks.mockGetRuntimeCapabilities).toHaveBeenCalled();
+    });
+    fireEvent.change(screen.getByLabelText("Text prompt"), {
+      target: { value: "drums" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Isolate Sound" }));
+
+    expect(
+      await screen.findByText("SAM-Audio unavailable: Out of memory."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Text prompt")).toHaveValue("drums");
+  });
+
+  it("leaves an unclassified failure reading as itself", async () => {
+    // Not every failure is the runtime's fault; a request-level error should
+    // not be dressed up as a capability problem.
+    stubCapabilities(samAudioCapability());
+    samAudioDialogMocks.mockRunSamAudioSeparation.mockRejectedValue(
+      new Error("Source contains no audio stream"),
+    );
+
+    openDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Extract Selection" }));
+    await waitFor(() => {
+      expect(samAudioDialogMocks.mockGetRuntimeCapabilities).toHaveBeenCalled();
+    });
+    fireEvent.change(screen.getByLabelText("Text prompt"), {
+      target: { value: "drums" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Isolate Sound" }));
+
+    expect(
+      await screen.findByText("Source contains no audio stream"),
+    ).toBeInTheDocument();
   });
 });

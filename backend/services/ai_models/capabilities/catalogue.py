@@ -27,8 +27,11 @@ from collections.abc import Callable
 from .contract import Remediation, RemediationKind
 from .descriptors import (
     CapabilityDescriptor,
+    DeviceSpec,
     DirectorySpec,
+    FromConfig,
     PackageSpec,
+    SearchPathSpec,
     SysPathSpec,
 )
 from .profiles import BASE_PROFILE_ID, SAM2_PROFILE_ID, SAM_AUDIO_PROFILE_ID
@@ -62,15 +65,15 @@ SAM2_DESCRIPTOR = CapabilityDescriptor(
         ),
     ),
     python_min=(3, 10),
-    device_env_var="SAM2_DEVICE",
+    device=DeviceSpec(FromConfig("SAM2_DEVICE")),
     cache_dirs=(
         DirectorySpec(
             id="sam2.cache",
-            config_attr="SAM2_CACHE_DIR",
+            path=FromConfig("SAM2_CACHE_DIR"),
             label="The SAM2 cache directory",
         ),
     ),
-    search_paths=("SAM2_SEARCH_PATHS",),
+    search_paths=(SearchPathSpec(FromConfig("SAM2_SEARCH_PATHS")),),
     sys_path=SysPathSpec(env_var="SAM2_PYTHONPATH", include_backend_root=True),
     app_status_key="sam2",
     unavailable_message="No SAM2 models discovered",
@@ -90,23 +93,23 @@ SAM_AUDIO_DESCRIPTOR = CapabilityDescriptor(
     profile=SAM_AUDIO_PROFILE_ID,
     packages=(PackageSpec(module="sam_audio", distribution="sam-audio"),),
     python_min=(3, 11),
-    device_env_var="SAM_AUDIO_DEVICE",
+    device=DeviceSpec(FromConfig("SAM_AUDIO_DEVICE")),
     cache_dirs=(
         DirectorySpec(
             id="samAudio.cache",
-            config_attr="SAM_AUDIO_CACHE_DIR",
+            path=FromConfig("SAM_AUDIO_CACHE_DIR"),
             label="The SAM-Audio cache directory",
         ),
         # Inventory, not a requirement: the discovery stage already reports
         # whether the models are there, so this one is snapshot-only.
         DirectorySpec(
             id="samAudio.models",
-            config_attr="SAM_AUDIO_MODEL_DIR",
+            path=FromConfig("SAM_AUDIO_MODEL_DIR"),
             label="The SAM-Audio model directory",
             check_id=None,
         ),
     ),
-    search_paths=("SAM_AUDIO_SEARCH_PATHS",),
+    search_paths=(SearchPathSpec(FromConfig("SAM_AUDIO_SEARCH_PATHS")),),
     sys_path=SysPathSpec(
         env_var="SAM_AUDIO_PYTHONPATH",
         home_relative=("sam-audio",),
@@ -150,11 +153,11 @@ BEATS_DESCRIPTOR = CapabilityDescriptor(
         ),
     ),
     python_min=(3, 10),
-    device_env_var="BEATTHIS_DEVICE",
+    device=DeviceSpec(FromConfig("BEATTHIS_DEVICE")),
     cache_dirs=(
         DirectorySpec(
             id="beatThis.cache",
-            config_attr="BEATTHIS_CACHE_DIR",
+            path=FromConfig("BEATTHIS_CACHE_DIR"),
             label="The Beat This! cache directory",
         ),
     ),
@@ -263,6 +266,28 @@ def register_descriptor(descriptor: CapabilityDescriptor) -> None:
     with _LOCK:
         if descriptor.id in _BY_ID:
             raise ValueError(f"'{descriptor.id}' is already registered")
+        # Separators fold when the snapshot key is derived, so two ids can be
+        # distinct and still claim one key. Silently overwriting would lose one
+        # capability's search paths from every support export.
+        #
+        # Only descriptors that declare search paths emit a key, so only they
+        # can collide. Rejecting a pair that emits nothing would refuse a
+        # perfectly valid registration over a conflict that cannot happen.
+        if descriptor.search_paths:
+            collision = next(
+                (
+                    existing.id
+                    for existing in _DESCRIPTORS
+                    if existing.search_paths
+                    and existing.snapshot_key == descriptor.snapshot_key
+                ),
+                None,
+            )
+            if collision is not None:
+                raise ValueError(
+                    f"'{descriptor.id}' and '{collision}' both map to the "
+                    f"environment-snapshot key '{descriptor.snapshot_key}'"
+                )
         _DESCRIPTORS.append(descriptor)
         _BY_ID[descriptor.id] = descriptor
         _GENERATION += 1

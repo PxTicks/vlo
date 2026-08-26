@@ -50,9 +50,12 @@ from .contract import (
 )
 from .descriptors import (
     CapabilityDescriptor,
+    DeviceSpec,
     DirectorySpec,
     Discovery,
+    FromConfig,
     PackageSpec,
+    SearchPathSpec,
     SysPathSpec,
 )
 from .environment import ENVIRONMENT_PROBE_KEY, describe_environment
@@ -300,15 +303,18 @@ __all__ = [
     "ClassifiedFailure",
     "DescriptorProvider",
     "DeviceReport",
+    "DeviceSpec",
     "DirectorySpec",
     "Discovery",
     "FailureCode",
     "FailureRecord",
+    "FromConfig",
     "LazyRuntime",
     "PackageSpec",
     "Remediation",
     "RemediationKind",
     "RuntimeLoad",
+    "SearchPathSpec",
     "SysPathSpec",
     "VerificationStage",
     "build_environment_checks",

@@ -19,6 +19,12 @@ from pathlib import Path
 from typing import Any
 
 from .catalogue import descriptor_packages, descriptors
+from .descriptors import (
+    DirectorySpec,
+    FromConfig,
+    SearchPathSpec,
+    ValueSource,
+)
 from .contract import iso_timestamp, utc_now
 from .failures import sanitize_message
 from .profiles import describe_profiles
@@ -188,9 +194,9 @@ def config_value(attribute: str, default: Any = None) -> Any:
     """Read a ``config`` attribute at call time.
 
     Deliberately not ``from config import NAME`` at module scope: the
-    directories and search paths a descriptor names are resolved every time the
-    snapshot is built, so a test (or a reconfiguration) that rebinds one of
-    them is seen rather than baked in at import.
+    directories and search paths a host descriptor names are resolved every
+    time the snapshot is built, so a test (or a reconfiguration) that rebinds
+    one of them is seen rather than baked in at import.
     """
 
     import config
@@ -198,15 +204,76 @@ def config_value(attribute: str, default: Any = None) -> Any:
     return getattr(config, attribute, default)
 
 
-def _descriptor_directories() -> list[dict[str, Any]]:
-    """Every cache and model directory the descriptors declare."""
+#: Returned by :func:`resolve_source` when a descriptor declared a value it
+#: cannot produce. Distinct from ``None``, which a source may legitimately
+#: return to mean "nothing configured here".
+UNRESOLVED = object()
 
-    return [
-        describe_directory(spec.id, Path(config_value(spec.config_attr)))
-        for descriptor in descriptors()
-        for spec in descriptor.cache_dirs
-        if config_value(spec.config_attr) is not None
-    ]
+
+def resolve_source(source: ValueSource) -> Any:
+    """Produce the value a descriptor declared, however it declared it.
+
+    A literal is itself, a callable is called, and a :class:`FromConfig` names
+    a ``config`` attribute. Anything that cannot be produced comes back as
+    :data:`UNRESOLVED` — never silently as ``None``, because a directory that
+    vanished from the evidence is exactly the failure this distinction exists
+    to make loud.
+    """
+
+    if isinstance(source, FromConfig):
+        return config_value(source.attribute, UNRESOLVED)
+    if callable(source):
+        try:
+            resolved = source()
+        except Exception:
+            # Extension-supplied callable. Its failure is that descriptor's
+            # problem to report, not grounds for a 500 on a shared snapshot.
+            return UNRESOLVED
+        return UNRESOLVED if resolved is None else resolved
+    return UNRESOLVED if source is None else source
+
+
+def resolve_directory(spec: DirectorySpec) -> Path | None:
+    """The directory a spec declares, or ``None`` when it cannot be resolved."""
+
+    resolved = resolve_source(spec.path)
+    if resolved is UNRESOLVED:
+        return None
+    try:
+        return Path(resolved)
+    except TypeError:
+        return None
+
+
+def resolve_search_paths(spec: SearchPathSpec) -> tuple[Path, ...] | None:
+    """The directories a search-path spec declares, or ``None`` if unresolved."""
+
+    resolved = resolve_source(spec.paths)
+    if resolved is UNRESOLVED or isinstance(resolved, (str, bytes)):
+        # A bare string is a declaration mistake: a search path is a sequence,
+        # and iterating a string would list its characters.
+        return None
+    try:
+        return tuple(Path(path) for path in resolved)
+    except TypeError:
+        return None
+
+
+def _descriptor_directories() -> list[dict[str, Any]]:
+    """Every cache and model directory the descriptors declare.
+
+    A directory that cannot be resolved is omitted rather than listed with a
+    placeholder path — the snapshot describes directories that exist. The
+    capability's own checks are where that failure is reported.
+    """
+
+    entries: list[dict[str, Any]] = []
+    for descriptor in descriptors():
+        for spec in descriptor.cache_dirs:
+            path = resolve_directory(spec)
+            if path is not None:
+                entries.append(describe_directory(spec.id, path))
+    return entries
 
 
 def _descriptor_search_paths() -> dict[str, list[str]]:
@@ -218,13 +285,15 @@ def _descriptor_search_paths() -> dict[str, list[str]]:
 
     paths: dict[str, list[str]] = {}
     for descriptor in descriptors():
+        if not descriptor.search_paths:
+            continue
         listed: list[str] = []
-        for attribute in descriptor.search_paths:
-            listed.extend(
-                display_path(path) for path in config_value(attribute, ()) or ()
-            )
-        if descriptor.search_paths:
-            paths[descriptor.snapshot_key] = listed
+        for spec in descriptor.search_paths:
+            resolved = resolve_search_paths(spec)
+            if resolved is None:
+                continue
+            listed.extend(display_path(path) for path in resolved)
+        paths[descriptor.snapshot_key] = listed
     return paths
 
 

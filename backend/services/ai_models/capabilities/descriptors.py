@@ -26,13 +26,41 @@ permitted shape.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 from .contract import Check, Remediation
+
+
+#: Every separator a capability id may use, folded when camelising.
+_ID_SEPARATORS = re.compile(r"[-._/]+")
+
+
+@dataclass(frozen=True)
+class FromConfig:
+    """A value read from the ``config`` module by attribute name, at call time.
+
+    The host's own capabilities are configured through ``config``, whose values
+    are rebindable — tests point them at temporary directories, and a
+    reconfiguration must be seen rather than baked in when this table is
+    imported. Naming the attribute instead of importing it keeps the descriptor
+    table free of ``config``, which creates directories at import.
+
+    An extension has nothing in ``config`` and must not write to it, so it
+    supplies its own values directly. See :data:`ValueSource`.
+    """
+
+    attribute: str
+
+
+#: How a descriptor supplies a value that is not known when the table is built:
+#: a literal, a zero-argument callable for something the owner recomputes, or a
+#: :class:`FromConfig` reference for the host's own configuration.
+ValueSource = Union[FromConfig, Callable[[], Any], Any]
 
 
 @dataclass(frozen=True)
@@ -82,13 +110,50 @@ class DirectorySpec:
     ``check_id`` of ``None`` puts the directory in the environment snapshot
     without asserting anything about it — a model directory is inventory, and
     the discovery stage already reports whether the models are there.
+
+    ``path`` is a :data:`ValueSource`. A declared directory that cannot be
+    resolved is a broken descriptor, not an absent directory: it fails the
+    completeness sweep and reports a failing check at runtime rather than
+    quietly disappearing from the capability's evidence.
     """
 
     id: str
-    config_attr: str
+    path: ValueSource
     label: str
     check_id: str | None = "cache.directory"
     require_writable: bool = True
+
+
+@dataclass(frozen=True)
+class SearchPathSpec:
+    """Where a capability looks for its models, for the environment snapshot.
+
+    ``paths`` resolves to a sequence of directories rather than a single one.
+    """
+
+    paths: ValueSource
+
+
+@dataclass(frozen=True)
+class DeviceSpec:
+    """The compute device this capability is configured to use.
+
+    ``env_var`` names the setting in remediation text ("Set SAM2_DEVICE=auto").
+    It defaults to the ``config`` attribute when ``requested`` is a
+    :class:`FromConfig`, because the host's device attributes are read from the
+    environment variable of the same name.
+    """
+
+    requested: ValueSource
+    env_var: str | None = None
+
+    @property
+    def setting_name(self) -> str:
+        if self.env_var is not None:
+            return self.env_var
+        if isinstance(self.requested, FromConfig):
+            return self.requested.attribute
+        return "the configured device"
 
 
 @dataclass(frozen=True)
@@ -153,11 +218,9 @@ class CapabilityDescriptor:
 
     # Environment stage — entirely declarative
     python_min: tuple[int, int] | None = None
-    #: Environment variable *and* ``config`` attribute naming the device.
-    device_env_var: str | None = None
+    device: DeviceSpec | None = None
     cache_dirs: tuple[DirectorySpec, ...] = ()
-    #: ``config`` attributes holding lists of model search paths.
-    search_paths: tuple[str, ...] = ()
+    search_paths: tuple[SearchPathSpec, ...] = ()
     sys_path: SysPathSpec = field(default_factory=SysPathSpec)
     #: Modules the real load path fakes when absent; the probe stubs them too,
     #: so an importability check answers the same question the service does.
@@ -194,10 +257,19 @@ class CapabilityDescriptor:
         """This capability's key in the environment snapshot's ``searchPaths``.
 
         ``sam-audio`` → ``samAudio``, matching the camelCase the rest of the
-        payload uses.
+        payload uses. Extension ids are namespaced (``acme.tracking``), so every
+        separator a capability id can carry is folded, not just the hyphen —
+        otherwise a dotted id leaks a ``.`` into a payload key.
+
+        Two ids differing only in their separators collapse to one key.
+        Registration rejects that collision rather than letting one capability's
+        search paths overwrite another's.
         """
 
-        head, *rest = self.id.split("-")
+        parts = [part for part in _ID_SEPARATORS.split(self.id) if part]
+        if not parts:
+            return self.id
+        head, *rest = parts
         return head + "".join(part[:1].upper() + part[1:] for part in rest)
 
 
@@ -222,9 +294,13 @@ def resolve_ref(reference: str) -> Any:
 
 __all__ = [
     "CapabilityDescriptor",
+    "DeviceSpec",
     "DirectorySpec",
     "Discovery",
+    "FromConfig",
     "PackageSpec",
+    "SearchPathSpec",
     "SysPathSpec",
+    "ValueSource",
     "resolve_ref",
 ]

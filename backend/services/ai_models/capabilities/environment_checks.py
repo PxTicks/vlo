@@ -16,11 +16,21 @@ the wrong problem.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
-from .contract import Check, DeviceReport, FailureCode
-from .descriptors import CapabilityDescriptor
-from .environment import config_value, device_probe
+from .contract import (
+    Check,
+    CheckStatus,
+    DeviceReport,
+    FailureCode,
+    VerificationStage,
+)
+from .descriptors import CapabilityDescriptor, DeviceSpec, DirectorySpec
+from .environment import (
+    UNRESOLVED,
+    device_probe,
+    resolve_directory,
+    resolve_source,
+)
 from .probes import (
     BACKEND_ROOT,
     device_check,
@@ -133,27 +143,35 @@ def build_environment_checks(
         )
 
     device: DeviceReport | None = None
-    if descriptor.device_env_var is not None:
-        requested = str(config_value(descriptor.device_env_var, "auto") or "auto")
-        device_status, device = device_check(
-            check_id="device.requested",
-            requested=requested,
-            probe=device_probe(deep_probe=deep_probe),
-            env_var=descriptor.device_env_var,
-            label=descriptor.label,
-        )
-        checks.append(device_status)
+    if descriptor.device is not None:
+        resolved = resolve_source(descriptor.device.requested)
+        if resolved is UNRESOLVED:
+            # Not "auto". Defaulting an unknown device to auto is the same
+            # silent-health defect as a directory that quietly vanishes: the
+            # check passes, the capability reads fine, and nothing established
+            # which device this runtime would actually use.
+            checks.append(_unresolved_device_check(descriptor.device))
+        else:
+            device_status, device = device_check(
+                check_id="device.requested",
+                requested=str(resolved) or "auto",
+                probe=device_probe(deep_probe=deep_probe),
+                env_var=descriptor.device.setting_name,
+                label=descriptor.label,
+            )
+            checks.append(device_status)
 
     for directory in descriptor.cache_dirs:
         if directory.check_id is None:
             continue
-        path = config_value(directory.config_attr)
-        if path is None:  # pragma: no cover - a descriptor naming a missing attr
+        path = resolve_directory(directory)
+        if path is None:
+            checks.append(_unresolved_directory_check(directory))
             continue
         checks.append(
             directory_check(
                 check_id=directory.check_id,
-                path=Path(path),
+                path=path,
                 label=directory.label,
                 require_writable=directory.require_writable,
             )
@@ -175,6 +193,50 @@ def build_environment_checks(
         device=device,
         package_present=package_present,
         package_failing=package_failing,
+    )
+
+
+def _unresolved_device_check(device: DeviceSpec) -> Check:
+    """A declared device whose descriptor cannot say which one it is.
+
+    ``device`` stays ``None`` on the report: the capability does run on a local
+    device, we simply could not establish which, and inventing a placeholder
+    would put an unproven guess where the payload promises a requested device.
+    """
+
+    return Check(
+        id="device.requested",
+        status=CheckStatus.FAIL,
+        stage=VerificationStage.ENVIRONMENT,
+        code=FailureCode.CONFIG_MISSING,
+        summary=f"{device.setting_name} is not configured",
+        detail=(
+            "This capability declares a compute device but could not resolve "
+            "a value for it, so no device could be checked."
+        ),
+    )
+
+
+def _unresolved_directory_check(directory: DirectorySpec) -> Check:
+    """A declared directory whose descriptor cannot say where it is.
+
+    Reported rather than skipped. Silently dropping it was the sharpest edge in
+    the descriptor system: the capability lost ``cache_unwritable`` detection
+    entirely and nothing said so, which reads as a healthy capability with one
+    fewer check than its neighbours.
+    """
+
+    assert directory.check_id is not None
+    return Check(
+        id=directory.check_id,
+        status=CheckStatus.FAIL,
+        stage=VerificationStage.ENVIRONMENT,
+        code=FailureCode.CONFIG_MISSING,
+        summary=f"{directory.label} is not configured",
+        detail=(
+            "This capability declares the directory but could not resolve a "
+            "path for it, so nothing could be checked."
+        ),
     )
 
 

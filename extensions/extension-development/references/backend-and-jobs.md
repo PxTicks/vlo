@@ -109,3 +109,113 @@ correct.
 Do not send backend filesystem paths from frontend assets. Exchange bytes through
 artifact tokens. Treat uploaded and generated job artifacts as ephemeral; import any
 result that must persist into an appropriate host/project asset flow.
+
+## Register a model runtime as a capability
+
+An extension whose backend loads its own weights should register a runtime
+capability rather than inventing a private "is it installed" endpoint. A
+capability is what makes the host's readiness contract available to it: staged
+checks, classified failures, install remediation, a recorded load boundary, and
+a card in Runtime Diagnostics.
+
+Register through the registrar on the context — never `register_descriptor`
+directly. The host owns the id, the lifetime, and the admission rules:
+
+```python
+from services.extensions import CapabilityDescriptor, PackageSpec, lazy_runtime
+
+def create_extension(ctx):
+    capability_id = ctx.capabilities.register(
+        CapabilityDescriptor(
+            id="tracker",                      # local name; the host namespaces it
+            label="Acme Tracker",
+            packages=(
+                PackageSpec(
+                    module="acme_tracker",
+                    install_target="acme-tracker>=1.0",
+                    install_summary="Install the Acme tracker runtime",
+                ),
+            ),
+            python_min=(3, 10),
+            loader=build_tracker,              # a callable, or "module:attr"
+            discover_models=discover_weights,  # (descriptor) -> Discovery
+        )
+    )
+```
+
+The returned id is namespaced — `acme.tracking:tracker` — so no extension can
+claim `sam2` or collide with a neighbour, and the registration is released when
+the extension deactivates, taking its memo cell, recorded failure, and load
+observation with it. Some descriptor fields are host-owned and are refused:
+`app_status_key`, `profile` (installer profiles install host requirements files;
+declare `PackageSpec.install_target` instead), and, until extension jobs pass
+through the model-work coordinator, `uses_local_gpu`.
+
+Obtain the runtime only through `lazy_runtime(capability_id).get()`. That call
+is the load boundary: it memoises, classifies a failure, records it, and notes
+success. There is no unrecorded way to load the model, which is the point —
+nothing to remember, so nothing to forget.
+
+Derive a job's `readiness` callback from the same capability, with
+`capability_runtime_health(capability_id)` from the same barrel, so a job that
+cannot run and a card that says why are the same fact rather than two opinions.
+
+Weights remain yours to distribute: the host's model manager does not know about
+extension models, so prefer a `docs` or `settings` remediation over `download`,
+and ship your own fetch through a route or job.
+
+## Read capability state from the frontend
+
+`context.api.capabilities` is the frontend half. It is a projection over the
+host's own single-flight capability store, so your panel and the Runtime
+Diagnostics panel read one answer and serialise their rechecks against each
+other:
+
+```ts
+const { capabilities } = context.api;
+await capabilities.ensureLoaded();
+
+const tracker = capabilities.read("tracker");   // local name or namespaced id
+if (!tracker.canAttempt) {
+  // tracker.failureCode, tracker.failure.remediation — already classified
+}
+```
+
+- `list`, `get`, `read`, `getStatus`, `ensureLoaded` read your own
+  capabilities; `subscribe` and `getRevision` follow changes; `recheck` re-runs
+  the checks and `test` loads the runtime for real (the host's "Test runtime"
+  action, and the only thing that raises `verifiedThrough` to `"loaded"`).
+- **A bare name is always yours.** `"tracker"` and `"acme.tracking:tracker"`
+  address the same capability. Host capabilities are read through `getHost` /
+  `readHost` — gating a feature on SAM2 is legitimate, and read-only. Another
+  extension's capability throws either way. The split is what stops a host
+  capability added in a later release from silently retargeting an id you
+  already ship.
+- **Snapshots are detached.** Every returned capability is a deep-frozen copy,
+  so what you hold cannot change under you and cannot reach host state.
+- `recheck` and `test` return a result, not just a view:
+  `{ ok: true, view }`, or `{ ok: false, status, error, view }` when the backend
+  was unreachable, the probe failed, or your extension deactivated mid-test
+  (`status: "cancelled"`). On failure `view` is the *previous* reading — the
+  store keeps the last good snapshot — so branch on `ok`, not on the view.
+  Concurrent calls for one capability join the run already in flight.
+- Before the first read there is no answer yet: `read()` reports `checking`, and
+  `canAttempt` is `false`. Render "still looking", never "unavailable" — a cold
+  read runs out-of-process probes and takes seconds.
+- `capabilities.FailureNotice` is the host's own remediation UI as a React
+  component. Render it through `api.runtime.react`, unconditionally above your
+  controls; it reads the capability itself and renders nothing when nothing is
+  wrong:
+
+  ```ts
+  const React = context.api.runtime.react;
+  React.createElement(capabilities.FailureNotice, {
+    capabilityId: "tracker",
+    downloadSurface: myDownloadUi,   // shown only for missing model files
+  });
+  ```
+
+  Pass `host: true` to present a host capability's notice instead of your own.
+
+Gate the feature on `canAttempt` and nothing else. Do not re-derive readiness
+from package probes, a private endpoint, or the presence of a file.

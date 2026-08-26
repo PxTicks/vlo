@@ -22,6 +22,7 @@ from services.ai_models.capabilities import (
     VerificationStage,
     lazy_runtime,
 )
+from services.ai_models.health import capability_runtime_health
 from services.extensions.capabilities import (
     ExtensionCapabilityError,
     ExtensionCapabilityRegistrar,
@@ -124,6 +125,7 @@ __all__ = [
     "SearchPathSpec",
     "SysPathSpec",
     "VerificationStage",
+    "capability_runtime_health",
     "lazy_runtime",
     "BackendArtifactError",
     "BackendArtifactStore",

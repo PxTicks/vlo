@@ -23,6 +23,30 @@ export type RuntimeCapabilityFetchStatus =
   | "ready"
   | "error";
 
+/**
+ * How an operation on one capability ended.
+ *
+ * The store keeps reporting failure through `error` for the panels that render
+ * it, but a caller that asked for the work needs the answer too: a failed
+ * recheck leaves the previous snapshot in place, so "did it work" is not
+ * recoverable from the store afterwards. `cancelled` is not a failure — the
+ * user or a deactivating owner stopped waiting.
+ */
+export interface CapabilityOperationOutcome {
+  status: "succeeded" | "failed" | "cancelled";
+  error: string | null;
+}
+
+const SUCCEEDED: CapabilityOperationOutcome = Object.freeze({
+  status: "succeeded" as const,
+  error: null,
+});
+
+const CANCELLED: CapabilityOperationOutcome = Object.freeze({
+  status: "cancelled" as const,
+  error: null,
+});
+
 export interface RuntimeCapabilityStoreState {
   status: RuntimeCapabilityFetchStatus;
   capabilities: Record<string, RuntimeCapability>;
@@ -37,10 +61,16 @@ export interface RuntimeCapabilityStoreState {
   ensureLoaded: () => Promise<void>;
   /** Drop the backend's probe cache and re-run every check. */
   refreshAll: () => Promise<void>;
-  /** Re-run one capability's checks. */
-  refreshCapability: (capabilityId: string) => Promise<void>;
-  /** Queue and follow an explicit runtime load test. */
-  testCapability: (capabilityId: string) => Promise<void>;
+  /** Re-run one capability's checks. Concurrent callers join the same run. */
+  refreshCapability: (capabilityId: string) => Promise<CapabilityOperationOutcome>;
+  /** Queue and follow an explicit runtime load test. Callers join one run. */
+  testCapability: (capabilityId: string) => Promise<CapabilityOperationOutcome>;
+  /**
+   * Stop following one capability's load test, without cancelling the backend
+   * job. For an owner going away — a deactivating extension — while other
+   * tests keep running.
+   */
+  cancelTest: (capabilityId: string) => void;
   /** Stop client-side probe polling without cancelling the backend job. */
   cancelTests: () => void;
   /**
@@ -100,6 +130,10 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
     // and keeping the promise out of the store means a second caller joins the
     // same request instead of racing a status flag.
     let inFlightLoad: Promise<void> | null = null;
+    // The same, per capability, for the two operations that target one: a
+    // second caller joins the work rather than being told nothing happened.
+    const refreshes = new Map<string, Promise<CapabilityOperationOutcome>>();
+    const tests = new Map<string, Promise<CapabilityOperationOutcome>>();
 
     // Every fetch that mutates the store runs through this chain. A full
     // refresh and a per-card recheck both invalidate the backend's shared
@@ -121,6 +155,93 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
       const next = queue.then(task, task);
       queue = next.catch(() => undefined);
       return next;
+    }
+
+    /**
+     * One runtime load test, start to terminal state.
+     *
+     * Split out of the store action so the action itself is only the join: a
+     * second caller for the same capability gets this promise rather than
+     * returning immediately, which used to hand back "nothing happened" while
+     * the first test was still running.
+     */
+    async function runTest(
+      capabilityId: string,
+    ): Promise<CapabilityOperationOutcome> {
+      const controller = new AbortController();
+      const generation = probeGeneration;
+      probeControllers.set(capabilityId, controller);
+      const cancelled = () =>
+        controller.signal.aborted || generation !== probeGeneration;
+      set((state) => ({
+        testing: [...state.testing, capabilityId],
+        error: null,
+      }));
+      try {
+        const requestOptions = { signal: controller.signal };
+        const { jobId } = await startRuntimeCapabilityProbe(
+          capabilityId,
+          requestOptions,
+        );
+        if (cancelled()) return CANCELLED;
+        let job = await getRuntimeCapabilityProbe(
+          capabilityId,
+          jobId,
+          requestOptions,
+        );
+        let polls = 0;
+        while (job.status === "queued" || job.status === "running") {
+          if (polls >= MAX_PROBE_POLLS) {
+            throw new Error("Runtime load test did not finish within 20 minutes");
+          }
+          polls += 1;
+          await waitForPoll(controller.signal);
+          job = await getRuntimeCapabilityProbe(
+            capabilityId,
+            jobId,
+            requestOptions,
+          );
+        }
+        if (cancelled()) return CANCELLED;
+
+        // Success and failure both update the registry. Read that evidence
+        // before surfacing the terminal job message so the card and alert
+        // cannot disagree.
+        const payload = await serialize(() =>
+          getRuntimeCapability(capabilityId, requestOptions),
+        );
+        if (cancelled()) return CANCELLED;
+        const failure =
+          job.status === "succeeded"
+            ? null
+            : job.error ?? `${payload.capability.label} load test failed`;
+        set((state) => ({
+          status: "ready",
+          capabilities: {
+            ...state.capabilities,
+            [payload.capability.id]: payload.capability,
+          },
+          environment: payload.environment,
+          error: failure,
+        }));
+        return failure === null
+          ? SUCCEEDED
+          : { status: "failed", error: failure };
+      } catch (error) {
+        if (cancelled() || isAbortError(error)) return CANCELLED;
+        const message = messageFor(error, `Failed to test ${capabilityId}`);
+        set({ error: message });
+        return { status: "failed", error: message };
+      } finally {
+        if (probeControllers.get(capabilityId) === controller) {
+          probeControllers.delete(capabilityId);
+        }
+        if (generation === probeGeneration) {
+          set((state) => ({
+            testing: state.testing.filter((id) => id !== capabilityId),
+          }));
+        }
+      }
     }
 
     async function load(refresh: boolean): Promise<void> {
@@ -186,9 +307,10 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
       },
 
       refreshCapability: async (capabilityId) => {
-        if (get().refreshing.includes(capabilityId)) return;
+        const inFlight = refreshes.get(capabilityId);
+        if (inFlight) return inFlight;
         set((state) => ({ refreshing: [...state.refreshing, capabilityId] }));
-        await serialize(async () => {
+        const running = serialize(async (): Promise<CapabilityOperationOutcome> => {
           try {
             const payload = await getRuntimeCapability(capabilityId, {
               refresh: true,
@@ -204,93 +326,46 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
               environment: payload.environment,
               error: null,
             }));
+            return SUCCEEDED;
           } catch (error) {
-            set({
-              error: messageFor(error, `Failed to recheck ${capabilityId}`),
-            });
+            const message = messageFor(
+              error,
+              `Failed to recheck ${capabilityId}`,
+            );
+            set({ error: message });
+            return { status: "failed", error: message };
           } finally {
             set((state) => ({
               refreshing: state.refreshing.filter((id) => id !== capabilityId),
             }));
           }
+        }).finally(() => {
+          if (refreshes.get(capabilityId) === running) {
+            refreshes.delete(capabilityId);
+          }
         });
+        refreshes.set(capabilityId, running);
+        return running;
       },
 
       testCapability: async (capabilityId) => {
-        if (get().testing.includes(capabilityId)) return;
-        const controller = new AbortController();
-        const generation = probeGeneration;
-        probeControllers.set(capabilityId, controller);
-        const cancelled = () =>
-          controller.signal.aborted || generation !== probeGeneration;
-        set((state) => ({
-          testing: [...state.testing, capabilityId],
-          error: null,
-        }));
-        try {
-          const requestOptions = { signal: controller.signal };
-          const { jobId } = await startRuntimeCapabilityProbe(
-            capabilityId,
-            requestOptions,
-          );
-          if (cancelled()) return;
-          let job = await getRuntimeCapabilityProbe(
-            capabilityId,
-            jobId,
-            requestOptions,
-          );
-          let polls = 0;
-          while (job.status === "queued" || job.status === "running") {
-            if (polls >= MAX_PROBE_POLLS) {
-              throw new Error(
-                "Runtime load test did not finish within 20 minutes",
-              );
-            }
-            polls += 1;
-            await waitForPoll(controller.signal);
-            job = await getRuntimeCapabilityProbe(
-              capabilityId,
-              jobId,
-              requestOptions,
-            );
-          }
-          if (cancelled()) return;
+        const inFlight = tests.get(capabilityId);
+        if (inFlight) return inFlight;
+        const running = runTest(capabilityId).finally(() => {
+          if (tests.get(capabilityId) === running) tests.delete(capabilityId);
+        });
+        tests.set(capabilityId, running);
+        return running;
+      },
 
-          // Success and failure both update the registry. Read that evidence
-          // before surfacing the terminal job message so the card and alert
-          // cannot disagree.
-          const payload = await serialize(() =>
-            getRuntimeCapability(capabilityId, requestOptions),
-          );
-          if (cancelled()) return;
-          set((state) => ({
-            status: "ready",
-            capabilities: {
-              ...state.capabilities,
-              [payload.capability.id]: payload.capability,
-            },
-            environment: payload.environment,
-            error:
-              job.status === "succeeded"
-                ? null
-                : job.error ?? `${payload.capability.label} load test failed`,
-          }));
-        } catch (error) {
-          if (!cancelled() && !isAbortError(error)) {
-            set({
-              error: messageFor(error, `Failed to test ${capabilityId}`),
-            });
-          }
-        } finally {
-          if (probeControllers.get(capabilityId) === controller) {
-            probeControllers.delete(capabilityId);
-          }
-          if (generation === probeGeneration) {
-            set((state) => ({
-              testing: state.testing.filter((id) => id !== capabilityId),
-            }));
-          }
-        }
+      cancelTest: (capabilityId) => {
+        const controller = probeControllers.get(capabilityId);
+        if (controller === undefined) return;
+        controller.abort();
+        probeControllers.delete(capabilityId);
+        set((state) => ({
+          testing: state.testing.filter((id) => id !== capabilityId),
+        }));
       },
 
       cancelTests: () => {
@@ -301,6 +376,8 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
       reset: () => {
         cancelProbePolling();
         inFlightLoad = null;
+        refreshes.clear();
+        tests.clear();
         queue = Promise.resolve();
         set({
           status: "idle",

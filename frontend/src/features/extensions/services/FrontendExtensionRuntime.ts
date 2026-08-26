@@ -15,6 +15,7 @@ import { createExtensionSelectionApi } from "../selection/createExtensionSelecti
 import { createExtensionProjectApi } from "../project/createExtensionProjectApi";
 import { createExtensionExportApi } from "../export/createExtensionExportApi";
 import { createExtensionAudioApi } from "../audio/createExtensionAudioApi";
+import { createExtensionCapabilityApi } from "../capabilities/createExtensionCapabilityApi";
 import { extensionTransformationRegistry } from "../../transformations/extensionApi";
 import { extensionTransitionRegistry } from "../../transitions/extensions/ExtensionTransitionRegistry";
 import { createExtensionAnimationApi } from "../../transformations/animation";
@@ -655,6 +656,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
       runtime: extensionHostRuntimeApi,
       color: extensionColorApi,
       backend: createExtensionBackendApi(scope),
+      capabilities: createExtensionCapabilityApi(scope),
       assets: createExtensionAssetApi(scope),
       storage: createExtensionStorageApi(scope),
       generation: createExtensionGenerationApi(scope),

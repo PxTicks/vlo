@@ -223,6 +223,46 @@ function createConformanceApi() {
       getRevision: () => 0,
       onBeforeSave: () => () => undefined,
     },
+    capabilities: {
+      list: () => [],
+      get: () => null,
+      read: () => ({
+        id: "example.tracking:tracker",
+        capability: null,
+        checking: false,
+        canAttempt: false,
+        verifiedThrough: null,
+        failure: null,
+        failureCode: null,
+        message: null,
+        rechecking: false,
+        testing: false,
+      }),
+      getHost: () => null,
+      readHost: () => ({
+        id: "sam2",
+        capability: null,
+        checking: false,
+        canAttempt: false,
+        verifiedThrough: null,
+        failure: null,
+        failureCode: null,
+        message: null,
+        rechecking: false,
+        testing: false,
+      }),
+      getStatus: () => "ready",
+      ensureLoaded: async () => undefined,
+      subscribe: () => () => undefined,
+      getRevision: () => 0,
+      recheck: async () => {
+        throw new Error("not stubbed");
+      },
+      test: async () => {
+        throw new Error("not stubbed");
+      },
+      FailureNotice: () => null,
+    },
     audio: {
       listClips: () => [],
       getClip: () => undefined,

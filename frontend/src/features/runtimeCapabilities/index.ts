@@ -13,6 +13,7 @@ export {
   useRuntimeCapabilityStore,
 } from "./useRuntimeCapabilityStore";
 export type {
+  CapabilityOperationOutcome,
   RuntimeCapabilityFetchStatus,
   RuntimeCapabilityStoreState,
 } from "./useRuntimeCapabilityStore";

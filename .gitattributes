@@ -156,6 +156,10 @@
 /frontend/src/features/project/constants.ts extension-surface=adapter
 /frontend/src/features/project/services/ProjectPersistenceService.ts extension-surface=adapter
 /frontend/src/features/project/useProjectStore.ts extension-surface=adapter
+# api.capabilities projects this feature to extensions, and it presents
+# extension-registered capabilities in the host's own diagnostics UI.
+/frontend/src/features/runtimeCapabilities/** extension-surface=adapter
+/frontend/src/types/RuntimeStatus.ts extension-surface=adapter
 /frontend/src/features/samAudio/services/samAudioApi.ts extension-surface=adapter
 /frontend/src/features/samAudio/services/runSamAudioSeparation.ts extension-surface=adapter
 /backend/services/sam_audio/sam_audio_service.py extension-surface=adapter

@@ -151,6 +151,270 @@ export interface ExtensionBackendApi {
   getArtifactUrl(artifactId: string): string;
 }
 
+/*
+ * Runtime capabilities: whether the machine can actually run a model runtime,
+ * and why not when it cannot.
+ *
+ * A backend extension registers a capability through the registrar on its
+ * `BackendExtensionContext`; everything below is the frontend half of that
+ * registration. The payload shapes mirror the host's own
+ * `/app/runtime-capabilities` contract exactly, because the point of this
+ * namespace is that an extension presents the same readiness the Runtime
+ * Diagnostics panel presents, rather than inventing a second definition of
+ * "available".
+ */
+
+/**
+ * Every failure the backend can report. Closed on purpose: an unrecognised
+ * runtime failure is classified as `runtime_load_failed` rather than given a
+ * new code, so a switch over this union stays total.
+ */
+export type ExtensionCapabilityFailureCode =
+  | "python_version_unsupported"
+  | "package_missing"
+  | "package_import_failed"
+  | "dependency_incompatible"
+  | "dependency_download_failed"
+  | "model_missing"
+  | "model_invalid"
+  | "config_missing"
+  | "out_of_memory"
+  | "runtime_load_failed"
+  | "device_unavailable"
+  | "cache_unwritable"
+  | "authentication_required";
+
+export type ExtensionCapabilityState =
+  | "unavailable"
+  | "blocked"
+  | "available_unverified"
+  | "ready"
+  | "degraded"
+  | "checking";
+
+/** How far the evidence reaches. `null` means not even discovery passed. */
+export type ExtensionCapabilityVerificationStage =
+  | "discovered"
+  | "environment"
+  | "loaded"
+  | "operational";
+
+/** `skipped` means the check could not be carried out — never that it passed. */
+export type ExtensionCapabilityCheckStatus = "pass" | "warn" | "fail" | "skipped";
+
+export type ExtensionCapabilityRemediationKind =
+  | "command"
+  | "download"
+  | "settings"
+  | "docs";
+
+export interface ExtensionCapabilityRemediation {
+  readonly kind: ExtensionCapabilityRemediationKind;
+  readonly summary: string;
+  readonly command?: string;
+  readonly url?: string;
+  readonly requiresRestart: boolean;
+}
+
+export interface ExtensionCapabilityCheck {
+  readonly id: string;
+  readonly status: ExtensionCapabilityCheckStatus;
+  readonly stage: ExtensionCapabilityVerificationStage;
+  readonly summary: string;
+  readonly code?: ExtensionCapabilityFailureCode;
+  readonly detail?: string;
+  readonly remediation?: ExtensionCapabilityRemediation;
+}
+
+export interface ExtensionCapabilityDevice {
+  readonly requested: string;
+  readonly resolved: string | null;
+  /** False while `resolved` is only what this configuration should resolve to. */
+  readonly proven: boolean;
+  readonly fallback: boolean;
+}
+
+export interface ExtensionCapabilityFailureRecord {
+  readonly code: ExtensionCapabilityFailureCode;
+  readonly summary: string;
+  readonly stage: ExtensionCapabilityVerificationStage;
+  readonly occurredAt: string;
+  readonly detail?: string;
+}
+
+/** One capability as the backend reports it. */
+export interface ExtensionCapabilitySnapshot {
+  readonly id: string;
+  readonly label: string;
+  readonly state: ExtensionCapabilityState;
+  /** The single field a feature surface gates on. */
+  readonly canAttempt: boolean;
+  readonly verifiedThrough: ExtensionCapabilityVerificationStage | null;
+  readonly checkedAt: string;
+  readonly selectedModel: string | null;
+  readonly device: ExtensionCapabilityDevice | null;
+  /** Backend-defined rows: whatever this capability's discovery reports. */
+  readonly models: readonly Readonly<Record<string, unknown>>[];
+  readonly checks: readonly ExtensionCapabilityCheck[];
+  readonly lastFailure: ExtensionCapabilityFailureRecord | null;
+  /** Present after this backend process has loaded the runtime successfully. */
+  readonly lastSuccessfulLoad?: string | null;
+}
+
+/**
+ * Whether the host has an answer yet — distinct from what the answer is.
+ *
+ * `checking` matters: a cold read runs out-of-process import probes and can
+ * take upwards of ten seconds, so a panel must say "still looking" rather than
+ * "unavailable" while the first read is in flight.
+ */
+export type ExtensionCapabilityReadStatus =
+  | "idle"
+  | "checking"
+  | "ready"
+  | "error";
+
+/**
+ * The host's own projection of a capability, as its feature surfaces consume
+ * it. `read` gives you this rather than making you re-derive which check
+ * explains the failure — the derivation is the part two implementations
+ * disagree about.
+ */
+export interface ExtensionCapabilityView {
+  /** Always the fully namespaced id, whichever form you asked with. */
+  readonly id: string;
+  readonly capability: ExtensionCapabilitySnapshot | null;
+  /** True while the first answer is still being fetched. */
+  readonly checking: boolean;
+  /** Unknown is not available: until something is known, nothing is offered. */
+  readonly canAttempt: boolean;
+  readonly verifiedThrough: ExtensionCapabilityVerificationStage | null;
+  /** The check that explains why not, when something is known to be failing. */
+  readonly failure: ExtensionCapabilityCheck | null;
+  readonly failureCode: ExtensionCapabilityFailureCode | null;
+  /** A message for surfaces with one line to spend. */
+  readonly message: string | null;
+  /** A recheck of this capability is in flight. */
+  readonly rechecking: boolean;
+  /** A runtime load test of this capability is queued or running. */
+  readonly testing: boolean;
+}
+
+/**
+ * How a recheck or a load test ended.
+ *
+ * A failed operation is an ordinary state of a running editor — the backend
+ * was unreachable, the probe job failed — so it comes back as a value rather
+ * than a rejection. `view` is the capability as it stands afterwards, which on
+ * failure is the *previous* reading: a failed recheck does not erase what was
+ * last known, and reading `view` alone would therefore look like success.
+ * `cancelled` means nobody is waiting any more (your extension deactivated, or
+ * the user stopped the test); the backend job may still be running.
+ */
+export type ExtensionCapabilityOperationResult =
+  | { readonly ok: true; readonly view: ExtensionCapabilityView }
+  | {
+      readonly ok: false;
+      readonly status: "failed" | "cancelled";
+      readonly error: string | null;
+      readonly view: ExtensionCapabilityView;
+    };
+
+export interface ExtensionCapabilityNoticeProps {
+  /** Your own capability's local name or namespaced id — see `host`. */
+  readonly capabilityId: string;
+  /**
+   * Render a *host* capability's notice (`"sam2"`, `"comfyui"`, …) instead of
+   * one of yours, for a feature that depends on one. Read-only either way.
+   */
+  readonly host?: boolean;
+  /** Shown when the capability is unavailable for a reason no check names. */
+  readonly fallbackMessage?: string | null;
+  /** Drops the title line, for a notice inside an already-titled panel. */
+  readonly dense?: boolean;
+  /**
+   * Your own model-download UI, as a React node. Rendered only for missing or
+   * incomplete model files — the one class of failure it can actually fix.
+   * Weights are the extension's to distribute, so this is where that lands.
+   */
+  readonly downloadSurface?: unknown;
+}
+
+/**
+ * The host's remediation UI, as a React component you render in your own tree.
+ * It reads the capability itself and renders nothing when there is nothing
+ * wrong, so it can sit unconditionally above a feature's controls.
+ *
+ * Render it through the host's React, which is what your components are built
+ * with anyway:
+ *
+ * ```ts
+ * const React = api.runtime.react;
+ * React.createElement(api.capabilities.FailureNotice, { capabilityId: "tracker" })
+ * ```
+ *
+ * The return type is `unknown` because this contract does not name React's
+ * types; `createElement` accepts it as-is.
+ */
+export type ExtensionCapabilityNoticeComponent = (
+  props: ExtensionCapabilityNoticeProps,
+) => unknown;
+
+/**
+ * Owner-bound `api.capabilities`: read your backend half's readiness, follow
+ * it, ask for a recheck or a load test, and render the host's own remediation.
+ *
+ * **Scope.** Every method here addresses *your* capabilities, by local name
+ * (`"tracker"`) or namespaced id (`"acme.tracking:tracker"`) — a bare name is
+ * always yours, so a host capability added in a later release can never
+ * silently retarget it, and a local name of `"sam2"` stays yours. Host
+ * capabilities are read through `getHost`/`readHost`: knowing whether SAM2 is
+ * available before offering a feature is a legitimate, read-only ask, but only
+ * an owner may recheck or test one. Another extension's capability is neither
+ * readable nor writable and throws.
+ *
+ * **Snapshots are detached.** Everything returned is a deep-frozen copy, so a
+ * capability you are holding never changes under you and nothing you do to it
+ * can reach the editor's own diagnostics.
+ */
+export interface ExtensionCapabilityApi {
+  /** Your own capabilities, in registration order. Empty until first read. */
+  list(): readonly ExtensionCapabilitySnapshot[];
+  /** One capability as reported, or `null` when nothing is known of it yet. */
+  get(capabilityId: string): ExtensionCapabilitySnapshot | null;
+  /** The same capability, projected the way the host's own surfaces read it. */
+  read(capabilityId: string): ExtensionCapabilityView;
+  /** A host capability as reported (`"sam2"`, `"comfyui"`, …), read-only. */
+  getHost(capabilityId: string): ExtensionCapabilitySnapshot | null;
+  /** A host capability, projected as `read` projects your own. Read-only. */
+  readHost(capabilityId: string): ExtensionCapabilityView;
+  /** Whether the host has an answer yet; see `ExtensionCapabilityReadStatus`. */
+  getStatus(): ExtensionCapabilityReadStatus;
+  /**
+   * Start the host's lazy first read, and resolve once it has settled.
+   * Concurrent callers — yours and the host's own panels — join one request.
+   */
+  ensureLoaded(): Promise<void>;
+  /** Fires whenever any capability's reported state changes. */
+  subscribe(listener: () => void): () => void;
+  getRevision(): number;
+  /**
+   * Re-run one of your capabilities' checks, discarding the cached probes.
+   * Cheap: it never loads the runtime. Throws for a capability you do not own.
+   * A second call while one is running joins it rather than starting another.
+   */
+  recheck(capabilityId: string): Promise<ExtensionCapabilityOperationResult>;
+  /**
+   * Load one of your runtimes for real and record what happened — the host's
+   * "Test runtime" action. Expensive, and the only thing that can raise
+   * `verifiedThrough` to `"loaded"`. Throws for a capability you do not own,
+   * and resolves `cancelled` if your extension deactivates while it runs.
+   */
+  test(capabilityId: string): Promise<ExtensionCapabilityOperationResult>;
+  /** The host's remediation UI; see `ExtensionCapabilityNoticeComponent`. */
+  readonly FailureNotice: ExtensionCapabilityNoticeComponent;
+}
+
 /** A point in project/canvas coordinates. */
 export interface ExtensionPoint2D {
   readonly x: number;
@@ -3519,6 +3783,8 @@ export interface VloExtensionApi {
   readonly trusted: ExtensionTrustedApi;
   readonly runtime: ExtensionHostRuntimeApi;
   readonly backend: ExtensionBackendApi;
+  /** Runtime readiness for the model your backend half registered. */
+  readonly capabilities: ExtensionCapabilityApi;
   readonly assets: ExtensionAssetApi;
   /** Extension-owned persistent key/value state (local and project scopes). */
   readonly storage: ExtensionStorageApi;

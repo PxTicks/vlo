@@ -5,6 +5,27 @@ from services.extensions.approval_store import (
     ExtensionApprovalStateError,
     ExtensionApprovalStore,
 )
+from services.ai_models.capabilities import (
+    CapabilityDescriptor,
+    Check,
+    CheckStatus,
+    DeviceSpec,
+    DirectorySpec,
+    Discovery,
+    FailureCode,
+    PackageSpec,
+    Remediation,
+    RemediationKind,
+    RuntimeLoad,
+    SearchPathSpec,
+    SysPathSpec,
+    VerificationStage,
+    lazy_runtime,
+)
+from services.extensions.capabilities import (
+    ExtensionCapabilityError,
+    ExtensionCapabilityRegistrar,
+)
 from services.extensions.backend_artifacts import (
     BackendArtifactError,
     BackendArtifactStore,
@@ -86,6 +107,24 @@ from services.extensions.package_digest import (
 )
 
 __all__ = [
+    # Runtime capabilities: describing one, and the runtime it loads.
+    "CapabilityDescriptor",
+    "Check",
+    "CheckStatus",
+    "DeviceSpec",
+    "DirectorySpec",
+    "Discovery",
+    "ExtensionCapabilityError",
+    "ExtensionCapabilityRegistrar",
+    "FailureCode",
+    "PackageSpec",
+    "Remediation",
+    "RemediationKind",
+    "RuntimeLoad",
+    "SearchPathSpec",
+    "SysPathSpec",
+    "VerificationStage",
+    "lazy_runtime",
     "BackendArtifactError",
     "BackendArtifactStore",
     "BackendExtensionEntry",

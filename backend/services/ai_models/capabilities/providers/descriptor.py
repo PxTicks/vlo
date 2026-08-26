@@ -104,8 +104,13 @@ class DescriptorProvider(CapabilityProvider):
         the installer was asked for it and never managed to finish.
 
         A capability in a non-optional profile is always wanted, so a missing
-        package there is a broken install rather than a declined feature.
+        package there is a broken install rather than a declined feature. So is
+        one an extension registered: an approved, running extension is itself
+        the evidence, and there is no installer marker that could say so.
         """
+
+        if self.descriptor.always_expected:
+            return True
 
         profile = (
             get_profile(self.descriptor.profile)

@@ -37,7 +37,7 @@ from .contract import Check, Remediation
 
 
 #: Every separator a capability id may use, folded when camelising.
-_ID_SEPARATORS = re.compile(r"[-._/]+")
+_ID_SEPARATORS = re.compile(r"[-._/:]+")
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,10 @@ class FromConfig:
 
     attribute: str
 
+
+#: A callable a descriptor names: a ``"module:attr"`` string resolved on
+#: demand, or the callable itself when the owner already holds it.
+Reference = Union[str, Callable[..., Any]]
 
 #: How a descriptor supplies a value that is not known when the table is built:
 #: a literal, a zero-argument callable for something the owner recomputes, or a
@@ -235,15 +239,22 @@ class CapabilityDescriptor:
     unavailable_message: str = ""
 
     # Behaviour
+    #: Whether this capability counts as wanted whatever is installed, which is
+    #: ``derive_state``'s ``expected``. A host capability earns it by being in a
+    #: non-optional install profile. An extension's capability earns it by the
+    #: extension being active — that *is* the user asking for the feature — so
+    #: the registrar sets it and an absent package reads as a broken install
+    #: rather than a feature nobody wanted.
+    always_expected: bool = False
     uses_local_gpu: bool = False
-    #: ``"module:attr"`` of the factory that builds the runtime. The registry
-    #: wraps it in the lazy cell, so there is no unrecorded way to load it.
-    loader: str | None = None
-    #: ``"module:attr"`` of ``(descriptor) -> Discovery``.
-    discover_models: str | None = None
-    #: ``"module:attr"`` of an exception class that means "cancelled", which is
-    #: not a failure and must pass through the load boundary unrecorded.
-    cancel_exception: str | None = None
+    #: The factory that builds the runtime. The registry wraps it in the lazy
+    #: cell, so there is no unrecorded way to load it.
+    loader: Reference | None = None
+    #: ``(descriptor) -> Discovery``.
+    discover_models: Reference | None = None
+    #: An exception class that means "cancelled", which is not a failure and
+    #: must pass through the load boundary unrecorded.
+    cancel_exception: Reference | None = None
     #: Offered for a model-shaped failure, which no install command can fix.
     download_remediation: Remediation | None = None
 
@@ -277,13 +288,22 @@ class CapabilityDescriptor:
         return head + "".join(part[:1].upper() + part[1:] for part in rest)
 
 
-def resolve_ref(reference: str) -> Any:
-    """Import a ``"module:attr"`` reference, on demand.
+def resolve_ref(reference: Reference) -> Any:
+    """Produce the callable a descriptor named, importing it if necessary.
 
-    Deferred on purpose: the descriptor table is read on the ``/app/status``
-    startup path, and resolving a loader eagerly would import an optional ML
-    dependency graph into the serving process.
+    A ``"module:attr"`` string is resolved on demand and deferred on purpose:
+    the descriptor table is read on the ``/app/status`` startup path, and
+    resolving a loader eagerly would import an optional ML dependency graph
+    into the serving process.
+
+    An already-resolved value passes straight through. That is the form an
+    extension uses: its module is loaded under a digest-derived name it cannot
+    predict, and it is already imported by the time it registers anything, so
+    the deferral the string form buys is worth nothing to it.
     """
+
+    if not isinstance(reference, str):
+        return reference
 
     module_name, _, attribute = reference.partition(":")
     if not module_name or not attribute:
@@ -303,6 +323,7 @@ __all__ = [
     "Discovery",
     "FromConfig",
     "PackageSpec",
+    "Reference",
     "SearchPathSpec",
     "SysPathSpec",
     "ValueSource",

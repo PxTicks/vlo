@@ -18,6 +18,7 @@ from typing import Awaitable, Callable, Literal
 
 from fastapi import APIRouter, FastAPI
 
+from services.extensions.capabilities import ExtensionCapabilityRegistrar
 from services.extensions.backend_artifacts import (
     BackendArtifactError,
     BackendArtifactStore,
@@ -66,6 +67,9 @@ class BackendExtensionContext:
     package_dir: Path
     logger: logging.LoggerAdapter[logging.Logger]
     raw_api_prefix: str
+    #: Register runtime capabilities for the life of this activation. See
+    #: :mod:`services.extensions.capabilities`.
+    capabilities: ExtensionCapabilityRegistrar
 
 
 @dataclass(frozen=True)
@@ -102,6 +106,7 @@ class _ActiveBackendSession:
     digest: str
     shutdown: BackendShutdown | None
     module_prefix: str
+    capabilities: ExtensionCapabilityRegistrar
 
 
 @dataclass(frozen=True)
@@ -467,6 +472,20 @@ class BackendExtensionRuntime:
                     session.extension_id,
                 )
             finally:
+                # Released last, so a shutdown callback and a job still winding
+                # down can both still see the capability they were using. The
+                # registrar is terminal, so anything either of them registered
+                # on the way out is removed here rather than surviving them.
+                try:
+                    session.capabilities.release()
+                except Exception as exc:
+                    errors.append(
+                        f"{session.extension_id} capability cleanup: {exc}"
+                    )
+                    logging.getLogger(__name__).exception(
+                        "Backend extension capability cleanup failed: %s",
+                        session.extension_id,
+                    )
                 _remove_modules(session.module_prefix)
         self._sessions.clear()
         await self._jobs.shutdown_all()
@@ -545,6 +564,7 @@ class BackendExtensionRuntime:
         prefix = f"/app/extensions/{extension_id}/api"
         definition: BackendExtensionDefinition | None = None
         module_prefix: str | None = None
+        capabilities = ExtensionCapabilityRegistrar(extension_id)
 
         try:
             if not is_extension_sdk_compatible(item.manifest.sdk):
@@ -592,6 +612,7 @@ class BackendExtensionRuntime:
                 package_dir=staged.package_dir,
                 logger=logger,
                 raw_api_prefix=prefix,
+                capabilities=capabilities,
             )
             activation_started = asyncio.get_running_loop().time()
             factory_call = await _call_factory_without_blocking_startup(
@@ -641,6 +662,7 @@ class BackendExtensionRuntime:
                     digest=digest,
                     shutdown=definition.shutdown,
                     module_prefix=module_prefix,
+                    capabilities=capabilities,
                 )
             )
             return BackendExtensionActivationRecord(
@@ -659,6 +681,10 @@ class BackendExtensionRuntime:
                     "Backend extension rollback failed: %s",
                     extension_id,
                 )
+            # After the rollback shutdown, for the same reason as ``stop``: a
+            # factory that registered a capability and then failed must not
+            # leave it behind, and neither must its own cleanup.
+            capabilities.release()
             if module_prefix is not None:
                 _remove_modules(module_prefix)
             logging.getLogger(__name__).exception(

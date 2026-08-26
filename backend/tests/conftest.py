@@ -224,6 +224,30 @@ def offline_app_status(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
+def no_leaked_capabilities():
+    """Fail the test that leaves a capability registered, not the next one.
+
+    Registration is process-global. A test that registers one and does not
+    clean up — or a rollback that regresses — otherwise surfaces as a failure
+    somewhere further down the file, which is a long way from the cause. The
+    leak is undone as well as reported, so one mistake produces one failure.
+    """
+
+    from services.ai_models.capabilities import descriptor_ids, unregister_descriptor
+
+    baseline = set(descriptor_ids())
+    yield
+    leaked = [
+        capability_id
+        for capability_id in descriptor_ids()
+        if capability_id not in baseline
+    ]
+    for capability_id in leaked:
+        unregister_descriptor(capability_id)
+    assert leaked == [], f"capabilities left registered: {leaked}"
+
+
+@pytest.fixture(autouse=True)
 def uv_on_path(monkeypatch: pytest.MonkeyPatch):
     """Pin ``uv`` discovery so remediation is not a property of the host.
 

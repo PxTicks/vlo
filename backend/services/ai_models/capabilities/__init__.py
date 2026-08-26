@@ -13,9 +13,23 @@ status request.
 
 from __future__ import annotations
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from .catalogue import (
+    BEATS_CAPABILITY_ID,
+    COMFYUI_CAPABILITY_ID,
+    DESCRIPTORS,
+    SAM2_CAPABILITY_ID,
+    SAM_AUDIO_CAPABILITY_ID,
+    catalogue_generation,
+    descriptor_ids,
+    descriptors,
+    get_descriptor,
+    register_descriptor,
+    unregister_descriptor,
+)
 from .contract import (
     ATTEMPTABLE_STATES,
     STAGE_ORDER,
@@ -34,7 +48,15 @@ from .contract import (
     evaluated_stages,
     utc_now,
 )
+from .descriptors import (
+    CapabilityDescriptor,
+    DirectorySpec,
+    Discovery,
+    PackageSpec,
+    SysPathSpec,
+)
 from .environment import ENVIRONMENT_PROBE_KEY, describe_environment
+from .environment_checks import build_environment_checks
 from .failures import (
     DURABLE_FAILURE_CODES,
     ClassifiedFailure,
@@ -68,30 +90,62 @@ from .profiles import (
     write_install_marker,
 )
 from .providers import (
-    BeatsProvider,
     CapabilityProvider,
     ComfyUIProvider,
-    Sam2Provider,
-    SamAudioProvider,
+    DescriptorProvider,
 )
-from .providers.beats import CAPABILITY_ID as BEATS_CAPABILITY_ID
-from .providers.comfyui import CAPABILITY_ID as COMFYUI_CAPABILITY_ID
-from .providers.sam2 import CAPABILITY_ID as SAM2_CAPABILITY_ID
-from .providers.sam_audio import CAPABILITY_ID as SAM_AUDIO_CAPABILITY_ID
+from .runtimes import LazyRuntime, RuntimeLoad, lazy_runtime, reset_lazy_runtimes
 from .subprocess_probe import invalidate_probe_cache
 
 
-#: Registration order is display order.
-_PROVIDERS: tuple[CapabilityProvider, ...] = (
-    Sam2Provider(),
-    SamAudioProvider(),
-    BeatsProvider(),
-    ComfyUIProvider(),
-)
+#: Capabilities the descriptor shape does not fit, implemented directly against
+#: :class:`CapabilityProvider`. ComfyUI is the standing example: no package to
+#: probe, no local device, no model files, and a reachability test rather than a
+#: load. Forcing it into the table would mean a descriptor that is mostly
+#: ``None`` plus an escape hatch — and a table with an escape hatch stops being
+#: a table.
+_HAND_WRITTEN: tuple[CapabilityProvider, ...] = (ComfyUIProvider(),)
 
-_PROVIDERS_BY_ID: dict[str, CapabilityProvider] = {
-    provider.id: provider for provider in _PROVIDERS
-}
+_REGISTRY_LOCK = threading.Lock()
+_REGISTRY_CACHE: (
+    tuple[
+        int,
+        tuple[CapabilityProvider, ...],
+        dict[str, CapabilityProvider],
+    ]
+    | None
+) = None
+
+
+def _registry() -> tuple[
+    tuple[CapabilityProvider, ...], dict[str, CapabilityProvider]
+]:
+    """Descriptor-built providers first, then the hand-written ones.
+
+    Rebuilt whenever the descriptor table changes rather than snapshotted at
+    import, so registering a capability is the only thing registering a
+    capability takes. Registration order is display order.
+
+    Keyed on the catalogue's generation, not on the set of ids: unregistering
+    an id and registering a different descriptor under it leaves the id set
+    identical, and a cache keyed on that would keep serving the old provider.
+    """
+
+    global _REGISTRY_CACHE
+
+    fingerprint = catalogue_generation()
+    with _REGISTRY_LOCK:
+        cached = _REGISTRY_CACHE
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1], cached[2]
+
+        providers: tuple[CapabilityProvider, ...] = (
+            *(DescriptorProvider(descriptor) for descriptor in descriptors()),
+            *_HAND_WRITTEN,
+        )
+        by_id = {provider.id: provider for provider in providers}
+        _REGISTRY_CACHE = (fingerprint, providers, by_id)
+        return providers, by_id
 
 #: Cap on concurrent probe subprocesses. Each one may import torch, so fanning
 #: out without a limit trades a slow cold cache for a memory spike.
@@ -99,11 +153,11 @@ _PROBE_FAN_OUT = 3
 
 
 def list_capability_ids() -> tuple[str, ...]:
-    return tuple(_PROVIDERS_BY_ID)
+    return tuple(_registry()[1])
 
 
 def get_provider(capability_id: str) -> CapabilityProvider | None:
-    return _PROVIDERS_BY_ID.get(capability_id)
+    return _registry()[1].get(capability_id)
 
 
 def get_capability(
@@ -119,7 +173,7 @@ def get_capability(
     makes this safe to call from ``/app/status``, which is on the startup path.
     """
 
-    provider = _PROVIDERS_BY_ID.get(capability_id)
+    provider = get_provider(capability_id)
     if provider is None:
         return None
     if refresh:
@@ -137,11 +191,13 @@ def list_capabilities(
     if refresh:
         invalidate_capability_cache()
 
+    providers = _registry()[0]
+
     # Providers share one subprocess for torch and the devices — the probe
     # cache is single-flight per key, so the fan-out joins that one run rather
     # than spawning a torch import per capability.
     with ThreadPoolExecutor(
-        max_workers=min(_PROBE_FAN_OUT, len(_PROVIDERS)),
+        max_workers=min(_PROBE_FAN_OUT, len(providers)),
         thread_name_prefix="capability-probe",
     ) as pool:
         return list(
@@ -151,7 +207,7 @@ def list_capabilities(
                         deep_probe and not is_capability_checking(provider.id)
                     )
                 ),
-                _PROVIDERS,
+                providers,
             )
         )
 
@@ -233,19 +289,29 @@ __all__ = [
     "SAM2_CAPABILITY_ID",
     "SAM_AUDIO_CAPABILITY_ID",
     "STAGE_ORDER",
+    "DESCRIPTORS",
     "Capability",
+    "CapabilityDescriptor",
     "CapabilityProfile",
     "CapabilityProvider",
     "CapabilityState",
     "Check",
     "CheckStatus",
     "ClassifiedFailure",
+    "DescriptorProvider",
     "DeviceReport",
+    "DirectorySpec",
+    "Discovery",
     "FailureCode",
     "FailureRecord",
+    "LazyRuntime",
+    "PackageSpec",
     "Remediation",
     "RemediationKind",
+    "RuntimeLoad",
+    "SysPathSpec",
     "VerificationStage",
+    "build_environment_checks",
     "capabilities_payload",
     "capability_install_remediation",
     "capability_payload",
@@ -254,11 +320,14 @@ __all__ = [
     "clear_failures",
     "derive_state",
     "derive_verified_through",
+    "descriptor_ids",
+    "descriptors",
     "evaluated_stages",
     "describe_environment",
     "describe_profiles",
     "expand_profile_ids",
     "get_capability",
+    "get_descriptor",
     "get_last_failure",
     "get_profile",
     "get_provider",
@@ -267,16 +336,20 @@ __all__ = [
     "invalidate_capability_cache",
     "invalidate_install_marker_cache",
     "is_durable",
+    "lazy_runtime",
     "note_capability_success",
     "list_capabilities",
     "list_capability_ids",
     "profile_for_capability",
     "read_install_marker",
+    "register_descriptor",
     "record_exception",
     "record_failure",
     "record_load_failures",
+    "reset_lazy_runtimes",
     "sanitize_message",
     "sanitize_url",
+    "unregister_descriptor",
     "uv_command",
     "write_install_marker",
 ]

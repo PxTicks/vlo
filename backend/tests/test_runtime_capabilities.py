@@ -848,40 +848,9 @@ def import_spy(monkeypatch: pytest.MonkeyPatch) -> _ImportSpy:
     return spy
 
 
-@pytest.fixture
-def offline_app_status(monkeypatch: pytest.MonkeyPatch):
-    """Stub everything ``/app/status`` touches except the AI capabilities.
-
-    ComfyUI is answered offline and the hardware/settings payloads are fixed,
-    so what the test observes is exactly the capability-derived half.
-    """
-
-    import httpx
-
-    import main
-    from services.hardware import VramInfo
-
-    class OfflineClient:
-        async def get(self, _path, timeout=None):
-            raise httpx.RequestError(
-                "offline",
-                request=httpx.Request("GET", "http://127.0.0.1:8188/system_stats"),
-            )
-
-    async def fake_get_http_client():
-        return OfflineClient()
-
-    monkeypatch.setattr(main, "detect_local_vram", lambda: VramInfo(total_mb=24576))
-    monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
-    monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
-    monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
-    monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
-    monkeypatch.setattr(
-        main,
-        "build_public_settings_payload",
-        lambda _vram: {"settings": {}, "hardware": {}, "recommendations": {}},
-    )
-    return main
+# ``offline_app_status`` lives in ``tests/conftest.py``: the descriptor
+# registration tests need the same stand-in to assert that a capability
+# registered at runtime reaches the real response.
 
 
 @pytest.mark.anyio
@@ -1270,9 +1239,12 @@ def test_a_real_load_attempt_invalidates_its_cached_probe(
 def test_beat_this_records_device_resolution_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Patches the service singleton rather than a throwaway instance: the
+    # recorded load boundary belongs to the registry's cell now, and that cell
+    # is the one both real work and the Test-runtime probe load through.
     from services.beats import beats_service
 
-    runtime = beats_service._BeatThisRuntime()
+    runtime = beats_service._runtime
 
     def fail_device_resolution(requested: str) -> str:
         del requested
@@ -1314,7 +1286,7 @@ def test_sam2_preserves_an_import_failure_across_device_aggregation(
             }
         ],
     )
-    runtime = sam2_service._Sam2PredictorRuntime()
+    runtime = sam2_service._runtime
     monkeypatch.setattr(runtime, "_resolve_candidate_devices", lambda requested: ["cpu"])
     monkeypatch.setattr(runtime, "_torch_load_compat_context", nullcontext)
     real_import = builtins.__import__

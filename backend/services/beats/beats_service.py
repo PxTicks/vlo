@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -15,8 +16,8 @@ from config import (
 )
 from services.ai_models.capabilities import (
     BEATS_CAPABILITY_ID,
-    note_capability_success,
-    record_load_failures,
+    RuntimeLoad,
+    lazy_runtime,
 )
 from services.ai_models.health import capability_runtime_health
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
@@ -190,12 +191,17 @@ def get_source_metadata(source_id: str) -> BeatThisSourceMetadata:
 
 
 class _BeatThisRuntime:
-    """Lazy-loaded singleton wrapper around the File2Beats predictor."""
+    """Lazy-loaded singleton wrapper around the File2Beats predictor.
+
+    The memo cell belongs to the capability registry, which owns the recorded
+    load boundary. The cell is unkeyed, so the ``(checkpoint, device, dbn)``
+    triple this runtime rebuilds on is tracked *above* it: a request for a
+    different triple resets the cell and the next ``get`` builds afresh.
+    """
 
     def __init__(self) -> None:
-        self._predictor: Any | None = None
+        self._runtime = lazy_runtime(BEATS_CAPABILITY_ID)
         self._predictor_key: tuple[str, str, bool] | None = None
-        self._resolved_device: str | None = None
         self._lock = threading.Lock()
 
     def _cuda_available(self) -> bool:
@@ -218,8 +224,7 @@ class _BeatThisRuntime:
 
     @property
     def resolved_device(self) -> str | None:
-        with self._lock:
-            return self._resolved_device
+        return self._runtime.resolved_device
 
     def _build_predictor(
         self,
@@ -251,19 +256,32 @@ class _BeatThisRuntime:
                 f"Failed to initialize Beat This! predictor ({exc})"
             ) from exc
 
+    def load(self, checkpoint: str, dbn: bool) -> RuntimeLoad:
+        """Build the predictor. Called only from inside the registry's cell.
+
+        Device resolution happens here rather than before the call because it
+        is part of whether this runtime can load at all — a ``BEATTHIS_DEVICE``
+        that does not exist is a load failure worth recording, not setup.
+        """
+
+        device = self._resolve_device(BEATTHIS_DEVICE)
+        predictor = self._build_predictor(checkpoint, device, dbn)
+        # Recorded by whoever built it, so the Test-runtime probe — which loads
+        # the default triple without going through ``get_predictor`` — leaves
+        # the key agreeing with what is in the cell.
+        self._predictor_key = (checkpoint, BEATTHIS_DEVICE.strip(), dbn)
+        return RuntimeLoad(value=predictor, resolved_device=device)
+
     def get_predictor(self, checkpoint: str, dbn: bool) -> Any:
+        # The requested device, not the resolved one, keys the rebuild: what
+        # changed is the configuration, and resolving it is the loader's job.
+        key = (checkpoint, BEATTHIS_DEVICE.strip(), dbn)
         with self._lock:
-            with record_load_failures(BEATS_CAPABILITY_ID):
-                # Device resolution is part of whether this runtime can load,
-                # not setup performed before the recorded boundary.
-                device = self._resolve_device(BEATTHIS_DEVICE)
-                key = (checkpoint, device, dbn)
-                if self._predictor is None or self._predictor_key != key:
-                    self._predictor = self._build_predictor(checkpoint, device, dbn)
-                    self._predictor_key = key
-                    self._resolved_device = device
-                note_capability_success(BEATS_CAPABILITY_ID)
-        return self._predictor
+            if self._predictor_key != key:
+                self._runtime.reset()
+            # The key is claimed by ``load``, not here: a key set before the
+            # build would name a predictor that may never exist.
+            return self._runtime.get(checkpoint=checkpoint, dbn=dbn)
 
     def health(self) -> dict[str, Any]:
         # Readiness comes from the capability registry, which probes the import
@@ -275,8 +293,8 @@ class _BeatThisRuntime:
             "device": BEATTHIS_DEVICE,
             # Health stays non-blocking while another thread loads the model;
             # an atomic snapshot is sufficient for this advisory field.
-            "resolvedDevice": self._resolved_device,
-            "predictorLoaded": self._predictor is not None,
+            "resolvedDevice": self._runtime.resolved_device,
+            "predictorLoaded": self._runtime.loaded,
             "defaultModel": BEATTHIS_DEFAULT_MODEL,
         }
 
@@ -284,11 +302,16 @@ class _BeatThisRuntime:
 _runtime = _BeatThisRuntime()
 
 
-def probe_runtime_load() -> dict[str, Any]:
-    """Load the default predictor without running it against an audio file."""
+def build_beats_runtime(
+    on_progress: Callable[[float, str], None] | None = None,
+    checkpoint: str | None = None,
+    dbn: bool = False,
+) -> RuntimeLoad:
+    """Named by the Beat This! descriptor; called only by the registry's cell."""
 
-    _runtime.get_predictor(checkpoint=BEATTHIS_DEFAULT_MODEL, dbn=False)
-    return {"resolvedDevice": _runtime.resolved_device}
+    if on_progress is not None:
+        on_progress(0.2, "Loading the Beat This! predictor")
+    return _runtime.load(checkpoint or BEATTHIS_DEFAULT_MODEL, dbn)
 
 
 def _detect_beats_with_predictor(

@@ -460,7 +460,9 @@ def test_runtime_load_preserves_an_aggregated_missing_package(
 ) -> None:
     from services.ai_models.capabilities import failures
 
-    runtime = sam_audio_service._SamAudioRuntime()
+    # The service singleton, not a throwaway instance: the recorded load
+    # boundary belongs to the registry's cell, which this singleton owns.
+    runtime = sam_audio_service._runtime
     monkeypatch.setattr(
         runtime,
         "_resolve_candidate_devices",
@@ -492,7 +494,9 @@ def test_runtime_load_cancellation_is_not_recorded(
 ) -> None:
     from services.ai_models.capabilities import failures
 
-    runtime = sam_audio_service._SamAudioRuntime()
+    # The service singleton, not a throwaway instance: the recorded load
+    # boundary belongs to the registry's cell, which this singleton owns.
+    runtime = sam_audio_service._runtime
     monkeypatch.setattr(
         runtime,
         "_resolve_candidate_devices",
@@ -619,6 +623,8 @@ def test_the_probe_stubs_every_module_the_service_fakes() -> None:
     # The stub list lives in two places — the service that loads the model and
     # the probe that reports whether it could. If they drift, the diagnostics
     # panel reports SAM-Audio as blocked while separation works fine.
-    from services.ai_models.capabilities.providers.sam_audio import _IMPORT_STUBS
+    from services.ai_models.capabilities import SAM_AUDIO_CAPABILITY_ID, get_descriptor
 
-    assert "wandb" in _IMPORT_STUBS
+    descriptor = get_descriptor(SAM_AUDIO_CAPABILITY_ID)
+    assert descriptor is not None
+    assert "wandb" in descriptor.import_stubs

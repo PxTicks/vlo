@@ -27,9 +27,9 @@ from config import (
 from services.ai_models.capabilities import (
     SAM_AUDIO_CAPABILITY_ID,
     ClassifiedFailure,
+    RuntimeLoad,
     classify_exception,
-    note_capability_success,
-    record_load_failures,
+    lazy_runtime,
     sanitize_message,
 )
 from services.ai_models.health import capability_runtime_health
@@ -230,17 +230,19 @@ class SamAudioJob:
 
 
 class _SamAudioRuntime:
-    """Lazy singleton around SAM-Audio model + processor."""
+    """Lazy singleton around SAM-Audio model + processor.
+
+    The memo cell belongs to the capability registry, which owns the recorded
+    load boundary. The device-fallback loop stays inside the loader, so every
+    candidate device it tries is inside the recorded region exactly as before.
+    """
 
     def __init__(self) -> None:
-        self._model: Any | None = None
-        self._processor: Any | None = None
-        self._resolved_device: str | None = None
+        self._runtime = lazy_runtime(SAM_AUDIO_CAPABILITY_ID)
         self._selected_model_ref: str | None = None
-        self._lock = threading.Lock()
 
     def is_loaded(self) -> bool:
-        return self._model is not None and self._processor is not None
+        return self._runtime.loaded
 
     def _cuda_available(self) -> bool:
         try:
@@ -639,65 +641,59 @@ class _SamAudioRuntime:
         timings: dict[str, float] | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> tuple[Any, Any, str]:
-        if self._model is not None and self._processor is not None:
-            return self._model, self._processor, self._resolved_device or "cpu"
-
         try:
-            return self._load(timings=timings, on_progress=on_progress)
+            model, processor, _model_ref = self._runtime.get(
+                timings=timings, on_progress=on_progress
+            )
         except BackendJobCancelledError:
             raise
         except Exception as exc:
             # This marker lets the job adapter distinguish a model-load failure
             # from source extraction, inference, or artifact-write failures.
             raise SamAudioRuntimeLoadError(classify_exception(exc)) from exc
+        return model, processor, self._runtime.resolved_device or "cpu"
 
-    def _load(
+    def load(
         self,
         timings: dict[str, float] | None = None,
         on_progress: ProgressCallback | None = None,
-    ) -> tuple[Any, Any, str]:
-        with self._lock:
-            if self._model is not None and self._processor is not None:
-                return self._model, self._processor, self._resolved_device or "cpu"
+    ) -> RuntimeLoad:
+        """Build the model and processor. Called only from inside the cell."""
 
-            with record_load_failures(
-                SAM_AUDIO_CAPABILITY_ID,
-                ignore=(BackendJobCancelledError,),
-            ):
-                requested_device = SAM_AUDIO_DEVICE.strip() or "auto"
-                candidate_devices = self._resolve_candidate_devices(requested_device)
-                errors: list[tuple[str, Exception]] = []
-                for device in candidate_devices:
-                    try:
-                        model, processor, model_ref = self._load_for_device(
-                            device,
-                            timings=timings,
-                            on_progress=on_progress,
-                        )
-                        self._model = model
-                        self._processor = processor
-                        self._resolved_device = device
-                        self._selected_model_ref = model_ref
-                        note_capability_success(SAM_AUDIO_CAPABILITY_ID)
-                        return model, processor, device
-                    except BackendJobCancelledError:
-                        raise
-                    except Exception as exc:  # pragma: no cover - environment dependent
-                        errors.append((device, exc))
+        requested_device = SAM_AUDIO_DEVICE.strip() or "auto"
+        candidate_devices = self._resolve_candidate_devices(requested_device)
+        errors: list[tuple[str, Exception]] = []
+        for device in candidate_devices:
+            try:
+                model, processor, model_ref = self._load_for_device(
+                    device,
+                    timings=timings,
+                    on_progress=on_progress,
+                )
+            except BackendJobCancelledError:
+                raise
+            except Exception as exc:  # pragma: no cover - environment dependent
+                errors.append((device, exc))
+                continue
+            self._selected_model_ref = model_ref
+            return RuntimeLoad(
+                value=(model, processor, model_ref),
+                resolved_device=device,
+            )
 
-                summary = (
-                    "; ".join(f"{device}: {exc}" for device, exc in errors)
-                    if errors
-                    else "unknown error"
-                )
-                error = SamAudioConfigError(
-                    f"Failed to initialize SAM-Audio runtime ({summary})"
-                )
-                if errors:
-                    # Keep the exception chain intact so package/import/model
-                    # failures survive fallback-device aggregation.
-                    raise error from errors[-1][1]
-                raise error
+        summary = (
+            "; ".join(f"{device}: {exc}" for device, exc in errors)
+            if errors
+            else "unknown error"
+        )
+        error = SamAudioConfigError(
+            f"Failed to initialize SAM-Audio runtime ({summary})"
+        )
+        if errors:
+            # Keep the exception chain intact so package/import/model failures
+            # survive fallback-device aggregation.
+            raise error from errors[-1][1]
+        raise error
 
     def health(self) -> dict[str, Any]:
         # A checkpoint on disk says nothing about whether sam_audio imports;
@@ -705,24 +701,24 @@ class _SamAudioRuntime:
         return {
             **capability_runtime_health(SAM_AUDIO_CAPABILITY_ID),
             "device": SAM_AUDIO_DEVICE,
-            "resolvedDevice": self._resolved_device,
+            "resolvedDevice": self._runtime.resolved_device,
             "selectedModel": SAM_AUDIO_DEFAULT_MODEL,
             "selectedModelRef": self._selected_model_ref,
             "discoveredModels": discover_sam_audio_models(),
-            "modelLoaded": self._model is not None,
+            "modelLoaded": self._runtime.loaded,
         }
 
 
 _runtime = _SamAudioRuntime()
 
 
-def probe_runtime_load(
+def build_sam_audio_runtime(
     on_progress: ProgressCallback | None = None,
-) -> dict[str, Any]:
-    """Load the same model and processor real separation jobs use."""
+    timings: dict[str, float] | None = None,
+) -> RuntimeLoad:
+    """Named by the SAM-Audio descriptor; called only by the registry's cell."""
 
-    _model, _processor, resolved_device = _runtime.get(on_progress=on_progress)
-    return {"resolvedDevice": resolved_device}
+    return _runtime.load(timings=timings, on_progress=on_progress)
 
 SAM_AUDIO_JOB_OWNER = "vlo.sam-audio"
 SAM_AUDIO_JOB_OWNER_VERSION = "1"

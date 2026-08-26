@@ -43,15 +43,10 @@ from services.comfyui.comfyui_client import (
     get_http_client,
 )
 from services.hardware import detect_local_vram, detect_vram_from_system_stats
-from services.ai_models.capabilities import (
-    BEATS_CAPABILITY_ID,
-    SAM2_CAPABILITY_ID,
-    SAM_AUDIO_CAPABILITY_ID,
-)
 from services.ai_models.capabilities.load_probes import (
     shutdown_runtime_capability_probe_jobs,
 )
-from services.ai_models.health import AppStatusProvider
+from services.ai_models.health import app_status_providers
 from services.model_registry import is_comfyui_model_downloads_enabled
 from services.generation_delivery import generation_holding_service
 from services.model_work import get_model_work_coordinator
@@ -146,26 +141,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECTS_DIR = BASE_DIR / "projects"
 FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
 FRONTEND_INDEX_FILE = FRONTEND_DIST_DIR / "index.html"
-
-# Legacy status fields, derived from the runtime-capability registry rather
-# than from model inventory: a checkpoint on disk is discovery, not readiness.
-AI_APP_STATUS_PROVIDERS = [
-    AppStatusProvider(
-        response_key="sam2",
-        capability_id=SAM2_CAPABILITY_ID,
-        unavailable_message="No SAM2 models discovered",
-    ),
-    AppStatusProvider(
-        response_key="sam_audio",
-        capability_id=SAM_AUDIO_CAPABILITY_ID,
-        unavailable_message="No SAM-Audio model configured",
-    ),
-    AppStatusProvider(
-        response_key="beat_this",
-        capability_id=BEATS_CAPABILITY_ID,
-        unavailable_message="Beat This! is not installed",
-    ),
-]
 
 app.mount("/static", StaticFiles(directory=str(PROJECTS_DIR)), name="static")
 
@@ -271,9 +246,15 @@ async def get_app_status():
             comfyui_status = "disconnected"
             comfyui_error = str(exc)
 
+    # Legacy status fields, derived from the runtime-capability registry rather
+    # than from model inventory: a checkpoint on disk is discovery, not
+    # readiness. The list is read from the descriptor table per request, not
+    # snapshotted at import — a capability registered after start-up has to
+    # reach this response the same way a built-in one does. Building it costs a
+    # tuple of frozen dataclasses.
     ai_statuses = {
         provider.response_key: provider.to_app_status()
-        for provider in AI_APP_STATUS_PROVIDERS
+        for provider in app_status_providers()
     }
     settings_payload = build_public_settings_payload(vram_info)
 

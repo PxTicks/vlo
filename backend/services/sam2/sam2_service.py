@@ -6,7 +6,7 @@ import av
 import sys
 import threading
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from contextlib import contextmanager
 from fractions import Fraction
@@ -22,8 +22,8 @@ from config import (
 )
 from services.ai_models.capabilities import (
     SAM2_CAPABILITY_ID,
-    note_capability_success,
-    record_load_failures,
+    RuntimeLoad,
+    lazy_runtime,
 )
 from services.ai_models.health import capability_runtime_health
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
@@ -121,12 +121,16 @@ class Sam2CachedMaskFrames:
 
 
 class _Sam2PredictorRuntime:
-    """Lazy-loaded singleton wrapper around the native SAM2 video predictor."""
+    """Lazy-loaded singleton wrapper around the native SAM2 video predictor.
+
+    The memo cell belongs to the capability registry, which is what makes every
+    real load classify and record its own failures. There is no unrecorded way
+    to obtain a predictor: ``get_predictor`` is the only accessor, and it goes
+    through the cell.
+    """
 
     def __init__(self) -> None:
-        self._predictor: Any | None = None
-        self._resolved_device: str | None = None
-        self._lock = threading.Lock()
+        self._runtime = lazy_runtime(SAM2_CAPABILITY_ID)
 
     def _build_predictor_for_device(
         self,
@@ -422,10 +426,9 @@ class _Sam2PredictorRuntime:
 
     @property
     def resolved_device(self) -> str | None:
-        with self._lock:
-            return self._resolved_device
+        return self._runtime.resolved_device
 
-    def _load_predictor(self) -> Any:
+    def load(self) -> RuntimeLoad:
         discovered_models = discover_sam2_models()
         if not discovered_models:
             raise Sam2ConfigError(
@@ -477,8 +480,7 @@ class _Sam2PredictorRuntime:
                             checkpoint_path=checkpoint_path,
                             device=device,
                         )
-                self._resolved_device = device
-                return predictor
+                return RuntimeLoad(value=predictor, resolved_device=device)
             except Exception as exc:  # pragma: no cover - environment dependent
                 errors_by_device.append((device, exc))
 
@@ -499,17 +501,10 @@ class _Sam2PredictorRuntime:
         raise error
 
     def get_predictor(self) -> Any:
-        if self._predictor is not None:
-            return self._predictor
-        with self._lock:
-            if self._predictor is None:
-                # Every real load feeds the same registry the probes do, so a
-                # genuine failure and a probe can never disagree about the
-                # cause — and the capability stops claiming to be attemptable.
-                with record_load_failures(SAM2_CAPABILITY_ID):
-                    self._predictor = self._load_predictor()
-                note_capability_success(SAM2_CAPABILITY_ID)
-        return self._predictor
+        # Locking, memoisation, failure classification and the success record
+        # all live in the cell, so a genuine failure and a probe can never
+        # disagree about the cause.
+        return self._runtime.get()
 
     def health(self) -> dict[str, Any]:
         # Discovered checkpoints are inventory, not readiness: the package can
@@ -520,20 +515,28 @@ class _Sam2PredictorRuntime:
             "device": SAM2_DEVICE,
             # Health stays non-blocking while another thread loads the model;
             # an atomic snapshot is sufficient for this advisory field.
-            "resolvedDevice": self._resolved_device,
+            "resolvedDevice": self._runtime.resolved_device,
             "discoveredModels": discover_sam2_models(),
-            "predictorLoaded": self._predictor is not None,
+            "predictorLoaded": self._runtime.loaded,
         }
 
 
 _runtime = _Sam2PredictorRuntime()
 
 
-def probe_runtime_load() -> dict[str, Any]:
-    """Load the same predictor real SAM2 requests use, without inference."""
+def build_sam2_runtime(
+    on_progress: Callable[[float, str], None] | None = None,
+) -> RuntimeLoad:
+    """Build the predictor. Named by the SAM2 descriptor; called only by the cell.
 
-    _runtime.get_predictor()
-    return {"resolvedDevice": _runtime.resolved_device}
+    Every caller — real work and the Test-runtime probe alike — reaches this
+    through :func:`services.ai_models.capabilities.lazy_runtime`, so the load
+    boundary cannot be bypassed.
+    """
+
+    if on_progress is not None:
+        on_progress(0.2, "Loading the SAM2 predictor")
+    return _runtime.load()
 
 
 SOURCES_DIR = SAM2_CACHE_DIR / "sources"

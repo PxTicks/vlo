@@ -159,6 +159,71 @@ def model_work_coordinator():
 
 
 @pytest.fixture(autouse=True)
+def unloaded_runtimes():
+    """Start and end every test with no capability runtime in memory.
+
+    The registry owns one memo cell per capability, shared by the services and
+    the Test-runtime probe. A test that loads (or stubs) a runtime would
+    otherwise leave it there for every later test, which reads as a capability
+    that is ``ready`` on evidence the next test never produced.
+
+    Dropping the memo is not enough on its own: a provider derives ``loaded``
+    from the *observation* a successful load recorded, not from the cell, so a
+    leaked observation keeps reporting ``ready`` and ``verifiedThrough:
+    loaded`` long after the runtime it described is gone.
+    """
+
+    from services.ai_models.capabilities import reset_lazy_runtimes
+    from services.ai_models.capabilities.observations import (
+        clear_runtime_observations,
+    )
+
+    def reset() -> None:
+        reset_lazy_runtimes()
+        clear_runtime_observations()
+
+    reset()
+    yield
+    reset()
+
+
+@pytest.fixture
+def offline_app_status(monkeypatch: pytest.MonkeyPatch):
+    """Stub everything ``/app/status`` touches except the AI capabilities.
+
+    ComfyUI is answered offline and the hardware/settings payloads are fixed,
+    so what the test observes is exactly the capability-derived half.
+    """
+
+    import httpx
+
+    import main
+    from services.hardware import VramInfo
+
+    class OfflineClient:
+        async def get(self, _path, timeout=None):
+            raise httpx.RequestError(
+                "offline",
+                request=httpx.Request("GET", "http://127.0.0.1:8188/system_stats"),
+            )
+
+    async def fake_get_http_client():
+        return OfflineClient()
+
+    monkeypatch.setattr(main, "detect_local_vram", lambda: VramInfo(total_mb=24576))
+    monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
+    monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
+    monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
+    monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
+    monkeypatch.setattr(
+        main,
+        "build_public_settings_payload",
+        lambda _vram: {"settings": {}, "hardware": {}, "recommendations": {}},
+    )
+    return main
+
+
+@pytest.fixture(autouse=True)
 def uv_on_path(monkeypatch: pytest.MonkeyPatch):
     """Pin ``uv`` discovery so remediation is not a property of the host.
 

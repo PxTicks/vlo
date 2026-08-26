@@ -25,6 +25,7 @@ from services.ai_models.capabilities import (
     Capability,
     Check,
     CheckStatus,
+    descriptors,
     get_capability,
     sanitize_message,
 )
@@ -141,3 +142,22 @@ class AppStatusProvider:
             "state": capability.state.value,
             "verifiedThrough": verified_through,
         }
+
+
+def app_status_providers() -> tuple[AppStatusProvider, ...]:
+    """The ``/app/status`` fields, derived from the descriptor table.
+
+    A capability that declares an ``app_status_key`` gets a legacy status field
+    for free; one that does not is simply absent from that payload. Either way
+    nobody edits ``main.py`` to add a capability.
+    """
+
+    return tuple(
+        AppStatusProvider(
+            response_key=descriptor.app_status_key,
+            capability_id=descriptor.id,
+            unavailable_message=descriptor.unavailable_message,
+        )
+        for descriptor in descriptors()
+        if descriptor.app_status_key
+    )

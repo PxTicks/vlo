@@ -22,12 +22,10 @@ from ..contract import (
     RemediationKind,
     VerificationStage,
 )
+from ..catalogue import COMFYUI_CAPABILITY_ID as CAPABILITY_ID
 from ..environment import display_path
 from ..failures import sanitize_message, sanitize_url
 from .base import CapabilityProvider, ProviderReport
-
-
-CAPABILITY_ID = "comfyui"
 
 SETTINGS_REMEDIATION = Remediation(
     kind=RemediationKind.SETTINGS,

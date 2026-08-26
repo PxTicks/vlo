@@ -1,17 +1,20 @@
-"""Per-capability providers."""
+"""Capability providers.
+
+Local model runtimes are registered by descriptor and share
+:class:`DescriptorProvider`; the per-capability modules here hold only what a
+descriptor cannot express — model discovery. A capability that does not fit the
+descriptor shape (ComfyUI, which is an external service) implements
+:class:`CapabilityProvider` directly, which stays a supported way to register.
+"""
 
 from .base import CapabilityProvider, ProviderReport
-from .beats import BeatsProvider
 from .comfyui import ComfyUIProvider
-from .sam2 import Sam2Provider
-from .sam_audio import SamAudioProvider
+from .descriptor import DescriptorProvider
 
 
 __all__ = [
-    "BeatsProvider",
     "CapabilityProvider",
     "ComfyUIProvider",
+    "DescriptorProvider",
     "ProviderReport",
-    "Sam2Provider",
-    "SamAudioProvider",
 ]

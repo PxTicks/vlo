@@ -34,6 +34,7 @@ from typing import Any
 from services.model_work.leases import (
     CoordinatorNotReadyError,
     Lease,
+    LeaseAbandonedError,
     LeaseInvalidError,
     LeaseTimeoutError,
     ModelWorkError,
@@ -58,6 +59,10 @@ logger = logging.getLogger(__name__)
 
 #: Terminal entries kept for the Queue panel's history before pruning.
 MAX_TERMINAL_ENTRIES = 100
+
+#: How often a ``stop``-aware waiter re-checks its event. Short enough that a
+#: cancelled job leaves the queue promptly, long enough not to be a spin.
+ABANDON_POLL_SECONDS = 0.25
 
 #: Per-subscriber event buffer. On overflow the buffer is replaced by a single
 #: gap marker rather than silently dropping events: a client that received a
@@ -283,11 +288,18 @@ class ModelWorkCoordinator:
         sharing: Sharing = "exclusive",
         timeout: float | None = None,
         cancel_endpoint: str | None = None,
+        stop: threading.Event | None = None,
     ) -> Lease:
         """Block the calling worker thread until admitted, or raise on timeout.
 
         Only ever called from a worker thread. The waiting entry is visible in
         the ledger so the queue is not a black box.
+
+        ``stop`` makes the wait abandonable: it is polled on a short slice, and
+        a set event raises :class:`LeaseAbandonedError` and drops the waiting
+        entry. Without it a job cancelled while queued would keep its place in
+        the ledger — and its claim on the resource — until it was admitted to
+        work nobody wanted any more.
         """
 
         deadline = None if timeout is None else time.monotonic() + timeout
@@ -314,8 +326,14 @@ class ModelWorkCoordinator:
                     if holder is not None:
                         self._publish_locked("updated", entry)
                         return self._lease_for(holder)
+                    if stop is not None and stop.is_set():
+                        raise LeaseAbandonedError(
+                            "Stopped waiting for the local GPU"
+                        )
                     if deadline is None:
-                        self._condition.wait()
+                        self._condition.wait(
+                            None if stop is None else ABANDON_POLL_SECONDS
+                        )
                         continue
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
@@ -323,7 +341,11 @@ class ModelWorkCoordinator:
                             "Timed out waiting for the local GPU",
                             occupied_by=self._describe_resource_locked(resource),
                         )
-                    self._condition.wait(remaining)
+                    self._condition.wait(
+                        remaining
+                        if stop is None
+                        else min(remaining, ABANDON_POLL_SECONDS)
+                    )
             except BaseException:
                 self._drop_entry_locked(entry)
                 raise
@@ -438,12 +460,30 @@ class ModelWorkCoordinator:
                 entry.job_status = job_status
             self._publish_locked("updated", entry)
 
-    def mark_stopping(self, entry_id: str, *, message: str | None = None) -> None:
+    def mark_stopping(
+        self,
+        entry_id: str,
+        *,
+        message: str | None = None,
+        job_status: TerminalVerdict = "cancelled",
+    ) -> None:
+        """The public outcome is decided; the worker is still resident.
+
+        ``job_status`` is not always ``cancelled``: a job that exceeded its
+        execution timeout is publicly *failed* while its thread may still be
+        inside the model. Recording it as cancelled would be a second untruth
+        on top of the one this method exists to prevent.
+
+        The status is terminal, so :meth:`release_holder` will not overwrite it
+        when the callable finally returns — including when it returns normally,
+        which is exactly how a timed-out job used to finish as succeeded.
+        """
+
         with self._lock:
             entry = self._entries.get(entry_id)
             if entry is None:
                 return
-            entry.job_status = "cancelled"
+            entry.job_status = job_status
             if entry.occupancy == "occupied":
                 entry.occupancy = "stopping"
             if message is not None:

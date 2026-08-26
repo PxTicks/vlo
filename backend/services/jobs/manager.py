@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import Executor, ThreadPoolExecutor
+from contextlib import AbstractContextManager, nullcontext
 from functools import partial
 import inspect
 import json
@@ -19,6 +20,10 @@ from services.jobs.artifacts import (
     JobArtifactRecord,
     JobArtifactStore,
 )
+from services.model_work import get_model_work_coordinator
+from services.model_work.leases import Lease, LeaseAbandonedError
+from services.model_work.ledger import TerminalVerdict
+from services.model_work.local_inference import local_gpu_lease
 
 
 DEFAULT_FINISHED_JOB_TTL_SECONDS = 15 * 60
@@ -33,6 +38,14 @@ DEFAULT_MAX_UNCLAIMED_ARTIFACTS_PER_EXTENSION = (
 DEFAULT_JOB_VALIDATION_TIMEOUT_SECONDS = 5.0
 DEFAULT_JOB_TIMEOUT_SECONDS = 15 * 60.0
 DEFAULT_MAX_JOB_DIAGNOSTICS = 100
+#: How long a GPU job waits for admission before failing. Generous on purpose:
+#: waiting is the normal state of a queue, and the alternative to waiting is
+#: two models resident at once. Cancellation is what shortens it, not a small
+#: timeout. Execution's own timeout starts only once the job is admitted.
+DEFAULT_ADMISSION_WAIT_SECONDS = 30 * 60.0
+#: Ledger statuses that represent a decision about a job, as opposed to the
+#: success a released lease reports when nothing has gone wrong.
+_DECIDED_JOB_STATUSES = frozenset({"failed", "cancelled"})
 
 _CONTRIBUTION_ID_PATTERN = re.compile(
     r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$"
@@ -119,6 +132,13 @@ class BackendJobDefinition:
     validate_result: BackendJobValidator | None = None
     readiness: BackendJobReadinessCallback | None = None
     timeout_seconds: float = DEFAULT_JOB_TIMEOUT_SECONDS
+    #: This job runs a model on the local GPU, so it must hold ``local-gpu``
+    #: for the whole of its physical execution. The manager takes the lease —
+    #: a job that volunteered for admission would be a job that could forget,
+    #: which is the failure this whole seam exists to remove. Only a manager
+    #: configured with a ``work_source`` may carry such definitions, and the
+    #: runner must be synchronous: the lease belongs to the worker thread.
+    uses_local_gpu: bool = False
 
 
 @dataclass(frozen=True)
@@ -217,6 +237,14 @@ class _BackendJobRecord:
     cancel_event: threading.Event = field(default_factory=threading.Event)
     diagnostics: list[BackendJobDiagnostic] = field(default_factory=list)
     runtime_metadata: object | None = None
+    #: Held only while the worker callable is physically executing, so the
+    #: queue can show this job's progress and mark it `stopping` on cancel.
+    lease: "Lease | None" = None
+    #: The ledger entry this job reserved, kept after the lease is gone. A job
+    #: can still become terminal after release — result validation is the
+    #: ordinary case — and the entry is retained as queue history, so it can
+    #: and must be corrected rather than left claiming success.
+    ledger_entry_id: str | None = None
 
 
 class BackendJobArtifactAccess:
@@ -378,6 +406,8 @@ class BackendJobManager:
         thread_name_prefix: str = "vlo-backend-job",
         max_jobs_per_extension: int | None = None,
         max_unclaimed_artifacts_per_extension: int | None = None,
+        work_source: str | None = None,
+        admission_wait_seconds: float = DEFAULT_ADMISSION_WAIT_SECONDS,
         now: Callable[[], float] = time.time,
     ) -> None:
         if max_jobs_per_extension is not None:
@@ -398,6 +428,8 @@ class BackendJobManager:
             raise ValueError("validation_timeout_seconds must be positive")
         if executor_max_workers <= 0:
             raise ValueError("executor_max_workers must be positive")
+        if admission_wait_seconds <= 0:
+            raise ValueError("admission_wait_seconds must be positive")
         if (
             max_concurrent_jobs_per_owner is not None
             and max_concurrent_jobs_per_owner <= 0
@@ -413,6 +445,12 @@ class BackendJobManager:
             max_unclaimed_artifacts_per_owner
         )
         self._validation_timeout_seconds = validation_timeout_seconds
+        # What the ledger calls this manager's work. Set it and jobs may
+        # declare `uses_local_gpu`; leave it unset and such a definition is
+        # refused at registration, because an entry with no source is one the
+        # queue panel cannot attribute to anyone.
+        self._work_source = work_source
+        self._admission_wait_seconds = admission_wait_seconds
         self._now = now
         self._lock = threading.RLock()
         self._definitions: dict[str, dict[str, BackendJobDefinition]] = {}
@@ -441,6 +479,8 @@ class BackendJobManager:
         validated: dict[str, BackendJobDefinition] = {}
         for definition in definitions:
             self._validate_definition(definition)
+            if definition.uses_local_gpu:
+                self._validate_gpu_definition(definition)
             if definition.id in validated:
                 raise BackendJobValidationError(
                     f"duplicate backend job type '{definition.id}'"
@@ -459,6 +499,24 @@ class BackendJobManager:
                 self._owner_semaphores[owner_id] = asyncio.Semaphore(
                     self._max_concurrent_jobs_per_owner
                 )
+
+    def _validate_gpu_definition(self, definition: BackendJobDefinition) -> None:
+        """A GPU job must be admissible and must own a thread while it runs."""
+
+        if self._work_source is None:
+            raise BackendJobValidationError(
+                f"backend job '{definition.id}' declares uses_local_gpu, but "
+                "this job manager has no work_source and cannot reserve the "
+                "local GPU"
+            )
+        if inspect.iscoroutinefunction(definition.run):
+            # The lease is released by the thread that took it, when the
+            # physical call returns. An async runner hands its work back to the
+            # event loop, so the release would race the model still resident.
+            raise BackendJobValidationError(
+                f"backend job '{definition.id}' declares uses_local_gpu, so "
+                "its run callable must be synchronous"
+            )
 
     def unregister_owner(self, owner_id: str) -> None:
         with self._lock:
@@ -495,6 +553,7 @@ class BackendJobManager:
                     "id": definition.id,
                     "label": definition.label,
                     "timeoutSeconds": definition.timeout_seconds,
+                    "usesLocalGpu": definition.uses_local_gpu,
                     "readiness": readiness.to_dict(),
                 }
             )
@@ -646,6 +705,13 @@ class BackendJobManager:
             record.cancel_event.set()
             record.message = "Cancellation requested"
             record.updated_at = float(self._now())
+            # Publicly cancelled, physically still resident: the ledger says
+            # `stopping` until the worker callable actually returns.
+            self._settle_ledger(
+                record,
+                job_status="cancelled",
+                message="Cancellation requested",
+            )
             task = self._tasks.get(job_id)
             if task is not None:
                 task.cancel()
@@ -689,6 +755,14 @@ class BackendJobManager:
             for record in records:
                 record.cancel_requested = True
                 record.cancel_event.set()
+                # The job record is about to be dropped entirely. Without this
+                # its entry would outlive it and release as a succeeded job
+                # belonging to an extension that is no longer loaded.
+                self._settle_ledger(
+                    record,
+                    job_status="cancelled",
+                    message="Owner shut down",
+                )
             for task in tasks:
                 task.cancel()
         if tasks:
@@ -775,6 +849,10 @@ class BackendJobManager:
         except TimeoutError:
             record.cancel_event.set()
             with self._lock:
+                # A non-cooperative runner can return normally long after this;
+                # without a terminal ledger status its entry would release as
+                # succeeded while the job says it timed out.
+                self._settle_ledger(record, job_status="failed", message="Timed out")
                 record.status = "failed"
                 record.progress = 1.0
                 record.message = "Timed out"
@@ -783,11 +861,27 @@ class BackendJobManager:
                     "second timeout"
                 )
                 record.updated_at = float(self._now())
-        except (asyncio.CancelledError, BackendJobCancelledError):
+        except (
+            asyncio.CancelledError,
+            BackendJobCancelledError,
+            # Cancelled while queued for the GPU: the wait was abandoned on
+            # this job's own cancel event, so this is that cancellation
+            # arriving, not a failure of the work.
+            LeaseAbandonedError,
+        ):
             with self._lock:
+                self._settle_ledger(
+                    record,
+                    job_status="cancelled",
+                    message="Cancelled",
+                )
                 self._finish_cancelled_locked(record)
         except Exception as exc:
             with self._lock:
+                # Result validation runs after the lease is released, so an
+                # invalid result would otherwise leave a succeeded entry behind
+                # a failed job.
+                self._settle_ledger(record, job_status="failed", message="Failed")
                 record.status = "failed"
                 record.progress = 1.0
                 record.message = "Failed"
@@ -799,25 +893,145 @@ class BackendJobManager:
             with self._lock:
                 self._tasks.pop(identity.job_id, None)
 
+    def _job_admission(self, record: _BackendJobRecord) -> AbstractContextManager:
+        """Hold `local-gpu` for this job's physical execution, or nothing.
+
+        Owner and source come from the manager and the job's identity, never
+        from the definition: an extension names its own job, not its place in
+        the machine's queue.
+        """
+
+        if not record.definition.uses_local_gpu or self._work_source is None:
+            return nullcontext(None)
+        identity = record.identity
+        return local_gpu_lease(
+            source=self._work_source,
+            label=f"{record.definition.label} ({identity.owner_id})",
+            owner=identity.owner_id,
+            timeout=self._admission_wait_seconds,
+            # Leave the queue when the job is cancelled, rather than waiting
+            # for a GPU nobody is going to use.
+            stop=record.cancel_event,
+        )
+
+    def _attach_lease(self, record: _BackendJobRecord, lease: Lease | None) -> None:
+        with self._lock:
+            record.lease = lease
+            if lease is None:
+                return
+            record.ledger_entry_id = lease.entry_id
+            if record.cancel_event.is_set():
+                # Cancelled between admission and here: the queue must say
+                # `stopping` immediately, not once this thread notices.
+                lease.request_stop(message="Cancellation requested")
+
+    def _settle_ledger(
+        self,
+        record: _BackendJobRecord,
+        *,
+        job_status: TerminalVerdict,
+        message: str,
+    ) -> None:
+        """Tell the queue what became of this job, whenever that was decided.
+
+        The job record and the ledger entry are independent by design — one is
+        a public lifecycle, the other is physical occupancy — but they may not
+        *contradict* each other. Two ways they used to:
+
+        * a job the host gave up on (timeout, shutdown) whose worker later
+          returned normally released its entry as ``succeeded``;
+        * a job that failed result validation had already released its entry as
+          ``succeeded``, because validation runs after the callable returns.
+
+        Called while the work is still resident, the entry becomes ``stopping``
+        and terminal. Called afterwards, the retained entry is corrected. Either
+        way the terminal status sticks: :meth:`release_holder` never overwrites
+        one.
+        """
+
+        entry_id = record.ledger_entry_id
+        if entry_id is None:
+            return
+        coordinator = get_model_work_coordinator()
+        entry = coordinator.get_entry(entry_id)
+        if entry is None or entry.job_status in _DECIDED_JOB_STATUSES:
+            # The first *adverse* statement wins: an outcome does not change
+            # once something has gone wrong, and a later sweep — shutting the
+            # owner down over already-finished records — must not relabel it.
+            #
+            # `succeeded` is deliberately not in that set. It is what
+            # `release_holder` writes when nothing else has spoken, so a job
+            # that fails after its lease is released is correcting a default
+            # rather than overwriting a verdict.
+            return
+        lease = record.lease
+        if lease is not None:
+            lease.request_stop(message=message, verdict=job_status)
+            return
+        coordinator.update_entry(entry_id, job_status=job_status, message=message)
+
     async def _invoke_runner(
         self,
         record: _BackendJobRecord,
         context: BackendJobContext,
     ) -> object:
-        """Start the timeout and running state when a worker actually begins."""
+        """Start the timeout and running state when a worker actually begins.
+
+        For a GPU job, "begins" means *admitted*, not dispatched: the worker
+        thread waits for `local-gpu` while the job is still `queued` and its
+        execution timeout has not started. A job whose timeout ran while it sat
+        in the queue would fail without ever touching the model.
+        """
 
         loop = asyncio.get_running_loop()
         started = asyncio.Event()
 
         def invoke() -> object:
-            try:
-                self._mark_running(record.identity.job_id)
-            finally:
+            marked = False
+
+            def mark_started() -> None:
+                nonlocal marked
+                if marked:
+                    return
+                marked = True
                 loop.call_soon_threadsafe(started.set)
-            return record.definition.run(
-                context,
-                _clone_json(record.input_value),
-            )
+
+            try:
+                # The lease is taken by the physical worker callable, not by the
+                # job record: a timeout or a cancellation makes the record
+                # terminal while this thread may still be inside torch, and the
+                # GPU must stay excluded for that whole window.
+                with self._job_admission(record) as lease:
+                    self._attach_lease(record, lease)
+                    try:
+                        try:
+                            self._mark_running(record.identity.job_id)
+                        finally:
+                            mark_started()
+                        result = record.definition.run(
+                            context,
+                            _clone_json(record.input_value),
+                        )
+                        if lease is not None and inspect.isawaitable(result):
+                            # Registration refuses a coroutine function; this
+                            # catches the sync callable that returns one. The
+                            # lease would be released here, with the awaited
+                            # work still to come and the model still resident.
+                            if inspect.iscoroutine(result):
+                                result.close()
+                            raise BackendJobValidationError(
+                                f"backend job '{record.definition.id}' declares "
+                                "uses_local_gpu, so its run callable must not "
+                                "return an awaitable"
+                            )
+                        return result
+                    finally:
+                        self._attach_lease(record, None)
+            finally:
+                # Admission can fail or be abandoned before anything above
+                # runs; without this the awaiting coroutine would never learn
+                # the worker had finished with it.
+                mark_started()
 
         concurrent_future = self._executor.submit(invoke)
         future = asyncio.wrap_future(concurrent_future)
@@ -867,6 +1081,17 @@ class BackendJobManager:
             record.progress = min(0.999999, max(record.progress, progress))
             record.message = normalized_message
             record.updated_at = float(self._now())
+            if record.lease is not None:
+                # The queue panel shows this entry while it holds the GPU;
+                # without the mirror it would sit at "waiting" for the whole
+                # run. Never fatal to the job: the ledger is a description.
+                try:
+                    record.lease.report(
+                        progress=record.progress,
+                        message=normalized_message,
+                    )
+                except Exception:  # pragma: no cover - defensive
+                    pass
 
     def _report_diagnostic(
         self,

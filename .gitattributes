@@ -156,6 +156,11 @@
 /frontend/src/features/project/constants.ts extension-surface=adapter
 /frontend/src/features/project/services/ProjectPersistenceService.ts extension-surface=adapter
 /frontend/src/features/project/useProjectStore.ts extension-surface=adapter
+# Extension jobs reserve the local GPU through the coordinator, so the queue is
+# a contract surface: an extension's work is admitted by the same authority as
+# the host's own, and the ledger names which extension holds the card.
+/backend/services/model_work/** extension-surface=adapter
+/backend/services/jobs/manager.py extension-surface=adapter
 # api.capabilities projects this feature to extensions, and it presents
 # extension-registered capabilities in the host's own diagnostics UI.
 /frontend/src/features/runtimeCapabilities/** extension-surface=adapter

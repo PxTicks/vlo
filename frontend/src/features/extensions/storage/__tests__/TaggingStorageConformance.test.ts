@@ -73,6 +73,7 @@ describe("tagging storage conformance fixture", () => {
             id: "tag-assets",
             label: "Tag fixture assets",
             timeoutSeconds: 10,
+            usesLocalGpu: false,
             readiness: { ready: true, message: "Ready" },
           },
         ],

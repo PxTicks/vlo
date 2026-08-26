@@ -39,9 +39,15 @@ from services.extensions.host_version import VLO_APPLICATION_VERSION
 
 DEFAULT_BACKEND_EXTENSION_ACTIVATION_TIMEOUT_SECONDS = 10.0
 
-#: Interim mitigation while extension jobs stay outside the model-work
-#: coordinator: bound how much work one extension can have running at once.
+#: Bound on how much work one extension can have running at once. This is
+#: quota, not admission: GPU exclusion comes from the model-work coordinator,
+#: which a job joins by declaring ``uses_local_gpu``.
 EXTENSION_MAX_CONCURRENT_JOBS_PER_OWNER = 2
+
+#: What the model-work ledger calls an extension's reservation. The owning
+#: extension's id travels on the entry beside it, so the queue panel can name
+#: which extension is holding the GPU.
+EXTENSION_WORK_SOURCE = "extension"
 
 BackendActivationStatus = Literal["active", "failed"]
 BackendRuntimeStatus = Literal[
@@ -384,12 +390,15 @@ class BackendExtensionRuntime:
         )
         self._jobs = BackendJobManager(
             self._job_artifacts,
-            # Extension jobs do not participate in the model-work coordinator
-            # yet (see docs/unified-model-queue-plan.md §10 step 8), so a
-            # GPU-using extension bypasses admission entirely. This caps
-            # pile-up per extension; it is explicitly *not* cross-tenant GPU
-            # exclusion, and does not make the plan's exclusion claim cover
-            # extensions.
+            # Ownership, quota and cancellation stay extension-scoped; only the
+            # *reservation* joins the host's exclusive tenant. An extension's
+            # model runs in this process, in this CUDA context, against this
+            # VRAM — it is the backend process, and minting a third tenant
+            # would assert it serialises its own work the way ComfyUI does.
+            work_source=EXTENSION_WORK_SOURCE,
+            # Bounds pile-up per extension. Distinct from GPU exclusion, which
+            # the coordinator now provides for jobs that declare it: two
+            # non-GPU jobs from one extension still run concurrently.
             max_concurrent_jobs_per_owner=EXTENSION_MAX_CONCURRENT_JOBS_PER_OWNER,
         )
         self._activation_timeout_seconds = activation_timeout_seconds

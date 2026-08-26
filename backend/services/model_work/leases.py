@@ -54,6 +54,16 @@ class LeaseInvalidError(ModelWorkError):
     """Raised when a released or transferred lease handle is used again."""
 
 
+class LeaseAbandonedError(ModelWorkError):
+    """Raised when a waiter stopped waiting before it was admitted.
+
+    Distinct from :class:`LeaseTimeoutError`: nothing expired and the resource
+    is not necessarily busy — the caller's own work was cancelled while it sat
+    in the queue. A cancelled job must leave the queue then, not when the GPU
+    it no longer needs finally comes free.
+    """
+
+
 class Lease:
     """A live claim on a resource, held for the duration of physical execution."""
 
@@ -116,14 +126,25 @@ class Lease:
             job_status=job_status,
         )
 
-    def request_stop(self, *, message: str | None = None) -> None:
-        """Cancellation was requested; the worker is still resident.
+    def request_stop(
+        self,
+        *,
+        message: str | None = None,
+        verdict: TerminalVerdict = "cancelled",
+    ) -> None:
+        """This work is publicly over; the worker is still resident.
 
-        Publicly the entry becomes ``cancelled``, physically it becomes
-        ``stopping`` and keeps excluding other tenants until the callable exits.
+        Physically the entry becomes ``stopping`` and keeps excluding other
+        tenants until the callable exits. ``verdict`` is what the entry now
+        says publicly — ``cancelled`` for a cancellation, ``failed`` for a job
+        the host has already given up on, such as an execution timeout.
         """
 
-        self._coordinator.mark_stopping(self._entry_id, message=message)
+        self._coordinator.mark_stopping(
+            self._entry_id,
+            message=message,
+            job_status=verdict,
+        )
 
     def transfer(self, prompt_id: str) -> "MonitorToken":
         """Hand this occupancy to a prompt-scoped monitor token.

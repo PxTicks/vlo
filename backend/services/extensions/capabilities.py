@@ -14,6 +14,11 @@ extension's:
 * **Wantedness.** An active extension is the evidence that its capability is
   wanted; there is no installer marker that could say so.
 
+``uses_local_gpu`` is accepted: an extension's inference job holds the same
+exclusive ``local-gpu`` lease the Test-runtime probe does, as long as the job
+declares ``uses_local_gpu`` too. The flag no longer promises more than the work
+delivers.
+
 The descriptor itself stays the extension's: what it needs, where it looks, how
 it loads. Only identity, lifetime, and the admission rules are taken away.
 """
@@ -125,17 +130,6 @@ class ExtensionCapabilityRegistrar:
                 "profile names a host installer profile, which cannot install "
                 "an extension's package: declare PackageSpec.install_target "
                 "instead"
-            )
-
-        if descriptor.uses_local_gpu:
-            # Declaring it would advertise a guarantee that holds only on the
-            # Test-runtime probe: the probe takes a real exclusive lease, while
-            # an extension's own jobs are not yet admitted by the coordinator.
-            # See docs/backend-extension-contract-plan.md §4.4.
-            raise ExtensionCapabilityError(
-                "uses_local_gpu is not available to extensions yet: extension "
-                "jobs do not pass through the model-work coordinator, so the "
-                "flag would claim GPU exclusion that only the load test has"
             )
 
         prepared = replace(

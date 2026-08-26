@@ -52,7 +52,7 @@ _MAX_LUT_CATALOG_BYTES = 1024 * 1024
 MAX_EXTENSION_LUT_BYTES = 16 * 1024 * 1024
 # Runtime deployments do not need the TypeScript authoring package. Its package
 # version is the release authority, with a contract test keeping this copy aligned.
-EXTENSION_SDK_VERSION = "1.18.0"
+EXTENSION_SDK_VERSION = "1.19.0"
 
 
 class ExtensionManifestError(ValueError):

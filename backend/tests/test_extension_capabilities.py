@@ -22,13 +22,8 @@ from services.ai_models.capabilities import (
     VerificationStage,
     descriptor_ids,
     get_capability,
+    get_provider,
     list_capability_ids,
-)
-from services.extensions import (
-    BackendArtifactStore,
-    BackendExtensionRuntime,
-    ExtensionApprovalStore,
-    ExtensionManager,
 )
 from services.extensions.capabilities import (
     ExtensionCapabilityError,
@@ -43,21 +38,6 @@ CAPABILITY_ID = f"{EXTENSION_ID}:tracker"
 # --------------------------------------------------------------------------
 # Harness
 # --------------------------------------------------------------------------
-
-
-def _create_runtime(tmp_path: Path):
-    extensions_root = tmp_path / "extensions"
-    extensions_root.mkdir()
-    state_root = tmp_path / "state"
-    manager = ExtensionManager(
-        extensions_root,
-        ExtensionApprovalStore(state_root / "approvals.json"),
-    )
-    artifacts = BackendArtifactStore(
-        state_root / "backend-artifacts",
-        extensions_root,
-    )
-    return BackendExtensionRuntime(manager, artifacts), manager, extensions_root
 
 
 def _capability_source(
@@ -161,36 +141,6 @@ def create_extension(context):
 '''
 
 
-def _install(extensions_root: Path, source: str, extension_id: str = EXTENSION_ID):
-    package_dir = extensions_root / extension_id
-    module_dir = package_dir / "backend" / "extension"
-    module_dir.mkdir(parents=True)
-    (module_dir / "__init__.py").write_text(source, encoding="utf-8")
-    (package_dir / "manifest.json").write_text(
-        json.dumps(
-            {
-                "manifestVersion": 1,
-                "id": extension_id,
-                "name": "Acme Tracking",
-                "version": "1.2.3",
-                "sdk": ">=1.0.0 <2.0.0",
-                "backend": {
-                    "mode": "in_process",
-                    "entry": "backend.extension:create_extension",
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    return package_dir
-
-
-def _approve(manager: ExtensionManager, extension_id: str = EXTENSION_ID) -> None:
-    item = manager.get_item(extension_id, force_digest=True)
-    assert item.digest is not None
-    manager.approve(extension_id, item.digest)
-
-
 @pytest.fixture
 def tracker_dirs(tmp_path: Path) -> dict[str, Path]:
     models = tmp_path / "acme-models"
@@ -202,26 +152,10 @@ def tracker_dirs(tmp_path: Path) -> dict[str, Path]:
 
 
 @pytest.fixture
-def activate(tmp_path: Path):
-    """Start one extension and always stop it, however the test ends.
+def activate(activate_backend_extension):
+    """The shared activation harness, under this module's historical name."""
 
-    Every runtime is stopped even when activation failed: the job manager and
-    the staged modules outlive a failed factory, and a test that asserts on a
-    failure has no less of an obligation to clean up than one that succeeds.
-    """
-
-    started: list[BackendExtensionRuntime] = []
-
-    def start(source: str):
-        runtime, manager, extensions_root = _create_runtime(tmp_path)
-        _install(extensions_root, source)
-        _approve(manager)
-        started.append(runtime)
-        return runtime, asyncio.run(runtime.start(FastAPI()))
-
-    yield start
-    for runtime in reversed(started):
-        asyncio.run(runtime.stop())
+    return activate_backend_extension
 
 
 # --------------------------------------------------------------------------
@@ -372,15 +306,15 @@ def test_an_unusable_capability_name_fails_activation(
     assert "not a usable capability name" in summary.records[0].message
 
 
-def test_uses_local_gpu_is_refused_until_extension_jobs_are_admitted(
+def test_uses_local_gpu_is_accepted_now_that_extension_jobs_are_admitted(
     fake_environment,
     capability_dirs: dict[str, Path],
     activate,
     tracker_dirs: dict[str, Path],
 ) -> None:
-    # Declaring it would advertise exclusion that only the Test-runtime probe
-    # actually has: the probe takes a real lease, the extension's own jobs do
-    # not pass through the coordinator at all.
+    # Refused until Phase E, because it would have advertised exclusion that
+    # only the Test-runtime probe actually had. An extension's own jobs now
+    # take the same exclusive lease, so the flag means what it says.
     _runtime, summary = activate(
         _capability_source(
             models_dir=tracker_dirs["models"],
@@ -388,11 +322,12 @@ def test_uses_local_gpu_is_refused_until_extension_jobs_are_admitted(
             uses_local_gpu=True,
         ),
     )
-    assert [record.status for record in summary.records] == ["failed"]
-    assert "uses_local_gpu is not available to extensions yet" in (
-        summary.records[0].message
-    )
-    assert CAPABILITY_ID not in list_capability_ids()
+    assert [record.status for record in summary.records] == ["active"]
+    assert CAPABILITY_ID in list_capability_ids()
+    provider = get_provider(CAPABILITY_ID)
+    assert provider is not None
+    # What the probe reads to decide whether to take the GPU lease.
+    assert provider.uses_local_gpu is True
 
 
 def test_a_discovery_hook_with_no_check_fails_activation(

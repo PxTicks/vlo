@@ -131,6 +131,7 @@ function createConformanceApi() {
           id: "track",
           label: "Track fixture target",
           timeoutSeconds: 30,
+          usesLocalGpu: false,
           readiness: { ready: true, message: "Ready" },
         },
       ],

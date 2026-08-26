@@ -33,6 +33,8 @@ const jobTypeSchema = z.object({
   id: z.string(),
   label: z.string(),
   timeoutSeconds: z.number().positive(),
+  // Older hosts predate GPU admission for extension jobs; absent means no.
+  usesLocalGpu: z.boolean().default(false),
   readiness: readinessSchema,
 });
 

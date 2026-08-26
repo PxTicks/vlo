@@ -76,6 +76,13 @@ export interface ExtensionBackendJobType {
   readonly id: string;
   readonly label: string;
   readonly timeoutSeconds: number;
+  /**
+   * This job holds the machine's GPU for the whole of its run, so it waits
+   * behind SAM2, SAM-Audio, a local ComfyUI prompt, and anything another
+   * extension is running. It stays `queued` while it waits, and its execution
+   * timeout starts only once it is admitted.
+   */
+  readonly usesLocalGpu: boolean;
   readonly readiness: ExtensionBackendJobReadiness;
 }
 

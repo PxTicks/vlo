@@ -45,11 +45,16 @@ def local_gpu_lease(
     owner: str,
     timeout: float | None = None,
     fail_fast: bool = False,
+    stop: threading.Event | None = None,
 ) -> Iterator[Lease | None]:
     """Hold ``local-gpu`` for the body, on the calling worker thread.
 
     ``timeout=None`` means :data:`LOCAL_INFERENCE_WAIT_SECONDS`. There is
     deliberately no unbounded wait here: an inline HTTP API must answer.
+
+    ``stop`` abandons the wait when it is set, for a caller whose work can be
+    cancelled while it is still queued — a background job, as opposed to an
+    inline request whose client is still holding the connection open.
 
     Yields ``None`` when this thread already owns the resource, so nested calls
     (SAM-Audio reading SAM2 mask frames) pass through instead of deadlocking
@@ -67,6 +72,7 @@ def local_gpu_lease(
         owner=owner,
         timeout=LOCAL_INFERENCE_WAIT_SECONDS if timeout is None else timeout,
         fail_fast=fail_fast,
+        stop=stop,
     )
 
     _thread_state.held = True
@@ -98,6 +104,7 @@ def run_local_inference(
     owner: str,
     timeout: float | None = None,
     fail_fast: bool = False,
+    stop: threading.Event | None = None,
 ) -> T:
     """Run ``callable_`` on this thread while holding the ``local-gpu`` lease.
 
@@ -111,6 +118,7 @@ def run_local_inference(
         owner=owner,
         timeout=timeout,
         fail_fast=fail_fast,
+        stop=stop,
     ):
         return callable_()
 
@@ -123,6 +131,7 @@ def _acquire(
     owner: str,
     timeout: float | None,
     fail_fast: bool,
+    stop: threading.Event | None = None,
 ) -> Lease:
     if fail_fast:
         lease = coordinator.try_reserve_sync(
@@ -151,6 +160,7 @@ def _acquire(
         owner=owner,
         sharing="exclusive",
         timeout=timeout,
+        stop=stop,
     )
 
 

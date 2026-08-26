@@ -91,6 +91,57 @@ waiting behind that worker remain truthfully `queued`; their execution timeout b
 only when a worker starts them. Avoid uninterruptible loops and release
 extension-owned resources in all terminal paths.
 
+## Declare a job that uses the GPU
+
+A job that runs a model on the local GPU must hold the machine's one
+`local-gpu` reservation for the whole of its execution, so it cannot be
+resident at the same time as SAM2, SAM-Audio, a local ComfyUI prompt, or
+another extension's model. Declare it and the host takes the lease:
+
+```python
+BackendJobDefinition(
+    id="track",
+    label="Track subject",
+    run=_run_tracking,          # must be synchronous
+    readiness=_readiness,
+    uses_local_gpu=True,
+)
+```
+
+You do not take the lease yourself, and there is no API for doing so: a job
+that volunteered for admission is a job that can forget, and forgetting is
+invisible until two models are on the card. What follows from the declaration:
+
+- **The wait is not your execution time.** The job stays `queued` while it
+  waits, and its `timeout_seconds` starts only when it is admitted. It waits up
+  to 30 minutes for the GPU before failing.
+- **The runner must be synchronous** and must not return an awaitable. The
+  lease is released by the worker thread when your callable returns; work
+  handed back to the event loop would outlive it, with the model still
+  resident. Both are refused — the first at registration, the second at run
+  time.
+- **Cancellation leaves the queue.** A job cancelled while waiting stops
+  waiting rather than being admitted to work nobody wants. A job cancelled
+  while running is publicly `cancelled` immediately, and the queue shows the
+  entry as `stopping` until your callable actually returns — so keep calling
+  `context.raise_if_cancelled()`.
+- **Progress reaches the queue panel**, not just your job: `report_progress`
+  mirrors into the ledger entry, which is labelled with your extension's id.
+- Nested host inference (reading SAM2 mask frames, say) passes straight
+  through: the thread already holds the lease.
+- **A waiting job occupies a worker slot.** The wait happens on the thread that
+  will run the model, so several queued GPU jobs can delay other extensions'
+  CPU jobs. Declare `uses_local_gpu` only for work that actually touches the
+  GPU.
+
+A capability descriptor takes the same `uses_local_gpu` flag, which is what
+makes its Test-runtime probe take the lease. Declare both: the descriptor's
+flag covers the load test, the job's covers the real work.
+
+Ownership, quota and cancellation stay yours. Only the reservation is shared —
+as the host's own `backend-process` tenant, because your model runs in the vlo
+process, in its CUDA context, against its VRAM.
+
 ## Call jobs from the frontend
 
 Use the owner-bound `context.api.backend` facade:

@@ -918,6 +918,7 @@ def test_tracking_fixture_runs_cancellable_job_through_approval_path(
             "id": "track",
             "label": "Track fixture target",
             "timeoutSeconds": 30,
+            "usesLocalGpu": False,
             "readiness": {
                 "ready": True,
                 "message": "Synthetic fixture tracker is ready",

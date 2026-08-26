@@ -18,6 +18,7 @@ from services.model_work.coordinator import (
 from services.model_work.leases import (
     CoordinatorNotReadyError,
     Lease,
+    LeaseAbandonedError,
     LeaseInvalidError,
     LeaseTimeoutError,
     ModelWorkError,
@@ -81,6 +82,7 @@ __all__ = [
     "LEDGER_GAP",
     "LOCAL_GPU_RESOURCE",
     "Lease",
+    "LeaseAbandonedError",
     "LeaseInvalidError",
     "LeaseTimeoutError",
     "LedgerEntry",

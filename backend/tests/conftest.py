@@ -359,3 +359,99 @@ def reset_hardware_probe_cache():
     hardware._cached_local_vram = None
     yield
     hardware._cached_local_vram = None
+
+
+@pytest.fixture
+def activate_backend_extension(tmp_path: Path):
+    """Start one backend extension the way the product does.
+
+    Stages a package, approves it, and runs ``BackendExtensionRuntime.start``,
+    because what these tests are about lives in the seams between activation,
+    failure and shutdown — a registrar built by hand proves nothing about the
+    path an installed extension actually takes.
+
+    Every runtime is stopped even when activation failed: the job manager and
+    the staged modules outlive a failed factory.
+    """
+
+    import asyncio
+    import json
+
+    from fastapi import FastAPI
+
+    from services.extensions import (
+        BackendArtifactStore,
+        BackendExtensionRuntime,
+        ExtensionApprovalStore,
+        ExtensionManager,
+    )
+
+    started: list[object] = []
+
+    def stage(source: str, *, extension_id: str = "example.tracking"):
+        extensions_root = tmp_path / "extensions"
+        extensions_root.mkdir(exist_ok=True)
+        state_root = tmp_path / "state"
+        manager = ExtensionManager(
+            extensions_root,
+            ExtensionApprovalStore(state_root / "approvals.json"),
+        )
+        artifacts = BackendArtifactStore(
+            state_root / "backend-artifacts",
+            extensions_root,
+        )
+        runtime = BackendExtensionRuntime(manager, artifacts)
+
+        package_dir = extensions_root / extension_id
+        module_dir = package_dir / "backend" / "extension"
+        module_dir.mkdir(parents=True)
+        (module_dir / "__init__.py").write_text(source, encoding="utf-8")
+        (package_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "manifestVersion": 1,
+                    "id": extension_id,
+                    "name": "Acme Tracking",
+                    "version": "1.2.3",
+                    "sdk": ">=1.0.0 <2.0.0",
+                    "backend": {
+                        "mode": "in_process",
+                        "entry": "backend.extension:create_extension",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        item = manager.get_item(extension_id, force_digest=True)
+        assert item.digest is not None
+        manager.approve(extension_id, item.digest)
+
+        started.append(runtime)
+        return runtime
+
+    class _Activation:
+        """Callable for a synchronous test; awaitable for an async one.
+
+        A test that then drives jobs must stay in *one* event loop, so an async
+        test cannot use the ``asyncio.run`` form to start the runtime and then
+        submit work from its own loop.
+        """
+
+        def __call__(self, source: str, *, extension_id: str = "example.tracking"):
+            runtime = stage(source, extension_id=extension_id)
+            return runtime, asyncio.run(runtime.start(FastAPI()))
+
+        async def start_async(
+            self,
+            source: str,
+            *,
+            extension_id: str = "example.tracking",
+        ):
+            runtime = stage(source, extension_id=extension_id)
+            return runtime, await runtime.start(FastAPI())
+
+    yield _Activation()
+    for runtime in reversed(started):
+        # `stop` is idempotent: a test that asserted on deactivation has
+        # already called it, and this is the safety net for one that did not.
+        asyncio.run(runtime.stop())

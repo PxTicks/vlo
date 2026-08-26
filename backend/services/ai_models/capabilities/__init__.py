@@ -59,7 +59,11 @@ from .descriptors import (
     SysPathSpec,
 )
 from .environment import ENVIRONMENT_PROBE_KEY, describe_environment
-from .environment_checks import build_environment_checks
+from .environment_checks import (
+    build_environment_checks,
+    capability_install_remediation,
+    package_install_remediation,
+)
 from .failures import (
     DURABLE_FAILURE_CODES,
     ClassifiedFailure,
@@ -79,7 +83,6 @@ from .profiles import (
     INSTALLABLE_PROFILE_IDS,
     PROFILES,
     CapabilityProfile,
-    capability_install_remediation,
     capability_was_requested,
     describe_profiles,
     expand_profile_ids,
@@ -344,6 +347,7 @@ __all__ = [
     "is_durable",
     "lazy_runtime",
     "note_capability_success",
+    "package_install_remediation",
     "list_capabilities",
     "list_capability_ids",
     "profile_for_capability",

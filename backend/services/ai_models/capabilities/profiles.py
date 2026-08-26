@@ -560,11 +560,6 @@ def package_remediation(summary: str, target: str) -> Remediation:
     )
 
 
-def capability_install_remediation(capability_id: str) -> Remediation | None:
-    profile = profile_for_capability(capability_id)
-    return install_remediation(profile.id) if profile is not None else None
-
-
 def failed_install_check(
     capability_id: str,
     *,

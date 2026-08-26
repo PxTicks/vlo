@@ -22,6 +22,7 @@ from types import ModuleType
 import pytest
 
 from services.ai_models.capabilities import (
+    BEATS_CAPABILITY_ID,
     COMFYUI_CAPABILITY_ID,
     CapabilityDescriptor,
     CapabilityState,
@@ -38,10 +39,12 @@ from services.ai_models.capabilities import (
     evaluated_stages,
     failures,
     get_capability,
+    get_descriptor,
     get_profile,
     get_provider,
     lazy_runtime,
     list_capability_ids,
+    package_install_remediation,
     register_descriptor,
     unregister_descriptor,
 )
@@ -49,6 +52,7 @@ from services.ai_models.capabilities.contract import (
     Check,
     CheckStatus,
     FailureCode,
+    RemediationKind,
 )
 from services.ai_models.capabilities.descriptors import resolve_ref
 from services.ai_models.capabilities.environment import (
@@ -349,6 +353,135 @@ def test_ids_folding_to_one_key_without_search_paths_are_both_accepted(
         unregister_descriptor(second.id)
     finally:
         unregister_descriptor(first.id)
+
+
+# --------------------------------------------------------------------------
+# Install remediation without an installer profile
+# --------------------------------------------------------------------------
+
+
+def _uninstallable(tmp_path: Path, **overrides) -> CapabilityDescriptor:
+    """A descriptor whose package no installer profile covers."""
+
+    models = tmp_path / "models"
+    models.mkdir(exist_ok=True)
+    return replace(
+        _fake_descriptor(tmp_path, models),
+        packages=(
+            PackageSpec(
+                module="vlo_fake_runtime",
+                distribution="vlo-fake",
+                install_target="vlo-fake==1.2.3",
+                install_summary="Install the Acme tracker runtime",
+            ),
+        ),
+        **overrides,
+    )
+
+
+def test_a_capability_with_no_profile_still_offers_an_install_command(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # No installer profile can cover a package the host does not ship, and
+    # reporting package_missing with no way to fix it is the failure the parent
+    # plan's governing case exists to prevent.
+    monkeypatch.setitem(sys.modules, FAKE_MODULE, _fake_module())
+    fake_environment.set_package("vlo_fake_runtime", installed=False, importable=False)
+
+    register_descriptor(_uninstallable(tmp_path))
+    try:
+        capability = get_capability(FAKE_ID)
+        assert capability is not None
+        package = next(
+            c for c in capability.checks if c.id == "package.vlo_fake_runtime"
+        )
+        assert package.code is FailureCode.PACKAGE_MISSING
+        assert package.remediation is not None
+        assert package.remediation.kind is RemediationKind.COMMAND
+        assert package.remediation.summary == "Install the Acme tracker runtime"
+        assert package.remediation.command == (
+            "uv pip install --python backend/.venv/bin/python vlo-fake==1.2.3"
+        )
+        assert package.remediation.requires_restart is True
+    finally:
+        unregister_descriptor(FAKE_ID)
+
+
+def test_a_profileless_install_command_degrades_to_docs_without_uv(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Same uv resolution as a profile command, including the rule that a
+    # command which would fail with "uv: command not found" is worse than none.
+    from services.ai_models.capabilities import profiles
+
+    monkeypatch.setattr(profiles, "_find_on_path", lambda name: None)
+    monkeypatch.setattr(profiles, "_uv_bootstrap_candidates", tuple)
+    monkeypatch.setitem(sys.modules, FAKE_MODULE, _fake_module())
+    fake_environment.set_package("vlo_fake_runtime", installed=False, importable=False)
+
+    register_descriptor(_uninstallable(tmp_path))
+    try:
+        package = next(
+            c
+            for c in get_capability(FAKE_ID).checks
+            if c.id == "package.vlo_fake_runtime"
+        )
+        assert package.remediation is not None
+        assert package.remediation.kind is RemediationKind.DOCS
+        assert package.remediation.command is None
+        assert package.remediation.url
+    finally:
+        unregister_descriptor(FAKE_ID)
+
+
+def test_a_recorded_package_failure_carries_the_same_command(
+    fake_environment: _FakeEnvironment,
+    capability_dirs: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # A failure a real load reported arrives with a code and no remedy. The
+    # descriptor is what knows how this capability is installed, whether or not
+    # a profile covers it.
+    monkeypatch.setitem(sys.modules, FAKE_MODULE, _fake_module())
+    register_descriptor(_uninstallable(tmp_path))
+    try:
+        failures.record_exception(
+            FAKE_ID, ModuleNotFoundError("No module named 'vlo_fake_runtime'")
+        )
+        last_failure = next(
+            c for c in get_capability(FAKE_ID).checks if c.id == "runtime.lastFailure"
+        )
+        assert last_failure.code is FailureCode.PACKAGE_MISSING
+        assert last_failure.remediation is not None
+        assert last_failure.remediation.command == (
+            "uv pip install --python backend/.venv/bin/python vlo-fake==1.2.3"
+        )
+    finally:
+        unregister_descriptor(FAKE_ID)
+
+
+def test_a_packages_own_target_beats_its_capabilitys_profile(
+    tmp_path: Path,
+) -> None:
+    # madmom is the shipped case: an optional extra inside a capability whose
+    # profile is the base requirements, which do not contain it.
+    beats = get_descriptor(BEATS_CAPABILITY_ID)
+    madmom = next(p for p in beats.packages if p.module == "madmom")
+
+    own = package_install_remediation(beats, madmom)
+    profile_backed = package_install_remediation(beats, beats.primary_package)
+
+    assert own is not None and own.command is not None
+    assert "madmom" in own.command
+    assert profile_backed is not None and profile_backed.command is not None
+    assert "requirements.txt" in profile_backed.command
 
 
 def test_a_namespaced_id_produces_a_well_formed_snapshot_key(

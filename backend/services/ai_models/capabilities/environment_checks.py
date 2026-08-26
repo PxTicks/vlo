@@ -17,14 +17,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .catalogue import get_descriptor
 from .contract import (
     Check,
     CheckStatus,
     DeviceReport,
     FailureCode,
+    Remediation,
     VerificationStage,
 )
-from .descriptors import CapabilityDescriptor, DeviceSpec, DirectorySpec
+from .descriptors import (
+    CapabilityDescriptor,
+    DeviceSpec,
+    DirectorySpec,
+    PackageSpec,
+)
 from .environment import (
     UNRESOLVED,
     device_probe,
@@ -45,6 +52,43 @@ from .profiles import (
     package_remediation,
 )
 from .subprocess_probe import ProbeModule, ProbeResult, ProbeSpec
+
+
+def package_install_remediation(
+    descriptor: CapabilityDescriptor,
+    package: PackageSpec | None = None,
+) -> Remediation | None:
+    """How to install the package a capability needs, or ``None``.
+
+    A package that names its own ``install_target`` wins: it is the more
+    specific statement, and it is the only one that can be right for an extra
+    the profile's requirements file does not contain — madmom is the standing
+    example, and every extension is the general case, since no installer
+    profile covers a package the host does not ship.
+
+    Falling back to the profile keeps a shipped capability's command generated
+    from the same table the installer runs, so the two cannot drift. Either way
+    the command goes through the same ``uv`` resolution and degrades to the same
+    documentation link when ``uv`` cannot be found — a command that fails with
+    "uv: command not found" is worse than no command.
+    """
+
+    package = package if package is not None else descriptor.primary_package
+    if package is not None and package.install_target:
+        return package_remediation(
+            package.install_summary or f"Install {package.module}",
+            package.install_target,
+        )
+    if descriptor.profile is not None:
+        return install_remediation(descriptor.profile)
+    return None
+
+
+def capability_install_remediation(capability_id: str) -> Remediation | None:
+    """The install command for a registered capability, profile-backed or not."""
+
+    descriptor = get_descriptor(capability_id)
+    return package_install_remediation(descriptor) if descriptor else None
 
 
 @dataclass(frozen=True)
@@ -91,11 +135,6 @@ def build_environment_checks(
     if descriptor.python_min is not None:
         checks.append(python_version_check(descriptor.python_min))
 
-    install = (
-        install_remediation(descriptor.profile)
-        if descriptor.profile is not None
-        else None
-    )
     paths = extra_sys_paths(descriptor)
     package_present = True
     package_failing = False
@@ -113,15 +152,7 @@ def build_environment_checks(
                     module=package.module,
                     feature=package.feature or package.module,
                     deep=deep,
-                    remediation=(
-                        package_remediation(
-                            package.install_summary
-                            or f"Install {package.module}",
-                            package.install_target,
-                        )
-                        if package.install_target
-                        else None
-                    ),
+                    remediation=package_install_remediation(descriptor, package),
                 )
             )
             continue
@@ -134,7 +165,7 @@ def build_environment_checks(
             minimum_version=package.minimum_version,
             extra_paths=paths,
             deep=deep,
-            remediation=install,
+            remediation=package_install_remediation(descriptor, package),
         )
         checks.append(check)
         package_failing = package_failing or check.failed
@@ -243,6 +274,8 @@ def _unresolved_directory_check(directory: DirectorySpec) -> Check:
 __all__ = [
     "EnvironmentChecks",
     "build_environment_checks",
+    "capability_install_remediation",
     "extra_sys_paths",
+    "package_install_remediation",
     "probe_spec_for",
 ]

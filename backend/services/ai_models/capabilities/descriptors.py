@@ -84,8 +84,12 @@ class PackageSpec:
     optional: bool = False
     #: What an optional package buys, phrased into its check summary.
     feature: str | None = None
-    #: ``uv pip install`` target for an optional extra that no profile covers.
+    #: ``uv pip install`` target for a package no installer profile covers —
+    #: an optional extra like madmom, and every package an extension brings,
+    #: since the host ships no requirements file for one. Takes precedence over
+    #: the descriptor's profile, being the more specific statement.
     install_target: str | None = None
+    #: Imperative summary for that command; defaults to "Install <module>".
     install_summary: str | None = None
 
     @property

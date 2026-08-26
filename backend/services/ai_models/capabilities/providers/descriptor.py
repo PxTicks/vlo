@@ -12,8 +12,12 @@ from typing import Any
 
 from ..contract import FailureCode, Remediation
 from ..descriptors import CapabilityDescriptor, Discovery, resolve_ref
-from ..environment_checks import build_environment_checks, probe_spec_for
-from ..profiles import capability_was_requested, get_profile, install_remediation
+from ..environment_checks import (
+    build_environment_checks,
+    package_install_remediation,
+    probe_spec_for,
+)
+from ..profiles import capability_was_requested, get_profile
 from ..runtimes import lazy_runtime
 from .base import CapabilityProvider, ProviderReport
 
@@ -62,8 +66,8 @@ class DescriptorProvider(CapabilityProvider):
         # A failure reported by a real load carries no remedy of its own: the
         # load path does not know how this capability is installed, and the
         # descriptor does.
-        if code in _INSTALL_CODES and self.descriptor.profile is not None:
-            return install_remediation(self.descriptor.profile)
+        if code in _INSTALL_CODES:
+            return package_install_remediation(self.descriptor)
         if code in _MODEL_CODES:
             return self.descriptor.download_remediation
         return None

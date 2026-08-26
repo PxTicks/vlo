@@ -228,6 +228,46 @@ def package_check(
     )
 
 
+def optional_package_check(
+    *,
+    check_id: str,
+    module: str,
+    feature: str,
+    deep: ModuleProbe | None,
+    remediation: Remediation | None = None,
+    stage: VerificationStage = VerificationStage.ENVIRONMENT,
+) -> Check:
+    """An extra that enables a feature rather than gating the capability.
+
+    Its absence is a warning, never a failure: only one code path needs it, so
+    blocking the whole capability on it would be a false negative. Nothing was
+    established when no probe ran, which is ``skipped`` rather than a pass.
+    """
+
+    if deep is None:
+        return Check(
+            id=check_id,
+            status=CheckStatus.SKIPPED,
+            stage=stage,
+            summary=f"{module} availability was not checked",
+        )
+    if deep.imported:
+        return Check(
+            id=check_id,
+            status=CheckStatus.PASS,
+            stage=stage,
+            summary=f"{module} is installed, {feature} is available",
+        )
+    return Check(
+        id=check_id,
+        status=CheckStatus.WARN,
+        stage=stage,
+        code=FailureCode.PACKAGE_MISSING,
+        summary=f"{module} is not installed, so {feature} is unavailable",
+        remediation=remediation,
+    )
+
+
 def directory_check(
     *,
     check_id: str,

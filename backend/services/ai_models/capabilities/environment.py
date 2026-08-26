@@ -18,6 +18,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from .catalogue import descriptor_packages, descriptors
 from .contract import iso_timestamp, utc_now
 from .failures import sanitize_message
 from .profiles import describe_profiles
@@ -36,9 +37,10 @@ ENVIRONMENT_PROBE_KEY = "environment"
 #: The one probe every capability shares: torch plus the device inventory.
 _ENVIRONMENT_SPEC = ProbeSpec(modules=(ProbeModule("torch"),), device=True)
 
-#: Packages worth reporting a version for. Versions come from installed
-#: distribution metadata, so listing one here never imports it.
-REPORTED_PACKAGES: tuple[str, ...] = (
+#: Packages every capability's environment rests on, whoever asked for them.
+#: Versions come from installed distribution metadata, so listing one here
+#: never imports it.
+BASE_REPORTED_PACKAGES: tuple[str, ...] = (
     "torch",
     "torchaudio",
     "torchcodec",
@@ -49,12 +51,22 @@ REPORTED_PACKAGES: tuple[str, ...] = (
     "huggingface-hub",
     "transformers",
     "hydra-core",
-    "beat-this",
-    "madmom",
-    "sam2",
-    "sam-audio",
     "xformers",
 )
+
+
+def reported_packages() -> tuple[str, ...]:
+    """The shared base, plus whatever the descriptors declare.
+
+    Derived rather than hand-listed so a new capability's packages appear in a
+    support export without anyone editing this module.
+    """
+
+    names = list(BASE_REPORTED_PACKAGES)
+    for name in descriptor_packages():
+        if name not in names:
+            names.append(name)
+    return tuple(names)
 
 _HF_TOKEN_ENV_VARS = (
     "HF_TOKEN",
@@ -172,17 +184,51 @@ def _offline_snapshot() -> dict[str, bool]:
     }
 
 
-def describe_environment(*, refresh: bool = False) -> dict[str, Any]:
-    from config import (
-        BEATTHIS_CACHE_DIR,
-        PROJECTS_ROOT,
-        SAM2_CACHE_DIR,
-        SAM2_SEARCH_PATHS,
-        SAM_AUDIO_CACHE_DIR,
-        SAM_AUDIO_MODEL_DIR,
-        SAM_AUDIO_SEARCH_PATHS,
-    )
+def config_value(attribute: str, default: Any = None) -> Any:
+    """Read a ``config`` attribute at call time.
 
+    Deliberately not ``from config import NAME`` at module scope: the
+    directories and search paths a descriptor names are resolved every time the
+    snapshot is built, so a test (or a reconfiguration) that rebinds one of
+    them is seen rather than baked in at import.
+    """
+
+    import config
+
+    return getattr(config, attribute, default)
+
+
+def _descriptor_directories() -> list[dict[str, Any]]:
+    """Every cache and model directory the descriptors declare."""
+
+    return [
+        describe_directory(spec.id, Path(config_value(spec.config_attr)))
+        for descriptor in descriptors()
+        for spec in descriptor.cache_dirs
+        if config_value(spec.config_attr) is not None
+    ]
+
+
+def _descriptor_search_paths() -> dict[str, list[str]]:
+    """Where each capability looks for its models.
+
+    This used to be hardcoded to ``sam2``/``samAudio``, which meant a new
+    capability's search paths were simply invisible in a support export.
+    """
+
+    paths: dict[str, list[str]] = {}
+    for descriptor in descriptors():
+        listed: list[str] = []
+        for attribute in descriptor.search_paths:
+            listed.extend(
+                display_path(path) for path in config_value(attribute, ()) or ()
+            )
+        if descriptor.search_paths:
+            paths[descriptor.snapshot_key] = listed
+    return paths
+
+
+def describe_environment(*, refresh: bool = False) -> dict[str, Any]:
     probe = environment_probe(refresh=refresh)
     device = probe.device
     torch_snapshot = device.to_json() if device is not None else None
@@ -190,11 +236,10 @@ def describe_environment(*, refresh: bool = False) -> dict[str, Any]:
         torch_snapshot["error"] = sanitize_message(torch_snapshot.get("error")) or None
 
     directories = [
-        describe_directory("projects", PROJECTS_ROOT),
-        describe_directory("sam2.cache", SAM2_CACHE_DIR),
-        describe_directory("samAudio.cache", SAM_AUDIO_CACHE_DIR),
-        describe_directory("samAudio.models", SAM_AUDIO_MODEL_DIR),
-        describe_directory("beatThis.cache", BEATTHIS_CACHE_DIR),
+        # Not owned by any capability: the projects root is where everything
+        # this backend writes ends up.
+        describe_directory("projects", Path(config_value("PROJECTS_ROOT"))),
+        *_descriptor_directories(),
     ]
 
     return {
@@ -219,12 +264,9 @@ def describe_environment(*, refresh: bool = False) -> dict[str, Any]:
             "timedOut": probe.timed_out,
             "error": sanitize_message(probe.error) or None,
         },
-        "packages": _package_versions(REPORTED_PACKAGES),
+        "packages": _package_versions(reported_packages()),
         "directories": directories,
-        "searchPaths": {
-            "sam2": [display_path(path) for path in SAM2_SEARCH_PATHS],
-            "samAudio": [display_path(path) for path in SAM_AUDIO_SEARCH_PATHS],
-        },
+        "searchPaths": _descriptor_search_paths(),
         "huggingFace": _hugging_face_snapshot(),
         "offline": _offline_snapshot(),
         # What the installer was asked for and what it managed to do. Without

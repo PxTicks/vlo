@@ -60,6 +60,10 @@ class RuntimeObservationStore:
         with self._lock:
             return capability_id in self._checking
 
+    def clear_success(self, capability_id: str) -> None:
+        with self._lock:
+            self._successes.pop(capability_id, None)
+
     def clear(self) -> None:
         with self._lock:
             self._successes.clear()
@@ -92,6 +96,17 @@ def set_capability_checking(capability_id: str, checking: bool) -> None:
 
 def is_capability_checking(capability_id: str) -> bool:
     return _STORE.is_checking(capability_id)
+
+
+def clear_load_success(capability_id: str) -> None:
+    """Forget one capability's successful load.
+
+    A load success is evidence about a *particular* runtime. Re-registering the
+    id with a different descriptor makes that evidence describe something that
+    is no longer there, so the registry drops it.
+    """
+
+    _STORE.clear_success(capability_id)
 
 
 def clear_runtime_observations() -> None:

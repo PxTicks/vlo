@@ -6,6 +6,12 @@ one lifetime. Two properties matter:
 - **The lease is owned by the worker thread, not the request coroutine.** A
   client disconnect or a cancelled ``run_in_threadpool`` coroutine cannot return
   the GPU to the pool while the physical call is still inside torch.
+  :func:`local_gpu_lease` acquires and owns in one step, for a caller that is
+  already on the thread that will run the model. A caller that must *wait*
+  somewhere else — a job manager awaiting admission on the event loop so a
+  queued job does not sit on a worker thread — splits the two:
+  :func:`reserve_local_gpu` awaits admission, and :func:`hold_local_gpu` takes
+  ownership on the worker thread and releases there.
 - **Nested calls do not deadlock.** SAM-Audio's separation job reads cached SAM2
   mask frames, which can initialise a predictor session. The backend tenant is
   exclusive by design, so a second acquisition on the same thread would block
@@ -74,6 +80,50 @@ def local_gpu_lease(
         fail_fast=fail_fast,
         stop=stop,
     )
+
+    with hold_local_gpu(lease):
+        yield lease
+
+
+async def reserve_local_gpu(
+    *,
+    source: str,
+    label: str,
+    owner: str,
+    timeout: float | None = None,
+) -> Lease:
+    """Await admission to ``local-gpu`` without blocking a worker thread.
+
+    For a caller that dispatches the model call to a thread of its own: the
+    wait belongs on the event loop, so a queued job does not sit on a pool
+    worker that unrelated CPU work needs. The returned lease is *unowned* — it
+    must be handed to :func:`hold_local_gpu` on the thread that runs the model,
+    which is what releases it, or released directly by the caller if that
+    dispatch never happens.
+    """
+
+    return await get_model_work_coordinator().reserve(
+        resource=LOCAL_GPU_RESOURCE,
+        tenant=TENANT_BACKEND,
+        source=source,
+        label=label,
+        owner=owner,
+        sharing="exclusive",
+        timeout=LOCAL_INFERENCE_WAIT_SECONDS if timeout is None else timeout,
+    )
+
+
+@contextmanager
+def hold_local_gpu(lease: Lease) -> Iterator[Lease]:
+    """Own an already-reserved ``lease`` on this thread for the body's duration.
+
+    This is the physical exit path of the model work, so it is where the lease
+    is released — not a future's done callback, which can run on the thread
+    that registered it when the future has already finished, and not the
+    awaiting coroutine, which would hand the GPU over on timeout with the model
+    still resident. Marking the thread also makes nested acquisitions pass
+    through :func:`local_gpu_lease` rather than deadlock.
+    """
 
     _thread_state.held = True
     verdict: TerminalVerdict = "succeeded"
@@ -166,7 +216,9 @@ def _acquire(
 
 __all__ = [
     "LOCAL_INFERENCE_WAIT_SECONDS",
+    "hold_local_gpu",
     "holds_local_gpu",
     "local_gpu_lease",
+    "reserve_local_gpu",
     "run_local_inference",
 ]

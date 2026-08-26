@@ -116,7 +116,7 @@ invisible until two models are on the card. What follows from the declaration:
   waits, and its `timeout_seconds` starts only when it is admitted. It waits up
   to 30 minutes for the GPU before failing.
 - **The runner must be synchronous** and must not return an awaitable. The
-  lease is released by the worker thread when your callable returns; work
+  lease is released by the thread that ran your callable, when it returns; work
   handed back to the event loop would outlive it, with the model still
   resident. Both are refused — the first at registration, the second at run
   time.
@@ -129,10 +129,10 @@ invisible until two models are on the card. What follows from the declaration:
   mirrors into the ledger entry, which is labelled with your extension's id.
 - Nested host inference (reading SAM2 mask frames, say) passes straight
   through: the thread already holds the lease.
-- **A waiting job occupies a worker slot.** The wait happens on the thread that
-  will run the model, so several queued GPU jobs can delay other extensions'
-  CPU jobs. Declare `uses_local_gpu` only for work that actually touches the
-  GPU.
+- **Waiting costs nothing.** A queued GPU job holds no worker thread, so it
+  cannot delay other extensions' CPU jobs; admitted GPU jobs run on a pool of
+  their own. Still declare `uses_local_gpu` only for work that actually touches
+  the GPU — it is what excludes every other model on the machine.
 
 A capability descriptor takes the same `uses_local_gpu` flag, which is what
 makes its Test-runtime probe take the lease. Declare both: the descriptor's

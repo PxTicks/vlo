@@ -34,6 +34,9 @@ from services.model_work import (
 from services.model_work.local_inference import holds_local_gpu, local_gpu_lease
 
 
+OTHER_EXTENSION_ID = "acme.captions"
+
+
 EXTENSION_ID = "acme.tracking"
 WORK_SOURCE = "extension"
 
@@ -62,12 +65,20 @@ async def _close(manager: BackendJobManager) -> None:
 
     await manager.shutdown_all()
     manager._executor.shutdown(wait=True)
+    if manager._gpu_executor is not None:
+        manager._gpu_executor.shutdown(wait=True)
 
 
-async def _drain(manager: BackendJobManager, job_id: str, *, timeout: float = 5.0):
+async def _drain(
+    manager: BackendJobManager,
+    job_id: str,
+    *,
+    owner_id: str = EXTENSION_ID,
+    timeout: float = 5.0,
+):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        snapshot = manager.get(EXTENSION_ID, job_id)
+        snapshot = manager.get(owner_id, job_id)
         if snapshot.status in ("succeeded", "failed", "cancelled"):
             return snapshot
         await asyncio.sleep(0.01)
@@ -476,6 +487,265 @@ async def test_a_job_that_does_not_declare_the_gpu_takes_no_lease(
     assert settled.status == "succeeded"
     assert observed["held"] is False
     assert observed["entries"] == []
+
+
+# --------------------------------------------------------------------------
+# Waiting for the GPU costs no worker thread
+# --------------------------------------------------------------------------
+
+
+def _cpu_and_gpu_manager(tmp_path, *, executor_max_workers: int):
+    """A manager whose general pool is deliberately small.
+
+    The point of these cases is what a *queued* or *running* GPU job does to
+    everything else in the pool, so the pool has to be small enough that a GPU
+    job holding a thread would be visible.
+    """
+
+    return BackendJobManager(
+        JobArtifactStore(tmp_path / "job-artifacts"),
+        work_source=WORK_SOURCE,
+        executor_max_workers=executor_max_workers,
+    )
+
+
+@pytest.mark.asyncio
+async def test_queued_gpu_jobs_do_not_occupy_the_general_pool(
+    tmp_path,
+    model_work_coordinator,
+) -> None:
+    # The bug this seam fixes: the wait for `local-gpu` used to happen on the
+    # worker thread that would go on to run the model, so enough queued GPU
+    # jobs filled the pool and an unrelated extension's CPU job — which wants
+    # nothing from the card — sat behind them.
+    started = threading.Event()
+    finished_native = threading.Event()
+    cpu_ran = threading.Event()
+
+    def gpu_run(context, value):
+        return {"ok": True}
+
+    def cpu_run(context, value):
+        cpu_ran.set()
+        return {"ok": True}
+
+    manager = _cpu_and_gpu_manager(tmp_path, executor_max_workers=2)
+    _register(
+        manager,
+        BackendJobDefinition(
+            id="track",
+            label="Track subject",
+            run=gpu_run,
+            uses_local_gpu=True,
+        ),
+    )
+    manager.register_owner(
+        OTHER_EXTENSION_ID,
+        "1.0.0",
+        (BackendJobDefinition(id="caption", label="Caption", run=cpu_run),),
+    )
+
+    def hold_native() -> None:
+        with local_gpu_lease(source="sam2", label="Propagate", owner="sam2-service"):
+            started.set()
+            finished_native.wait(5)
+
+    native = threading.Thread(target=hold_native)
+    try:
+        native.start()
+        assert await _reach(started)
+
+        # Three queued GPU jobs against a two-thread pool: on the old shape
+        # both threads are blocked in the admission wait before the CPU job is
+        # ever dispatched.
+        queued = [
+            await manager.submit(EXTENSION_ID, "track", {}) for _ in range(3)
+        ]
+        cpu = await manager.submit(OTHER_EXTENSION_ID, "caption", {})
+
+        settled_cpu = await _drain(
+            manager,
+            cpu.identity.job_id,
+            owner_id=OTHER_EXTENSION_ID,
+            timeout=3.0,
+        )
+        assert settled_cpu.status == "succeeded"
+        assert cpu_ran.is_set()
+
+        # And the GPU jobs really were still queued while that happened.
+        assert [entry.occupancy for entry in _entries(WORK_SOURCE)] == [
+            "waiting"
+        ] * 3
+        assert all(
+            manager.get(EXTENSION_ID, snapshot.identity.job_id).status == "queued"
+            for snapshot in queued
+        )
+
+        finished_native.set()
+        for snapshot in queued:
+            assert (
+                await _drain(manager, snapshot.identity.job_id, timeout=8.0)
+            ).status == "succeeded"
+    finally:
+        finished_native.set()
+        native.join(5)
+        await _close(manager)
+
+
+@pytest.mark.asyncio
+async def test_a_running_gpu_job_does_not_occupy_the_general_pool(
+    tmp_path,
+    model_work_coordinator,
+) -> None:
+    # Admitted work runs on its own pool, sized to what may be admitted at
+    # once: a GPU job that had to queue for a general worker after admission
+    # would hold the card idle while it waited, and one that took a general
+    # worker would be the head-of-line blocking again by another route.
+    inside = threading.Event()
+    release = threading.Event()
+    cpu_ran = threading.Event()
+
+    def gpu_run(context, value):
+        inside.set()
+        release.wait(5)
+        return {"ok": True}
+
+    def cpu_run(context, value):
+        cpu_ran.set()
+        return {"ok": True}
+
+    manager = _cpu_and_gpu_manager(tmp_path, executor_max_workers=1)
+    _register(
+        manager,
+        BackendJobDefinition(
+            id="track",
+            label="Track subject",
+            run=gpu_run,
+            uses_local_gpu=True,
+        ),
+    )
+    manager.register_owner(
+        OTHER_EXTENSION_ID,
+        "1.0.0",
+        (BackendJobDefinition(id="caption", label="Caption", run=cpu_run),),
+    )
+    try:
+        gpu = await manager.submit(EXTENSION_ID, "track", {})
+        assert await _reach(inside)
+
+        cpu = await manager.submit(OTHER_EXTENSION_ID, "caption", {})
+        settled_cpu = await _drain(
+            manager,
+            cpu.identity.job_id,
+            owner_id=OTHER_EXTENSION_ID,
+            timeout=3.0,
+        )
+        assert settled_cpu.status == "succeeded"
+        assert cpu_ran.is_set()
+
+        release.set()
+        assert (
+            await _drain(manager, gpu.identity.job_id)
+        ).status == "succeeded"
+    finally:
+        release.set()
+        await _close(manager)
+
+
+@pytest.mark.asyncio
+async def test_an_admission_no_worker_can_take_is_released_by_the_caller(
+    tmp_path,
+    model_work_coordinator,
+) -> None:
+    # Ownership passes to the worker callable, so its `finally` is what
+    # releases. If the callable can never run, nobody is left to do it — the
+    # coroutine has to, or the card never comes back.
+    ran = threading.Event()
+
+    def run(context, value):
+        ran.set()
+        return {"ok": True}
+
+    manager = _cpu_and_gpu_manager(tmp_path, executor_max_workers=1)
+    _register(
+        manager,
+        BackendJobDefinition(
+            id="track",
+            label="Track subject",
+            run=run,
+            uses_local_gpu=True,
+        ),
+    )
+    try:
+        # A GPU pool that refuses every submission.
+        manager._gpu_worker_pool().shutdown(wait=True)
+
+        snapshot = await manager.submit(EXTENSION_ID, "track", {})
+        settled = await _drain(manager, snapshot.identity.job_id)
+
+        assert settled.status == "failed"
+        assert not ran.is_set()
+        # Admitted, then handed back: nothing is left holding `local-gpu`.
+        assert _entries(WORK_SOURCE) == []
+        with local_gpu_lease(
+            source="sam2",
+            label="Propagate",
+            owner="sam2-service",
+            fail_fast=True,
+        ):
+            pass
+    finally:
+        await _close(manager)
+
+
+@pytest.mark.asyncio
+async def test_cancelling_before_the_worker_starts_releases_the_admission(
+    tmp_path,
+    model_work_coordinator,
+) -> None:
+    # The other path where the wrapper never runs: the future was still
+    # pending when it was cancelled. A `Future.add_done_callback` would fire
+    # here too — off any worker thread, with the callable never entered — which
+    # is why the release lives in the wrapper and this one case is explicit.
+    ran = threading.Event()
+    occupied = threading.Event()
+    release_pool = threading.Event()
+
+    def run(context, value):
+        ran.set()
+        return {"ok": True}
+
+    manager = _cpu_and_gpu_manager(tmp_path, executor_max_workers=1)
+    _register(
+        manager,
+        BackendJobDefinition(
+            id="track",
+            label="Track subject",
+            run=run,
+            uses_local_gpu=True,
+        ),
+    )
+    try:
+        # Occupy the GPU pool's only thread with something that is not a job,
+        # so an admitted job's submission stays pending.
+        pool = manager._gpu_worker_pool()
+        pool.submit(lambda: (occupied.set(), release_pool.wait(5)))
+        assert await _reach(occupied)
+
+        snapshot = await manager.submit(EXTENSION_ID, "track", {})
+        # Admitted — the entry exists and holds the resource — but pending.
+        deadline = time.monotonic() + 2.0
+        while not _entries(WORK_SOURCE) and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        assert [entry.occupancy for entry in _entries(WORK_SOURCE)] == ["occupied"]
+
+        cancelled = await manager.cancel(EXTENSION_ID, snapshot.identity.job_id)
+        assert cancelled.status == "cancelled"
+        assert not ran.is_set()
+        assert _entries(WORK_SOURCE) == []
+    finally:
+        release_pool.set()
+        await _close(manager)
 
 
 # --------------------------------------------------------------------------

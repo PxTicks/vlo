@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import Executor, ThreadPoolExecutor
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import nullcontext
 from functools import partial
 import inspect
 import json
@@ -22,8 +22,8 @@ from services.jobs.artifacts import (
 )
 from services.model_work import get_model_work_coordinator
 from services.model_work.leases import Lease, LeaseAbandonedError
-from services.model_work.ledger import TerminalVerdict
-from services.model_work.local_inference import local_gpu_lease
+from services.model_work.ledger import LOCAL_GPU_RESOURCE, TerminalVerdict
+from services.model_work.local_inference import hold_local_gpu, reserve_local_gpu
 
 
 DEFAULT_FINISHED_JOB_TTL_SECONDS = 15 * 60
@@ -137,7 +137,8 @@ class BackendJobDefinition:
     #: a job that volunteered for admission would be a job that could forget,
     #: which is the failure this whole seam exists to remove. Only a manager
     #: configured with a ``work_source`` may carry such definitions, and the
-    #: runner must be synchronous: the lease belongs to the worker thread.
+    #: runner must be synchronous: the lease belongs to the worker thread that
+    #: runs the model, even though the *wait* for it happens on the loop.
     uses_local_gpu: bool = False
 
 
@@ -460,10 +461,16 @@ class BackendJobManager:
         self._max_concurrent_jobs_per_owner = max_concurrent_jobs_per_owner
         self._evict_finished_jobs_at_capacity = evict_finished_jobs_at_capacity
         self._owner_semaphores: dict[str, asyncio.Semaphore] = {}
+        self._thread_name_prefix = thread_name_prefix
         self._executor = ThreadPoolExecutor(
             max_workers=executor_max_workers,
             thread_name_prefix=thread_name_prefix,
         )
+        # GPU jobs run on their own pool, created on first use. Two reasons,
+        # and both are about who waits where: an admitted job must not then
+        # queue behind CPU work for a thread, holding the card idle; and CPU
+        # jobs must not queue behind it either. See `_gpu_worker_pool`.
+        self._gpu_executor: ThreadPoolExecutor | None = None
         self._closed = False
 
     @property
@@ -510,7 +517,7 @@ class BackendJobManager:
                 "local GPU"
             )
         if inspect.iscoroutinefunction(definition.run):
-            # The lease is released by the thread that took it, when the
+            # The lease is released by the thread that ran the model, when the
             # physical call returns. An async runner hands its work back to the
             # event loop, so the release would race the model still resident.
             raise BackendJobValidationError(
@@ -788,7 +795,10 @@ class BackendJobManager:
             if self._closed:
                 return
             self._closed = True
+            gpu_executor = self._gpu_executor
         self._executor.shutdown(wait=False, cancel_futures=True)
+        if gpu_executor is not None:
+            gpu_executor.shutdown(wait=False, cancel_futures=True)
 
     async def _run_job(self, record: _BackendJobRecord) -> None:
         identity = record.identity
@@ -864,9 +874,10 @@ class BackendJobManager:
         except (
             asyncio.CancelledError,
             BackendJobCancelledError,
-            # Cancelled while queued for the GPU: the wait was abandoned on
-            # this job's own cancel event, so this is that cancellation
-            # arriving, not a failure of the work.
+            # A runner that waits for the GPU itself, with this job's cancel
+            # event as its stop: abandoning that wait is this job's own
+            # cancellation arriving, not a failure of the work. The manager's
+            # admission wait is cancelled through the task instead.
             LeaseAbandonedError,
         ):
             with self._lock:
@@ -893,8 +904,18 @@ class BackendJobManager:
             with self._lock:
                 self._tasks.pop(identity.job_id, None)
 
-    def _job_admission(self, record: _BackendJobRecord) -> AbstractContextManager:
-        """Hold `local-gpu` for this job's physical execution, or nothing.
+    async def _reserve_gpu(self, record: _BackendJobRecord) -> Lease | None:
+        """Wait for `local-gpu` on the event loop, or `None` for a CPU job.
+
+        The wait used to happen on the worker thread that would go on to run
+        the model, because the lease must belong to that thread. It does not
+        have to *start* there: four queued GPU jobs would fill a four-thread
+        pool and delay an unrelated extension's CPU job, so only the ownership
+        is thread-bound, and it is taken at dispatch instead.
+
+        Cancelling the job cancels the task awaiting this, which drops the
+        waiting entry — a cancelled job leaves the queue rather than keeping
+        its place until it is admitted to work nobody wants any more.
 
         Owner and source come from the manager and the job's identity, never
         from the definition: an extension names its own job, not its place in
@@ -902,17 +923,67 @@ class BackendJobManager:
         """
 
         if not record.definition.uses_local_gpu or self._work_source is None:
-            return nullcontext(None)
+            return None
         identity = record.identity
-        return local_gpu_lease(
+        return await reserve_local_gpu(
             source=self._work_source,
             label=f"{record.definition.label} ({identity.owner_id})",
             owner=identity.owner_id,
             timeout=self._admission_wait_seconds,
-            # Leave the queue when the job is cancelled, rather than waiting
-            # for a GPU nobody is going to use.
-            stop=record.cancel_event,
         )
+
+    def _gpu_worker_pool(self) -> Executor:
+        """The pool admitted GPU jobs run on, sized to what may be admitted.
+
+        Separate from the general pool in both directions. A GPU job that had
+        to queue for a general worker after admission would hold the card idle
+        while it waited; a GPU job on the general pool is the head-of-line
+        blocking that moving the wait off it was meant to remove.
+
+        One thread per concurrently admissible job means admission is never
+        followed by a wait for somewhere to run. The width is a runtime
+        setting, so it is read at first use rather than at construction, and
+        managers that never register a GPU job never spawn the pool.
+        """
+
+        with self._lock:
+            if self._closed:
+                raise BackendJobError("backend job manager is closed")
+            if self._gpu_executor is None:
+                width = get_model_work_coordinator().resource_width(
+                    LOCAL_GPU_RESOURCE
+                )
+                self._gpu_executor = ThreadPoolExecutor(
+                    max_workers=max(1, width),
+                    thread_name_prefix=f"{self._thread_name_prefix}-gpu",
+                )
+            return self._gpu_executor
+
+    def _release_admission(
+        self,
+        record: _BackendJobRecord,
+        lease: Lease | None,
+    ) -> None:
+        """Release a lease no worker callable will ever own.
+
+        Only for the two paths where that callable cannot run at all: the
+        executor refused the submission, or the future was still pending when
+        it was cancelled. Everywhere else the worker's own exit path releases,
+        and this coroutine must keep its hands off — a lease released while the
+        model is still resident is the bug the thread-ownership rule exists to
+        prevent.
+        """
+
+        if lease is None:
+            return
+        self._attach_lease(record, None)
+        entry = lease.entry()
+        verdict: TerminalVerdict = (
+            "cancelled"
+            if entry is not None and entry.job_status == "cancelled"
+            else "failed"
+        )
+        lease.release(verdict)
 
     def _attach_lease(self, record: _BackendJobRecord, lease: Lease | None) -> None:
         with self._lock:
@@ -975,13 +1046,27 @@ class BackendJobManager:
         record: _BackendJobRecord,
         context: BackendJobContext,
     ) -> object:
-        """Start the timeout and running state when a worker actually begins.
+        """Admit here, but let the worker own the lease it runs under.
 
-        For a GPU job, "begins" means *admitted*, not dispatched: the worker
-        thread waits for `local-gpu` while the job is still `queued` and its
-        execution timeout has not started. A job whose timeout ran while it sat
-        in the queue would fail without ever touching the model.
+        Two lifetimes, deliberately different. The *wait* for `local-gpu` is
+        awaited on the loop, so a queued GPU job costs no worker thread. The
+        *ownership* is handed to the physical worker callable and released in
+        its `finally`, which is the one exit path every way of leaving the
+        model call passes through. Releasing from this coroutine instead would
+        hand the GPU over on cancellation or timeout with the model still
+        resident; a `Future.add_done_callback` would not be reliable either,
+        since it runs on the registering thread when the future has already
+        completed, and on a cancelled future runs without the callable having
+        run at all. What this coroutine may still do is mark the entry
+        `stopping` and stop awaiting — see `_settle_ledger`.
+
+        The execution timeout starts when a worker actually begins, not when
+        the job was submitted: a job whose timeout ran while it sat in the
+        queue would fail without ever touching the model.
         """
+
+        lease = await self._reserve_gpu(record)
+        self._attach_lease(record, lease)
 
         loop = asyncio.get_running_loop()
         started = asyncio.Event()
@@ -996,13 +1081,12 @@ class BackendJobManager:
                 marked = True
                 loop.call_soon_threadsafe(started.set)
 
+            # Taking ownership on this thread is also what lets nested local
+            # inference inside the runner pass through instead of deadlocking
+            # against its own exclusive tenant.
+            holder = nullcontext(lease) if lease is None else hold_local_gpu(lease)
             try:
-                # The lease is taken by the physical worker callable, not by the
-                # job record: a timeout or a cancellation makes the record
-                # terminal while this thread may still be inside torch, and the
-                # GPU must stay excluded for that whole window.
-                with self._job_admission(record) as lease:
-                    self._attach_lease(record, lease)
+                with holder:
                     try:
                         try:
                             self._mark_running(record.identity.job_id)
@@ -1026,14 +1110,23 @@ class BackendJobManager:
                             )
                         return result
                     finally:
+                        # Detach before the release below, so the record never
+                        # names a lease the coordinator has already let go.
                         self._attach_lease(record, None)
             finally:
-                # Admission can fail or be abandoned before anything above
-                # runs; without this the awaiting coroutine would never learn
-                # the worker had finished with it.
+                # A job cancelled before execution is refused by
+                # `_mark_running`; without this the awaiting coroutine would
+                # never learn the worker had finished with it.
                 mark_started()
 
-        concurrent_future = self._executor.submit(invoke)
+        try:
+            executor = self._executor if lease is None else self._gpu_worker_pool()
+            concurrent_future = executor.submit(invoke)
+        except BaseException:
+            # No pool, or one that refused the submission: `invoke` will never
+            # run, so nothing else can release.
+            self._release_admission(record, lease)
+            raise
         future = asyncio.wrap_future(concurrent_future)
         future.add_done_callback(_consume_future_exception)
         try:
@@ -1050,7 +1143,11 @@ class BackendJobManager:
                 timeout=record.definition.timeout_seconds,
             )
         except asyncio.CancelledError:
-            concurrent_future.cancel()
+            if concurrent_future.cancel():
+                # Cancelled while still pending: the wrapper never ran and
+                # never will, so this is the one cancellation path that has to
+                # release. A running worker keeps its lease, by design.
+                self._release_admission(record, lease)
             raise
 
     def _mark_running(self, job_id: str) -> None:

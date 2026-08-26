@@ -23,6 +23,14 @@ interface BaseTextInputProps {
   type?: React.InputHTMLAttributes<HTMLInputElement>["type"];
   inputProps?: Record<string, unknown>;
   commitComparison?: CommitComparisonMode;
+  /**
+   * When set, typing commits on its own after this idle delay instead of
+   * waiting for blur. Gated controls (e.g. a Generate button that reads the
+   * committed value) would otherwise stay disabled while the user is still in
+   * the field, with no blur to un-stick them — a disabled button never takes
+   * focus, so clicking it does not commit either.
+   */
+  commitDebounceMs?: number;
   sx?: SxProps<Theme>; // To allow custom styling
 }
 
@@ -53,29 +61,53 @@ function TextInputComponent({
   type,
   inputProps,
   commitComparison = "prop",
+  commitDebounceMs,
   sx,
 }: TextInputProps) {
   const [localValue, setLocalValue] = useState<string>(value);
   const lastCommittedValueRef = useRef(value);
+  const localValueRef = useRef(value);
+  const valuePropRef = useRef(value);
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelPendingCommit = () => {
+    if (commitTimerRef.current !== null) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
-    // The buffered input must reset when the upstream committed value changes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLocalValue(value);
+    valuePropRef.current = value;
+    // A debounced commit echoes back as a prop change. Resetting on that echo
+    // would discard whatever the user typed while it was in flight, so only an
+    // upstream value we did not just commit takes the field over.
+    if (value === lastCommittedValueRef.current) {
+      return;
+    }
+    cancelPendingCommit();
+    localValueRef.current = value;
     lastCommittedValueRef.current = value;
+    // The buffered input must reset when the upstream committed value changes.
+    setLocalValue(value);
   }, [value]);
 
-  const commit = () => {
+  useEffect(() => cancelPendingCommit, []);
+
+  const commitValue = (nextValue: string) => {
     const comparisonValue =
       commitComparison === "lastCommitted"
         ? lastCommittedValueRef.current
-        : value;
-    if (localValue !== comparisonValue) {
-      if (commitComparison === "lastCommitted") {
-        lastCommittedValueRef.current = localValue;
-      }
-      onCommit(localValue);
+        : valuePropRef.current;
+    if (nextValue !== comparisonValue) {
+      lastCommittedValueRef.current = nextValue;
+      onCommit(nextValue);
     }
+  };
+
+  const commit = () => {
+    cancelPendingCommit();
+    commitValue(localValueRef.current);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -97,7 +129,16 @@ function TextInputComponent({
       onChange={(e) => {
         const nextValue = e.target.value;
         setLocalValue(nextValue);
+        localValueRef.current = nextValue;
         onPreview?.(nextValue);
+        if (commitDebounceMs === undefined) {
+          return;
+        }
+        cancelPendingCommit();
+        commitTimerRef.current = setTimeout(() => {
+          commitTimerRef.current = null;
+          commitValue(localValueRef.current);
+        }, commitDebounceMs);
       }}
       onBlur={() => {
         commit();

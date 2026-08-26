@@ -814,6 +814,14 @@ function buildRenderableSections(
     });
 }
 
+/**
+ * Prompt boxes gate the Generate button: a workflow can require the text input
+ * before submission is allowed. Committing only on blur left the button grey
+ * while the caret was still in the box, and clicking the disabled button moves
+ * no focus, so it never un-stuck itself. Commit on a short typing pause too.
+ */
+const PROMPT_COMMIT_DEBOUNCE_MS = 250;
+
 interface TextInputSectionProps {
   input: WorkflowInput;
   bgColor: string;
@@ -839,6 +847,7 @@ function TextInputSection({
       <CommittedTextInput
         initialValue={value}
         onCommit={(nextValue) => onCommit(commitInputId, nextValue)}
+        commitDebounceMs={PROMPT_COMMIT_DEBOUNCE_MS}
         multiline={true}
         minRows={6}
         maxRows={20}
@@ -1448,6 +1457,7 @@ function WidgetRow({
           onCommit={(nextValue) => {
             onWidgetChange(widget.nodeId, widget.param, nextValue);
           }}
+          commitDebounceMs={PROMPT_COMMIT_DEBOUNCE_MS}
           multiline={true}
           minRows={6}
           maxRows={20}

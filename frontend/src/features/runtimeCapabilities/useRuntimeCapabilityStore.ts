@@ -1,14 +1,18 @@
 import { create } from "zustand";
 import {
+  cancelRuntimeCapabilityInstall,
   getRuntimeCapabilities,
   getRuntimeCapability,
+  getRuntimeCapabilityInstall,
   getRuntimeCapabilityProbe,
+  startRuntimeCapabilityInstall,
   startRuntimeCapabilityProbe,
 } from "../../services/runtimeApi";
 import type {
   RuntimeCapability,
   RuntimeEnvironmentSnapshot,
 } from "../../types/RuntimeStatus";
+import { useBackendRestartStore } from "./useBackendRestartStore";
 
 /**
  * Whether the store has an answer yet — distinct from what the answer is.
@@ -47,6 +51,25 @@ const CANCELLED: CapabilityOperationOutcome = Object.freeze({
   error: null,
 });
 
+/**
+ * An install, as the surface that started it needs to see it.
+ *
+ * The log is kept because it is the only honest progress an install has, and
+ * because a failed install is unreadable without it — "exited with status 1"
+ * is not a reason. It survives the job finishing so the user can still read
+ * what happened.
+ */
+export interface CapabilityInstallProgress {
+  jobId: string | null;
+  status: "starting" | "running" | "succeeded" | "failed" | "cancelled";
+  message: string;
+  log: string[];
+  error: string | null;
+}
+
+/** Longest install log kept per capability. The backend caps its own at 100. */
+const MAX_INSTALL_LOG_LINES = 200;
+
 export interface RuntimeCapabilityStoreState {
   status: RuntimeCapabilityFetchStatus;
   capabilities: Record<string, RuntimeCapability>;
@@ -57,6 +80,10 @@ export interface RuntimeCapabilityStoreState {
   refreshing: string[];
   /** Ids with an explicit model-load job queued or running. */
   testing: string[];
+  /** Ids with an install job queued or running. */
+  installing: string[];
+  /** The last install attempt per capability, running or finished. */
+  installs: Record<string, CapabilityInstallProgress>;
   /** Fetch once. Concurrent callers join the in-flight request. */
   ensureLoaded: () => Promise<void>;
   /** Drop the backend's probe cache and re-run every check. */
@@ -65,6 +92,15 @@ export interface RuntimeCapabilityStoreState {
   refreshCapability: (capabilityId: string) => Promise<CapabilityOperationOutcome>;
   /** Queue and follow an explicit runtime load test. Callers join one run. */
   testCapability: (capabilityId: string) => Promise<CapabilityOperationOutcome>;
+  /**
+   * Run this capability's install command and follow it to a terminal state.
+   *
+   * The command is not a parameter and never could be: the request carries a
+   * capability id, and the backend derives what to run from its own tables.
+   */
+  installCapability: (capabilityId: string) => Promise<CapabilityOperationOutcome>;
+  /** Ask the backend to stop an install. Concurrent callers join the same run. */
+  cancelInstall: (capabilityId: string) => Promise<void>;
   /**
    * Stop following one capability's load test, without cancelling the backend
    * job. For an owner going away — a deactivating extension — while other
@@ -97,6 +133,9 @@ function messageFor(error: unknown, fallback: string): string {
 }
 
 const MAX_PROBE_POLLS = 2_400;
+
+/** 45 minutes at one poll every 500ms — the backend's own install ceiling. */
+const MAX_INSTALL_POLLS = 5_400;
 
 function waitForPoll(signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -134,6 +173,7 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
     // second caller joins the work rather than being told nothing happened.
     const refreshes = new Map<string, Promise<CapabilityOperationOutcome>>();
     const tests = new Map<string, Promise<CapabilityOperationOutcome>>();
+    const installs = new Map<string, Promise<CapabilityOperationOutcome>>();
 
     // Every fetch that mutates the store runs through this chain. A full
     // refresh and a per-card recheck both invalidate the backend's shared
@@ -142,6 +182,28 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
     let queue: Promise<unknown> = Promise.resolve();
     let probeGeneration = 0;
     const probeControllers = new Map<string, AbortController>();
+
+    const installControllers = new Map<string, AbortController>();
+    // The job id is remembered outside the store's per-capability record so a
+    // cancel can reach the backend even while the poll response that would
+    // have updated that record is still in flight.
+    const installJobIds = new Map<string, string>();
+    // Capabilities the user cancelled before their job id came back. Aborting
+    // the POST would not undo a request the backend has already accepted — it
+    // would only stop us hearing which job to cancel — so the intent is held
+    // here and spent the moment the id lands.
+    const pendingInstallCancels = new Set<string>();
+
+    async function cancelInstallJob(
+      capabilityId: string,
+      jobId: string,
+    ): Promise<void> {
+      try {
+        await cancelRuntimeCapabilityInstall(capabilityId, jobId);
+      } catch (error) {
+        set({ error: messageFor(error, `Failed to cancel ${capabilityId}`) });
+      }
+    }
 
     function cancelProbePolling() {
       probeGeneration += 1;
@@ -244,6 +306,168 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
       }
     }
 
+    function patchInstall(
+      capabilityId: string,
+      patch: Partial<CapabilityInstallProgress>,
+    ) {
+      set((state) => {
+        const current = state.installs[capabilityId] ?? {
+          jobId: null,
+          status: "starting" as const,
+          message: "",
+          log: [],
+          error: null,
+        };
+        return {
+          installs: {
+            ...state.installs,
+            [capabilityId]: { ...current, ...patch },
+          },
+        };
+      });
+    }
+
+    function appendInstallLog(capabilityId: string, lines: string[]) {
+      if (lines.length === 0) return;
+      set((state) => {
+        const current = state.installs[capabilityId];
+        if (!current) return {};
+        const log = [...current.log, ...lines];
+        return {
+          installs: {
+            ...state.installs,
+            [capabilityId]: {
+              ...current,
+              // Bounded: an install of torch prints thousands of lines, and
+              // the panel only ever shows the end of them.
+              log: log.slice(-MAX_INSTALL_LOG_LINES),
+            },
+          },
+        };
+      });
+    }
+
+    /**
+     * One install, start to terminal state.
+     *
+     * The polling is the same shape as a load test's, with one difference that
+     * matters: cancelling here stops the *backend* job, because an installer
+     * left running would keep writing to the environment the user just decided
+     * against.
+     */
+    async function runInstall(
+      capabilityId: string,
+    ): Promise<CapabilityOperationOutcome> {
+      const controller = new AbortController();
+      installControllers.set(capabilityId, controller);
+      set((state) => ({
+        installing: [...state.installing, capabilityId],
+        installs: {
+          ...state.installs,
+          [capabilityId]: {
+            jobId: null,
+            status: "starting",
+            message: "Starting the install…",
+            log: [],
+            error: null,
+          },
+        },
+        error: null,
+      }));
+
+      let jobId: string | null = null;
+      try {
+        const started = await startRuntimeCapabilityInstall(capabilityId, {
+          signal: controller.signal,
+        });
+        jobId = started.jobId;
+        installJobIds.set(capabilityId, jobId);
+        patchInstall(capabilityId, { jobId, status: "running" });
+        if (pendingInstallCancels.delete(capabilityId)) {
+          // Cancelled while the submission was in flight. The installer is
+          // running by now, so this is the first moment it can be stopped.
+          await cancelInstallJob(capabilityId, jobId);
+        }
+
+        let job = await getRuntimeCapabilityInstall(capabilityId, jobId);
+        let seen = 0;
+        let polls = 0;
+        const drain = () => {
+          const lines = job.diagnostics.slice(seen).map((entry) => entry.message);
+          seen = job.diagnostics.length;
+          appendInstallLog(capabilityId, lines);
+          patchInstall(capabilityId, { message: job.message });
+        };
+        drain();
+        while (job.status === "queued" || job.status === "running") {
+          if (polls >= MAX_INSTALL_POLLS) {
+            throw new Error("The install did not finish within 45 minutes");
+          }
+          polls += 1;
+          await waitForPoll(controller.signal);
+          job = await getRuntimeCapabilityInstall(capabilityId, jobId);
+          drain();
+        }
+
+        if (job.status === "cancelled") {
+          patchInstall(capabilityId, {
+            status: "cancelled",
+            message: "Install cancelled",
+          });
+          return CANCELLED;
+        }
+
+        if (job.status !== "succeeded") {
+          const message = job.error ?? "The install failed";
+          patchInstall(capabilityId, { status: "failed", error: message });
+          set({ error: message });
+          return { status: "failed", error: message };
+        }
+
+        patchInstall(capabilityId, {
+          status: "succeeded",
+          message: job.result?.summary ?? "Installed",
+          error: null,
+        });
+
+        // Read the capability back rather than assuming: the backend dropped
+        // its probe cache when the install finished, so this is the first
+        // answer that describes the environment as it now is — including
+        // whether a restart is what is left to do.
+        const payload = await serialize(() =>
+          getRuntimeCapability(capabilityId),
+        );
+        set((state) => ({
+          status: "ready",
+          capabilities: {
+            ...state.capabilities,
+            [payload.capability.id]: payload.capability,
+          },
+          environment: payload.environment,
+        }));
+        void useBackendRestartStore.getState().refresh();
+        return SUCCEEDED;
+      } catch (error) {
+        if (isAbortError(error)) {
+          patchInstall(capabilityId, { status: "cancelled" });
+          return CANCELLED;
+        }
+        const message = messageFor(error, `Failed to install ${capabilityId}`);
+        patchInstall(capabilityId, { status: "failed", error: message });
+        set({ error: message });
+        return { status: "failed", error: message };
+      } finally {
+        if (installControllers.get(capabilityId) === controller) {
+          installControllers.delete(capabilityId);
+        }
+        installJobIds.delete(capabilityId);
+        pendingInstallCancels.delete(capabilityId);
+        set((state) => ({
+          installing: state.installing.filter((id) => id !== capabilityId),
+        }));
+      }
+    }
+
     async function load(refresh: boolean): Promise<void> {
       try {
         const payload = await getRuntimeCapabilities({ refresh });
@@ -268,6 +492,8 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
       error: null,
       refreshing: [],
       testing: [],
+      installing: [],
+      installs: {},
 
       ensureLoaded: async () => {
         const { status } = get();
@@ -358,6 +584,33 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
         return running;
       },
 
+      installCapability: async (capabilityId) => {
+        const inFlight = installs.get(capabilityId);
+        if (inFlight) return inFlight;
+        const running = runInstall(capabilityId).finally(() => {
+          if (installs.get(capabilityId) === running) {
+            installs.delete(capabilityId);
+          }
+        });
+        installs.set(capabilityId, running);
+        return running;
+      },
+
+      cancelInstall: async (capabilityId) => {
+        const jobId = installJobIds.get(capabilityId);
+        if (jobId !== undefined) {
+          await cancelInstallJob(capabilityId, jobId);
+          return;
+        }
+        // No job id yet. The submission may already have been accepted, so
+        // abandoning the request here would report a cancellation while the
+        // installer kept writing packages. Record the intent instead; the
+        // submission spends it the moment it knows what to cancel.
+        if (!installControllers.has(capabilityId)) return;
+        pendingInstallCancels.add(capabilityId);
+        patchInstall(capabilityId, { message: "Cancelling…" });
+      },
+
       cancelTest: (capabilityId) => {
         const controller = probeControllers.get(capabilityId);
         if (controller === undefined) return;
@@ -375,9 +628,16 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
 
       reset: () => {
         cancelProbePolling();
+        for (const controller of installControllers.values()) {
+          controller.abort();
+        }
+        installControllers.clear();
+        installJobIds.clear();
+        pendingInstallCancels.clear();
         inFlightLoad = null;
         refreshes.clear();
         tests.clear();
+        installs.clear();
         queue = Promise.resolve();
         set({
           status: "idle",
@@ -386,6 +646,8 @@ export const useRuntimeCapabilityStore = create<RuntimeCapabilityStoreState>(
           error: null,
           refreshing: [],
           testing: [],
+          installing: [],
+          installs: {},
         });
       },
     };

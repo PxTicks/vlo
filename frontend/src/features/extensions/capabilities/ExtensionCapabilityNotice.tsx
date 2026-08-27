@@ -39,6 +39,7 @@ export function ExtensionCapabilityNotice({
 
   return (
     <CapabilityFailureNotice
+      capabilityId={capabilityId}
       capabilityLabel={capability?.label ?? capabilityId}
       failure={failure}
       lastFailure={capability?.lastFailure ?? null}

@@ -26,6 +26,7 @@ from routers.beats import router as beats_router
 from routers.downloads import router as downloads_router
 from routers.generation_delivery import router as generation_delivery_router
 from routers.runtime_capabilities import router as runtime_capabilities_router
+from routers.app_lifecycle import router as app_lifecycle_router
 from routers.app_settings import (
     build_public_settings_payload,
     router as app_settings_router,
@@ -43,6 +44,9 @@ from services.comfyui.comfyui_client import (
     get_http_client,
 )
 from services.hardware import detect_local_vram, detect_vram_from_system_stats
+from services.ai_models.capabilities.install_jobs import (
+    shutdown_runtime_capability_install_jobs,
+)
 from services.ai_models.capabilities.load_probes import (
     shutdown_runtime_capability_probe_jobs,
 )
@@ -115,12 +119,15 @@ async def application_lifespan(application: FastAPI):
             await shutdown_runtime_capability_probe_jobs()
         finally:
             try:
-                await sam_audio_service.shutdown_jobs()
+                await shutdown_runtime_capability_install_jobs()
             finally:
                 try:
-                    await runtime.stop()
+                    await sam_audio_service.shutdown_jobs()
                 finally:
-                    await close_http_client()
+                    try:
+                        await runtime.stop()
+                    finally:
+                        await close_http_client()
 
 
 app = FastAPI(lifespan=application_lifespan)
@@ -135,6 +142,7 @@ app.include_router(generation_delivery_router)
 app.include_router(extensions_router)
 app.include_router(app_settings_router)
 app.include_router(runtime_capabilities_router)
+app.include_router(app_lifecycle_router)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent

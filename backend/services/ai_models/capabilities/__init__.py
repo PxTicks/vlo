@@ -64,6 +64,14 @@ from .environment_checks import (
     capability_install_remediation,
     package_install_remediation,
 )
+from .installs import (
+    InstallPlan,
+    capability_requires_restart,
+    describe_install,
+    failing_package_modules,
+    install_plan_for_capability,
+    restart_reason_id,
+)
 from .failures import (
     DURABLE_FAILURE_CODES,
     ClassifiedFailure,
@@ -246,6 +254,25 @@ def invalidate_capability_cache(capability_id: str | None = None) -> None:
     invalidate_probe_cache(ENVIRONMENT_PROBE_KEY)
 
 
+def capability_json(capability: Capability) -> dict[str, Any]:
+    """One capability, serialised with what the app can *do* about it.
+
+    :meth:`Capability.to_json` describes the capability itself and stays that
+    way: the contract is pure data, and neither of the two fields added here is
+    a property of the capability. ``install`` depends on which installer this
+    machine has, and ``restartRequired`` on what this process has done since it
+    started — both are answers about the host, so they are attached where the
+    host serialises, not where the provider reports.
+    """
+
+    payload = capability.to_json()
+    install = describe_install(capability)
+    if install is not None:
+        payload["install"] = install
+    payload["restartRequired"] = capability_requires_restart(capability.id)
+    return payload
+
+
 def capabilities_payload(*, refresh: bool = False) -> dict[str, Any]:
     """The full cheap-stage response: every capability plus the environment.
 
@@ -256,7 +283,7 @@ def capabilities_payload(*, refresh: bool = False) -> dict[str, Any]:
 
     capabilities = list_capabilities(refresh=refresh)
     return {
-        "capabilities": [capability.to_json() for capability in capabilities],
+        "capabilities": [capability_json(capability) for capability in capabilities],
         # ``list_capabilities`` has already invalidated and re-run the probes,
         # so this reads the warm cache rather than spawning another round.
         "environment": describe_environment(),
@@ -280,7 +307,7 @@ def capability_payload(
     if capability is None:
         return None
     return {
-        "capability": capability.to_json(),
+        "capability": capability_json(capability),
         "environment": describe_environment(),
     }
 
@@ -312,6 +339,7 @@ __all__ = [
     "FailureCode",
     "FailureRecord",
     "FromConfig",
+    "InstallPlan",
     "LazyRuntime",
     "PackageSpec",
     "Remediation",
@@ -323,7 +351,9 @@ __all__ = [
     "build_environment_checks",
     "capabilities_payload",
     "capability_install_remediation",
+    "capability_json",
     "capability_payload",
+    "capability_requires_restart",
     "capability_was_requested",
     "classify_exception",
     "clear_failures",
@@ -333,14 +363,17 @@ __all__ = [
     "descriptors",
     "evaluated_stages",
     "describe_environment",
+    "describe_install",
     "describe_profiles",
     "expand_profile_ids",
+    "failing_package_modules",
     "get_capability",
     "get_descriptor",
     "get_last_failure",
     "get_profile",
     "get_provider",
     "install_command",
+    "install_plan_for_capability",
     "install_remediation",
     "invalidate_capability_cache",
     "invalidate_install_marker_cache",
@@ -357,6 +390,7 @@ __all__ = [
     "record_failure",
     "record_load_failures",
     "reset_lazy_runtimes",
+    "restart_reason_id",
     "sanitize_message",
     "sanitize_url",
     "unregister_descriptor",

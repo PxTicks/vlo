@@ -267,6 +267,23 @@ def uv_on_path(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
+def no_inprocess_restart(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make it impossible for the suite to re-exec itself.
+
+    ``request_restart`` schedules ``os.execv`` on a timer. A test that reaches
+    it — through the route, or through a stale patch of a guard that no longer
+    gates it — does not fail: it *restarts pytest*, mid-run, and takes the
+    evidence with the old process. This is not a mock of the behaviour under
+    test; it is the same off-switch a deployment uses, so a test that genuinely
+    wants the scheduling path has to remove it by name and say why.
+    """
+
+    from services.app_lifecycle import restart as restart_module
+
+    monkeypatch.setenv(restart_module.DISABLE_ENV_VAR, "1")
+
+
+@pytest.fixture(autouse=True)
 def isolated_install_marker(monkeypatch: pytest.MonkeyPatch, tmp_path_factory):
     """Hide the developer's own installer marker from every test.
 

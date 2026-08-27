@@ -1,8 +1,10 @@
 import { API_BASE_URL } from "../config";
 import type {
+  BackendLifecycleState,
   ComfyuiInstallVerification,
   RuntimeCapabilitiesPayload,
   RuntimeCapabilityPayload,
+  RuntimeCapabilityInstallJob,
   RuntimeCapabilityProbeJob,
   RuntimeSettingsPatch,
   RuntimeSettingsPayload,
@@ -186,6 +188,92 @@ export async function getRuntimeCapabilityProbe(
     throw new Error(await parseErrorMessage(response));
   }
   return (await response.json()) as RuntimeCapabilityProbeJob;
+}
+
+/**
+ * Ask the backend to install this capability.
+ *
+ * Deliberately nothing but an id: the command is derived on the backend from
+ * the capability's own descriptor, so there is no way for a client — or
+ * anything that can reach one — to name what gets installed.
+ */
+export async function startRuntimeCapabilityInstall(
+  capabilityId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<{ jobId: string }> {
+  const response = await fetch(
+    `${CAPABILITIES_PATH}/${encodeURIComponent(capabilityId)}/install`,
+    { method: "POST", signal: options.signal },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as { jobId: string };
+}
+
+export async function getRuntimeCapabilityInstall(
+  capabilityId: string,
+  jobId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<RuntimeCapabilityInstallJob> {
+  const response = await fetch(
+    `${CAPABILITIES_PATH}/${encodeURIComponent(capabilityId)}/install/${encodeURIComponent(jobId)}`,
+    { signal: options.signal },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as RuntimeCapabilityInstallJob;
+}
+
+export async function cancelRuntimeCapabilityInstall(
+  capabilityId: string,
+  jobId: string,
+): Promise<RuntimeCapabilityInstallJob> {
+  const response = await fetch(
+    `${CAPABILITIES_PATH}/${encodeURIComponent(capabilityId)}/install/${encodeURIComponent(jobId)}/cancel`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as RuntimeCapabilityInstallJob;
+}
+
+export async function getBackendLifecycle(
+  options: { signal?: AbortSignal } = {},
+): Promise<BackendLifecycleState> {
+  const response = await fetch(`${APP_API}/lifecycle`, {
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as BackendLifecycleState;
+}
+
+/**
+ * Restart the backend.
+ *
+ * Resolves when the restart has been *scheduled*: the process replaces itself
+ * a moment later, so the response to this request is the last thing the old
+ * process says. Whether it worked is answered by polling
+ * {@link getBackendLifecycle} for a new `instanceId`.
+ */
+export async function restartBackend(
+  options: { force?: boolean } = {},
+): Promise<{ restarting: boolean; instanceId: string }> {
+  const response = await fetch(
+    `${APP_API}/lifecycle/restart${options.force ? "?force=true" : ""}`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as {
+    restarting: boolean;
+    instanceId: string;
+  };
 }
 
 export async function downloadRuntimeDiagnostics(): Promise<Blob> {

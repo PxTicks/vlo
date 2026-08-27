@@ -27,6 +27,24 @@ export function isModelProblem(
 }
 
 /**
+ * Can installing packages fix this?
+ *
+ * The mirror of {@link isModelProblem}, and the same discipline: an install
+ * command is offered for the failures an install repairs, and for no others.
+ * Re-running `uv pip install` does nothing for an unsupported Python, an
+ * unwritable cache, or a model that failed to load once it was in memory.
+ */
+export function isInstallProblem(
+  code: CapabilityFailureCode | null | undefined,
+): boolean {
+  return (
+    code === "package_missing" ||
+    code === "package_import_failed" ||
+    code === "dependency_incompatible"
+  );
+}
+
+/**
  * A short phrase naming the cause, for places with one line to spend: a
  * status caption, a queue notification ("SAM-Audio unavailable: Python
  * package not installed").

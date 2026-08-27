@@ -139,6 +139,7 @@ export function RuntimeCapabilityCard({
         </Typography>
 
         <CapabilityFailureNotice
+          capabilityId={capability.id}
           capabilityLabel={capability.label}
           failure={failure}
           lastFailure={capability.lastFailure}

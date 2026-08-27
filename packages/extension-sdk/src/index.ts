@@ -352,6 +352,13 @@ export interface ExtensionCapabilityNoticeProps {
  * It reads the capability itself and renders nothing when there is nothing
  * wrong, so it can sit unconditionally above a feature's controls.
  *
+ * For a missing or broken Python package it offers to *run* the install, not
+ * only print it — built from the `install_target` your descriptor declared,
+ * shown in full before it runs, and followed by a prompt to restart the
+ * backend. Nothing about the command comes from this component or from your
+ * extension's UI: the host derives it from your registered descriptor, so what
+ * you declared at registration is the whole of what can be installed.
+ *
  * Render it through the host's React, which is what your components are built
  * with anyway:
  *

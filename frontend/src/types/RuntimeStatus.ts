@@ -162,6 +162,28 @@ export interface CapabilityCheck {
   remediation?: CapabilityRemediation;
 }
 
+/**
+ * The install this capability's missing packages can be repaired with.
+ *
+ * Present only when the backend can actually run one: it is absent, never
+ * `available: false`, because a card with nothing to run and a card whose
+ * install cannot run here should render identically — no button.
+ *
+ * `command` is what will run, rendered from the argument vector itself. The
+ * client never sends it back: an install is requested by capability id, and
+ * the backend rebuilds the command from its own tables.
+ */
+export interface CapabilityInstall {
+  available: true;
+  summary: string;
+  command: string;
+  /** Which installer drives the command. `pip` is the no-`uv` fallback. */
+  tool: "uv" | "pip";
+  /** The installer profile this installs, or null for a bare package target. */
+  profileId: string | null;
+  requiresRestart: boolean;
+}
+
 export interface CapabilityDevice {
   requested: string;
   resolved: string | null;
@@ -193,6 +215,18 @@ export interface RuntimeCapability {
   lastFailure: CapabilityFailureRecord | null;
   /** Present after this backend process has loaded the runtime successfully. */
   lastSuccessfulLoad?: string | null;
+  /** How the app can install this, when it can. See {@link CapabilityInstall}. */
+  install?: CapabilityInstall;
+  /**
+   * Something was installed for this capability *after* the backend started.
+   *
+   * The checks may well pass now — they run out of process, and read the disk
+   * this install just wrote — while the process serving them still holds the
+   * imports it resolved at startup. So this is reported separately rather than
+   * folded into `state`: the environment is fixed, and the running process is
+   * the part that is out of date.
+   */
+  restartRequired?: boolean;
 }
 
 export type RuntimeCapabilityProbeStatus =
@@ -214,6 +248,71 @@ export interface RuntimeCapabilityProbeJob {
     loaded: boolean;
     details: Record<string, unknown>;
   };
+}
+
+/** One line the installer printed, as the job manager recorded it. */
+export interface RuntimeJobDiagnostic {
+  level: "debug" | "info" | "warning" | "error";
+  message: string;
+  timestamp: number;
+}
+
+/**
+ * An install job in flight.
+ *
+ * The log is the progress: an installer spends an unknowable amount of time
+ * resolving and then downloads an unknowable number of megabytes, so
+ * `progress` only ever means "still going" and `diagnostics` is what the panel
+ * actually shows.
+ */
+export interface RuntimeCapabilityInstallJob {
+  jobId: string;
+  jobType: string;
+  status: RuntimeCapabilityProbeStatus;
+  progress: number;
+  message: string;
+  cancelRequested?: boolean;
+  error?: string;
+  diagnostics: RuntimeJobDiagnostic[];
+  result?: {
+    capabilityId: string;
+    installed: boolean;
+    command: string;
+    summary: string;
+    requiresRestart: boolean;
+  };
+}
+
+/** Why the backend is waiting to be restarted. */
+export interface BackendRestartReason {
+  id: string;
+  label: string;
+  summary: string;
+  notedAt: string;
+}
+
+/**
+ * The restart poll.
+ *
+ * `instanceId` is the whole mechanism a client uses to know a restart finished:
+ * it changes exactly once, when a genuinely new process answers. A response
+ * carrying the old id came from the process that has not gone yet.
+ */
+export interface BackendLifecycleState {
+  instanceId: string;
+  restartRequired: boolean;
+  reasons: BackendRestartReason[];
+  /**
+   * False where nothing can re-exec: a container, a frozen build, a service,
+   * or — the case that looks like it should work and does not — a process
+   * supervised by `uvicorn --reload` or `--workers`, where the port belongs to
+   * the parent.
+   */
+  restartSupported: boolean;
+  /** Why, in the backend's own words. Null when a restart is supported. */
+  restartUnsupportedReason?: string | null;
+  /** Set while a restart would destroy work in flight. */
+  blockedReason: string | null;
 }
 
 export interface RuntimeEnvironmentSnapshot {

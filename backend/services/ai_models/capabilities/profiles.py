@@ -426,15 +426,29 @@ def backend_python() -> str:
     ``sys.executable`` empty.
     """
 
+    return _project_relative(backend_python_executable())
+
+
+def backend_python_executable() -> str:
+    """The same interpreter as :func:`backend_python`, as a runnable path.
+
+    :func:`backend_python` shortens the path for display, which is exactly
+    wrong for ``argv``: a project-relative path only resolves for a process
+    whose working directory happens to be the repository root, and the install
+    runner's is not guaranteed to be. Both answers come from here so the
+    command the user is shown and the command that runs cannot name different
+    interpreters.
+    """
+
     executable = sys.executable
     if executable and Path(executable).is_file():
-        return _project_relative(executable)
+        return executable
 
     venv = BACKEND_ROOT / ".venv"
     candidate = (
         venv / "Scripts" / "python.exe" if os.name == "nt" else venv / "bin" / "python"
     )
-    return _project_relative(candidate)
+    return str(candidate)
 
 
 def _find_on_path(name: str) -> str | None:
@@ -459,13 +473,17 @@ def _uv_bootstrap_candidates() -> tuple[Path, ...]:
     )
 
 
-def uv_command() -> str | None:
-    """How to invoke ``uv``, or ``None`` when it cannot be found.
+def uv_executable() -> str | None:
+    """How to invoke ``uv``, unquoted, or ``None`` when it cannot be found.
 
     ``uv`` on ``PATH`` wins, so the documented command stays the short one. The
     installer's recorded absolute path is the fallback, because it bootstraps
     ``uv`` into ``~/.local/bin`` without modifying the shell profile — the exact
     case where the short command would fail.
+
+    This is the form ``argv`` needs: quoting is a shell concern, and a
+    ``subprocess`` argument list that contains one would look for a binary
+    whose name really does begin with a quote.
     """
 
     if _find_on_path("uv"):
@@ -473,13 +491,20 @@ def uv_command() -> str | None:
 
     recorded = read_install_marker().uv_path
     if recorded and Path(recorded).is_file() and os.access(recorded, os.X_OK):
-        return _quote(recorded)
+        return recorded
 
     for candidate in _uv_bootstrap_candidates():
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            return _quote(str(candidate))
+            return str(candidate)
 
     return None
+
+
+def uv_command() -> str | None:
+    """:func:`uv_executable`, quoted for a command line the user can paste."""
+
+    executable = uv_executable()
+    return None if executable is None else _quote(executable)
 
 
 def install_command(profile: CapabilityProfile, *, uv: str | None) -> str | None:
@@ -673,6 +698,87 @@ def write_install_marker(
             if profile_id in _PROFILES_BY_ID
         },
     }
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    invalidate_install_marker_cache()
+    return target
+
+
+def record_profile_install(
+    profile_id: str,
+    *,
+    status: str,
+    detail: str | None = None,
+    installer: str = "vlo",
+    path: Path | None = None,
+) -> Path | None:
+    """Record one profile's outcome without disturbing the others.
+
+    :func:`write_install_marker` is the installer's whole-run write: it states
+    what one invocation was asked for, and everything it does not mention is
+    gone. An install started from inside the app knows about exactly one
+    profile, so it merges instead — otherwise installing SAM-Audio from the
+    diagnostics panel would erase the record of the SAM2 step that failed
+    during installation, which is the one thing the marker exists to remember.
+
+    Only profiles that install something are recorded. ``None`` comes back when
+    there is nothing to write, which is the ordinary case for a package target
+    no profile covers.
+    """
+
+    profile = _PROFILES_BY_ID.get(profile_id)
+    if profile is None or profile.requirements is None:
+        return None
+
+    target = path or PROFILE_MARKER_PATH
+    try:
+        existing = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        existing = None
+    payload: dict[str, Any] = existing if isinstance(existing, dict) else {}
+
+    # A marker written as a list of records reads back the same way, but only
+    # the mapping form can be merged by id, so normalise on the way in.
+    raw_profiles = payload.get("profiles")
+    profiles: dict[str, Any] = {}
+    if isinstance(raw_profiles, dict):
+        profiles = {
+            str(key): value
+            for key, value in raw_profiles.items()
+            if isinstance(value, dict)
+        }
+    elif isinstance(raw_profiles, list):
+        profiles = {
+            str(entry["id"]): {
+                key: value for key, value in entry.items() if key != "id"
+            }
+            for entry in raw_profiles
+            if isinstance(entry, dict) and entry.get("id")
+        }
+
+    now = iso_timestamp(utc_now())
+    record: dict[str, Any] = {
+        "status": status,
+        "requested": True,
+        "recordedAt": now,
+    }
+    if detail:
+        record["detail"] = detail
+    profiles[profile.id] = record
+
+    payload.update(
+        {
+            "version": 1,
+            "recordedAt": now,
+            "installer": installer,
+            "profiles": profiles,
+        }
+    )
+    payload.setdefault("uv", uv_executable())
+    payload.setdefault("python", backend_python_executable())
+
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

@@ -9,6 +9,7 @@ import {
 } from "@mui/material";
 import type { ClipMaskPoint } from "../../../types/TimelineTypes";
 import type { CapabilityCheck } from "../../../types/RuntimeStatus";
+import { RUNTIME_CAPABILITY_IDS } from "../../../types/RuntimeStatus";
 import {
   CapabilityFailureNotice,
   isModelProblem,
@@ -178,6 +179,7 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
         {showFailureNotice ? (
           <Box sx={{ mb: 1.5 }}>
             <CapabilityFailureNotice
+              capabilityId={RUNTIME_CAPABILITY_IDS.sam2}
               capabilityLabel="SAM2"
               failure={sam2AvailabilityFailure}
               fallbackMessage={sam2AvailabilityError}

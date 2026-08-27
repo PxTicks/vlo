@@ -445,6 +445,7 @@ export function SamAudioExtractDialog() {
                   could not install. */}
               {availability === "unavailable" ? (
                 <CapabilityFailureNotice
+                  capabilityId={RUNTIME_CAPABILITY_IDS.samAudio}
                   capabilityLabel="SAM-Audio"
                   failure={samAudio.failure}
                   lastFailure={samAudio.capability?.lastFailure ?? null}

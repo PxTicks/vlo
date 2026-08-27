@@ -1,0 +1,372 @@
+{
+  "version": 3,
+  "name": "MiniMax H3 masked guides",
+  "sections": [
+    {
+      "id": "guides",
+      "title": "Guides",
+      "order": 3,
+      "default_open": true
+    },
+    {
+      "id": "advanced_settings",
+      "title": "Advanced Settings",
+      "order": 4,
+      "default_open": false
+    }
+  ],
+  "nodes": {
+    "53": {
+      "present": {
+        "label": "Source video",
+        "input_type": "video",
+        "param": "file",
+        "class_type": "vloMemoryLoadVideo"
+      },
+      "selection": {
+        "export_fps": 24,
+        "frame_step": 17,
+        "frame_offset": 5,
+        "max_frames": 719
+      }
+    },
+    "1": {},
+    "96": {
+      "present": {
+        "label": "Prompt",
+        "input_type": "text",
+        "param": "prompt"
+      }
+    },
+    "102": {
+      "widgets": {
+        "strength": {
+          "label": "Guide strength",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "percent",
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "default": 1,
+          "section_id": "guides",
+          "group_id": "guide_masking",
+          "group_title": "Guide Masking",
+          "group_order": 0
+        },
+        "min_aug": {
+          "label": "Guidance floor",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "default": 0,
+          "section_id": "guides",
+          "group_id": "guide_masking",
+          "group_title": "Guide Masking",
+          "group_order": 1
+        },
+        "mask_gamma": {
+          "label": "Mask gamma",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0.1,
+          "max": 5,
+          "step": 0.05,
+          "default": 1,
+          "section_id": "guides",
+          "group_id": "guide_masking",
+          "group_title": "Guide Masking",
+          "group_order": 2
+        },
+        "min_coverage": {
+          "label": "Drop frames below coverage",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "percent",
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "default": 0,
+          "section_id": "guides",
+          "group_id": "guide_chunking",
+          "group_title": "Guide Chunking",
+          "group_order": 0
+        },
+        "chunk_align": {
+          "label": "Clip trimming",
+          "value_type": "enum",
+          "options": [
+            "start",
+            "center"
+          ],
+          "default": "start",
+          "section_id": "guides",
+          "group_id": "guide_chunking",
+          "group_title": "Guide Chunking",
+          "group_order": 1
+        },
+        "time_pooling": {
+          "label": "Mask time pooling",
+          "value_type": "enum",
+          "options": [
+            "average",
+            "max"
+          ],
+          "default": "average",
+          "section_id": "guides",
+          "group_id": "guide_chunking",
+          "group_title": "Guide Chunking",
+          "group_order": 2
+        },
+        "frame_idx": {
+          "label": "Guide start frame",
+          "value_type": "int",
+          "default": 0,
+          "hidden": true
+        }
+      }
+    },
+    "100": {
+      "widgets": {
+        "guide_clock": {
+          "label": "Guide clock",
+          "description": "How a guide token's confidence becomes a condition timestep. 'stock' corrupts the latent only (the baseline); 'floored' carries over core's max(t_v, a) guard; 'matched' labels each token as noisy as it actually is; 'target_relative' sits a zero-confidence token level with the target instead of at pure noise.",
+          "value_type": "enum",
+          "options": [
+            "matched",
+            "target_relative",
+            "floored",
+            "stock"
+          ],
+          "default": "matched",
+          "section_id": "advanced_settings",
+          "group_id": "masked_guides",
+          "group_title": "Masked Guides",
+          "group_order": 0
+        },
+        "debug": {
+          "label": "Log guide report",
+          "value_type": "boolean",
+          "default": false,
+          "section_id": "advanced_settings",
+          "group_id": "masked_guides",
+          "group_title": "Masked Guides",
+          "group_order": 1
+        }
+      }
+    },
+    "43": {
+      "widgets": {
+        "noise_seed": {
+          "label": "Noise seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 3
+        }
+      }
+    },
+    "37": {
+      "widgets": {
+        "steps": {
+          "label": "Steps",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 60,
+          "step": 1,
+          "default": 20,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 1
+        },
+        "denoise": {
+          "label": "Denoise",
+          "value_type": "float",
+          "default": 1,
+          "hidden": true
+        },
+        "scheduler": {
+          "label": "Scheduler",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 1
+        }
+      }
+    },
+    "36": {
+      "widgets": {
+        "sampler_name": {
+          "label": "Sampler",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 0
+        }
+      }
+    },
+    "47": {
+      "widgets": {
+        "attention": {
+          "label": "Attention backend",
+          "section_id": "advanced_settings",
+          "group_id": "model_patches",
+          "group_title": "Model",
+          "group_order": 0
+        }
+      }
+    }
+  },
+  "frontend_controls": {
+    "spectrum_enabled": {
+      "label": "MiniMax Spectrum",
+      "value_type": "boolean",
+      "default": true,
+      "section_id": "advanced_settings",
+      "group_id": "model_patches",
+      "group_title": "Model",
+      "group_order": 1
+    }
+  },
+  "validation": {
+    "inputs": [
+      {
+        "kind": "required",
+        "input": "53",
+        "message": "A source video is required."
+      },
+      {
+        "kind": "required",
+        "input": "96:prompt",
+        "message": "A prompt is required."
+      }
+    ]
+  },
+  "rewrites": [
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "frontend_control",
+          "control_id": "spectrum_enabled"
+        },
+        "operator": "eq",
+        "value": false
+      },
+      "bypass": [
+        "45"
+      ]
+    }
+  ],
+  "slots": {},
+  "pipeline": [
+    {
+      "id": "mask_processing",
+      "kind": "mask_processing",
+      "after": [
+        "aspect_ratio"
+      ],
+      "targets": [
+        {
+          "source": {
+            "node_id": "53",
+            "param": "file"
+          },
+          "mask": {
+            "node_id": "1",
+            "param": "file"
+          },
+          "mask_type": "binary",
+          "purpose": "video"
+        }
+      ],
+      "controls": [
+        {
+          "key": "crop_mode",
+          "label": "Mask crop mode",
+          "description": "Guides work from context, so 'full' keeps the whole frame. 'crop' narrows the canvas to the mask and is cheaper.",
+          "value_type": "enum",
+          "expose": "widget",
+          "options": [
+            "full",
+            "crop"
+          ],
+          "default": "full"
+        },
+        {
+          "key": "crop_dilation",
+          "label": "Mask crop padding",
+          "value_type": "float",
+          "expose": "widget",
+          "control": "slider",
+          "slider_display": "percent",
+          "min": 0,
+          "max": 0.5,
+          "step": 0.01,
+          "default": 0.1
+        }
+      ]
+    },
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolution_ladder": {
+          "min": 240,
+          "max": 720,
+          "steps": 5
+        },
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
+        {
+          "width": {
+            "node_id": "60",
+            "param": "resize_type.width"
+          },
+          "height": {
+            "node_id": "60",
+            "param": "resize_type.height"
+          }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "default": 480,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0,
+          "description": "Guide clips roughly double the packed sequence, so this workflow starts lower than the others."
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0,
+          "label": "Aspect ratio",
+          "expose": "widget",
+          "source": "client"
+        }
+      ]
+    }
+  ]
+}

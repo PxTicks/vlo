@@ -360,6 +360,11 @@ function applyExtractedFilesToPlan(
     if (value.preparedMaskFile) {
       slot.preparedMaskFile = value.preparedMaskFile;
     }
+    if (value.preparedMasksByKey) {
+      slot.preparedMasksByKey = value.preparedMasksByKey;
+      slot.preparedMaskContentByKey =
+        value.preparedMaskContentByKey ?? undefined;
+    }
     slot.preparedDerivedMaskSignature =
       value.preparedDerivedMaskSignature;
   }

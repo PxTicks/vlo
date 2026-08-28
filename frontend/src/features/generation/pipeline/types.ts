@@ -85,6 +85,15 @@ export type SlotValue =
       selection: TimelineSelection;
       preparedVideoFile?: File;
       preparedMaskFile?: File;
+      /**
+       * Every matte prepared for this slot, keyed by derived-mask render key.
+       * Only a baked selection (see {@link TimelineSelection.bakedSource})
+       * populates it: it cannot be re-rendered, so each flavour the workflow
+       * asks for has to survive from the bake to the upload.
+       */
+      preparedMasksByKey?: Partial<Record<string, File>>;
+      /** Per-key emptiness of {@link preparedMasksByKey}, decided at bake time. */
+      preparedMaskContentByKey?: Partial<Record<string, boolean>>;
       preparedDerivedMaskSignature?: string | null;
       // When set, the slot was queued while an extraction with this id was
       // still in flight. The dispatcher waits for the matching mediaInputs

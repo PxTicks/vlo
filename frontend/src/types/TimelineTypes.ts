@@ -92,6 +92,13 @@ export interface TimelineSelection extends TimelineRegionData {
    */
   resolution?: number;
   /**
+   * Marks a placeholder selection that stands in for already-baked media (the
+   * generation mini editor's synthetic asset edit): it carries no clips and no
+   * project geometry, so it can never be re-rendered — consumers must use the
+   * files prepared alongside it.
+   */
+  bakedSource?: true;
+  /**
    * Optional workflow-provided guidance shown while the selection is being made.
    */
   message?: string;

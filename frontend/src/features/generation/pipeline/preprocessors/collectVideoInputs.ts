@@ -50,6 +50,10 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
     const inputById = buildWorkflowInputLookup(ctx.workflowInputs);
     const projectFps = Math.max(1, ctx.projectConfig.fps);
 
+    /** A placeholder for already-baked media; see {@link TimelineSelection.bakedSource}. */
+    const isBakedSelection = (selection: TimelineSelection): boolean =>
+      selection.bakedSource === true;
+
     /**
      * Whether a file prepared at extraction time is still the right size.
      *
@@ -61,8 +65,13 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
      * this field is exactly that case. Re-render rather than upload a file of
      * unknown size.
      */
-    const preparedFileIsCurrent = (selection: TimelineSelection): boolean =>
-      typeof selection.resolution === "number" && selection.resolution > 0;
+    const preparedFileIsCurrent = (selection: TimelineSelection): boolean => {
+      // A baked stand-in (the mini editor's synthetic asset edit) is not
+      // something the renderer can reproduce: re-rendering it would upload an
+      // empty timeline. Its prepared files are the media.
+      if (isBakedSelection(selection)) return true;
+      return typeof selection.resolution === "number" && selection.resolution > 0;
+    };
 
     // Build lookup: sourceInputId/sourceNodeId → mask mappings
     const masksBySource = new Map<string, DerivedMaskMapping[]>();
@@ -86,6 +95,11 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       if (preparedVideoFile && preparedFileIsCurrent(selection)) {
         return preparedVideoFile;
       }
+      if (isBakedSelection(selection)) {
+        throw new Error(
+          "The edited video is no longer available — please re-apply the edit before generating.",
+        );
+      }
       throwIfAborted(ctx.signal);
       return renderTimelineSelectionToMp4(
         prepareNormalizedSelection(selection, projectFps, config),
@@ -100,6 +114,10 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       preparedMaskFile?: File,
       preparedDerivedMaskSignature?: string | null,
       config?: WorkflowSelectionConfig,
+      preparedMasks?: {
+        masksByKey?: Partial<Record<string, File>> | null;
+        contentByKey?: Partial<Record<string, boolean>> | null;
+      },
     ): Promise<Awaited<ReturnType<typeof renderTimelineSelectionToMp4WithDerivedMasks>>> {
       const visualMasks = masks.filter((mask) => mask.purpose !== "audio_timing");
       const expectedPreparedSignature =
@@ -121,6 +139,45 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       const uniqueVisualMaskKeys = new Set(
         visualMasks.map((mask) => getDerivedMaskRenderKey(mask)),
       );
+      if (isBakedSelection(selection)) {
+        // A bake was rendered against a synthetic project that no longer
+        // exists: it is reused exactly as prepared, or not at all. Anything the
+        // workflow has changed since — a soft mapping where the bake produced a
+        // binary matte, a different source treatment — makes the prepared files
+        // wrong, and there is nothing to re-render them from.
+        if (!preparedVideoFile) {
+          throw new Error(
+            "The edited video is no longer available — please re-apply the edit before generating.",
+          );
+        }
+        if (!hasMatchingPreparedSignature) {
+          throw new Error(
+            "This workflow now asks for a different mask than the edit produced — please re-apply the edit before generating.",
+          );
+        }
+        const masks: Awaited<
+          ReturnType<typeof renderTimelineSelectionToMp4WithDerivedMasks>
+        >["masks"] = {};
+        const maskContentByKey: Awaited<
+          ReturnType<typeof renderTimelineSelectionToMp4WithDerivedMasks>
+        >["maskContentByKey"] = {};
+        for (const mask of visualMasks) {
+          const key = getDerivedMaskRenderKey(mask);
+          // Pre-map bakes stored a single matte under the primary key only.
+          const bakedMask =
+            preparedMasks?.masksByKey?.[key] ??
+            (uniqueVisualMaskKeys.size === 1 ? preparedMaskFile : undefined);
+          if (!bakedMask) {
+            throw new Error(
+              `The edit produced no '${key}' mask — please re-apply the edit before generating.`,
+            );
+          }
+          masks[key] = bakedMask;
+          maskContentByKey[key] =
+            preparedMasks?.contentByKey?.[key] ?? true;
+        }
+        return { video: preparedVideoFile, masks, maskContentByKey };
+      }
       if (
         !hasAudioTimingMasks &&
         uniqueVisualMaskKeys.size === 1 &&
@@ -229,9 +286,12 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
           masksBySource.get(inputId) ?? masksBySource.get(input.nodeId);
         // Optional mask uploads stay compatible with `input_presence`
         // rewrites by withholding the upload after render when the matte is
-        // effectively empty.
+        // effectively empty. A baked selection cannot be re-rendered, so its
+        // emptiness check happened at bake time instead: the mini editor
+        // stores no prepared mask when the matte came back black.
         const needsRenderedMaskPresenceCheck =
-          allMasks?.some((mapping) => mapping.optional) ?? false;
+          !isBakedSelection(value.selection) &&
+          (allMasks?.some((mapping) => mapping.optional) ?? false);
         if (allMasks && allMasks.length > 0) {
           const result = await normalizeVideoSelectionWithDerivedMasks(
             value.selection,
@@ -239,6 +299,11 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
             value.preparedVideoFile,
             needsRenderedMaskPresenceCheck ? undefined : value.preparedMaskFile,
             value.preparedDerivedMaskSignature,
+            undefined,
+            {
+              masksByKey: value.preparedMasksByKey,
+              contentByKey: value.preparedMaskContentByKey,
+            },
           );
           throwIfAborted(ctx.signal);
           ctx.videoInputs[
@@ -246,6 +311,14 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
           ] =
             result.video;
           for (const mask of allMasks) {
+            // An audio-timing mask needs timeline activity a baked asset edit
+            // does not have, exactly as for a directly uploaded asset.
+            if (
+              isBakedSelection(value.selection) &&
+              mask.purpose === "audio_timing"
+            ) {
+              continue;
+            }
             const maskInput = ctx.workflowInputs.find(
               (candidate) =>
                 candidate.nodeId === mask.maskNodeId &&
@@ -254,18 +327,20 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
             const maskRequestKey = maskInput
               ? getNodeInputRequestKey(maskInput, inputById)
               : mask.maskNodeId;
+            const maskKnownEmpty =
+              result.maskContentByKey[getDerivedMaskRenderKey(mask)] === false;
+            // Checked before the file itself: a baked pair carries no file for
+            // an empty matte, and an optional input wants exactly that.
+            if (maskKnownEmpty && mask.optional) {
+              continue;
+            }
             const renderedMask = result.masks[getDerivedMaskRenderKey(mask)];
             if (!renderedMask) {
               throw new Error(
                 `Derived mask render '${getDerivedMaskRenderKey(mask)}' was requested but not produced`,
               );
             }
-            const maskKnownEmpty =
-              result.maskContentByKey[getDerivedMaskRenderKey(mask)] === false;
             if (maskKnownEmpty) {
-              if (mask.optional) {
-                continue;
-              }
               console.warn(
                 `[Generation] Required derived mask '${getDerivedMaskRenderKey(mask)}' rendered with no visible content; uploading an empty matte. The workflow will likely produce unmasked or blank output.`,
               );

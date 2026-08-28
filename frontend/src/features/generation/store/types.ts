@@ -13,6 +13,7 @@ import type { ComfyUIWebSocket } from "../services/ComfyUIWebSocket";
 import type { GenerationDeliveryWebSocket } from "../services/GenerationDeliveryWebSocket";
 import type { WorkflowWarningSummary } from "../services/workflowBridge";
 import type {
+  GenerationBakedEditOrigin,
   GenerationJob,
   GenerationMediaInputValue,
   GenerationPipelineStatus,
@@ -159,7 +160,12 @@ export interface GenerationWorkflowState {
       preparedVideoFile?: File | null;
       preparedAudioFile?: File | null;
       preparedMaskFile?: File | null;
+      preparedMasksByKey?: Partial<Record<string, File>> | null;
+      preparedMaskContentByKey?: Partial<Record<string, boolean>> | null;
       preparedDerivedMaskSignature?: string | null;
+      bakedEdit?: GenerationBakedEditOrigin | null;
+      /** Carries the per-item audio switch across a value replacement. */
+      includeEmbeddedAudio?: boolean;
       extractionError?: string | null;
     },
   ) => void;

@@ -18,6 +18,13 @@ export type MiniEditorPresentation = "modal" | "workspace";
 
 /** The source media resolved by the opener (asset src, or a rendered selection mp4). */
 export interface ResolvedEditorSource {
+  /**
+   * The library asset this source was resolved from, when there is one. A bake
+   * that rebuilds a synthetic project around the source needs it: clip audio is
+   * pulled from the asset store by id, so a fabricated id would silently render
+   * the edit without its soundtrack.
+   */
+  assetId?: string;
   /** Object URL owned by the editor and revoked when it closes. */
   sourceUrl: string;
   /** The underlying file extraction or baking reads from. */

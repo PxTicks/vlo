@@ -57,6 +57,7 @@ export async function openAssetInMiniEditor(
         : 0;
 
       return {
+        assetId: asset.id,
         sourceUrl: URL.createObjectURL(file),
         sourceFile: file,
         durationTicks: mediaSecondsToTick(durationSeconds),

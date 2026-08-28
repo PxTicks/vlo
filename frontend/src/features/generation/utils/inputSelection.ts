@@ -409,6 +409,11 @@ interface RenderTimelineSelectionMaskOptions {
   signal?: AbortSignal;
   outputWidth?: number;
   outputHeight?: number;
+  /**
+   * Render against a caller-supplied project/export config instead of the
+   * global timeline store — see {@link renderTimelineSelectionToMp4}.
+   */
+  renderInputs?: RenderInputsOverride;
 }
 
 function createOutputFile(blob: Blob, filename: string): File {
@@ -437,22 +442,26 @@ async function renderTimelineSelectionToOutputs(
     includeTimelineMasks?: boolean;
     outputWidth?: number;
     outputHeight?: number;
+    renderInputs?: RenderInputsOverride;
   } = {},
 ): Promise<Awaited<ReturnType<ExportRenderer["render"]>>> {
   throwIfAborted(options.signal);
-  const preparedTimelineSelection =
-    (await prepareBrushMasksForTimelineRender(timelineSelection, {
-      refreshSelectionClips: false,
-    })) ??
-    timelineSelection;
-  const { exportConfig, projectData } = buildProjectRenderInputs();
+  const preparedTimelineSelection = options.renderInputs
+    ? timelineSelection
+    : ((await prepareBrushMasksForTimelineRender(timelineSelection, {
+        refreshSelectionClips: false,
+      })) ??
+      timelineSelection);
+  const { exportConfig, projectData } =
+    options.renderInputs ?? buildProjectRenderInputs();
   const normalizedSelection = normalizeDetachedTimelineSelection(
     preparedTimelineSelection,
   );
-  const dimensions = resolveSelectionOutputDimensions(
-    timelineSelection,
-    options,
-  );
+  // A caller-supplied config already states its own output size; only the
+  // project's own geometry is resolved from the selection.
+  const dimensions = options.renderInputs
+    ? options
+    : resolveSelectionOutputDimensions(timelineSelection, options);
   const renderConfig = {
     ...exportConfig,
     outputWidth: normalizeOutputDimension(
@@ -486,7 +495,7 @@ function getRenderedMaskHasVisibleContent(
   return result.outputAnalyses?.mask?.hasVisibleContent ?? true;
 }
 
-async function renderTimelineSelectionToMaskOutput(
+export async function renderTimelineSelectionToMaskOutput(
   timelineSelection: TimelineSelection,
   maskType: DerivedMaskType = "binary",
   options: RenderTimelineSelectionMaskOptions & {
@@ -504,6 +513,7 @@ async function renderTimelineSelectionToMaskOutput(
       signal: options.signal,
       outputWidth: options.outputWidth,
       outputHeight: options.outputHeight,
+      renderInputs: options.renderInputs,
     },
   );
   const maskBlob = result.outputs.mask;

@@ -267,8 +267,15 @@ export function buildMediaInputActions(
                 extractionRequestId: options?.extractionRequestId ?? 0,
                 preparedVideoFile: options?.preparedVideoFile ?? null,
                 preparedMaskFile: options?.preparedMaskFile ?? null,
+                preparedMasksByKey: options?.preparedMasksByKey ?? null,
+                preparedMaskContentByKey:
+                  options?.preparedMaskContentByKey ?? null,
                 preparedDerivedMaskSignature:
                   options?.preparedDerivedMaskSignature ?? null,
+                bakedEdit: options?.bakedEdit ?? null,
+                ...(typeof options?.includeEmbeddedAudio === "boolean"
+                  ? { includeEmbeddedAudio: options.includeEmbeddedAudio }
+                  : {}),
                 extractionError: options?.extractionError ?? null,
               },
         ),

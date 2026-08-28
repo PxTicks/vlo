@@ -7,6 +7,10 @@ import type {
   VideoTimelineClip,
 } from "../../../types/TimelineTypes";
 import type { ExportConfig, ProjectData } from "../../renderer";
+import type {
+  DerivedMaskSourceVideoTreatment,
+  DerivedMaskType,
+} from "../pipeline/types";
 import { createClipFromAsset } from "../../timeline";
 import { tickToMediaSeconds } from "../../../core/time";
 import { calculateClipTime } from "../../transformations";
@@ -18,8 +22,10 @@ import type {
   MiniEditorEditSpec,
 } from "../../miniEditor";
 import {
+  renderTimelineSelectionToMaskOutput,
   renderTimelineSelectionToMp4,
   renderTimelineSelectionToMp4WithMask,
+  type DerivedMaskRenderKey,
 } from "./inputSelection";
 
 function clamp(value: number, min: number, max: number): number {
@@ -161,11 +167,23 @@ interface EditedRenderInputs {
   selection: TimelineSelection;
 }
 
+/**
+ * One matte the workflow asks of this source, keyed exactly as the timeline
+ * path keys its derived-mask renders so the two stay interchangeable.
+ */
+export interface SyntheticEditedMaskRequest {
+  key: DerivedMaskRenderKey;
+  maskType: DerivedMaskType;
+  sourceVideoTreatment?: DerivedMaskSourceVideoTreatment;
+}
+
 export interface SyntheticEditedRenderResult {
   /** Cropped video (full frames; mp4 has no alpha so masks live in the matte). */
   video: File;
-  /** Binary matte for the masked time windows, or null when no active ranges. */
-  mask: File | null;
+  /** One matte per requested render key; empty when none was requested. */
+  masks: Partial<Record<DerivedMaskRenderKey, File>>;
+  /** False for a matte that came back entirely black. */
+  maskContentByKey: Partial<Record<DerivedMaskRenderKey, boolean>>;
 }
 
 function toEven(value: number): number {
@@ -189,8 +207,11 @@ function buildSyntheticRenderInputs(
   const cropEnd = clamp(spec.cropEndTicks, cropStart, durationTicks);
   const cropLen = Math.max(1, cropEnd - cropStart);
 
+  // Keep the library asset's own id when the source came from one: the export
+  // renderer resolves clip audio through the global asset store by id, so a
+  // synthetic id renders the video silently.
   const asset: Asset = {
-    id: `mini_editor_source_${crypto.randomUUID()}`,
+    id: source.assetId ?? `mini_editor_source_${crypto.randomUUID()}`,
     hash: "mini-editor-source",
     name: source.sourceFile.name || "edited-video",
     type: "video",
@@ -266,15 +287,50 @@ function buildSyntheticRenderInputs(
 }
 
 /**
+ * Collapses duplicate render keys and rejects a set the pair renderer could not
+ * satisfy: the source video is rendered once, so its treatment must be agreed.
+ */
+function dedupeMaskRequests(
+  requests: readonly SyntheticEditedMaskRequest[],
+): SyntheticEditedMaskRequest[] {
+  const byKey = new Map<DerivedMaskRenderKey, SyntheticEditedMaskRequest>();
+  const treatments = new Set<DerivedMaskSourceVideoTreatment>();
+  for (const request of requests) {
+    treatments.add(request.sourceVideoTreatment ?? "remove_transparency");
+    if (!byKey.has(request.key)) {
+      byKey.set(request.key, request);
+    }
+  }
+  if (treatments.size > 1) {
+    throw new Error(
+      "Derived masks for a single source requested conflicting source video treatments",
+    );
+  }
+  return [...byKey.values()];
+}
+
+/**
  * Bakes an edit of a plain video asset (no backing timeline selection) into the
- * files the generation pipeline consumes: a cropped video plus, when ranges are
- * present, a binary matte derived from their transparency.
+ * files the generation pipeline consumes: a cropped video that keeps the
+ * asset's own soundtrack, plus — when the workflow has a derived-mask input —
+ * a separate matte for the masked windows, derived from their transparency.
  */
 export async function renderSyntheticEditedOutputs(
   spec: MiniEditorEditSpec,
   source: ResolvedEditorSource,
   dims: { width: number; height: number },
-  options: { signal?: AbortSignal } = {},
+  options: {
+    signal?: AbortSignal;
+    /**
+     * The mattes the workflow's derived-mask mappings ask for, deduplicated by
+     * render key. Every one of them is rendered — an empty matte included,
+     * since the bake is the only render this input will ever get. With none
+     * requested the ranges have nowhere separate to go and are baked into the
+     * video instead, exactly as a timeline-selection input does when the
+     * workflow has no derived-mask node.
+     */
+    maskRequests?: readonly SyntheticEditedMaskRequest[];
+  } = {},
 ): Promise<SyntheticEditedRenderResult> {
   const { exportConfig, projectData, selection } = buildSyntheticRenderInputs(
     spec,
@@ -287,23 +343,48 @@ export async function renderSyntheticEditedOutputs(
     brushMasksPrepared: true as const,
   };
 
-  const activeRanges = spec.ranges.filter(
-    (range) => range.isActive && range.endSourceTicks > range.startSourceTicks,
-  );
-
-  if (activeRanges.length === 0) {
+  const maskRequests = dedupeMaskRequests(options.maskRequests ?? []);
+  if (maskRequests.length === 0) {
     const video = await renderTimelineSelectionToMp4(selection, {
-      includeTimelineMasks: false,
       signal: options.signal,
       renderInputs,
     });
-    return { video, mask: null };
+    return { video, masks: {}, maskContentByKey: {} };
   }
 
-  const { video, mask } = await renderTimelineSelectionToMp4WithMask(
-    selection,
-    "binary",
-    { signal: options.signal, renderInputs },
-  );
-  return { video, mask };
+  // The first request renders the pair — the source video's treatment is a
+  // property of the pair render, so it comes from that request; conflicting
+  // treatments are rejected the same way the timeline path rejects them.
+  const [primary, ...secondary] = maskRequests;
+  const { video, mask, maskHasVisibleContent } =
+    await renderTimelineSelectionToMp4WithMask(selection, primary.maskType, {
+      signal: options.signal,
+      sourceVideoTreatment: primary.sourceVideoTreatment,
+      renderInputs,
+    });
+
+  const masks: Partial<Record<DerivedMaskRenderKey, File>> = {
+    [primary.key]: mask,
+  };
+  const maskContentByKey: Partial<Record<DerivedMaskRenderKey, boolean>> = {
+    [primary.key]: maskHasVisibleContent,
+  };
+
+  // Remaining flavours reuse the same synthetic project, so they land frame
+  // for frame on the video already rendered above.
+  for (const request of secondary) {
+    const { file, hasVisibleContent } = await renderTimelineSelectionToMaskOutput(
+      selection,
+      request.maskType,
+      {
+        signal: options.signal,
+        trackRenderedMaskContent: true,
+        renderInputs,
+      },
+    );
+    masks[request.key] = file;
+    maskContentByKey[request.key] = hasVisibleContent;
+  }
+
+  return { video, masks, maskContentByKey };
 }

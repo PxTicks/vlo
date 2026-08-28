@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { WorkflowRules } from "../../services/workflowRules";
 import {
   EMPTY_WORKFLOW_RULES,
+  PRUNED_WORKFLOW_RULE_SECTIONS,
   applyPresentationRules,
   areWorkflowRulesCompatibleWithWorkflow,
   areWorkflowRulesEffectivelyEmpty,
@@ -100,6 +103,32 @@ function rulesFixture(): WorkflowRules {
       { kind: "set_input", node_id: "1", input: "seed", value: 4 },
       { kind: "set_input", node_id: "missing", input: "seed", value: 5 },
     ],
+    effect_switches: [
+      {
+        id: "switch-keep",
+        cases: [
+          {
+            when: {
+              kind: "compare",
+              ref: { kind: "workflow_param", node_id: "1", param: "denoise" },
+              operator: "lt",
+              value: 1,
+            },
+            set_widgets: [{ node_id: "2", widget: "switch", value: false }],
+          },
+          {
+            when: { kind: "always" },
+            set_widgets: [
+              { node_id: "missing", widget: "switch", value: true },
+            ],
+          },
+        ],
+      },
+      {
+        id: "switch-drop",
+        cases: [{ when: { kind: "always" }, bypass: ["missing"] }],
+      },
+    ],
     slots: {
       output: { kind: "output" },
     },
@@ -174,6 +203,12 @@ describe("workflowState rule pruning", () => {
     ]);
     expect(result.derived_widgets).toHaveLength(1);
     expect(result.rewrites).toEqual([]);
+    // Effect switches survive pruning: dropping them silently is what made a
+    // regenerated workflow ignore its denoise-conditioned switch.
+    expect(result.effect_switches?.map((entry) => entry.id)).toEqual([
+      "switch-keep",
+    ]);
+    expect(result.effect_switches?.[0]?.cases).toHaveLength(1);
     expect(result.media_fallbacks).toHaveLength(2);
     expect(result.pipeline?.map((stage) => stage.id)).toEqual(["assembly"]);
     expect(Object.keys(result.frontend_controls ?? {})).toEqual([
@@ -182,6 +217,124 @@ describe("workflowState rule pruning", () => {
     expect(
       result.frontend_controls?.["control-keep"]?.default_overrides,
     ).toHaveLength(1);
+  });
+
+  it("prunes every section the backend rules schema defines", () => {
+    // The pruner rewrites each section by hand. When a new top-level section
+    // is added to the schema this fails, forcing a decision: prune it, or
+    // accept the pass-through `carryUnprunedSections` gives it by default.
+    // vitest runs with `frontend/` as the working directory.
+    const schemaPath = resolve(
+      process.cwd(),
+      "../backend/services/workflow_rules/schema/resolved_workflow_rules.schema.json",
+    );
+    const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as {
+      properties: Record<string, unknown>;
+    };
+
+    expect([...PRUNED_WORKFLOW_RULE_SECTIONS].sort()).toEqual(
+      Object.keys(schema.properties).sort(),
+    );
+  });
+
+  it("preserves every schema section whose references are all live", () => {
+    // Membership in PRUNED_WORKFLOW_RULE_SECTIONS only says a section was
+    // considered. This asserts it is actually handled: with nothing to prune,
+    // every section must survive intact. Dropping `effect_switches` and
+    // `sections` both hid behind the weaker check.
+    const live = workflow({ "1": "LoadImage" });
+    const rules = {
+      version: 3,
+      name: "Live",
+      default_widgets_mode: "manual",
+      sections: [
+        { id: "advanced", title: "Advanced", order: 1, default_open: false },
+      ],
+      nodes: { "1": { present: { label: "Image" } } },
+      validation: { inputs: [{ kind: "required", input: "1" }] },
+      input_conditions: [{ kind: "at_least_one", inputs: ["1"] }],
+      frontend_controls: { "control-a": { label: "A" } },
+      derived_widgets: [
+        {
+          id: "d",
+          kind: "video_audio_retake",
+          video_bypass: { node_id: "1", param: "switch" },
+          audio_bypass: { node_id: "1", param: "switch" },
+        },
+      ],
+      rewrites: [
+        {
+          when: {
+            kind: "compare",
+            ref: { kind: "frontend_control", control_id: "control-a" },
+            operator: "eq",
+            value: true,
+          },
+          bypass: ["1"],
+        },
+      ],
+      effect_switches: [
+        {
+          id: "s",
+          cases: [
+            { when: { kind: "always" }, bypass: ["1"] },
+            {
+              when: { kind: "always" },
+              set_widgets: [{ node_id: "1", widget: "switch", value: false }],
+            },
+          ],
+        },
+      ],
+      slots: { output: { kind: "output" } },
+      pipeline: [
+        {
+          id: "mask",
+          kind: "mask_processing",
+          targets: [
+            {
+              source: { node_id: "1", param: "video" },
+              mask: { node_id: "1", param: "mask" },
+            },
+          ],
+        },
+      ],
+      media_fallbacks: [{ kind: "dummy", node_id: "1", input_type: "image" }],
+    } as unknown as WorkflowRules;
+
+    // Keep the fixture honest as the schema grows.
+    expect(Object.keys(rules).sort()).toEqual(
+      [...PRUNED_WORKFLOW_RULE_SECTIONS].sort(),
+    );
+
+    const result = pruneWorkflowRulesForWorkflows([live], rules) as unknown as
+      Record<string, unknown>;
+    for (const section of PRUNED_WORKFLOW_RULE_SECTIONS) {
+      expect({ [section]: result[section] }).toEqual({
+        [section]: (rules as unknown as Record<string, unknown>)[section],
+      });
+    }
+  });
+
+  it("carries sections it does not know how to prune", () => {
+    // A backend newer than this bundle can send a section these types have
+    // never heard of. Passing it through beats deleting it silently.
+    const rules = {
+      version: 3,
+      nodes: { "1": { present: { label: "Image" } } },
+      future_section: [{ node_id: "1" }],
+    } as unknown as WorkflowRules;
+
+    const result = pruneWorkflowRulesForWorkflows(
+      [workflow({ "1": "LoadImage" })],
+      rules,
+    ) as unknown as Record<string, unknown>;
+    expect(result.future_section).toEqual([{ node_id: "1" }]);
+
+    const withoutWorkflow = pruneWorkflowRulesForWorkflows(
+      [],
+      rules,
+    ) as unknown as Record<string, unknown>;
+    expect(withoutWorkflow.future_section).toEqual([{ node_id: "1" }]);
   });
 
   it("keeps rule fragments without node references", () => {
@@ -206,6 +359,7 @@ describe("workflowState compatibility helpers", () => {
     ["conditions", { input_conditions: [{ kind: "at_least_one", inputs: ["1"] }] }],
     ["derived", { derived_widgets: [{ id: "d" }] }],
     ["rewrites", { rewrites: [{}] }],
+    ["effect switches", { effect_switches: [{ id: "s" }] }],
     ["fallbacks", { media_fallbacks: [{}] }],
     ["pipeline", { pipeline: [{ id: "p", kind: "mask_processing" }] }],
   ])("detects node-linked %s rules", (_name, partial) => {
@@ -250,6 +404,7 @@ describe("workflowState compatibility helpers", () => {
       pipeline: [],
       derived_widgets: [],
       rewrites: [],
+      effect_switches: [],
       media_fallbacks: [],
     } as WorkflowRules;
     const loss = findLostRuleFragments(previous, next);
@@ -257,9 +412,31 @@ describe("workflowState compatibility helpers", () => {
     expect(loss.nodeIds).toEqual(["1", "missing"]);
     expect(loss.derivedWidgetIds).toEqual(["derived-keep", "derived-drop"]);
     expect(loss.rewriteCount).toBe(2);
+    expect(loss.effectSwitchIds).toEqual(["switch-keep", "switch-drop"]);
     expect(loss.mediaFallbackCount).toBe(4);
     expect(loss.hasLoss).toBe(true);
     expect(findLostRuleFragments(null, null).hasLoss).toBe(false);
+  });
+
+  it("counts a dropped effect-switch case as loss", () => {
+    const previous = rulesFixture();
+    const next = {
+      ...rulesFixture(),
+      effect_switches: [
+        {
+          ...(rulesFixture().effect_switches ?? [])[0],
+          cases: [(rulesFixture().effect_switches ?? [])[0].cases?.[0]],
+        },
+        (rulesFixture().effect_switches ?? [])[1],
+      ],
+    } as WorkflowRules;
+
+    const loss = findLostRuleFragments(previous, next);
+    // The switch itself survives, so ids alone report nothing: first-match
+    // ordering makes a missing case just as behaviour-changing.
+    expect(loss.effectSwitchIds).toEqual([]);
+    expect(loss.effectSwitchCaseCount).toBe(1);
+    expect(loss.hasLoss).toBe(true);
   });
 
   it("compares workflow node identities with a configurable Jaccard threshold", () => {

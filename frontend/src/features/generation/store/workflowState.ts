@@ -63,7 +63,10 @@ function collectReferencedRuleNodeIds(
     return;
   }
 
-  if (normalizedKey === "nodes" && Object.getPrototypeOf(value) === Object.prototype) {
+  if (
+    normalizedKey === "nodes" &&
+    Object.getPrototypeOf(value) === Object.prototype
+  ) {
     for (const nodeId of Object.keys(value as Record<string, unknown>)) {
       result.add(nodeId);
     }
@@ -303,6 +306,49 @@ function pruneStage(
   return stage;
 }
 
+/**
+ * Every top-level rules section this pruner rewrites. Anything else a rules
+ * object carries — a section added to the backend schema after this code was
+ * written, say — is passed through untouched rather than dropped: an
+ * unpruned rule that still names a live node is recoverable, while a section
+ * that quietly disappears is not (that is how `effect_switches` went missing
+ * from replayed workflows). `workflowRules.pruneCoverage` test asserts this
+ * list still covers the schema, so a new section is a failing test rather
+ * than a silent pass-through.
+ */
+const PRUNED_RULE_SECTIONS = [
+  "version",
+  "name",
+  "default_widgets_mode",
+  "sections",
+  "nodes",
+  "validation",
+  "input_conditions",
+  "frontend_controls",
+  "derived_widgets",
+  "rewrites",
+  "effect_switches",
+  "slots",
+  "pipeline",
+  "media_fallbacks",
+] as const satisfies readonly (keyof WorkflowRules)[];
+
+export const PRUNED_WORKFLOW_RULE_SECTIONS: readonly string[] =
+  PRUNED_RULE_SECTIONS;
+
+function carryUnprunedSections(
+  rules: WorkflowRules,
+  pruned: WorkflowRules,
+): WorkflowRules {
+  const owned = new Set<string>(PRUNED_RULE_SECTIONS);
+  const carried = Object.fromEntries(
+    Object.entries(rules).filter(([section]) => !owned.has(section)),
+  );
+  return Object.keys(carried).length > 0
+    ? ({ ...carried, ...pruned } as WorkflowRules)
+    : pruned;
+}
+
 export function pruneWorkflowRulesForWorkflows(
   workflows: ReadonlyArray<Record<string, unknown> | null | undefined>,
   rules: WorkflowRules | null | undefined,
@@ -313,11 +359,17 @@ export function pruneWorkflowRulesForWorkflows(
 
   const workflowNodeIds = collectWorkflowNodeIds(workflows);
   if (workflowNodeIds.size === 0) {
-    return createDefaultWorkflowRules({
-      name: rules.name ?? undefined,
-      default_widgets_mode: rules.default_widgets_mode ?? undefined,
-      slots: rules.slots ?? {},
-    });
+    // No workflow to check against: every node-linked section is inapplicable,
+    // so only the workflow-independent ones survive.
+    return carryUnprunedSections(
+      rules,
+      createDefaultWorkflowRules({
+        name: rules.name ?? undefined,
+        default_widgets_mode: rules.default_widgets_mode ?? undefined,
+        ...(rules.sections !== undefined ? { sections: rules.sections } : {}),
+        slots: rules.slots ?? {},
+      }),
+    );
   }
 
   const nodes = Object.fromEntries(
@@ -330,9 +382,7 @@ export function pruneWorkflowRulesForWorkflows(
   );
   const validationInputs = (rules.validation?.inputs ?? [])
     .map((rule) => pruneValidationRule(rule, workflowNodeIds))
-    .filter(
-      (rule): rule is WorkflowInputValidationRule => rule !== null,
-    );
+    .filter((rule): rule is WorkflowInputValidationRule => rule !== null);
   const inputConditions = (rules.input_conditions ?? [])
     .map((condition) => pruneInputCondition(condition, workflowNodeIds))
     .filter(
@@ -363,6 +413,19 @@ export function pruneWorkflowRulesForWorkflows(
   const rewrites = (rules.rewrites ?? []).filter((rewrite) =>
     isRuleFragmentApplicable(rewrite, workflowNodeIds),
   );
+  // Cases are pruned individually, like rewrites: a case whose targets are all
+  // gone cannot fire, but the switch's remaining cases still decide the mode.
+  const effectSwitches = (rules.effect_switches ?? []).flatMap(
+    (effectSwitch) => {
+      const cases = (effectSwitch.cases ?? []).filter((effectCase) =>
+        isRuleFragmentApplicable(effectCase, workflowNodeIds),
+      );
+      if (cases.length === 0) {
+        return [];
+      }
+      return [{ ...effectSwitch, cases }];
+    },
+  );
   const mediaFallbacks = (rules.media_fallbacks ?? []).filter((fallback) => {
     if (!workflowNodeIds.has(fallback.node_id)) {
       return false;
@@ -374,9 +437,8 @@ export function pruneWorkflowRulesForWorkflows(
   const pipeline = (rules.pipeline ?? [])
     .map((stage) => pruneStage(stage, workflowNodeIds))
     .filter(
-      (
-        stage,
-      ): stage is NonNullable<WorkflowRules["pipeline"]>[number] => stage !== null,
+      (stage): stage is NonNullable<WorkflowRules["pipeline"]>[number] =>
+        stage !== null,
     );
 
   const referencedFrontendControlIds = new Set<string>();
@@ -385,6 +447,7 @@ export function pruneWorkflowRulesForWorkflows(
       nodes,
       derived_widgets: derivedWidgets,
       rewrites,
+      effect_switches: effectSwitches,
       pipeline,
     },
     referencedFrontendControlIds,
@@ -402,25 +465,36 @@ export function pruneWorkflowRulesForWorkflows(
           controlId,
           {
             ...controlRule,
-            ...(defaultOverrides ? { default_overrides: defaultOverrides } : {}),
+            ...(defaultOverrides
+              ? { default_overrides: defaultOverrides }
+              : {}),
           },
         ];
       }),
   );
 
-  return createDefaultWorkflowRules({
-    name: rules.name ?? undefined,
-    default_widgets_mode: rules.default_widgets_mode ?? undefined,
-    nodes,
-    validation: { inputs: validationInputs },
-    ...(inputConditions.length > 0 ? { input_conditions: inputConditions } : {}),
-    frontend_controls: frontendControls,
-    derived_widgets: derivedWidgets,
-    rewrites,
-    slots: rules.slots ?? {},
-    pipeline,
-    ...(mediaFallbacks.length > 0 ? { media_fallbacks: mediaFallbacks } : {}),
-  });
+  return carryUnprunedSections(
+    rules,
+    createDefaultWorkflowRules({
+      name: rules.name ?? undefined,
+      default_widgets_mode: rules.default_widgets_mode ?? undefined,
+      // Section titles/order/open state are panel presentation, not node
+      // references: nothing here can make them inapplicable.
+      ...(rules.sections !== undefined ? { sections: rules.sections } : {}),
+      nodes,
+      validation: { inputs: validationInputs },
+      ...(inputConditions.length > 0
+        ? { input_conditions: inputConditions }
+        : {}),
+      frontend_controls: frontendControls,
+      derived_widgets: derivedWidgets,
+      rewrites,
+      effect_switches: effectSwitches,
+      slots: rules.slots ?? {},
+      pipeline,
+      ...(mediaFallbacks.length > 0 ? { media_fallbacks: mediaFallbacks } : {}),
+    }),
+  );
 }
 
 export function hasNodeLinkedWorkflowRules(
@@ -432,6 +506,7 @@ export function hasNodeLinkedWorkflowRules(
     (rules?.input_conditions?.length ?? 0) > 0 ||
     (rules?.derived_widgets?.length ?? 0) > 0 ||
     (rules?.rewrites?.length ?? 0) > 0 ||
+    (rules?.effect_switches?.length ?? 0) > 0 ||
     (rules?.media_fallbacks?.length ?? 0) > 0 ||
     (rules?.pipeline ?? []).some((stage) => stage.kind !== "output_assembly")
   );
@@ -447,6 +522,7 @@ export function areWorkflowRulesEffectivelyEmpty(
     Object.keys(rules?.frontend_controls ?? {}).length === 0 &&
     (rules?.derived_widgets?.length ?? 0) === 0 &&
     (rules?.rewrites?.length ?? 0) === 0 &&
+    (rules?.effect_switches?.length ?? 0) === 0 &&
     (rules?.media_fallbacks?.length ?? 0) === 0 &&
     Object.keys(rules?.slots ?? {}).length === 0 &&
     (rules?.pipeline?.length ?? 0) === 0
@@ -457,6 +533,8 @@ export interface LostRuleFragments {
   pipelineStageIds: string[];
   nodeIds: string[];
   derivedWidgetIds: string[];
+  effectSwitchIds: string[];
+  effectSwitchCaseCount: number;
   rewriteCount: number;
   mediaFallbackCount: number;
   hasLoss: boolean;
@@ -492,9 +570,33 @@ export function findLostRuleFragments(
 
   const rewriteCount = Math.max(
     0,
-    (previousRules?.rewrites?.length ?? 0) -
-      (nextRules?.rewrites?.length ?? 0),
+    (previousRules?.rewrites?.length ?? 0) - (nextRules?.rewrites?.length ?? 0),
   );
+  const countEffectSwitchCases = (
+    rules: WorkflowRules | null | undefined,
+  ): Map<string, number> =>
+    new Map(
+      (rules?.effect_switches ?? []).map((effectSwitch, index) => [
+        effectSwitch.id ?? `#${index}`,
+        (effectSwitch.cases ?? []).length,
+      ]),
+    );
+  const prevEffectSwitchCases = countEffectSwitchCases(previousRules);
+  const nextEffectSwitchCases = countEffectSwitchCases(nextRules);
+  const effectSwitchIds = [...prevEffectSwitchCases.keys()].filter(
+    (id) => !nextEffectSwitchCases.has(id),
+  );
+  // A switch is first-match-wins, so losing one case silently changes which
+  // branch fires — the same failure a missing switch causes, minus the
+  // missing switch. Count that as loss too.
+  let effectSwitchCaseCount = 0;
+  for (const [id, prevCases] of prevEffectSwitchCases) {
+    const nextCases = nextEffectSwitchCases.get(id);
+    if (nextCases === undefined) {
+      continue;
+    }
+    effectSwitchCaseCount += Math.max(0, prevCases - nextCases);
+  }
   const mediaFallbackCount = Math.max(
     0,
     (previousRules?.media_fallbacks?.length ?? 0) -
@@ -505,12 +607,16 @@ export function findLostRuleFragments(
     pipelineStageIds,
     nodeIds,
     derivedWidgetIds,
+    effectSwitchIds,
+    effectSwitchCaseCount,
     rewriteCount,
     mediaFallbackCount,
     hasLoss:
       pipelineStageIds.length > 0 ||
       nodeIds.length > 0 ||
       derivedWidgetIds.length > 0 ||
+      effectSwitchIds.length > 0 ||
+      effectSwitchCaseCount > 0 ||
       rewriteCount > 0 ||
       mediaFallbackCount > 0,
   };

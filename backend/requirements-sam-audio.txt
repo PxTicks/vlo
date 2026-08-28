@@ -3,14 +3,10 @@
 # perception-models, so keep them attached to the upstream package instead of
 # listing them as bare PyPI requirements in backend/requirements.txt.
 #
+# Install this file with `--overrides backend/overrides-sam-audio.txt`; the
+# protobuf floor SAM-Audio needs lives there, because dacvae caps protobuf below
+# 3.20 and a requirement cannot lift another package's cap. Every installer path
+# (install.sh, install.bat, the in-app capability installer) passes it.
+#
 # Requires Python >=3.11.
 sam_audio @ git+https://github.com/facebookresearch/sam-audio.git
-
-# descript-audiotools 0.7.2 caps protobuf below 3.20, and tensorboard floors it
-# at 3.19.6, so a plain resolve lands on exactly 3.19.6 — the last release
-# before google/protobuf/internal/builder.py existed. sentencepiece's generated
-# _pb2 module imports that symbol on the tokenizer path, so SAM-Audio cannot
-# import without this floor. The audiotools cap is stale and inert here: its
-# only protobuf use is a lazily imported visqol metric that is not installed.
-# Upper bound from wandb, which declares protobuf<7.
-protobuf>=5.29,<7

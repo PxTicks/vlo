@@ -506,10 +506,18 @@ if [ "$PROFILES_EXPLICIT" -eq 0 ]; then
 fi
 
 install_profile_requirements() {
-    local profile="$1" label="$2" requirements="$3"
+    local profile="$1" label="$2" requirements="$3" overrides="${4:-}"
+    local override_args=()
+
+    # An overrides file *replaces* a dependency's declared constraint instead of
+    # intersecting with it, which is the only way to install a profile whose
+    # transitive pin is stale (SAM-Audio: dacvae caps protobuf below 3.20).
+    if [ -n "$overrides" ]; then
+        override_args=(--overrides "$SCRIPT_DIR/$overrides")
+    fi
 
     info "Installing ${label} into the backend virtual environment..."
-    if "$UV_BIN" pip install --python "$VENV_PY" -r "$SCRIPT_DIR/$requirements"; then
+    if "$UV_BIN" pip install --python "$VENV_PY" "${override_args[@]}" -r "$SCRIPT_DIR/$requirements"; then
         record_profile_status "$profile" installed
         info "${label} installed."
         return 0
@@ -556,7 +564,8 @@ else
 fi
 
 if profile_requested sam-audio; then
-    install_profile_requirements sam-audio "SAM-Audio" "backend/requirements-sam-audio.txt" || true
+    install_profile_requirements sam-audio "SAM-Audio" \
+        "backend/requirements-sam-audio.txt" "backend/overrides-sam-audio.txt" || true
 else
     info "Skipping SAM-Audio installation. Rerun with --profiles sam-audio to add it later."
 fi

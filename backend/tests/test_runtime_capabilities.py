@@ -129,6 +129,7 @@ def test_checkpoint_present_without_package_is_blocked(
     assert package.remediation.requires_restart is True
     assert package.remediation.command == (
         "uv pip install --python backend/.venv/bin/python "
+        "--overrides backend/overrides-sam-audio.txt "
         "-r backend/requirements-sam-audio.txt"
     )
 

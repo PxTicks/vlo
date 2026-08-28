@@ -117,6 +117,29 @@ def test_the_displayed_command_is_the_argv_and_nothing_else(with_uv: None) -> No
     assert plan.to_json()["profileId"] == SAM_AUDIO_PROFILE_ID
 
 
+def test_a_profile_override_file_rides_along_with_the_requirements(
+    with_uv: None,
+) -> None:
+    # SAM-Audio's protobuf floor cannot be a requirement: dacvae caps protobuf
+    # below 3.20, and a requirement intersects with that cap rather than
+    # replacing it, so the resolve is unsatisfiable. Losing the flag here would
+    # make every in-app SAM-Audio install fail in the resolver.
+    plan = install_plan_for_capability("sam-audio")
+
+    assert plan is not None
+    assert plan.argv[5] == "--overrides"
+    assert (
+        Path(plan.argv[6]) == PROJECT_ROOT / "backend" / "overrides-sam-audio.txt"
+    )
+    assert plan.argv[-2] == "-r"
+    assert (
+        Path(plan.argv[-1])
+        == PROJECT_ROOT / "backend" / "requirements-sam-audio.txt"
+    )
+    # The file has to exist, or the install stops before the installer runs.
+    validate_plan(plan)
+
+
 def test_pip_installs_when_the_machine_has_no_uv(
     without_uv: None,
     monkeypatch: pytest.MonkeyPatch,

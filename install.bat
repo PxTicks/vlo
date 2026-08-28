@@ -401,7 +401,7 @@ if "%WANT_SAM_AUDIO%"=="0" (
 )
 
 echo [INFO]  Installing SAM-Audio into the backend virtual environment...
-call "%UV_BIN%" pip install --python "%VENV_PY%" -r "%SCRIPT_DIR%backend\requirements-sam-audio.txt"
+call "%UV_BIN%" pip install --python "%VENV_PY%" --overrides "%SCRIPT_DIR%backend\overrides-sam-audio.txt" -r "%SCRIPT_DIR%backend\requirements-sam-audio.txt"
 if %errorlevel% neq 0 (
     set "PROFILE_STATUS_SAM_AUDIO=failed"
     echo [WARN]  SAM-Audio installation failed. The app will report it as blocked, with the command to retry.

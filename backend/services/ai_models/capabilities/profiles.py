@@ -73,6 +73,10 @@ class CapabilityProfile:
     capability_ids: tuple[str, ...] = ()
     #: Project-relative requirements file, or ``None`` for a meta profile.
     requirements: str | None = None
+    #: Project-relative ``uv --overrides`` file, for a profile whose
+    #: dependencies declare a constraint that has to be replaced rather than
+    #: intersected with. ``uv`` only: ``pip`` has no equivalent flag.
+    overrides: str | None = None
     #: Profiles a meta profile expands to.
     includes: tuple[str, ...] = ()
     #: ``False`` for the base environment, which is not optional.
@@ -106,6 +110,7 @@ PROFILES: tuple[CapabilityProfile, ...] = (
         summary="Prompted audio separation",
         capability_ids=("sam-audio",),
         requirements="backend/requirements-sam-audio.txt",
+        overrides="backend/overrides-sam-audio.txt",
     ),
     CapabilityProfile(
         id=LOCAL_AI_PROFILE_ID,
@@ -512,9 +517,12 @@ def install_command(profile: CapabilityProfile, *, uv: str | None) -> str | None
 
     if profile.requirements is None:
         return None
+    overrides = (
+        f"--overrides {profile.overrides} " if profile.overrides else ""
+    )
     return (
         f"{uv or 'uv'} pip install --python {backend_python()} "
-        f"-r {profile.requirements}"
+        f"{overrides}-r {profile.requirements}"
     )
 
 

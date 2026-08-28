@@ -276,8 +276,15 @@ Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/
 SAM-Audio is optional and requires Python 3.11 or newer. It is intentionally not part of `backend/requirements.txt` because Meta's package owns VCS-only dependencies such as `dacvae`, ImageBind, and perception-models. Install SAM-Audio into the backend virtual environment as one unit:
 
 ```bash
-uv pip install --python backend/.venv/bin/python -r backend/requirements-sam-audio.txt
+uv pip install --python backend/.venv/bin/python \
+  --overrides backend/overrides-sam-audio.txt \
+  -r backend/requirements-sam-audio.txt
 ```
+
+The `--overrides` file is required, not optional: `dacvae` inherits a stale
+`protobuf<3.20` cap, and SAM-Audio's tokenizer needs a newer protobuf than that.
+An override replaces the cap, where a plain requirement would only intersect
+with it and make the resolve unsatisfiable.
 
 If you are working from a local checkout, install that checkout into the backend virtual environment, or set `SAM_AUDIO_PYTHONPATH` to a path such as `~/sam-audio` after installing its dependencies.
 

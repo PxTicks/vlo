@@ -81,6 +81,7 @@ def test_install_remediation_is_the_documented_command_when_uv_is_on_path(
     assert remediation.kind is RemediationKind.COMMAND
     assert remediation.command == (
         "uv pip install --python backend/.venv/bin/python "
+        "--overrides backend/overrides-sam-audio.txt "
         "-r backend/requirements-sam-audio.txt"
     )
     assert remediation.requires_restart is True
@@ -175,6 +176,7 @@ def test_the_command_targets_a_conda_environment_it_is_running_in(
     assert remediation is not None
     assert remediation.command == (
         f"uv pip install --python {executable} "
+        "--overrides backend/overrides-sam-audio.txt "
         "-r backend/requirements-sam-audio.txt"
     )
     assert ".venv" not in (remediation.command or "")

@@ -276,6 +276,12 @@ def install_plan_for_capability(
     if installer is None:
         return None
     leading, tool = installer
+    # ``--overrides`` is a uv flag with no pip equivalent. A profile that needs
+    # one cannot resolve under pip at all, but passing an unknown flag would
+    # fail earlier and less legibly than the resolution error itself does.
+    overrides: tuple[str, ...] = ()
+    if profile.overrides and tool == "uv":
+        overrides = ("--overrides", str(_requirements_path(profile.overrides)))
     return InstallPlan(
         capability_id=capability_id,
         summary=(
@@ -283,7 +289,12 @@ def install_plan_for_capability(
             if profile.optional
             else "Reinstall the backend requirements"
         ),
-        argv=(*leading, "-r", str(_requirements_path(profile.requirements))),
+        argv=(
+            *leading,
+            *overrides,
+            "-r",
+            str(_requirements_path(profile.requirements)),
+        ),
         tool=tool,
         profile_id=profile.id,
     )
@@ -355,7 +366,7 @@ def validate_plan(plan: InstallPlan) -> None:
     """
 
     for index, argument in enumerate(plan.argv):
-        if argument == "-r" and index + 1 < len(plan.argv):
+        if argument in ("-r", "--overrides") and index + 1 < len(plan.argv):
             requirements = Path(plan.argv[index + 1])
             if not requirements.is_file():
                 raise InstallNotAvailableError(

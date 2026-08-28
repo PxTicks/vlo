@@ -1,0 +1,15 @@
+# Dependency overrides for the SAM-Audio install (uv --overrides).
+#
+# dacvae — a VCS dependency of sam_audio — inherits descript-audiotools' stale
+# `protobuf>=3.9.2,<3.20` cap, so a plain resolve lands on exactly 3.19.6: the
+# last release before google/protobuf/internal/builder.py existed. sentencepiece's
+# generated _pb2 module imports that symbol on the tokenizer path, so SAM-Audio
+# cannot import without a newer protobuf. The cap is inert here — audiotools'
+# only protobuf use is a lazily imported visqol metric that is not installed.
+#
+# Stating that as a requirement instead of an override makes the resolve
+# *unsatisfiable* rather than merely unpinned, which is what an override is for:
+# it replaces dacvae's declared range instead of intersecting with it.
+#
+# Upper bound from wandb, which declares protobuf<7.
+protobuf>=5.29,<7

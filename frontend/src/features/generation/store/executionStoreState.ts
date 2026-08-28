@@ -60,6 +60,7 @@ import {
 import {
   isActiveGenerationJob,
   markJobError,
+  resolveActiveJobId,
 } from "./jobMutations";
 import { buildGenerationFamilyRequestKey } from "../utils/familyAssignment";
 import { revokePreviewAnimation } from "./previewState";
@@ -1027,10 +1028,17 @@ export function buildExecutionStoreState(
           return {};
         }
 
-        if (state.latestPreviewUrl) {
-          URL.revokeObjectURL(state.latestPreviewUrl);
+        // Submitting no longer means "this is now the one running": with the
+        // whole batch handed to ComfyUI up front, a prompt queued behind a
+        // still-running sibling must not steal the preview pane from it.
+        const nextActiveJobId = resolveActiveJobId(updated, state.activeJobId);
+        const takesOverPreview = nextActiveJobId === submitted.promptId;
+        if (takesOverPreview) {
+          if (state.latestPreviewUrl) {
+            URL.revokeObjectURL(state.latestPreviewUrl);
+          }
+          revokePreviewAnimation(state.previewAnimation);
         }
-        revokePreviewAnimation(state.previewAnimation);
 
         const nextPreviewFrames = new Map(state.jobPreviewFrames);
         const previewMode = newJob.postprocessConfig?.mode ?? "auto";
@@ -1047,9 +1055,10 @@ export function buildExecutionStoreState(
         return {
           jobs: updated,
           jobPreviewFrames: nextPreviewFrames,
-          activeJobId: submitted.promptId,
-          latestPreviewUrl: null,
-          previewAnimation: null,
+          activeJobId: nextActiveJobId,
+          ...(takesOverPreview
+            ? { latestPreviewUrl: null, previewAnimation: null }
+            : {}),
           pipelineStatus: IDLE_PIPELINE_STATUS,
           preprocessAbortController: null,
         };
@@ -1156,13 +1165,12 @@ export function buildExecutionStoreState(
     try {
       while (true) {
         const state = get();
-        const activeJob = state.activeJobId
-          ? state.jobs.get(state.activeJobId)
-          : null;
-        if (
-          state.pipelineStatus.phase === "preprocessing" ||
-          isActiveGenerationJob(activeJob)
-        ) {
+        // Deliberately *not* gated on an in-flight job. ComfyUI's queue is the
+        // queue: every plan is submitted as soon as its preprocessing is done,
+        // so the work survives the browser going away and ComfyUI runs the
+        // batch to completion on its own. Preprocessing still serialises,
+        // because it is local work sharing one abort controller.
+        if (state.pipelineStatus.phase === "preprocessing") {
           return;
         }
         if (!canDispatchNow(state)) {
@@ -1183,11 +1191,9 @@ export function buildExecutionStoreState(
       isProcessingQueue = false;
 
       const state = get();
-      const activeJob = state.activeJobId ? state.jobs.get(state.activeJobId) : null;
       if (
         state.generationQueue.length > 0 &&
         state.pipelineStatus.phase !== "preprocessing" &&
-        !isActiveGenerationJob(activeJob) &&
         canDispatchNow(state)
       ) {
         void processGenerationQueue();
@@ -1195,19 +1201,114 @@ export function buildExecutionStoreState(
     }
   }
 
+  /**
+   * Every generation vlo is tracking for this project that ComfyUI has not
+   * started yet, oldest first.
+   *
+   * This deliberately includes in-editor prompts adopted from the ComfyUI
+   * iframe: adoption puts them in this same job map, and they are this
+   * project's work, so "clear the queue" covers them. It does not reach
+   * prompts vlo never adopted — another tab's, or another tool driving the
+   * same ComfyUI — because those were never added here.
+   */
+  function pendingPromptIds(state: ReturnType<GenerationStoreGet>): string[] {
+    return [...state.jobs.values()]
+      .filter((job) => job.status === "queued")
+      .sort((a, b) => a.submittedAt - b.submittedAt)
+      .map((job) => job.id);
+  }
+
+  /**
+   * Cancel a set of prompts in ComfyUI and mark them cancelled locally.
+   *
+   * Both calls are needed and neither is sufficient. ComfyUI's `delete` only
+   * touches *pending* entries, so a prompt that starts executing between these
+   * ids being collected and ComfyUI handling the delete would survive it — and
+   * run to completion while the frontend has already called it cancelled. The
+   * prompt-scoped `interrupt` closes that window, and cannot reach past this
+   * set: ComfyUI ignores it unless the id names the prompt it is executing.
+   *
+   * Both are scoped to exact ids because ComfyUI's queue is a single global
+   * FIFO. A bodyless clear or interrupt is what would hit work vlo does not
+   * own.
+   */
+  async function cancelPrompts(promptIds: string[]): Promise<void> {
+    if (promptIds.length === 0) {
+      return;
+    }
+
+    set((state) => {
+      let patched = state;
+      for (const promptId of promptIds) {
+        patched = {
+          ...patched,
+          ...markJobError(
+            patched,
+            promptId,
+            GENERATION_CANCELLED_BY_USER_MESSAGE,
+            null,
+            { completedAt: Date.now() },
+          ),
+        };
+      }
+      return {
+        jobs: patched.jobs,
+        jobPreviewFrames: patched.jobPreviewFrames,
+        previewAnimation: patched.previewAnimation,
+        activeJobId: resolveActiveJobId(patched.jobs, patched.activeJobId),
+      };
+    });
+
+    try {
+      await comfyApi.deleteQueueItems(promptIds);
+      // Not filtered on local job status, which lags the delivery stream: the
+      // whole point is to catch an id that has just become the running prompt.
+      await Promise.all(promptIds.map((promptId) => comfyApi.interrupt(promptId)));
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? `Cancel failed: ${error.message}`
+          : "Cancel failed: ComfyUI is unreachable";
+      set((state) => {
+        let patched = state;
+        for (const promptId of promptIds) {
+          patched = {
+            ...patched,
+            ...markJobError(patched, promptId, message, null, {
+              nextConnectionStatus: "error",
+              completedAt: Date.now(),
+            }),
+          };
+        }
+        return {
+          jobs: patched.jobs,
+          jobPreviewFrames: patched.jobPreviewFrames,
+          previewAnimation: patched.previewAnimation,
+          connectionStatus: patched.connectionStatus,
+        };
+      });
+    }
+  }
+
+  /**
+   * Drop everything not yet started: plans still waiting on local preprocessing
+   * *and* the prompts already handed to ComfyUI. Both halves matter now that
+   * the queue is submitted ahead — most of a "clear queue" lives in ComfyUI,
+   * and emptying only the local array would leave it running the batch.
+   */
+  async function clearPendingGenerations(): Promise<void> {
+    set({ generationQueue: [] });
+    await cancelPrompts(pendingPromptIds(get()));
+  }
+
   async function interruptGeneration(
     options: { clearQueue: boolean },
   ): Promise<void> {
-    const {
-      pipelineStatus,
-      preprocessAbortController,
-      pipelineRunToken,
-      activeJobId,
-      jobs,
-    } = get();
+    const { pipelineStatus, preprocessAbortController, pipelineRunToken } =
+      get();
 
     if (options.clearQueue) {
-      set({ generationQueue: [] });
+      await clearPendingGenerations();
     }
 
     if (pipelineStatus.phase === "preprocessing") {
@@ -1223,44 +1324,14 @@ export function buildExecutionStoreState(
       return;
     }
 
-    const activeJob = activeJobId ? jobs.get(activeJobId) : null;
-    if (!isActiveGenerationJob(activeJob)) {
-      if (!options.clearQueue) {
-        void processGenerationQueue();
-      }
-      return;
-    }
-
-    set((state) =>
-      markJobError(
-        state,
-        activeJob.id,
-        GENERATION_CANCELLED_BY_USER_MESSAGE,
-        null,
-        {
-          clearActiveJob: true,
-          completedAt: Date.now(),
-        },
-      ),
-    );
-
-    // The active job's id is its ComfyUI prompt_id. Scope the cancel to it:
-    // drop it if still pending, and interrupt only if it is the running prompt.
-    // Both are no-ops against the iframe's jobs sharing the global queue.
-    try {
-      await comfyApi.deleteQueueItems([activeJob.id]);
-      await comfyApi.interrupt(activeJob.id);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? `Cancel failed: ${error.message}`
-          : "Cancel failed: ComfyUI is unreachable";
-      set((state) =>
-        markJobError(state, activeJob.id, message, null, {
-          nextConnectionStatus: "error",
-          completedAt: Date.now(),
-        }),
-      );
+    // "Interrupt current" stops the prompt ComfyUI is executing and lets the
+    // rest of the batch carry on; "cancel" already dropped the rest above.
+    const state = get();
+    const activeJob = state.activeJobId
+      ? state.jobs.get(state.activeJobId)
+      : null;
+    if (isActiveGenerationJob(activeJob)) {
+      await cancelPrompts([activeJob.id]);
     }
 
     if (!options.clearQueue) {
@@ -1369,8 +1440,17 @@ export function buildExecutionStoreState(
 
     resumeGenerationQueueAfterGpuRelease: releaseGpuHold,
 
-    clearGenerationQueue: () => {
-      set({ generationQueue: [] });
+    clearGenerationQueue: async () => {
+      await clearPendingGenerations();
+    },
+
+    cancelQueuedGeneration: async (promptId: string) => {
+      // Only a prompt that has not started: interrupting the running one is
+      // "interrupt current", a different and more destructive action.
+      if (get().jobs.get(promptId)?.status !== "queued") {
+        return;
+      }
+      await cancelPrompts([promptId]);
     },
 
     interruptCurrentGeneration: async () => {

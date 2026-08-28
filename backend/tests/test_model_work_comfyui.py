@@ -260,6 +260,49 @@ def test_admission_transfers_before_any_fallible_persistence(
     assert model_work_coordinator.describe_resource(LOCAL_GPU_RESOURCE) is None
 
 
+def test_submitted_ahead_prompts_stay_queued_until_comfyui_starts_them(
+    model_work_coordinator,
+    local_comfyui: None,
+) -> None:
+    """A batch handed to ComfyUI up front is one running prompt and N queued.
+
+    Admission for a ComfyUI prompt only buys a place in ComfyUI's own queue, so
+    it must not report the whole batch as running: the Queue panel would then
+    show several prompts executing on a card that runs one at a time.
+    """
+
+    tokens = []
+    for index in range(3):
+        admission = ComfyPromptAdmission(
+            source="comfyui-vlo",
+            label=f"flux render {index}",
+        )
+        admission.reserve()
+        tokens.append(admission.accept(f"prompt-{index}"))
+
+    def _status(prompt_id: str) -> str:
+        entry_id = model_work_coordinator.token_for_prompt(prompt_id).entry_id
+        entry = next(
+            candidate
+            for candidate in model_work_coordinator.snapshot().entries
+            if candidate.entry_id == entry_id
+        )
+        return entry.job_status
+
+    assert [_status(f"prompt-{i}") for i in range(3)] == ["queued"] * 3
+
+    comfyui_admission.report_prompt_progress("prompt-1", job_status="running")
+
+    assert [_status(f"prompt-{i}") for i in range(3)] == [
+        "queued",
+        "running",
+        "queued",
+    ]
+
+    for token in tokens:
+        token.settle_sync("succeeded")
+
+
 def test_admission_reports_the_occupant_when_local_work_owns_the_gpu(
     model_work_coordinator,
     local_comfyui: None,

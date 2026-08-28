@@ -1267,3 +1267,83 @@ async def test_monitor_sets_connected_event_when_websocket_opens(
     )
 
     assert connected.is_set()
+
+
+@pytest.mark.anyio
+async def test_queued_backstops_share_one_queue_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A submitted-ahead batch must not pull /queue once per delivery.
+
+    /queue carries the full prompt payload of every entry, so N deliveries
+    polling it on their own cadence is N copies of the whole queue every couple
+    of seconds. They share one snapshot within its TTL instead.
+    """
+
+    service = GenerationHoldingService(tmp_path)
+    queue_fetches = 0
+
+    class _CountingClient:
+        async def get(self, path: str) -> _FakeResponse:
+            nonlocal queue_fetches
+            assert path == "/queue"
+            queue_fetches += 1
+            return _FakeResponse(
+                {"queue_running": [], "queue_pending": [[0, "prompt-1"]]}
+            )
+
+    async def _client() -> _CountingClient:
+        return _CountingClient()
+
+    monkeypatch.setattr(delivery_service_module, "get_http_client", _client)
+    monkeypatch.setattr(
+        delivery_service_module, "QUEUE_SNAPSHOT_TTL_SECONDS", 60
+    )
+
+    results = await asyncio.gather(
+        *(service._queued_prompt_ids() for _ in range(8))
+    )
+
+    assert queue_fetches == 1
+    assert all(result == {"prompt-1"} for result in results)
+
+    # Expiring the snapshot re-fetches rather than serving a stale queue.
+    monkeypatch.setattr(
+        delivery_service_module, "QUEUE_SNAPSHOT_TTL_SECONDS", 0
+    )
+    assert await service._queued_prompt_ids() == {"prompt-1"}
+    assert queue_fetches == 2
+
+
+@pytest.mark.anyio
+async def test_unreachable_queue_snapshot_reports_unknown_without_stampeding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(tmp_path)
+    attempts = 0
+
+    class _BrokenClient:
+        async def get(self, path: str) -> _FakeResponse:
+            nonlocal attempts
+            attempts += 1
+            raise RuntimeError("comfyui is down")
+
+    async def _client() -> _BrokenClient:
+        return _BrokenClient()
+
+    monkeypatch.setattr(delivery_service_module, "get_http_client", _client)
+    monkeypatch.setattr(
+        delivery_service_module, "QUEUE_SNAPSHOT_TTL_SECONDS", 60
+    )
+
+    results = await asyncio.gather(
+        *(service._queued_prompt_ids() for _ in range(5))
+    )
+
+    # A failed probe is cached like any other, so a ComfyUI that is down is not
+    # hammered by every backstop in the batch.
+    assert attempts == 1
+    assert all(result is None for result in results)
+    assert await service.probe_comfyui_activity() == "unknown"

@@ -167,9 +167,13 @@ export async function interrupt(promptId?: string): Promise<void> {
 }
 
 /**
- * Remove prompts from ComfyUI's *pending* queue by id. Scoped to the exact ids
- * we own so a cancel never clears the iframe's queued work; a bodyless queue
- * clear (which ComfyUI's own UI issues) would wipe everyone's pending prompts.
+ * Remove prompts from ComfyUI's *pending* queue by id.
+ *
+ * Always id-scoped: ComfyUI's queue is one global FIFO, and the bodyless clear
+ * its own UI issues would wipe every pending prompt on the machine, including
+ * work vlo has nothing to do with. Callers decide which ids they mean — the
+ * panel's "clear queue" does include in-editor prompts vlo has adopted, which
+ * are this project's generations too.
  */
 export async function deleteQueueItems(promptIds: string[]): Promise<void> {
   if (promptIds.length === 0) {

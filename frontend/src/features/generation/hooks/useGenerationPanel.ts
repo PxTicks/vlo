@@ -342,9 +342,23 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const activeJobId = useGenerationStore((s) => s.activeJobId);
   const jobs = useGenerationStore((s) => s.jobs);
   const pipelineStatus = useGenerationStore((s) => s.pipelineStatus);
-  const queuedGenerationCount = useGenerationStore(
-    (s) => s.generationQueue.length,
-  );
+  const queuedPlanCount = useGenerationStore((s) => s.generationQueue.length);
+  // Prompts already handed to ComfyUI but not yet started. Since the queue is
+  // submitted ahead, most of "what is still queued" lives there rather than in
+  // the local plan array — which drains as fast as preprocessing allows.
+  //
+  // The active job is excluded: it is reported separately as the current one
+  // (and stays `queued` for as long as ComfyUI has something else in front of
+  // it), so counting it here as well would claim one generation more than
+  // exists.
+  const queuedPromptCount = useGenerationStore((s) => {
+    let count = 0;
+    for (const job of s.jobs.values()) {
+      if (job.status === "queued" && job.id !== s.activeJobId) count += 1;
+    }
+    return count;
+  });
+  const queuedGenerationCount = queuedPlanCount + queuedPromptCount;
   const postprocessingCount = useGenerationStore(
     (s) => s.postprocessingJobIds.length,
   );
@@ -1009,7 +1023,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   );
 
   const handleClearQueue = useCallback(() => {
-    clearGenerationQueue();
+    void clearGenerationQueue();
   }, [clearGenerationQueue]);
 
   const handleInterruptCurrent = useCallback(() => {

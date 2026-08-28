@@ -63,6 +63,13 @@ MONITOR_UNREACHABLE_STALE_THRESHOLD = 3
 # released. More than one, because a prompt can sit between "accepted" and
 # "queued" for a moment.
 AMBIGUOUS_SUBMISSION_IDLE_THRESHOLD = 2
+# Every backstop that has not seen its prompt in /history falls through to
+# /queue, and /queue returns the *full prompt payload* for every entry. Now
+# that a batch is submitted ahead, N deliveries would each pull the whole queue
+# every couple of seconds, so one snapshot is fetched and shared. Kept just
+# under the queued poll interval so a round of backstops coalesces onto one
+# fetch without any of them reading a snapshot older than its own cadence.
+QUEUE_SNAPSHOT_TTL_SECONDS = 1.5
 MONITOR_BACKSTOP_QUEUED_INTERVAL_SECONDS = 2.0
 MONITOR_BACKSTOP_QUEUED_MISS_THRESHOLD = 2
 # Backstop-only monitors (adopted in-editor generations) have no websocket to
@@ -420,6 +427,11 @@ class GenerationHoldingService:
         self._active_consumer_id_by_project: dict[str, str] = {}
         self._monitor_tasks: dict[str, asyncio.Task[None]] = {}
         self._iframe_client_projects: dict[str, tuple[int, str]] = {}
+        # (taken_at, prompt_ids | None) — None means ComfyUI was unreachable,
+        # which is cached too so a batch of backstops cannot stampede a
+        # ComfyUI that is down.
+        self._queue_snapshot: tuple[float, set[str] | None] | None = None
+        self._queue_snapshot_lock = asyncio.Lock()
 
     async def _ensure_loaded(self) -> None:
         reattach_manifests: list[dict[str, Any]] = []
@@ -1077,6 +1089,10 @@ class GenerationHoldingService:
             manifest.get("prompt_id") or "",
             progress=None if progress is None else progress / 100,
             message=current_node,
+            # ComfyUI has started this prompt. Admission left it queued in the
+            # ledger precisely so the Queue panel could tell the executing
+            # prompt apart from its submitted-ahead siblings.
+            job_status="running",
         )
         await self._broadcast_payload(manifest["project_id"], {"type": "delivery_update", "data": {"delivery": serialized}})
 
@@ -1632,6 +1648,46 @@ class GenerationHoldingService:
                 await self._persist_manifest(manifest)
         await self.mark_completed(delivery_id, outputs)
 
+    async def _queued_prompt_ids(self) -> set[str] | None:
+        """Prompt ids ComfyUI holds, or ``None`` when it could not be queried.
+
+        Shared across every delivery backstop with a short TTL — see
+        :data:`QUEUE_SNAPSHOT_TTL_SECONDS`.
+        """
+
+        loop = asyncio.get_running_loop()
+
+        def _fresh() -> tuple[bool, set[str] | None]:
+            snapshot = self._queue_snapshot
+            if (
+                snapshot is not None
+                and loop.time() - snapshot[0] < QUEUE_SNAPSHOT_TTL_SECONDS
+            ):
+                return True, snapshot[1]
+            return False, None
+
+        hit, cached = _fresh()
+        if hit:
+            return cached
+
+        async with self._queue_snapshot_lock:
+            # Re-checked: pollers that queued behind the lock are served by the
+            # fetch they were waiting on rather than issuing their own.
+            hit, cached = _fresh()
+            if hit:
+                return cached
+            try:
+                client = await get_http_client()
+                response = await client.get("/queue")
+                response.raise_for_status()
+                prompt_ids: set[str] | None = _parse_queue_prompt_ids(
+                    response.json()
+                )
+            except Exception:
+                prompt_ids = None
+            self._queue_snapshot = (loop.time(), prompt_ids)
+            return prompt_ids
+
     async def probe_comfyui_activity(self) -> str:
         """Whether ComfyUI has anything running or pending.
 
@@ -1641,14 +1697,10 @@ class GenerationHoldingService:
         whoever's prompt it was.
         """
 
-        try:
-            client = await get_http_client()
-            response = await client.get("/queue")
-            response.raise_for_status()
-            queue = response.json()
-        except Exception:
+        prompt_ids = await self._queued_prompt_ids()
+        if prompt_ids is None:
             return "unknown"
-        return "busy" if _parse_queue_prompt_ids(queue) else "idle"
+        return "busy" if prompt_ids else "idle"
 
     async def watch_ambiguous_submission(self, lease: Any) -> None:
         """Own the GPU reservation of a submission whose fate is unknown.
@@ -1757,14 +1809,10 @@ class GenerationHoldingService:
         if isinstance(prompt_history, dict):
             return "completed", _extract_history_error(prompt_history)
 
-        try:
-            response = await client.get("/queue")
-            response.raise_for_status()
-            queue = response.json()
-        except Exception:
+        queued_prompt_ids = await self._queued_prompt_ids()
+        if queued_prompt_ids is None:
             return "unknown", None
-
-        if prompt_id in _parse_queue_prompt_ids(queue):
+        if prompt_id in queued_prompt_ids:
             return "pending", None
         return "missing", None
 

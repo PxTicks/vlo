@@ -218,6 +218,9 @@ class ModelWorkCoordinator:
                 tenant=TENANT_COMFYUI,
                 sharing="tenant",
                 entry=entry,
+                # The manifest already says whether ComfyUI had started this
+                # prompt; admission must not overwrite that with "running".
+                promote_to_running=False,
             )
             if holder is None:
                 # Width-1 local-gpu already owned by a different tenant. That is
@@ -254,6 +257,7 @@ class ModelWorkCoordinator:
         owner: str,
         sharing: Sharing = "exclusive",
         cancel_endpoint: str | None = None,
+        promote_to_running: bool = True,
     ) -> Lease | None:
         with self._lock:
             self._require_ready_locked()
@@ -270,6 +274,7 @@ class ModelWorkCoordinator:
                 tenant=tenant,
                 sharing=sharing,
                 entry=entry,
+                promote_to_running=promote_to_running,
             )
             if holder is None:
                 return None
@@ -717,13 +722,24 @@ class ModelWorkCoordinator:
         tenant: str | None,
         sharing: Sharing,
         entry: LedgerEntry,
+        promote_to_running: bool = True,
     ) -> _Holder | None:
+        """Admit ``entry``, or return None when the resource excludes it.
+
+        ``promote_to_running`` is what admission *means* for the caller. For
+        local inference they coincide: being admitted is the moment the work
+        starts. For a ComfyUI prompt they do not — admission only buys a place
+        in ComfyUI's own queue, and several accepted prompts share one
+        occupancy while exactly one of them executes. Promoting all of them
+        would show a whole submitted-ahead batch as running at once.
+        """
         if resource is None:
             # Observe-only work (remote ComfyUI). Recorded, never gated.
             holder = _Holder(holder_id=uuid.uuid4().hex, entry=entry, occupancy=None)
             self._holders[holder.holder_id] = holder
             entry.occupancy = "occupied"
-            entry.job_status = "running" if entry.job_status == "queued" else entry.job_status
+            if promote_to_running and entry.job_status == "queued":
+                entry.job_status = "running"
             entry.started_at = entry.started_at or time.time()
             return holder
 
@@ -756,7 +772,7 @@ class ModelWorkCoordinator:
         target.holders[holder.holder_id] = holder
         self._holders[holder.holder_id] = holder
         entry.occupancy = "occupied"
-        if entry.job_status == "queued":
+        if promote_to_running and entry.job_status == "queued":
             entry.job_status = "running"
         entry.started_at = entry.started_at or time.time()
         # Shared tenants group their prompt children under one occupancy id.

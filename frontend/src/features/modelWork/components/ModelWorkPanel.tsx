@@ -49,6 +49,11 @@ function statusText(entry: ModelWorkEntry): string {
     if (entry.jobStatus === "cancelled") return "Cancelled";
     return "Done";
   }
+  // Occupied but not started: a ComfyUI prompt submitted ahead holds a child
+  // of the shared `comfyui-process` occupancy while it waits its turn in
+  // ComfyUI's own queue. Reading occupancy alone would show a whole batch as
+  // running on a card that runs one prompt at a time.
+  if (entry.jobStatus === "queued") return "Queued";
   return entry.message ?? "Running";
 }
 
@@ -62,8 +67,11 @@ interface ModelWorkRowProps {
 }
 
 function ModelWorkRow({ entry, onRelease }: ModelWorkRowProps) {
+  // A queued sibling has no progress to show, and an indeterminate bar on each
+  // row would read as a whole batch executing at once.
   const showProgress =
-    entry.occupancy === "occupied" || entry.occupancy === "stopping";
+    (entry.occupancy === "occupied" && entry.jobStatus !== "queued") ||
+    entry.occupancy === "stopping";
   return (
     <Box sx={{ ...rowSx, opacity: isMuted(entry) ? 0.6 : 1 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>

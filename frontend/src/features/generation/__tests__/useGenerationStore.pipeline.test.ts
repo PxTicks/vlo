@@ -796,16 +796,10 @@ describe("useGenerationStore pipeline phases", () => {
       activeWorkflowRules: queuedRules,
       rulesWorkflowSourceId: "video_ltx2_3_flf2v.json",
       editorRef: {} as HTMLIFrameElement,
-      jobs: new Map([
-        [
-          "active-job",
-          {
-            ...makeQueuedJob("active-job"),
-            status: "running",
-          },
-        ],
-      ]),
-      activeJobId: "active-job",
+      // The queue no longer waits on an in-flight job — it is submitted ahead
+      // into ComfyUI's own queue — so the gap between queue time and dispatch
+      // time is opened by making dispatch impossible instead.
+      wsClient: null,
     });
 
     await useGenerationStore.getState().queueGeneration({});
@@ -817,7 +811,12 @@ describe("useGenerationStore pipeline phases", () => {
       selectedWorkflowId: "video_ltx2_3_i2v.json",
       activeWorkflowRules: switchedRules,
       rulesWorkflowSourceId: "video_ltx2_3_i2v.json",
-      activeJobId: null,
+      wsClient: {
+        currentClientId: "client-id",
+        isConnected: true,
+        connect: () => {},
+        disconnect: () => {},
+      } as never,
     });
 
     await useGenerationStore.getState().processGenerationQueue();
@@ -914,16 +913,10 @@ describe("useGenerationStore pipeline phases", () => {
       rulesWorkflowSourceId: queuedWorkflowId,
       editorRef: {} as HTMLIFrameElement,
       preResolvedPromptEnabled: true,
-      jobs: new Map([
-        [
-          "active-job",
-          {
-            ...makeQueuedJob("active-job"),
-            status: "running",
-          },
-        ],
-      ]),
-      activeJobId: "active-job",
+      // The queue no longer waits on an in-flight job — it is submitted ahead
+      // into ComfyUI's own queue — so the gap between queue time and dispatch
+      // time is opened by making dispatch impossible instead.
+      wsClient: null,
     });
 
     await useGenerationStore.getState().queueGeneration({});
@@ -945,7 +938,12 @@ describe("useGenerationStore pipeline phases", () => {
       },
       activeWorkflowRules: switchedRules,
       rulesWorkflowSourceId: switchedWorkflowId,
-      activeJobId: null,
+      wsClient: {
+        currentClientId: "client-id",
+        isConnected: true,
+        connect: () => {},
+        disconnect: () => {},
+      } as never,
     });
 
     await useGenerationStore.getState().processGenerationQueue();
@@ -1885,16 +1883,10 @@ describe("useGenerationStore pipeline phases", () => {
       rulesWorkflowSourceId: "video_ltx2_3_retake.json",
       editorRef: {} as HTMLIFrameElement,
       preResolvedPromptEnabled: true,
-      jobs: new Map([
-        [
-          "active-job",
-          {
-            ...makeQueuedJob("active-job"),
-            status: "running",
-          },
-        ],
-      ]),
-      activeJobId: "active-job",
+      // The queue no longer waits on an in-flight job — it is submitted ahead
+      // into ComfyUI's own queue — so the gap between queue time and dispatch
+      // time is opened by making dispatch impossible instead.
+      wsClient: null,
     });
 
     await useGenerationStore.getState().queueGeneration({});
@@ -1922,7 +1914,12 @@ describe("useGenerationStore pipeline phases", () => {
       },
       activeWorkflowRules: switchedRules,
       rulesWorkflowSourceId: "video_ltx2_3_i2v.json",
-      activeJobId: null,
+      wsClient: {
+        currentClientId: "client-id",
+        isConnected: true,
+        connect: () => {},
+        disconnect: () => {},
+      } as never,
     });
 
     await useGenerationStore.getState().processGenerationQueue();
@@ -2382,7 +2379,7 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockInterrupt).toHaveBeenCalledTimes(1);
   });
 
-  it("clears queued future generations without interrupting the active one", () => {
+  it("clears queued future generations without interrupting the active one", async () => {
     const runningJob = {
       ...makeQueuedJob("prompt-running"),
       status: "running" as const,
@@ -2445,7 +2442,7 @@ describe("useGenerationStore pipeline phases", () => {
       ],
     });
 
-    useGenerationStore.getState().clearGenerationQueue();
+    await useGenerationStore.getState().clearGenerationQueue();
 
     const state = useGenerationStore.getState();
     expect(state.generationQueue).toHaveLength(0);

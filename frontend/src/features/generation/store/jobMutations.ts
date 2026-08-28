@@ -40,6 +40,42 @@ export function isActiveGenerationJob(
   return job?.status === "queued" || job?.status === "running";
 }
 
+/**
+ * Which job the panel treats as *the* one, now that several of our prompts can
+ * sit in ComfyUI's queue at once.
+ *
+ * It has to be the prompt ComfyUI is executing: the preview pane and the
+ * websocket preview-frame capture both file frames against `activeJobId`, and
+ * frames arrive for the running prompt only. ComfyUI runs a single serial
+ * FIFO, so "the running one" is unambiguous. Between runs it falls back to the
+ * oldest still-queued prompt so the panel keeps a subject instead of blanking.
+ */
+export function resolveActiveJobId(
+  jobs: ReadonlyMap<string, GenerationJob>,
+  currentActiveJobId: string | null,
+): string | null {
+  const current = currentActiveJobId ? jobs.get(currentActiveJobId) : null;
+  if (current?.status === "running") {
+    return current.id;
+  }
+
+  let running: GenerationJob | null = null;
+  let queued: GenerationJob | null = null;
+  for (const job of jobs.values()) {
+    if (job.status === "running") {
+      if (!running || job.submittedAt < running.submittedAt) running = job;
+    } else if (job.status === "queued") {
+      if (!queued || job.submittedAt < queued.submittedAt) queued = job;
+    }
+  }
+
+  if (running) return running.id;
+  // Nothing is executing yet, so an already-chosen queued job keeps the slot
+  // rather than being shuffled by arrival order of delivery updates.
+  if (current?.status === "queued") return current.id;
+  return queued?.id ?? null;
+}
+
 export function markJobError(
   state: JobErrorState,
   jobId: string,

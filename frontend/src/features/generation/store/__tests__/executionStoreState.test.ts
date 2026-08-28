@@ -105,7 +105,10 @@ vi.mock("../submission", () => ({
   createSubmissionErrorJob: mocks.createSubmissionErrorJob,
 }));
 
-vi.mock("../jobMutations", () => ({
+vi.mock("../jobMutations", async (importOriginal) => ({
+  // `resolveActiveJobId` is a pure derivation over the job map; stubbing it
+  // would only test the stub, so the real one runs here.
+  ...(await importOriginal<typeof import("../jobMutations")>()),
   isActiveGenerationJob: mocks.isActiveGenerationJob,
   markJobError: mocks.markJobError,
 }));
@@ -706,7 +709,7 @@ describe("buildExecutionStoreState", () => {
     await harness.actions.queueGeneration({}, {}, {}, {}, 2.9);
     expect(mocks.createGenerationPlan).toHaveBeenCalledTimes(2);
     expect(harness.state.generationQueue).toHaveLength(2);
-    harness.actions.clearGenerationQueue();
+    await harness.actions.clearGenerationQueue();
     expect(harness.state.generationQueue).toEqual([]);
   });
 
@@ -1110,6 +1113,100 @@ describe("buildExecutionStoreState", () => {
       null,
       expect.objectContaining({ nextConnectionStatus: "error" }),
     );
+  });
+
+  it("submits the whole queue ahead instead of waiting on the running job", async () => {
+    // The point of the change: ComfyUI's queue is the queue, so a batch keeps
+    // running (and keeps being captured by the backend) with no browser.
+    const harness = createHarness({
+      jobs: new Map([["job-1", { id: "job-1", status: "running", error: null }]]),
+      activeJobId: "job-1",
+      generationQueue: [makePlan({ id: "plan-a" }), makePlan({ id: "plan-b" })],
+    });
+
+    await harness.actions.processGenerationQueue();
+
+    expect(mocks.generate).toHaveBeenCalledTimes(2);
+    expect(harness.state.generationQueue).toEqual([]);
+    // The already-running prompt keeps the preview pane; a prompt queued
+    // behind it must not steal it.
+    expect(harness.state.activeJobId).toBe("job-1");
+  });
+
+  it("clears pending prompts from ComfyUI's queue and leaves the running one", async () => {
+    const harness = createHarness({
+      jobs: new Map([
+        ["job-1", { id: "job-1", status: "running", error: null, submittedAt: 1 }],
+        ["job-2", { id: "job-2", status: "queued", error: null, submittedAt: 2 }],
+        ["job-3", { id: "job-3", status: "queued", error: null, submittedAt: 3 }],
+        ["job-4", { id: "job-4", status: "completed", error: null, submittedAt: 0 }],
+      ]),
+      activeJobId: "job-1",
+      generationQueue: [makePlan()],
+    });
+
+    await harness.actions.clearGenerationQueue();
+
+    expect(harness.state.generationQueue).toEqual([]);
+    expect(mocks.deleteQueueItems).toHaveBeenCalledWith(["job-2", "job-3"]);
+    // Each cleared id is also interrupted, because one of them may have become
+    // the running prompt between collecting the ids and ComfyUI deleting them
+    // — `delete` only touches pending entries, so it would miss that one.
+    expect(mocks.interrupt.mock.calls.flat()).toEqual(["job-2", "job-3"]);
+    // Clearing the queue is not an interrupt of the *current* generation: the
+    // prompt-scoped interrupt is a no-op for anything but its own id.
+    expect(mocks.interrupt).not.toHaveBeenCalledWith("job-1");
+    expect(harness.state.activeJobId).toBe("job-1");
+  });
+
+  it("clears adopted in-editor prompts along with the panel's own", async () => {
+    // Adoption puts iframe generations in this same job map, and they are the
+    // project's work, so a queue clear covers them. Prompts vlo never adopted
+    // are untouched simply by never being in the map.
+    const harness = createHarness({
+      jobs: new Map([
+        [
+          "panel-job",
+          { id: "panel-job", status: "queued", error: null, submittedAt: 1 },
+        ],
+        [
+          "iframe-job",
+          {
+            id: "iframe-job",
+            status: "queued",
+            error: null,
+            submittedAt: 2,
+            generationMetadata: { generatedInEditor: true },
+          },
+        ],
+      ]),
+      activeJobId: null,
+    });
+
+    await harness.actions.clearGenerationQueue();
+
+    expect(mocks.deleteQueueItems).toHaveBeenCalledWith([
+      "panel-job",
+      "iframe-job",
+    ]);
+  });
+
+  it("cancels a single queued prompt but refuses the running one", async () => {
+    const harness = createHarness({
+      jobs: new Map([
+        ["job-1", { id: "job-1", status: "running", error: null, submittedAt: 1 }],
+        ["job-2", { id: "job-2", status: "queued", error: null, submittedAt: 2 }],
+      ]),
+      activeJobId: "job-1",
+    });
+
+    await harness.actions.cancelQueuedGeneration("job-1");
+    expect(mocks.deleteQueueItems).not.toHaveBeenCalled();
+
+    await harness.actions.cancelQueuedGeneration("job-2");
+    expect(mocks.deleteQueueItems).toHaveBeenCalledWith(["job-2"]);
+    // Same race as a queue clear: scoped to job-2, never the running prompt.
+    expect(mocks.interrupt.mock.calls.flat()).toEqual(["job-2"]);
   });
 
   it("does nothing destructive when no active job exists", async () => {

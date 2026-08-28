@@ -281,7 +281,14 @@ export interface GenerationExecutionState {
    * rather than by this store.
    */
   resumeGenerationQueueAfterGpuRelease: () => void;
-  clearGenerationQueue: () => void;
+  /**
+   * Drop every generation that has not started: plans still awaiting local
+   * preprocessing, and the prompts already sitting in ComfyUI's queue. Leaves
+   * the running prompt alone.
+   */
+  clearGenerationQueue: () => Promise<void>;
+  /** Remove one not-yet-started prompt from ComfyUI's queue. */
+  cancelQueuedGeneration: (promptId: string) => Promise<void>;
   interruptCurrentGeneration: () => Promise<void>;
   cancelGeneration: () => Promise<void>;
 }

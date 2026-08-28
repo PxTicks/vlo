@@ -96,6 +96,11 @@ class ComfyPromptAdmission:
             owner=self._owner,
             sharing="tenant" if resource is not None else "exclusive",
             cancel_endpoint=self._cancel_endpoint,
+            # Admission buys a place in ComfyUI's queue, not the GPU itself:
+            # a submitted-ahead batch holds several accepted prompts under one
+            # occupancy while ComfyUI runs exactly one. The monitor promotes
+            # the one that is actually executing.
+            promote_to_running=False,
         )
         if lease is None:
             raise ComfyGpuBusyError(coordinator.describe_resource(resource))
@@ -156,6 +161,7 @@ def report_prompt_progress(
     *,
     progress: float | None = None,
     message: str | None = None,
+    job_status: Any | None = None,
 ) -> None:
     if not prompt_id:
         return
@@ -163,7 +169,7 @@ def report_prompt_progress(
     token = coordinator.token_for_prompt(prompt_id)
     if token is None:
         return
-    token.report(progress=progress, message=message)
+    token.report(progress=progress, message=message, job_status=job_status)
 
 
 def mark_prompt_suspected_stale(prompt_id: str, diagnostic: str) -> None:

@@ -324,6 +324,9 @@ def fast_delivery_timings(monkeypatch: pytest.MonkeyPatch) -> None:
         "MONITOR_BACKSTOP_INTERVAL_SECONDS": 0,
         "MONITOR_BACKSTOP_QUEUED_INTERVAL_SECONDS": 0,
         "MONITOR_BACKSTOP_ONLY_INITIAL_DELAY_SECONDS": 0,
+        # Tests drive /queue responses poll by poll; the shared snapshot would
+        # otherwise hand a second poll the first one's answer.
+        "QUEUE_SNAPSHOT_TTL_SECONDS": 0,
     }
     for name, value in near_zero.items():
         monkeypatch.setattr(delivery_service_module, name, value)

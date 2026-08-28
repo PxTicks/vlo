@@ -15,6 +15,7 @@ import type {
 import {
   applyPreviewUpdate,
   isActiveGenerationJob,
+  resolveActiveJobId,
   markJobError,
   setJobPostprocessResult,
 } from "./jobMutations";
@@ -24,7 +25,6 @@ import {
 } from "./constants";
 import type {
   GenerationStoreGet,
-  GenerationStorePatch,
   GenerationStoreSet,
 } from "./types";
 
@@ -423,15 +423,13 @@ export function attachDeliveryClientHandlers(
       const nextJobs = new Map(state.jobs);
       nextJobs.set(manifest.prompt_id!, nextJob);
 
-      const patch: GenerationStorePatch = {
+      // Re-derived rather than "whichever delivery updated last wins": with a
+      // whole batch in ComfyUI's queue, updates arrive for prompts that are
+      // still waiting, and those must not displace the one executing.
+      return {
         jobs: nextJobs,
+        activeJobId: resolveActiveJobId(nextJobs, state.activeJobId),
       };
-      if (nextJob.status === "queued" || nextJob.status === "running") {
-        patch.activeJobId = manifest.prompt_id!;
-      } else if (state.activeJobId === manifest.prompt_id) {
-        patch.activeJobId = null;
-      }
-      return patch;
     });
 
     if (

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyPreviewUpdate, markActiveJobError } from "../jobMutations";
+import {
+  applyPreviewUpdate,
+  markActiveJobError,
+  resolveActiveJobId,
+} from "../jobMutations";
+import type { GenerationJob } from "../../types";
 
 type ErrorState = Parameters<typeof markActiveJobError>[0];
 type PreviewState = Parameters<typeof applyPreviewUpdate>[0];
@@ -151,5 +156,63 @@ describe("jobMutations", () => {
     expect(patch).toEqual({});
     expect(createSpy).not.toHaveBeenCalled();
     expect(revokeSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveActiveJobId", () => {
+  function job(
+    id: string,
+    status: GenerationJob["status"],
+    submittedAt: number,
+  ): GenerationJob {
+    return {
+      id,
+      deliveryId: null,
+      status,
+      progress: 0,
+      currentNode: null,
+      outputs: [],
+      error: null,
+      submittedAt,
+      completedAt: null,
+    } as unknown as GenerationJob;
+  }
+
+  function jobMap(...entries: GenerationJob[]): Map<string, GenerationJob> {
+    return new Map(entries.map((entry) => [entry.id, entry]));
+  }
+
+  it("prefers the running prompt over queued siblings", () => {
+    // ComfyUI runs one prompt at a time; that prompt owns the preview pane no
+    // matter how many of ours are queued behind it.
+    const jobs = jobMap(
+      job("queued-first", "queued", 1),
+      job("running", "running", 2),
+      job("queued-last", "queued", 3),
+    );
+    expect(resolveActiveJobId(jobs, "queued-last")).toBe("running");
+  });
+
+  it("keeps the running prompt when a queued sibling updates", () => {
+    const jobs = jobMap(job("running", "running", 1), job("queued", "queued", 2));
+    expect(resolveActiveJobId(jobs, "running")).toBe("running");
+  });
+
+  it("falls back to the oldest queued prompt once nothing is running", () => {
+    const jobs = jobMap(
+      job("done", "completed", 1),
+      job("queued-late", "queued", 3),
+      job("queued-early", "queued", 2),
+    );
+    expect(resolveActiveJobId(jobs, "done")).toBe("queued-early");
+  });
+
+  it("holds a chosen queued prompt rather than reshuffling on each update", () => {
+    const jobs = jobMap(job("queued-early", "queued", 1), job("queued-late", "queued", 2));
+    expect(resolveActiveJobId(jobs, "queued-late")).toBe("queued-late");
+  });
+
+  it("returns null when nothing is in flight", () => {
+    expect(resolveActiveJobId(jobMap(job("done", "completed", 1)), "done")).toBeNull();
   });
 });

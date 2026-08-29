@@ -55,6 +55,11 @@ from services.workflow_rules.object_info import (
     set_object_info_cache,
 )
 from services.workflow_rules.input_labels import default_input_label
+from services.gen_pipeline.prepared_media import (
+    is_valid_group_id,
+    load_prepared_media,
+    store_prepared_media,
+)
 from services.gen_pipeline.processors.upload_media import BATCH_INPUT_OPTION_KEYS
 from services.gen_pipeline.processors.validate_inputs import (
     collect_provided_input_ids_from_sources,
@@ -1715,6 +1720,60 @@ async def generate(request: Request):
                 batch_index=batch_index,
             )
 
+    # --- Prepared-media group: reuse this submission's bytes across the batch ---
+    # A queued batch is one submission repeated. The first copy sends its media
+    # and has it retained here; the rest send only the group id, so a batch of
+    # N costs one upload instead of N and reaches ComfyUI's durable queue in
+    # one burst rather than trickling in behind repeated transfers.
+    #
+    # Restoring reproduces the exact `buffered_media` mapping the form loop
+    # above would have built, so every downstream phase — validation, mask
+    # crop, upload/registration and its stale-reference recovery — is unchanged
+    # and cannot tell which path the bytes arrived by.
+    prepared_media_group_id_raw = form.get("prepared_media_group_id")
+    prepared_media_group_id = (
+        prepared_media_group_id_raw.strip()
+        if isinstance(prepared_media_group_id_raw, str)
+        else ""
+    )
+    if prepared_media_group_id and not is_valid_group_id(prepared_media_group_id):
+        return error_response(
+            400,
+            "invalid_prepared_media_group_id",
+            "Prepared media group id is malformed",
+            retryable=False,
+        )
+    prepared_media_group_stored = False
+    if prepared_media_group_id:
+        if buffered_media:
+            prepared_media_group_stored = store_prepared_media(
+                prepared_media_group_id,
+                buffered_media,
+            )
+        else:
+            restored = load_prepared_media(prepared_media_group_id)
+            if restored is None:
+                # An ordinary miss: expired, evicted, or the backend restarted.
+                # Retryable, because resubmitting with the bytes attached is a
+                # request the frontend can make on its own.
+                return error_response(
+                    409,
+                    "prepared_media_group_expired",
+                    "Prepared media for this submission is no longer held; "
+                    "resubmit with the media attached",
+                    retryable=True,
+                )
+            # Only keep entries the submitted workflow still has a node for, so
+            # a group cannot inject media into a graph that has moved on.
+            buffered_media.update(
+                {
+                    buffer_key: media_info
+                    for buffer_key, media_info in restored.items()
+                    if isinstance(workflow.get(media_info.get("node_id")), dict)
+                }
+            )
+            prepared_media_group_stored = True
+
     _apply_workflow_media_fallbacks(
         workflow_rules=workflow_rules,
         workflow_id=workflow_id,
@@ -1942,6 +2001,11 @@ async def generate(request: Request):
                 else None,
             )
             payload["delivery_id"] = delivery_id
+            # Echoed only when the bytes are genuinely held, so the frontend
+            # never switches a group to reference-only submission against a
+            # backend that did not retain them.
+            if prepared_media_group_stored:
+                payload["prepared_media_group_id"] = prepared_media_group_id
             result = comfyui_generate_service.GenerationResult(
                 content=json.dumps(payload).encode("utf-8"),
                 status_code=result.status_code,

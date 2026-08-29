@@ -444,6 +444,12 @@ export interface GenerationRequest {
   audioInputs: Record<string, File>;
   batchInputOptions?: Record<string, BatchInputOptions>;
   cachedMediaInputs?: Record<string, Record<string, unknown>>;
+  /**
+   * Identifies this submission's prepared media to the backend so a queued
+   * batch uploads its bytes once instead of once per copy. Sent alongside
+   * the media on the first copy, and alone on the rest.
+   */
+  preparedMediaGroupId?: string;
   maskCropMode?: WorkflowMaskCroppingMode;
   maskCropDilation?: number;
   widgetInputs?: Record<string, string>;

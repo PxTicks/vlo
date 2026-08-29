@@ -52,6 +52,7 @@ from services.ai_models.capabilities.load_probes import (
 )
 from services.ai_models.health import app_status_providers
 from services.model_registry import is_comfyui_model_downloads_enabled
+from services.gen_pipeline.prepared_media import sweep_prepared_media
 from services.generation_delivery import generation_holding_service
 from services.model_work import get_model_work_coordinator
 from services.sam_audio import sam_audio_service
@@ -102,6 +103,15 @@ async def application_lifespan(application: FastAPI):
     runtime = get_extension_services().backend_runtime
     restore_retry: asyncio.Task[None] | None = None
     try:
+        # Prepared-media groups are a submission-time accelerator, not state
+        # anything depends on. A backend that stopped mid-batch leaves its bytes
+        # behind with nothing scheduled to collect them, so retire them here.
+        try:
+            sweep_prepared_media()
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to sweep retained prepared media", exc_info=True
+            )
         # The model-work coordinator starts *not ready* and refuses admission
         # (503) until in-flight ComfyUI prompts have been rebuilt as occupancy.
         # Without this a restart could admit local inference alongside prompts

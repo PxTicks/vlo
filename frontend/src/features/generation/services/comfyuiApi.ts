@@ -24,6 +24,8 @@ export interface PromptResponse {
   pipeline_outputs?: Record<string, Record<string, unknown>>;
   comfyui_prompt?: Record<string, unknown>;
   comfyui_workflow?: Record<string, unknown>;
+  /** Echoed only when the backend actually retained the group's media. */
+  prepared_media_group_id?: string;
 }
 
 function extractNodeErrors(payload: unknown): Record<string, unknown> | null {
@@ -297,6 +299,9 @@ export async function generate(
       "batch_input_options",
       JSON.stringify(request.batchInputOptions),
     );
+  }
+  if (request.preparedMediaGroupId) {
+    formData.append("prepared_media_group_id", request.preparedMediaGroupId);
   }
   if (
     request.cachedMediaInputs &&

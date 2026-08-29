@@ -101,11 +101,25 @@ export interface GenerationPreprocessCacheEntry {
   key: string;
   assets: CachedGenerationPreprocessAssets;
   backendMedia: CachedGenerationBackendMedia | null;
+  /**
+   * Identifies this preprocess group's media to the backend.
+   *
+   * A queued batch is one submission repeated, so every copy needs the same
+   * bytes. The first copy uploads them under this id; once the backend
+   * confirms it retained them (`preparedMediaHeld`), the rest submit the id
+   * alone. That is what turns a batch of N from N serial uploads into one
+   * upload followed by N-1 small posts — and it is why a browser that goes
+   * away mid-batch no longer takes the undispatched copies with it.
+   */
+  preparedMediaGroupId: string;
+  /** Set only from the backend's echo; never assumed. */
+  preparedMediaHeld: boolean;
 }
 
 interface BackendPreprocessResponseData {
   comfyui_prompt?: Record<string, unknown>;
   pipeline_outputs?: Record<string, Record<string, unknown>>;
+  prepared_media_group_id?: string;
 }
 
 const SAVE_IMAGE_WEBSOCKET_NODE_TYPES = new Set([
@@ -636,6 +650,7 @@ function buildGenerationRequestFromCache(
   cacheEntry: GenerationPreprocessCacheEntry,
 ): GenerationRequest {
   const backendMedia = cacheEntry.backendMedia;
+  const preparedMediaHeld = cacheEntry.preparedMediaHeld;
 
   return {
     workflow: plan.workflow.workflow,
@@ -648,12 +663,23 @@ function buildGenerationRequestFromCache(
       plan.workflow.workflowInputs,
       plan.preprocess.slotValues,
     ),
-    // Cached reruns still carry the original prepared files so the backend can
-    // recover from stale loader ids by replaying upload/registration from
-    // bytes instead of surfacing a retry-only validation failure.
-    imageInputs: cloneFileRecord(cacheEntry.assets.imageInputs),
-    videoInputs: cloneFileRecord(cacheEntry.assets.videoInputs),
-    audioInputs: cloneFileRecord(cacheEntry.assets.audioInputs),
+    // Once the backend confirms it is holding this group's bytes, siblings stop
+    // sending them: re-uploading identical media per copy is what made a queued
+    // batch trickle into ComfyUI. The recovery path is unchanged, only moved —
+    // the backend replays upload/registration from its own retained copy, so a
+    // stale loader id still resolves without a retry-only failure.
+    //
+    // Bytes are still attached when the group is not held (first copy of a
+    // batch, an expired group, or a backend that does not retain them), which
+    // is also what keeps this compatible in both directions.
+    ...(preparedMediaHeld
+      ? { imageInputs: {}, videoInputs: {}, audioInputs: {} }
+      : {
+          imageInputs: cloneFileRecord(cacheEntry.assets.imageInputs),
+          videoInputs: cloneFileRecord(cacheEntry.assets.videoInputs),
+          audioInputs: cloneFileRecord(cacheEntry.assets.audioInputs),
+        }),
+    preparedMediaGroupId: cacheEntry.preparedMediaGroupId,
     batchInputOptions: { ...cacheEntry.assets.batchInputOptions },
     ...(backendMedia
       ? {
@@ -675,9 +701,13 @@ function buildGenerationRequestFromCache(
 export function buildGenerationPreprocessCacheEntry(
   key: string,
   prepared: PreparedGeneration,
+  preparedMediaGroupId: string,
 ): GenerationPreprocessCacheEntry {
   return {
     key,
+    preparedMediaGroupId,
+    // Never assumed: only the backend's echo may set this.
+    preparedMediaHeld: false,
     assets: {
       targetAspectRatio: prepared.request.targetAspectRatio,
       imageInputs: cloneFileRecord(prepared.request.imageInputs),
@@ -871,16 +901,26 @@ export function updateGenerationPreprocessCacheFromResponse(
   plan: GenerationPlan,
   response: BackendPreprocessResponseData,
 ): GenerationPreprocessCacheEntry {
+  // Independent of the media references below: the backend retains the bytes
+  // whether or not the prompt exposed reusable loader values, and reference-only
+  // submission only needs the group to be held.
+  const preparedMediaHeld =
+    entry.preparedMediaHeld ||
+    response.prepared_media_group_id === entry.preparedMediaGroupId;
+
   const cachedMediaInputs = extractCachedMediaInputs(
     plan,
     response.comfyui_prompt,
   );
   if (!cachedMediaInputs) {
-    return entry;
+    return preparedMediaHeld === entry.preparedMediaHeld
+      ? entry
+      : { ...entry, preparedMediaHeld };
   }
 
   return {
     ...entry,
+    preparedMediaHeld,
     backendMedia: {
       cachedMediaInputs,
       pipelineOutputs: cloneUnknownRecord(response.pipeline_outputs ?? {}),

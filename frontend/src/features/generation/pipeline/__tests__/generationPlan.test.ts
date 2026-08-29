@@ -125,6 +125,8 @@ function makeBatchPlan(): GenerationPlan {
 function makeCacheEntry(): GenerationPreprocessCacheEntry {
   return {
     key: "cache-key",
+    preparedMediaGroupId: "group-1",
+    preparedMediaHeld: false,
     assets: {
       targetAspectRatio: "16:9",
       imageInputs: {},
@@ -575,7 +577,7 @@ describe("generationPlan cache media extraction", () => {
         clientId: "client",
       },
     };
-    const entry = buildGenerationPreprocessCacheEntry("key", prepared);
+    const entry = buildGenerationPreprocessCacheEntry("key", prepared, "group-1");
     prepared.request.pipelineInputs.mask.enabled = false;
     expect(entry.assets.pipelineInputs.mask?.enabled).toBe(true);
 

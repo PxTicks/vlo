@@ -1154,6 +1154,209 @@ describe("useGenerationStore pipeline phases", () => {
     );
   });
 
+  it("uploads a queued batch's media once and submits the rest by reference", async () => {
+    makeReadyStoreState();
+    const sourceVideo = makeTestFile("video", "batch-source.mp4", {
+      type: "video/mp4",
+      lastModified: 101,
+    });
+    const preparedVideo = makeTestFile("prepared", "batch-prepared.mp4", {
+      type: "video/mp4",
+      lastModified: 102,
+    });
+
+    useGenerationStore.setState({
+      syncedWorkflow: {
+        "20": {
+          class_type: "LoadVideo",
+          inputs: {
+            file: "",
+          },
+        },
+        "115": {
+          class_type: "RandomNoise",
+          inputs: {
+            noise_seed: 1,
+          },
+        },
+      },
+      workflowInputs: [
+        makeWorkflowInput({
+          id: "source",
+          nodeId: "20",
+          inputType: "video",
+          param: "file",
+        }),
+      ],
+    });
+    mockFrontendPreprocess.mockImplementation(
+      async (
+        syncedWorkflow: Record<string, unknown> | null,
+        workflowId: string | null,
+        _workflowRules: unknown,
+        _workflowInputs: unknown,
+        _slotValues: unknown,
+        clientId: string,
+      ) => ({
+        workflow: syncedWorkflow,
+        workflowId,
+        targetAspectRatio: "16:9",
+        exactAspectRatio: false,
+        targetResolution: 1080,
+        textInputs: {},
+        imageInputs: {},
+        audioInputs: {},
+        videoInputs: {
+          "20": preparedVideo,
+        },
+        pipelineInputs: {},
+        clientId,
+      }),
+    );
+
+    let promptNumber = 0;
+    mockGenerate.mockImplementation(
+      async (request: import("../pipeline/types").GenerationRequest) => {
+        promptNumber += 1;
+        return {
+          prompt_id: `prompt-${promptNumber}`,
+          number: promptNumber,
+          node_errors: {},
+          comfyui_prompt: {
+            "20": {
+              class_type: "LoadVideo",
+              inputs: { file: "cached-source.mp4" },
+            },
+          },
+          // The backend only echoes the group once it has actually retained
+          // the bytes, which is exactly what licenses the reference-only
+          // submissions asserted below.
+          ...(Object.keys(request.videoInputs).length > 0
+            ? { prepared_media_group_id: request.preparedMediaGroupId }
+            : {}),
+        };
+      },
+    );
+
+    await useGenerationStore.getState().queueGeneration(
+      { source: { type: "video", file: sourceVideo } },
+      { widget_115_noise_seed: "1" },
+      { widget_mode_115_noise_seed: "randomize" },
+      {},
+      4,
+    );
+
+    expect(mockGenerate).toHaveBeenCalledTimes(4);
+    // The whole batch reaches ComfyUI, and only the first copy pays for the
+    // media: that is what keeps a browser that goes away mid-batch from taking
+    // the undispatched copies with it.
+    expect(mockFrontendPreprocess).toHaveBeenCalledTimes(1);
+
+    const requests = mockGenerate.mock.calls.map(
+      (call) => call[0] as import("../pipeline/types").GenerationRequest,
+    );
+    const groupId = requests[0]?.preparedMediaGroupId;
+    expect(groupId).toEqual(expect.any(String));
+    expect(requests[0]?.videoInputs).toEqual({ "20": preparedVideo });
+    for (const request of requests.slice(1)) {
+      expect(request.videoInputs).toEqual({});
+      expect(request.imageInputs).toEqual({});
+      expect(request.audioInputs).toEqual({});
+      expect(request.preparedMediaGroupId).toBe(groupId);
+    }
+    expect(useGenerationStore.getState().generationQueue).toHaveLength(0);
+  });
+
+  it("resends a batch's media when the backend stopped holding the group", async () => {
+    makeReadyStoreState();
+    const sourceVideo = makeTestFile("video", "expiry-source.mp4", {
+      type: "video/mp4",
+      lastModified: 201,
+    });
+    const preparedVideo = makeTestFile("prepared", "expiry-prepared.mp4", {
+      type: "video/mp4",
+      lastModified: 202,
+    });
+
+    useGenerationStore.setState({
+      syncedWorkflow: {
+        "20": {
+          class_type: "LoadVideo",
+          inputs: { file: "" },
+        },
+      },
+      workflowInputs: [
+        makeWorkflowInput({
+          id: "source",
+          nodeId: "20",
+          inputType: "video",
+          param: "file",
+        }),
+      ],
+    });
+    mockFrontendPreprocess.mockImplementation(
+      async (
+        syncedWorkflow: Record<string, unknown> | null,
+        workflowId: string | null,
+        _workflowRules: unknown,
+        _workflowInputs: unknown,
+        _slotValues: unknown,
+        clientId: string,
+      ) => ({
+        workflow: syncedWorkflow,
+        workflowId,
+        targetAspectRatio: "16:9",
+        exactAspectRatio: false,
+        targetResolution: 1080,
+        textInputs: {},
+        imageInputs: {},
+        audioInputs: {},
+        videoInputs: { "20": preparedVideo },
+        pipelineInputs: {},
+        clientId,
+      }),
+    );
+
+    let promptNumber = 0;
+    let rejectedOnce = false;
+    mockGenerate.mockImplementation(
+      async (request: import("../pipeline/types").GenerationRequest) => {
+        const carriesMedia = Object.keys(request.videoInputs).length > 0;
+        if (!carriesMedia && !rejectedOnce) {
+          rejectedOnce = true;
+          throw Object.assign(new Error("prepared media expired"), {
+            status: 409,
+            payload: { error: { code: "prepared_media_group_expired" } },
+          });
+        }
+        promptNumber += 1;
+        return {
+          prompt_id: `prompt-${promptNumber}`,
+          number: promptNumber,
+          node_errors: {},
+          ...(carriesMedia
+            ? { prepared_media_group_id: request.preparedMediaGroupId }
+            : {}),
+        };
+      },
+    );
+
+    await useGenerationStore.getState().queueGeneration(
+      { source: { type: "video", file: sourceVideo } },
+      {},
+      {},
+      {},
+      2,
+    );
+
+    // The rejection costs a resubmission, never a generation: both copies are
+    // in ComfyUI and nothing is left stranded in the local queue.
+    expect(rejectedOnce).toBe(true);
+    expect(promptNumber).toBe(2);
+    expect(useGenerationStore.getState().generationQueue).toHaveLength(0);
+    expect(useGenerationStore.getState().jobs.size).toBe(2);
+  });
+
   it("treats cached media inputs as present during pre-resolve reruns", async () => {
     makeReadyStoreState();
     const sourceFrame = makeTestFile("frame", "source.png", {
@@ -1991,6 +2194,110 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockGenerate).not.toHaveBeenCalled();
     expect(useGenerationStore.getState().pipelineStatus.phase).toBe("idle");
     expect(useGenerationStore.getState().jobs.size).toBe(0);
+  });
+
+  it("keeps a disconnected dispatch's plan queued instead of dropping it", async () => {
+    makeReadyStoreState();
+    const preprocessDeferred = createDeferred<{
+      workflow: Record<string, unknown> | null;
+      workflowId: string | null;
+      targetAspectRatio: string;
+      exactAspectRatio: boolean;
+      targetResolution: number;
+      textInputs: Record<string, string>;
+      imageInputs: Record<string, File>;
+      audioInputs: Record<string, File>;
+      videoInputs: Record<string, File>;
+      clientId: string;
+    }>();
+    mockFrontendPreprocess.mockReturnValue(preprocessDeferred.promise);
+
+    const queuePromise = useGenerationStore
+      .getState()
+      .queueGeneration({}, {}, {}, {}, 2);
+
+    // Drain microtasks until the first plan is genuinely mid-dispatch. Without
+    // this the queue has not been shifted yet and the test would pass whether
+    // or not the plan is recovered.
+    for (let tick = 0; tick < 50; tick += 1) {
+      if (mockFrontendPreprocess.mock.calls.length > 0) break;
+      await Promise.resolve();
+    }
+    expect(mockFrontendPreprocess).toHaveBeenCalledTimes(1);
+    expect(useGenerationStore.getState().generationQueue).toHaveLength(1);
+
+    // A disconnect aborts the in-flight dispatch and bumps the run token —
+    // exactly what a user interrupt does. Only the interrupt means "drop this
+    // generation"; the plan mid-dispatch here must survive to be resubmitted
+    // on reconnect.
+    useGenerationStore.getState().disconnect();
+
+    preprocessDeferred.resolve({
+      workflow: {},
+      workflowId: "wf.json",
+      targetAspectRatio: "16:9",
+      exactAspectRatio: false,
+      targetResolution: 1080,
+      textInputs: {},
+      imageInputs: {},
+      audioInputs: {},
+      videoInputs: {},
+      clientId: "client-id",
+    });
+    await queuePromise;
+
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(useGenerationStore.getState().generationQueue).toHaveLength(2);
+  });
+
+  it("drops a plan disconnected mid-submission rather than risking a duplicate", async () => {
+    makeReadyStoreState();
+    const generateDeferred = createDeferred<never>();
+    mockFrontendPreprocess.mockImplementation(
+      async (
+        syncedWorkflow: Record<string, unknown> | null,
+        workflowId: string | null,
+        _workflowRules: unknown,
+        _workflowInputs: unknown,
+        _slotValues: unknown,
+        clientId: string,
+      ) => ({
+        workflow: syncedWorkflow,
+        workflowId,
+        targetAspectRatio: "16:9",
+        exactAspectRatio: false,
+        targetResolution: 1080,
+        textInputs: {},
+        imageInputs: {},
+        audioInputs: {},
+        videoInputs: {},
+        clientId,
+      }),
+    );
+    mockGenerate.mockReturnValue(generateDeferred.promise);
+
+    const queuePromise = useGenerationStore
+      .getState()
+      .queueGeneration({}, {}, {}, {}, 2);
+
+    for (let tick = 0; tick < 50; tick += 1) {
+      if (mockGenerate.mock.calls.length > 0) break;
+      await Promise.resolve();
+    }
+    expect(mockGenerate).toHaveBeenCalledTimes(1);
+    expect(useGenerationStore.getState().generationQueue).toHaveLength(1);
+
+    // The request is in flight. Aborting it cannot tell "the backend never saw
+    // this" from "the backend queued the prompt and the response never came
+    // back", so the plan must not be re-queued — the delivery the backend may
+    // already hold is what recovers it.
+    useGenerationStore.getState().disconnect();
+    generateDeferred.reject(
+      Object.assign(new Error("aborted"), { name: "AbortError" }),
+    );
+    await queuePromise;
+
+    expect(useGenerationStore.getState().generationQueue).toHaveLength(1);
   });
 
   it("queues generations when graph snapshots include non-serializable browser values", async () => {

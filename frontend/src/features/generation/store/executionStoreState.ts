@@ -251,6 +251,32 @@ function isLocalModelWorkHoldingGpu(): boolean {
 /** Fallback resume interval when no ledger event arrives to lift a GPU hold. */
 const GPU_ADMISSION_HOLD_RETRY_MS = 2000;
 
+/**
+ * How many preprocess groups stay warm at once. Small on purpose: entries pin
+ * prepared media `File`s in memory, and a queue rarely alternates between more
+ * than a couple of distinct asset sets.
+ */
+const PREPROCESS_CACHE_MAX_ENTRIES = 4;
+
+/**
+ * The backend stopped holding a group's media (expired, evicted, or it
+ * restarted). The bytes still exist locally, so the plan is simply resubmitted
+ * with them attached rather than failed.
+ */
+function isPreparedMediaExpiredRejection(error: unknown): boolean {
+  // Duck-typed for the same reasons as `isGpuBusyRejection` below.
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const { status, payload } = error as {
+    status?: unknown;
+    payload?: { error?: { code?: unknown } };
+  };
+  return (
+    status === 409 && payload?.error?.code === "prepared_media_group_expired"
+  );
+}
+
 function isGpuBusyRejection(error: unknown): boolean {
   // Duck-typed rather than `instanceof ComfyApiError`: the shape is what
   // matters, and this stays true through module mocking and bundle splitting.
@@ -768,7 +794,51 @@ export function buildExecutionStoreState(
   get: GenerationStoreGet,
 ): GenerationExecutionState {
   let isProcessingQueue = false;
-  let generationPreprocessCache: GenerationPreprocessCacheEntry | null = null;
+  /**
+   * The abort controller of a dispatch the user explicitly interrupted.
+   *
+   * Both a user interrupt and a disconnect abort the in-flight dispatch and
+   * bump the run token, but they mean opposite things for the plan being
+   * dispatched: an interrupt is meant to drop it, a disconnect is not. Without
+   * a way to tell them apart, every disconnect silently ate the generation it
+   * was mid-dispatch on.
+   *
+   * Identified by controller rather than run token: a controller is created
+   * once per dispatch and never reused, whereas run tokens are just a counter
+   * and a stale one can collide with a later dispatch's.
+   */
+  let interruptedAbortController: AbortController | null = null;
+  /**
+   * Preprocess results keyed by preprocess-cache key, most-recently-used last.
+   *
+   * A single slot was enough while dispatch was one plan at a time, but it
+   * thrashes the moment a queue interleaves preprocess groups: alternating
+   * asset sets missed on every plan and re-ran the whole preparation. Holding
+   * a few keeps each group's prepared media warm for the whole batch, which is
+   * what lets siblings submit by reference instead of re-uploading.
+   */
+  const generationPreprocessCaches = new Map<
+    string,
+    GenerationPreprocessCacheEntry
+  >();
+
+  function readPreprocessCache(
+    key: string | null,
+  ): GenerationPreprocessCacheEntry | null {
+    if (key === null) return null;
+    return generationPreprocessCaches.get(key) ?? null;
+  }
+
+  function writePreprocessCache(entry: GenerationPreprocessCacheEntry): void {
+    // Re-inserting moves the key to the end, so the eviction below is LRU.
+    generationPreprocessCaches.delete(entry.key);
+    generationPreprocessCaches.set(entry.key, entry);
+    while (generationPreprocessCaches.size > PREPROCESS_CACHE_MAX_ENTRIES) {
+      const oldestKey = generationPreprocessCaches.keys().next().value;
+      if (oldestKey === undefined) break;
+      generationPreprocessCaches.delete(oldestKey);
+    }
+  }
 
   async function dispatchGenerationPlan(
     plan: GenerationPlan,
@@ -785,6 +855,49 @@ export function buildExecutionStoreState(
         interruptible: true,
       },
     });
+
+    /**
+     * Set the instant the submission request leaves, and never cleared.
+     *
+     * Aborting that fetch proves nothing about the backend: the request may
+     * already have created a delivery and queued the prompt in ComfyUI. From
+     * here the plan therefore belongs to the backend, and the frontend must not
+     * hold a second copy of it.
+     */
+    let submissionStarted = false;
+
+    /**
+     * Give up on this dispatch, putting the plan back at the head of the queue
+     * — but only while the frontend is still the only place it exists.
+     *
+     * Every bail-out below is reached by the run token changing, which happens
+     * both when the user interrupts (the plan is meant to be dropped) and when
+     * the connection goes away (it is not). Returning plain `null` treated
+     * those the same and silently lost the generation mid-dispatch.
+     *
+     * Once submission has started the answer flips. Re-queuing would risk
+     * generating twice, since an aborted fetch cannot tell "the backend never
+     * saw this" from "the backend queued it and the response never arrived".
+     * Dropping the plan is safe instead of lossy here precisely because the
+     * backend owns it: if the request did land, its delivery is in the holding
+     * area and the reconnect snapshot adopts it. Closing the remaining gap —
+     * the request that never landed — needs an idempotency key the backend can
+     * dedupe on, which this does not attempt.
+     */
+    function abandonDispatch(): null {
+      if (
+        !submissionStarted &&
+        interruptedAbortController !== preprocessAbortController
+      ) {
+        set((state) => ({ generationQueue: [plan, ...state.generationQueue] }));
+      }
+      return null;
+    }
+
+    // Hoisted so the error paths below can see which preprocess group this
+    // dispatch belongs to.
+    let preprocessCacheKey: string | null = null;
+    let matchingPreprocessCache: GenerationPreprocessCacheEntry | null = null;
 
     try {
       const state = get();
@@ -819,7 +932,7 @@ export function buildExecutionStoreState(
       // keeps the switch on and always awaits.
       let resolvedPlan = plan;
       if (get().pipelineRunToken !== pipelineRunToken) {
-        return null;
+        return abandonDispatch();
       }
 
       // If the user clicked Generate while a timeline-selection extraction was
@@ -834,17 +947,13 @@ export function buildExecutionStoreState(
           preprocessAbortController.signal,
         );
         if (get().pipelineRunToken !== pipelineRunToken) {
-          return null;
+          return abandonDispatch();
         }
         applyExtractedFilesToPlan(get(), resolvedPlan, pendingExtractions);
       }
 
-      const preprocessCacheKey = buildGenerationPreprocessCacheKey(resolvedPlan);
-      const matchingPreprocessCache =
-        preprocessCacheKey !== null &&
-        generationPreprocessCache?.key === preprocessCacheKey
-          ? generationPreprocessCache
-          : null;
+      preprocessCacheKey = buildGenerationPreprocessCacheKey(resolvedPlan);
+      matchingPreprocessCache = readPreprocessCache(preprocessCacheKey);
 
       const prepared = await prepareGenerationPlan(resolvedPlan, {
         clientId: wsClient.currentClientId,
@@ -853,7 +962,7 @@ export function buildExecutionStoreState(
       });
       let effectivePrepared = prepared;
       if (get().pipelineRunToken !== pipelineRunToken) {
-        return null;
+        return abandonDispatch();
       }
       // Read live state again: preprocessing can take minutes, and the editor
       // this capture needs may have come or gone in the meantime.
@@ -904,13 +1013,33 @@ export function buildExecutionStoreState(
         }
       }
       if (get().pipelineRunToken !== pipelineRunToken) {
-        return null;
+        return abandonDispatch();
       }
-      if (preprocessCacheKey !== null && matchingPreprocessCache === null) {
-        generationPreprocessCache = buildGenerationPreprocessCacheEntry(
+      // The first copy of a group uploads its media under a fresh id; the
+      // backend retains the bytes against it and echoes the id back, and every
+      // later copy submits the id alone. Minted only when there is media worth
+      // retaining — a text-only submission has nothing to reuse.
+      let preprocessCache = matchingPreprocessCache;
+      if (preprocessCacheKey !== null && preprocessCache === null) {
+        preprocessCache = buildGenerationPreprocessCacheEntry(
           preprocessCacheKey,
           effectivePrepared,
+          crypto.randomUUID(),
         );
+        writePreprocessCache(preprocessCache);
+      }
+      if (
+        preprocessCache !== null &&
+        !effectivePrepared.request.preparedMediaGroupId
+      ) {
+        const carriesMedia =
+          Object.keys(effectivePrepared.request.imageInputs).length > 0 ||
+          Object.keys(effectivePrepared.request.videoInputs).length > 0 ||
+          Object.keys(effectivePrepared.request.audioInputs).length > 0;
+        if (carriesMedia) {
+          effectivePrepared.request.preparedMediaGroupId =
+            preprocessCache.preparedMediaGroupId;
+        }
       }
 
       // `promptIsPreResolved` tells the backend the prompt topology is already
@@ -952,6 +1081,7 @@ export function buildExecutionStoreState(
         autoFamilyRequestKey,
       );
 
+      submissionStarted = true;
       const response = await comfyApi.generate(
         {
           ...effectivePrepared.request,
@@ -966,6 +1096,9 @@ export function buildExecutionStoreState(
         },
       );
       if (get().pipelineRunToken !== pipelineRunToken) {
+        // Not abandoned: ComfyUI already has this prompt, so re-queuing would
+        // run it twice. The delivery it was submitted under carries it, and the
+        // reconnect snapshot re-adopts the job.
         return null;
       }
 
@@ -979,16 +1112,14 @@ export function buildExecutionStoreState(
           matchingPreprocessCache,
         );
 
-      if (
-        preprocessCacheKey !== null &&
-        generationPreprocessCache?.key === preprocessCacheKey
-      ) {
-        generationPreprocessCache =
+      if (preprocessCache !== null) {
+        writePreprocessCache(
           updateGenerationPreprocessCacheFromResponse(
-            generationPreprocessCache,
+            preprocessCache,
             resolvedPlan,
             responseWithCachedPipelineOutputs,
-          );
+          ),
+        );
       }
       const submitted = buildSubmittedGeneration(
         effectivePrepared,
@@ -1071,11 +1202,48 @@ export function buildExecutionStoreState(
 
       return submitted.promptId;
     } catch (error) {
+      // The cache is what holds the group id, so without it there is nothing to
+      // mark unheld — and re-queuing would just repeat the same rejection.
       if (
+        isPreparedMediaExpiredRejection(error) &&
+        matchingPreprocessCache !== null
+      ) {
+        // The backend is no longer holding this group's media. The bytes are
+        // still here, so this is a resubmission rather than a failure: forget
+        // that the group is held and re-queue the plan, which sends them again
+        // and re-establishes the group for the rest of the batch.
+        //
+        // Safe to re-queue despite submission having started, unlike the
+        // abandon path: this is an answered request, and the route rejects a
+        // missing group before it creates a delivery or reaches ComfyUI, so
+        // there is nothing for a resubmission to duplicate.
+        writePreprocessCache({
+          ...matchingPreprocessCache,
+          preparedMediaHeld: false,
+        });
+        set((state) => ({
+          generationQueue: [plan, ...state.generationQueue],
+          preprocessAbortController: null,
+          pipelineStatus: IDLE_PIPELINE_STATUS,
+        }));
+        return null;
+      }
+
+      const wasInterrupted =
         isAbortError(error) ||
         preprocessAbortController.signal.aborted ||
-        get().pipelineRunToken !== pipelineRunToken
-      ) {
+        get().pipelineRunToken !== pipelineRunToken;
+      if (wasInterrupted) {
+        // A cancel drops the plan on purpose; anything else that interrupts it
+        // — a disconnect, a superseding run — must put it back, or the queue
+        // silently loses the generation it was in the middle of dispatching.
+        //
+        // Deliberately its own `set`, ahead of the guarded one below: a
+        // disconnect changes both the run token and the abort controller, so
+        // the guard declines to touch pipeline state — correctly, since the
+        // disconnect already reset it. Re-queuing is not pipeline state and
+        // must happen either way.
+        abandonDispatch();
         set((state) => {
           if (
             state.pipelineRunToken !== pipelineRunToken &&
@@ -1113,7 +1281,9 @@ export function buildExecutionStoreState(
         return null;
       }
 
-      generationPreprocessCache = null;
+      if (preprocessCacheKey !== null) {
+        generationPreprocessCaches.delete(preprocessCacheKey);
+      }
       return buildSubmissionErrorPatch(get, set, error);
     }
   }
@@ -1317,6 +1487,9 @@ export function buildExecutionStoreState(
     }
 
     if (pipelineStatus.phase === "preprocessing") {
+      // Names the dispatch being abandoned on purpose, so it drops its plan
+      // instead of re-queuing it the way an interrupted one is.
+      interruptedAbortController = preprocessAbortController ?? null;
       preprocessAbortController?.abort();
       set({
         pipelineRunToken: pipelineRunToken + 1,

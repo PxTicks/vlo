@@ -10,6 +10,7 @@ export {
   severityForCode,
 } from "./failureCodes";
 export { useRuntimeCapability } from "./useRuntimeCapability";
+export { warmRuntimeCapabilities } from "./warmRuntimeCapabilities";
 export type { RuntimeCapabilityView } from "./useRuntimeCapability";
 export {
   selectCapability,

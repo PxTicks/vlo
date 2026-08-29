@@ -4,6 +4,7 @@ import {
   FrontendExtensionBootstrap,
   installExtensionMenuContributions,
 } from "../features/extensions";
+import { warmRuntimeCapabilities } from "../features/runtimeCapabilities";
 import { App } from "./App";
 import { installE2EDiagnostics } from "./installE2EDiagnostics";
 import { installHostOptionCatalogues } from "./installHostOptionCatalogues";
@@ -20,6 +21,10 @@ Symbol.asyncDispose ??= Symbol("Symbol.asyncDispose");
 installExtensionMenuContributions();
 installHostOptionCatalogues();
 installE2EDiagnostics();
+// Runtime capabilities are read once here, in the background, so features that
+// depend on one (SAM-Audio, SAM2, Beat This!) open onto their own controls
+// rather than onto a "checking the runtime" progress bar.
+warmRuntimeCapabilities();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

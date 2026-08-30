@@ -10,7 +10,7 @@ import {
   getWorkflowContent,
   getWorkflowMenuDefinition,
   getWorkflowRules,
-  interrupt,
+  cancelGenerations,
   listWorkflows,
   resolveWorkflowRules,
   saveWorkflowContent,
@@ -251,14 +251,26 @@ describe("comfyuiApi generate", () => {
 });
 
 describe("comfyuiApi simple endpoints", () => {
-  it("interrupt resolves on success and throws on failure", async () => {
+  it("cancelGenerations posts the prompt ids and surfaces failures", async () => {
     fetchMock.mockResolvedValueOnce(makeResponse({ text: "" }));
-    await expect(interrupt()).resolves.toBeUndefined();
+    await expect(cancelGenerations(["a", "b"])).resolves.toBeUndefined();
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/comfy/generations/cancel");
+    expect(JSON.parse(String(options?.body))).toEqual({
+      prompt_ids: ["a", "b"],
+    });
 
     fetchMock.mockResolvedValueOnce(
       makeResponse({ ok: false, status: 503, contentType: "text/plain", text: "down" }),
     );
-    await expect(interrupt()).rejects.toThrow(/Interrupt failed \(503\): down/);
+    await expect(cancelGenerations(["a"])).rejects.toThrow(
+      /Cancel failed \(503\): down/,
+    );
+  });
+
+  it("cancelGenerations does not call ComfyUI for an empty id list", async () => {
+    await expect(cancelGenerations([])).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("getHealth and getConfig parse JSON", async () => {

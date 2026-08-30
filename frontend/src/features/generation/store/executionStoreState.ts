@@ -1394,18 +1394,14 @@ export function buildExecutionStoreState(
   }
 
   /**
-   * Cancel a set of prompts in ComfyUI and mark them cancelled locally.
+   * Cancel a set of prompts and mark them cancelled locally.
    *
-   * Both calls are needed and neither is sufficient. ComfyUI's `delete` only
-   * touches *pending* entries, so a prompt that starts executing between these
-   * ids being collected and ComfyUI handling the delete would survive it — and
-   * run to completion while the frontend has already called it cancelled. The
-   * prompt-scoped `interrupt` closes that window, and cannot reach past this
-   * set: ComfyUI ignores it unless the id names the prompt it is executing.
-   *
-   * Both are scoped to exact ids because ComfyUI's queue is a single global
-   * FIFO. A bodyless clear or interrupt is what would hit work vlo does not
-   * own.
+   * The cancel goes through the backend rather than straight to ComfyUI: it
+   * owns the delete/interrupt pair *and* the record that this was deliberate,
+   * without which its reconcile settles every cancelled prompt as a failure in
+   * the delivery stream and the Queue panel. Marking locally first is still
+   * worth doing — it is what makes the panel respond immediately — but it is no
+   * longer the only thing standing between a cancel and a row of failures.
    */
   async function cancelPrompts(promptIds: string[]): Promise<void> {
     if (promptIds.length === 0) {
@@ -1435,10 +1431,10 @@ export function buildExecutionStoreState(
     });
 
     try {
-      await comfyApi.deleteQueueItems(promptIds);
-      // Not filtered on local job status, which lags the delivery stream: the
-      // whole point is to catch an id that has just become the running prompt.
-      await Promise.all(promptIds.map((promptId) => comfyApi.interrupt(promptId)));
+      // Not filtered on local job status, which lags the delivery stream: an id
+      // that has just become the running prompt has to reach the interrupt the
+      // backend issues behind this call.
+      await comfyApi.cancelGenerations(promptIds);
     } catch (error) {
       const message =
         error instanceof Error

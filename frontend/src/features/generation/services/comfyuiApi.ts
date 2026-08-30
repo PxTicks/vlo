@@ -149,45 +149,27 @@ export class ComfyApiError extends Error {
   }
 }
 
-export async function interrupt(promptId?: string): Promise<void> {
-  // ComfyUI's queue is a single global FIFO shared with the in-editor iframe.
-  // A bodyless interrupt is a *global* interrupt that kills whichever prompt is
-  // running — possibly the iframe's, not ours. Passing prompt_id makes ComfyUI
-  // interrupt only if that prompt is the one currently running (else a no-op).
-  const resp = await fetch(`${COMFY_API}/api/interrupt`, {
-    method: "POST",
-    ...(promptId
-      ? {
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt_id: promptId }),
-        }
-      : {}),
-  });
-  if (!resp.ok) {
-    await throwRequestError("Interrupt", resp);
-  }
-}
-
 /**
- * Remove prompts from ComfyUI's *pending* queue by id.
+ * Cancel prompts vlo owns, through the backend.
  *
- * Always id-scoped: ComfyUI's queue is one global FIFO, and the bodyless clear
- * its own UI issues would wipe every pending prompt on the machine, including
- * work vlo has nothing to do with. Callers decide which ids they mean — the
- * panel's "clear queue" does include in-editor prompts vlo has adopted, which
- * are this project's generations too.
+ * Not a direct `delete` + `interrupt` against ComfyUI, because ComfyUI keeps no
+ * record of *why* a prompt left its queue: reconciliation cannot tell a cancel
+ * from a prompt that vanished, and reported every cancelled item as a failure.
+ * The backend records the intent before touching ComfyUI, confirms what
+ * actually went, and settles those as cancelled — in the delivery stream and in
+ * the Queue panel's ledger alike.
  */
-export async function deleteQueueItems(promptIds: string[]): Promise<void> {
+export async function cancelGenerations(promptIds: string[]): Promise<void> {
   if (promptIds.length === 0) {
     return;
   }
-  const resp = await fetch(`${COMFY_API}/api/queue`, {
+  const resp = await fetch(`${COMFY_API}/generations/cancel`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ delete: promptIds }),
+    body: JSON.stringify({ prompt_ids: promptIds }),
   });
   if (!resp.ok) {
-    await throwRequestError("Queue delete", resp);
+    await throwRequestError("Cancel", resp);
   }
 }
 

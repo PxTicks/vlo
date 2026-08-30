@@ -1040,8 +1040,7 @@ describe("useGenerationStore workflow rules", () => {
       activeJobId: runningJob.id,
       connectionStatus: "connected",
     });
-    vi.spyOn(comfyApi, "deleteQueueItems").mockResolvedValue(undefined);
-    vi.spyOn(comfyApi, "interrupt").mockRejectedValue(
+    vi.spyOn(comfyApi, "cancelGenerations").mockRejectedValue(
       new Error("Interrupt failed: 502"),
     );
 
@@ -1062,8 +1061,7 @@ describe("useGenerationStore workflow rules", () => {
       activeJobId: runningJob.id,
       connectionStatus: "connected",
     });
-    vi.spyOn(comfyApi, "deleteQueueItems").mockResolvedValue(undefined);
-    vi.spyOn(comfyApi, "interrupt").mockResolvedValue(undefined);
+    vi.spyOn(comfyApi, "cancelGenerations").mockResolvedValue(undefined);
 
     await useGenerationStore.getState().cancelGeneration();
 
@@ -1088,8 +1086,7 @@ describe("useGenerationStore workflow rules", () => {
         totalFrames: 3,
       },
     });
-    vi.spyOn(comfyApi, "deleteQueueItems").mockResolvedValue(undefined);
-    vi.spyOn(comfyApi, "interrupt").mockResolvedValue(undefined);
+    vi.spyOn(comfyApi, "cancelGenerations").mockResolvedValue(undefined);
 
     await useGenerationStore.getState().cancelGeneration();
 

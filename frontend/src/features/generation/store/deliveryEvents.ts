@@ -28,10 +28,29 @@ import type {
   GenerationStoreSet,
 } from "./types";
 
+/**
+ * A delivery the backend has settled, whatever the outcome.
+ *
+ * "cancelled" joins the two the frontend already knew about: it is terminal in
+ * exactly the same way, and every ack / queue-advance / do-not-resurrect check
+ * here has to treat it as such or a cancelled job stays queued forever.
+ */
+function isTerminalDeliveryStatus(
+  deliveryStatus: GenerationDeliveryManifest["status"],
+): boolean {
+  return (
+    deliveryStatus === "completed_pending_ack" ||
+    deliveryStatus === "error" ||
+    deliveryStatus === "cancelled"
+  );
+}
+
 function toJobStatus(
   deliveryStatus: GenerationDeliveryManifest["status"],
 ): GenerationJob["status"] {
-  if (deliveryStatus === "error") {
+  // A cancelled generation is an errored one carrying the cancellation as its
+  // message; `panelDisplayJob` is what keeps those out of the failure history.
+  if (deliveryStatus === "error" || deliveryStatus === "cancelled") {
     return "error";
   }
   if (deliveryStatus === "completed_pending_ack") {
@@ -181,7 +200,7 @@ function buildJobFromDelivery(
     submittedAt: manifest.submitted_at ?? existingJob?.submittedAt ?? Date.now(),
     completedAt:
       manifest.completed_at ??
-      (manifest.status === "completed_pending_ack" || manifest.status === "error"
+      (isTerminalDeliveryStatus(manifest.status)
         ? Date.now()
         : existingJob?.completedAt ?? null),
     postprocessConfig:
@@ -410,8 +429,7 @@ export function attachDeliveryClientHandlers(
     const shouldIgnoreTerminalInterruptedDelivery =
       existingJob?.status === "error" &&
       isGenerationInterruptionMessage(existingJob.error) &&
-      (manifest.status === "completed_pending_ack" ||
-        manifest.status === "error");
+      isTerminalDeliveryStatus(manifest.status);
 
     set((state) => {
       const existingJob = state.jobs.get(manifest.prompt_id!);
@@ -432,10 +450,7 @@ export function attachDeliveryClientHandlers(
       };
     });
 
-    if (
-      manifest.status === "completed_pending_ack" ||
-      manifest.status === "error"
-    ) {
+    if (isTerminalDeliveryStatus(manifest.status)) {
       void get().processGenerationQueue();
     }
 
@@ -446,7 +461,7 @@ export function attachDeliveryClientHandlers(
 
     if (manifest.status === "completed_pending_ack") {
       void processCompletedDelivery(manifest);
-    } else if (manifest.status === "error") {
+    } else if (isTerminalDeliveryStatus(manifest.status)) {
       void acknowledgeDeliveryOnce(manifest);
     }
   }
@@ -470,7 +485,7 @@ export function attachDeliveryClientHandlers(
             livePromptIds.add(delivery.prompt_id);
           }
           if (
-            delivery.status === "error" &&
+            (delivery.status === "error" || delivery.status === "cancelled") &&
             delivery.prompt_id &&
             !get().jobs.has(delivery.prompt_id)
           ) {

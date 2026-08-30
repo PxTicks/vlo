@@ -50,7 +50,11 @@ import {
   createGenerationAbortError,
   isAbortError,
 } from "../pipeline/utils/abort";
-import type { WorkflowInput, WorkflowPostprocessingConfig } from "../types";
+import type {
+  GenerationJob,
+  WorkflowInput,
+  WorkflowPostprocessingConfig,
+} from "../types";
 import { createSubmissionErrorJob } from "./submission";
 import {
   GENERATION_CANCELLED_BY_USER_MESSAGE,
@@ -1402,11 +1406,26 @@ export function buildExecutionStoreState(
    * the delivery stream and the Queue panel. Marking locally first is still
    * worth doing — it is what makes the panel respond immediately — but it is no
    * longer the only thing standing between a cancel and a row of failures.
+   *
+   * Optimism has to be reversible, though. A prompt ComfyUI has started can
+   * only be stopped by the interrupt, and when that fails the generation runs
+   * on and will deliver: the backend reports those ids back, and their jobs go
+   * back to what they were. Leaving them marked cancelled is what would make
+   * the delivery arrive against a locally-terminal job and have its outputs
+   * dropped on the floor.
    */
   async function cancelPrompts(promptIds: string[]): Promise<void> {
     if (promptIds.length === 0) {
       return;
     }
+
+    const jobsBeforeCancel = new Map(
+      promptIds
+        .map((promptId) => [promptId, get().jobs.get(promptId)] as const)
+        .filter(
+          (entry): entry is [string, GenerationJob] => entry[1] !== undefined,
+        ),
+    );
 
     set((state) => {
       let patched = state;
@@ -1434,7 +1453,22 @@ export function buildExecutionStoreState(
       // Not filtered on local job status, which lags the delivery stream: an id
       // that has just become the running prompt has to reach the interrupt the
       // backend issues behind this call.
-      await comfyApi.cancelGenerations(promptIds);
+      const result = await comfyApi.cancelGenerations(promptIds);
+      const stillRunning = result.uncancelled.filter((promptId) =>
+        jobsBeforeCancel.has(promptId),
+      );
+      if (stillRunning.length > 0) {
+        set((state) => {
+          const restored = new Map(state.jobs);
+          for (const promptId of stillRunning) {
+            restored.set(promptId, jobsBeforeCancel.get(promptId)!);
+          }
+          return {
+            jobs: restored,
+            activeJobId: resolveActiveJobId(restored, state.activeJobId),
+          };
+        });
+      }
     } catch (error) {
       const message =
         error instanceof Error

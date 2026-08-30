@@ -149,6 +149,17 @@ export class ComfyApiError extends Error {
   }
 }
 
+export interface CancelGenerationsResult {
+  requested: string[];
+  /** Confirmed gone: deleted while pending, and settled as cancelled. */
+  cancelled: string[];
+  /**
+   * Asked for, but still running. `delete` is a no-op on a started prompt, so
+   * when its interrupt fails nothing stopped it — it will run on and deliver.
+   */
+  uncancelled: string[];
+}
+
 /**
  * Cancel prompts vlo owns, through the backend.
  *
@@ -159,9 +170,11 @@ export class ComfyApiError extends Error {
  * actually went, and settles those as cancelled — in the delivery stream and in
  * the Queue panel's ledger alike.
  */
-export async function cancelGenerations(promptIds: string[]): Promise<void> {
+export async function cancelGenerations(
+  promptIds: string[],
+): Promise<CancelGenerationsResult> {
   if (promptIds.length === 0) {
-    return;
+    return { requested: [], cancelled: [], uncancelled: [] };
   }
   const resp = await fetch(`${COMFY_API}/generations/cancel`, {
     method: "POST",
@@ -171,6 +184,14 @@ export async function cancelGenerations(promptIds: string[]): Promise<void> {
   if (!resp.ok) {
     await throwRequestError("Cancel", resp);
   }
+  const payload: unknown = await resp.json().catch(() => null);
+  const readIds = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+  return {
+    requested: readIds(isRecord(payload) ? payload.requested : null),
+    cancelled: readIds(isRecord(payload) ? payload.cancelled : null),
+    uncancelled: readIds(isRecord(payload) ? payload.uncancelled : null),
+  };
 }
 
 export async function getHealth(): Promise<{ status: string }> {

@@ -1716,7 +1716,7 @@ async def test_a_cancelled_delivery_cannot_be_restated(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_note_queue_mutation_records_deletes_and_pending_clears(
+async def test_resolve_queue_mutation_names_deletes_and_pending_clears(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1726,18 +1726,64 @@ async def test_note_queue_mutation_records_deletes_and_pending_clears(
     )
     _use_comfy(monkeypatch, client)
 
-    await service.note_queue_mutation({"delete": ["prompt-1", 7, ""]})
-    assert service.was_cancelled("prompt-1") is True
-
-    await service.note_queue_mutation({"clear": True})
-    assert service.was_cancelled("pending-1") is True
-    # ComfyUI's clear spares the prompt it is executing, so calling that one
-    # cancelled would mislabel its eventual, genuine failure.
-    assert service.was_cancelled("running-1") is False
-
+    assert await service.resolve_queue_mutation({"delete": ["prompt-1", 7, ""]}) == [
+        "prompt-1"
+    ]
+    # ComfyUI's clear spares the prompt it is executing, so naming that one
+    # would mislabel its eventual, genuine failure as a cancellation.
+    assert await service.resolve_queue_mutation({"clear": True}) == ["pending-1"]
     # A read of the queue claims nothing about anyone's intent.
-    await service.note_queue_mutation({"queue_pending": []})
-    assert service.was_cancelled("prompt-2") is False
+    assert await service.resolve_queue_mutation({"queue_pending": []}) == []
+    assert await service.resolve_queue_mutation("not a payload") == []
+    # Resolving names ids; it never records them. The proxy does that only once
+    # ComfyUI has accepted the mutation.
+    assert service.was_cancelled("prompt-1") is False
+    assert service.was_cancelled("pending-1") is False
+
+
+@pytest.mark.anyio
+async def test_cancel_reports_a_prompt_it_could_not_stop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed interrupt on a running prompt cancelled nothing.
+
+    `delete` is a no-op once ComfyUI has started a prompt, so the interrupt is
+    the only thing that could have stopped it. Reporting success there would
+    leave the caller's job marked cancelled while the generation runs on — and
+    its outputs would be dropped when they arrived.
+    """
+
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await _make_delivery(service, "prompt-running")
+    await _make_delivery(service, "prompt-pending")
+
+    class _InterruptRefusingClient(_FakeComfyHttpClient):
+        async def post(self, path: str, json: dict) -> _FakeResponse:
+            self.posts.append((path, json))
+            if path == "/interrupt" and json["prompt_id"] == "prompt-running":
+                raise RuntimeError("interrupt refused")
+            return _FakeResponse({})
+
+    client = _InterruptRefusingClient(
+        queue_responses=[
+            _queue(running=["prompt-running"], pending=["prompt-pending"]),
+            _queue(running=["prompt-running"]),
+        ],
+    )
+    _use_comfy(monkeypatch, client)
+
+    result = await service.cancel_prompts(["prompt-running", "prompt-pending"])
+
+    assert result["cancelled"] == ["prompt-pending"]
+    assert result["uncancelled"] == ["prompt-running"]
+    # Its note goes too: the generation is still running, and if it later fails
+    # on its own that failure is not this cancel.
+    assert service.was_cancelled("prompt-running") is False
+    assert service.was_cancelled("prompt-pending") is True
+    running = await service.get_delivery("project-1", "delivery-prompt-running")
+    assert running is not None and running["status"] == "queued"
+    assert service._deliveries["delivery-prompt-running"]["cancel_requested"] is False
 
 
 @pytest.mark.anyio

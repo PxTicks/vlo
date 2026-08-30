@@ -251,9 +251,19 @@ describe("comfyuiApi generate", () => {
 });
 
 describe("comfyuiApi simple endpoints", () => {
-  it("cancelGenerations posts the prompt ids and surfaces failures", async () => {
-    fetchMock.mockResolvedValueOnce(makeResponse({ text: "" }));
-    await expect(cancelGenerations(["a", "b"])).resolves.toBeUndefined();
+  it("cancelGenerations posts the prompt ids and reports what it stopped", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse({
+        body: { requested: ["a", "b"], cancelled: ["a"], uncancelled: ["b"] },
+      }),
+    );
+    // `uncancelled` is the half the caller has to act on: those prompts are
+    // still running and will deliver.
+    await expect(cancelGenerations(["a", "b"])).resolves.toEqual({
+      requested: ["a", "b"],
+      cancelled: ["a"],
+      uncancelled: ["b"],
+    });
     const [url, options] = fetchMock.mock.calls[0];
     expect(String(url)).toContain("/comfy/generations/cancel");
     expect(JSON.parse(String(options?.body))).toEqual({
@@ -269,8 +279,21 @@ describe("comfyuiApi simple endpoints", () => {
   });
 
   it("cancelGenerations does not call ComfyUI for an empty id list", async () => {
-    await expect(cancelGenerations([])).resolves.toBeUndefined();
+    await expect(cancelGenerations([])).resolves.toEqual({
+      requested: [],
+      cancelled: [],
+      uncancelled: [],
+    });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("cancelGenerations tolerates a response body it cannot parse", async () => {
+    fetchMock.mockResolvedValueOnce(makeResponse({ text: "" }));
+    await expect(cancelGenerations(["a"])).resolves.toEqual({
+      requested: [],
+      cancelled: [],
+      uncancelled: [],
+    });
   });
 
   it("getHealth and getConfig parse JSON", async () => {

@@ -1061,7 +1061,11 @@ describe("useGenerationStore workflow rules", () => {
       activeJobId: runningJob.id,
       connectionStatus: "connected",
     });
-    vi.spyOn(comfyApi, "cancelGenerations").mockResolvedValue(undefined);
+    vi.spyOn(comfyApi, "cancelGenerations").mockResolvedValue({
+      requested: [],
+      cancelled: [],
+      uncancelled: [],
+    });
 
     await useGenerationStore.getState().cancelGeneration();
 
@@ -1086,7 +1090,11 @@ describe("useGenerationStore workflow rules", () => {
         totalFrames: 3,
       },
     });
-    vi.spyOn(comfyApi, "cancelGenerations").mockResolvedValue(undefined);
+    vi.spyOn(comfyApi, "cancelGenerations").mockResolvedValue({
+      requested: [],
+      cancelled: [],
+      uncancelled: [],
+    });
 
     await useGenerationStore.getState().cancelGeneration();
 

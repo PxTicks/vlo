@@ -52,7 +52,8 @@ def _cancel(body: object) -> Response:
 class _RecordingService:
     def __init__(self, *, raises: bool = False) -> None:
         self.cancelled: list[str] = []
-        self.noted: list[object] = []
+        self.noted: list[str] = []
+        self.queue_pending: list[str] = []
         self._raises = raises
 
     async def cancel_prompts(self, prompt_ids):
@@ -62,11 +63,22 @@ class _RecordingService:
         return {
             "requested": list(prompt_ids),
             "cancelled": list(prompt_ids),
-            "interrupt_failures": [],
+            "uncancelled": [],
         }
 
-    async def note_queue_mutation(self, payload) -> None:
-        self.noted.append(payload)
+    async def resolve_queue_mutation(self, payload):
+        # Mirrors the real service: a `clear` names no ids, so they come off
+        # the queue as it stands *now*.
+        if not isinstance(payload, dict):
+            return []
+        if isinstance(payload.get("delete"), list):
+            return list(payload["delete"])
+        if payload.get("clear"):
+            return list(self.queue_pending)
+        return []
+
+    async def note_prompts_cancelled(self, prompt_ids) -> None:
+        self.noted.extend(prompt_ids)
 
 
 def test_cancel_endpoint_delegates_the_whole_sequence(
@@ -125,9 +137,15 @@ def test_proxy_records_queue_mutations_the_in_editor_comfyui_accepted(
 
     async def fake_proxy(_request: Request, upstream_path: str) -> Response:
         forwarded.append(upstream_path)
+        status = status_codes.pop(0)
+        if 200 <= status < 300:
+            # ComfyUI empties the pending queue as it handles the mutation.
+            # Resolving the ids after this point finds nothing, which is
+            # exactly how the clear used to record no cancellations at all.
+            service.queue_pending = []
         return Response(
             content=b"{}",
-            status_code=status_codes.pop(0),
+            status_code=status,
             media_type="application/json",
         )
 
@@ -148,11 +166,13 @@ def test_proxy_records_queue_mutations_the_in_editor_comfyui_accepted(
         )
 
     _call(body={"delete": ["prompt-1"]})
+    service.queue_pending = ["pending-1", "pending-2"]
     _call(body={"clear": True})
     _call("GET")  # a read says nothing about anyone's intent
     _call(body={"delete": ["prompt-2"]})  # rejected upstream
 
-    # Only what ComfyUI accepted. A note for a rejected mutation would outlive
-    # its own request and relabel a later, genuine failure as a cancellation.
-    assert service.noted == [{"delete": ["prompt-1"]}, {"clear": True}]
+    # The clear's ids come from the queue as it stood *before* ComfyUI emptied
+    # it, and only what ComfyUI accepted is recorded: a note for a rejected
+    # mutation would outlive its request and relabel a later, genuine failure.
+    assert service.noted == ["prompt-1", "pending-1", "pending-2"]
     assert forwarded == [raw_path] * 4

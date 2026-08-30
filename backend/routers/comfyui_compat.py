@@ -258,16 +258,23 @@ async def proxy_queue_mutation(request: Request, upstream_path: str) -> Response
     """
 
     normalized_path = f"/{upstream_path.lstrip('/')}".rstrip("/")
-    payload: object = None
+    cancelled: list[str] = []
     if request.method == "POST" and normalized_path in _QUEUE_UPSTREAM_PATHS:
         try:
-            payload = await request.json()
+            payload: object = await request.json()
         except (UnicodeDecodeError, json.JSONDecodeError):
             payload = None
+        # Resolved *before* forwarding, because a `clear` names no ids: they can
+        # only be read off the queue ComfyUI is about to empty. Reading the body
+        # here is free — Starlette caches it, so the forwarded request is
+        # unaffected.
+        cancelled = await generation_holding_service.resolve_queue_mutation(payload)
 
     response = await proxy_http_request(request, upstream_path)
-    if payload is not None and 200 <= response.status_code < 300:
-        await generation_holding_service.note_queue_mutation(payload)
+    # Recorded only once ComfyUI accepts it: a note for a rejected mutation
+    # would outlive its own request and relabel a later, genuine failure.
+    if cancelled and 200 <= response.status_code < 300:
+        await generation_holding_service.note_prompts_cancelled(cancelled)
     return response
 
 

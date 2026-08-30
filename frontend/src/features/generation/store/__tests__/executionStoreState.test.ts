@@ -297,6 +297,11 @@ describe("buildExecutionStoreState", () => {
     mocks.getSaveImageWebsocketNodeIds.mockReturnValue(new Set(["1"]));
     mocks.buildGenerationFamilyRequestKey.mockResolvedValue("family-key");
     mocks.generate.mockResolvedValue({ promptId: "server-response" });
+    mocks.cancelGenerations.mockResolvedValue({
+      requested: [],
+      cancelled: [],
+      uncancelled: [],
+    });
     mocks.buildSubmittedGeneration.mockReturnValue({
       promptId: "prompt-1",
       deliveryId: "delivery-1",
@@ -1181,6 +1186,36 @@ describe("buildExecutionStoreState", () => {
       "panel-job",
       "iframe-job",
     ]);
+  });
+
+  it("restores a job the backend could not actually stop", async () => {
+    // `delete` is a no-op on a started prompt, so a failed interrupt cancelled
+    // nothing: the generation runs on and will deliver. Leaving it marked
+    // cancelled is what would make its outputs arrive against a terminal job
+    // and be dropped.
+    const running = {
+      id: "job-1",
+      status: "running",
+      error: null,
+      submittedAt: 1,
+    };
+    const harness = createHarness({
+      jobs: new Map([["job-1", running]]),
+      activeJobId: "job-1",
+    });
+    mocks.cancelGenerations.mockResolvedValueOnce({
+      requested: ["job-1"],
+      cancelled: [],
+      uncancelled: ["job-1"],
+    });
+
+    await harness.actions.interruptCurrentGeneration();
+
+    expect(mocks.cancelGenerations).toHaveBeenCalledWith(["job-1"]);
+    expect(
+      (harness.state.jobs as Map<string, unknown>).get("job-1"),
+    ).toEqual(running);
+    expect(harness.state.activeJobId).toBe("job-1");
   });
 
   it("cancels a single queued prompt but refuses the running one", async () => {

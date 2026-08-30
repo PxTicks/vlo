@@ -1259,31 +1259,34 @@ class GenerationHoldingService:
         manifest = self._deliveries.get(delivery_id) if delivery_id else None
         return bool(manifest and manifest.get("cancel_requested"))
 
-    async def note_queue_mutation(self, payload: object) -> None:
-        """Record a proxied ComfyUI queue delete/clear as a cancellation.
+    async def resolve_queue_mutation(self, payload: object) -> list[str]:
+        """Which prompts a proxied ComfyUI queue delete/clear would cancel.
 
         This is the path vlo does not originate: the Clear button inside the
-        in-editor ComfyUI, whose request only ever reaches ComfyUI through this
-        proxy. Only the intent is recorded — whether a given prompt actually
-        leaves the queue is ComfyUI's answer to give, and the monitors already
-        watch for exactly that.
+        in-editor ComfyUI, whose request only ever reaches ComfyUI through the
+        proxy. A `clear` names nothing — the ids have to be read from the queue,
+        and only *before* ComfyUI empties it, which is why resolving and
+        recording are two steps. The proxy resolves here, forwards, and records
+        the result only if ComfyUI accepted the mutation.
+
+        Pending only: ComfyUI's clear wipes the waiting queue and leaves the
+        running prompt alone, so naming that one would relabel its eventual,
+        genuine failure as a cancellation.
         """
 
         if not isinstance(payload, dict):
-            return
+            return []
         deleted = payload.get("delete")
         if isinstance(deleted, list):
-            await self.note_prompts_cancelled(
-                prompt_id for prompt_id in deleted if isinstance(prompt_id, str)
-            )
-            return
+            return [
+                prompt_id
+                for prompt_id in deleted
+                if isinstance(prompt_id, str) and prompt_id
+            ]
         if payload.get("clear"):
-            # Pending only. ComfyUI's clear wipes the waiting queue and leaves
-            # the running prompt alone, so noting that one would relabel its
-            # eventual, genuine failure as a cancellation.
             prompt_ids = await self._pending_prompt_ids(force_refresh=True)
-            if prompt_ids:
-                await self.note_prompts_cancelled(prompt_ids)
+            return sorted(prompt_ids or ())
+        return []
 
     async def mark_cancelled(
         self,
@@ -1376,8 +1379,6 @@ class GenerationHoldingService:
                 )
                 response.raise_for_status()
             except Exception as exc:
-                # The delete did happen, so the notes stand. This prompt simply
-                # settles from its monitor instead of from here.
                 logger.warning("Interrupting prompt %s failed: %s", prompt_id, exc)
                 interrupt_failures.append(prompt_id)
 
@@ -1395,10 +1396,25 @@ class GenerationHoldingService:
             if delivery_id and await self.mark_cancelled(delivery_id):
                 cancelled.append(prompt_id)
 
+        # An interrupt is the only thing that can stop a prompt ComfyUI has
+        # started — `delete` is a no-op on it — so a failed interrupt on a
+        # prompt that was not confirmably deleted means it was not cancelled at
+        # all. It keeps running, and it will deliver: say so, rather than
+        # letting the caller record a cancellation that never happened and
+        # throw the outputs away when they arrive. Its note goes too, or the
+        # generation's own later failure would be reported as this cancel.
+        uncancelled = [
+            prompt_id
+            for prompt_id in interrupt_failures
+            if prompt_id not in cancelled
+        ]
+        if uncancelled:
+            await self.discard_cancel_notes(uncancelled)
+
         return {
             "requested": prompt_ids,
             "cancelled": cancelled,
-            "interrupt_failures": interrupt_failures,
+            "uncancelled": uncancelled,
         }
 
     async def mark_completed(

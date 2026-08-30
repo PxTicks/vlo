@@ -65,14 +65,8 @@ from services.gen_pipeline.processors.validate_inputs import (
     collect_provided_input_ids_from_sources,
 )
 
-from routers.comfyui_compat import (  # noqa: F401 -- compat_router re-exported for main.py
-    compat_router,
-    proxy_queue_mutation,
-)
-from services.generation_delivery import (
-    GenerationCancelError,
-    generation_holding_service,
-)
+from routers.comfyui_compat import compat_router  # noqa: F401 -- re-exported for main.py
+from services.generation_delivery import generation_holding_service
 
 # Single source of truth for workflow asset locations lives in the generation
 # service; the router previously re-derived and monkey-patched these per
@@ -2026,53 +2020,6 @@ async def generate(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Cancellation
-# ---------------------------------------------------------------------------
-
-
-@router.post("/generations/cancel")
-async def cancel_generations(request: Request):
-    """Stop prompts vlo owns, and record that stopping them was deliberate.
-
-    ComfyUI has no notion of *why* a prompt left its queue: a cancelled prompt
-    and one that vanished for any other reason are the same observation, which
-    is why cancelling a batch used to be reported as a row of failures. Routing
-    the cancel through the backend closes that gap — the delete, the interrupt,
-    the record of intent and the confirmation that it worked are one ordered
-    sequence, owned by the delivery service.
-    """
-
-    try:
-        payload = await request.json()
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        payload = None
-    raw_prompt_ids = payload.get("prompt_ids") if isinstance(payload, dict) else None
-    prompt_ids = [
-        prompt_id
-        for prompt_id in (raw_prompt_ids if isinstance(raw_prompt_ids, list) else [])
-        if isinstance(prompt_id, str) and prompt_id
-    ]
-    if not prompt_ids:
-        return error_response(
-            400,
-            "invalid_cancel_request",
-            "No prompt ids to cancel",
-            retryable=False,
-        )
-
-    try:
-        result = await generation_holding_service.cancel_prompts(prompt_ids)
-    except GenerationCancelError as exc:
-        return error_response(
-            502,
-            "comfyui_unreachable",
-            f"ComfyUI did not accept the cancellation: {exc}",
-            retryable=True,
-        )
-    return JSONResponse(result)
-
-
-# ---------------------------------------------------------------------------
 # /comfy passthrough routes
 # ---------------------------------------------------------------------------
 
@@ -2081,7 +2028,7 @@ async def cancel_generations(request: Request):
 async def proxy_comfyui_api(request: Request, path: str = ""):
     # Use the raw request path to preserve encoded slashes in file names.
     upstream_path = upstream_path_from_raw_request(request, "/comfy/api")
-    return await proxy_queue_mutation(request, upstream_path)
+    return await proxy_http_request(request, upstream_path)
 
 
 @router.api_route("/history", methods=PROXY_HTTP_METHODS)

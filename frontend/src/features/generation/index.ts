@@ -5,6 +5,7 @@ export {
   COMFYUI_EDITOR_DROP_SINK_ID,
 } from "./components/ComfyUIEditor";
 export { canRegenerateFromAssetMetadata } from "./utils/metadataReplay";
+export { installGenerationPanelPersistence } from "./persistence/installGenerationPanelPersistence";
 export type {
   GenerationMode,
   InputSlot,

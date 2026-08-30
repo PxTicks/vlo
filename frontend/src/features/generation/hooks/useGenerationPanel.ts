@@ -102,10 +102,6 @@ import {
 } from "../../../shared/utils/assetTypeDetection";
 import { resolveManualWidgetInputs } from "../services/manualWorkflowWidgets";
 import { buildGenerationNodeCatalogue } from "../services/workflowNodeCatalogue";
-import {
-  buildFrontendStateDerivedWidgetKey,
-  buildFrontendStateValueKey,
-} from "../services/frontendRuleState";
 import { shouldShowHistoricalGenerationJob } from "../utils/panelDisplayJob";
 import {
   areWidgetValueMapsEqual,
@@ -115,18 +111,18 @@ import {
   resolveReplayWidgetValues,
   shouldWaitForReplayPanelHydration,
 } from "../utils/replayPanelHydration";
-import { parseStoredWidgetValue } from "../utils/storedWidgetValues";
 import {
   collectBypassDiscoveryDiagnostics,
   collectBypassDiscoveryNodeIds,
   mergeAutodiscoveredLoraWidgetInputs,
   resolveAutodiscoveredLoraWidgetInputs,
 } from "../utils/loraLoaderWidgets";
+import { collectWidgetSubmissionState } from "../utils/widgetSubmissionState";
+import type { GenerationPanelValuesSnapshot } from "../persistence/generationPanelSnapshot";
 import {
   collectDefaultNodeBypassWidgetTargets,
   getNodeBypassWidgetKey,
   isNodeBypassWidgetValue,
-  partitionNodeBypassWidgetInputs,
   reconcileNodeBypassWidgetTargets,
 } from "../utils/nodeBypassWidgets";
 
@@ -417,6 +413,13 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const pendingReplayPanelState = useGenerationStore(
     (s) => s.pendingReplayPanelState,
   );
+  const pendingPanelSnapshot = useGenerationStore(
+    (s) => s.pendingPanelSnapshot,
+  );
+  const isRestoringPanelSnapshot = useGenerationStore(
+    (s) => s.isRestoringPanelSnapshot,
+  );
+  const panelResetToken = useGenerationStore((s) => s.panelResetToken);
   const clearPendingReplayPanelState = useGenerationStore(
     (s) => s.clearPendingReplayPanelState,
   );
@@ -763,6 +766,70 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     workflowInputs,
   ]);
 
+  // Text and widget values live here rather than in the store, so a project
+  // change has to reach in and clear them: nothing else would, and they would
+  // otherwise be saved into a project that never entered them.
+  const previousPanelResetTokenRef = useRef(panelResetToken);
+  useEffect(() => {
+    if (previousPanelResetTokenRef.current === panelResetToken) return;
+    previousPanelResetTokenRef.current = panelResetToken;
+
+    setTextValues({});
+    widgetValuesRef.current = {};
+    setWidgetValues({});
+    setRandomizeToggles({});
+    const clearedBypasses = new Set<string>();
+    bypassedWidgetTargetsRef.current = clearedBypasses;
+    appliedBypassDefaultsRef.current = clearedBypasses;
+    bypassWorkflowSourceRef.current = null;
+    setBypassedWidgetTargets(clearedBypasses);
+  }, [panelResetToken]);
+
+  // Mirror the panel's own control values into the store so the project can
+  // save them. Nothing submits from here — this is the persistence seam only.
+  useEffect(() => {
+    const widgetState = collectWidgetSubmissionState({
+      widgetInputs,
+      widgetValues,
+      randomizeToggles,
+      bypassedWidgetTargets,
+    });
+    const nextValues: GenerationPanelValuesSnapshot = {
+      textValues,
+      frontendStateWidgetValues: widgetState.frontendStateWidgetValues,
+      derivedWidgetInputs: widgetState.derivedWidgetInputs,
+      widgetModes: widgetState.widgetModes,
+      bypassNodeIds: widgetState.bypassNodeIds,
+      activateNodeIds: widgetState.activateNodeIds,
+    };
+    useGenerationStore.getState().setPanelValues(nextValues);
+  }, [
+    bypassedWidgetTargets,
+    randomizeToggles,
+    textValues,
+    widgetInputs,
+    widgetValues,
+  ]);
+
+  // Restore the state this project was left in. Held until here rather than
+  // done at project load: seeding media slots renders timeline selections, so
+  // it needs the loaded timeline and a reachable ComfyUI.
+  useEffect(() => {
+    if (!pendingPanelSnapshot) return;
+    if (isRestoringPanelSnapshot) return;
+    if (connectionStatus !== "connected") return;
+
+    void useGenerationStore
+      .getState()
+      .restorePanelSnapshot(pendingPanelSnapshot)
+      .catch((error: unknown) => {
+        console.warn(
+          "[Generation] Failed to restore the project's panel state",
+          error,
+        );
+      });
+  }, [connectionStatus, isRestoringPanelSnapshot, pendingPanelSnapshot]);
+
   useEffect(() => {
     const store = useGenerationStore.getState();
     store.connect();
@@ -933,87 +1000,28 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         }
       }
 
-      // Build widget overrides and randomization modes.
-      // Actual random number generation happens in the backend to preserve
-      // precision for large integer domains (for example seed ranges).
-      const widgetOverrides: Record<string, string> = {};
-      const frontendStateWidgetValues: Record<string, unknown> = {};
-      const derivedWidgetInputs: Record<string, string> = {};
-      const widgetModes: Record<string, "fixed" | "randomize"> = {};
-      const widgetSubmission = partitionNodeBypassWidgetInputs(
-        widgetInputsRef.current,
-        bypassedWidgetTargetsRef.current,
-      );
+      // Widget overrides and randomization modes, from the same collector the
+      // project's saved panel state is built from.
+      const widgetSubmission = collectWidgetSubmissionState({
+        widgetInputs: widgetInputsRef.current,
+        widgetValues: currentWidgetValues,
+        randomizeToggles,
+        bypassedWidgetTargets: bypassedWidgetTargetsRef.current,
+      });
       for (const nodeId of widgetSubmission.bypassNodeIds) {
         bypassNodeIds.add(nodeId);
       }
       for (const nodeId of widgetSubmission.activateNodeIds) {
         activateNodeIds.add(nodeId);
       }
-      for (const w of widgetSubmission.activeWidgetInputs) {
-        const value =
-          currentWidgetValues[w.nodeId]?.[w.param] ?? w.currentValue;
-        if (w.kind === "derived") {
-          if (value !== undefined && value !== null) {
-            derivedWidgetInputs[`derived_widget_${w.derivedWidgetId}`] =
-              String(value);
-            frontendStateWidgetValues[
-              buildFrontendStateDerivedWidgetKey(w.derivedWidgetId)
-            ] =
-              typeof value === "string"
-                ? parseStoredWidgetValue(w, value)
-                : value;
-          }
-          continue;
-        }
-
-        if (value !== undefined && value !== null) {
-          const frontendStateKey = buildFrontendStateValueKey({
-            nodeId: w.nodeId,
-            widget: w.param,
-            frontendControlId: w.frontendControlId,
-          });
-          frontendStateWidgetValues[frontendStateKey] =
-            typeof value === "string"
-              ? parseStoredWidgetValue(w, value)
-              : value;
-        }
-
-        const key = `${w.nodeId}:${w.param}`;
-        const isRandomized = randomizeToggles[key] ?? false;
-        if (w.config.controlAfterGenerate) {
-          widgetModes[`widget_mode_${w.nodeId}_${w.param}`] = isRandomized
-            ? "randomize"
-            : "fixed";
-        }
-        if (w.config.frontendOnly) {
-          continue;
-        }
-
-        if (isRandomized && w.config.controlAfterGenerate) {
-          continue;
-        }
-        if (value !== undefined && value !== null) {
-          let storedValue: unknown = value;
-          if (w.config.valueType === "boolean") {
-            if (value === true && w.config.trueValue !== undefined) {
-              storedValue = w.config.trueValue;
-            } else if (value === false && w.config.falseValue !== undefined) {
-              storedValue = w.config.falseValue;
-            }
-          }
-          widgetOverrides[`widget_${w.nodeId}_${w.param}`] =
-            String(storedValue);
-        }
-      }
 
       await queueGeneration(
         slotValues,
-        widgetOverrides,
-        widgetModes,
-        derivedWidgetInputs,
+        widgetSubmission.widgetOverrides,
+        widgetSubmission.widgetModes,
+        widgetSubmission.derivedWidgetInputs,
         count,
-        frontendStateWidgetValues,
+        widgetSubmission.frontendStateWidgetValues,
         [...bypassNodeIds],
         [...activateNodeIds],
       );
@@ -1055,6 +1063,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
   const handleWorkflowSelect = useCallback(
     (workflowId: string) => {
+      // Choosing a workflow by hand ends any wait for the saved one: from
+      // here the panel is the user's, and what it holds is what gets saved.
+      useGenerationStore.getState().discardPendingPanelSnapshot();
       setWorkflowLoadState("loading");
       void loadWorkflow(workflowId);
     },
@@ -1062,6 +1073,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   );
 
   const handleWorkflowBack = useCallback(() => {
+    useGenerationStore.getState().discardPendingPanelSnapshot();
     clearWorkflowSelection();
   }, [clearWorkflowSelection]);
 

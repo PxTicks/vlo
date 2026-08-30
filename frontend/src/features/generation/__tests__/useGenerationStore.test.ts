@@ -1033,14 +1033,15 @@ describe("useGenerationStore workflow rules", () => {
     expect(state.jobPreviewFrames.has(jobId)).toBe(true);
   });
 
-  it("keeps the active job live when the cancel request fails", async () => {
+  it("marks active job as error and clears activeJobId when cancel fails", async () => {
     const runningJob = makeRunningJob("prompt-1");
     useGenerationStore.setState({
       jobs: new Map([[runningJob.id, runningJob]]),
       activeJobId: runningJob.id,
       connectionStatus: "connected",
     });
-    vi.spyOn(comfyApi, "cancelGenerations").mockRejectedValue(
+    vi.spyOn(comfyApi, "deleteQueueItems").mockResolvedValue(undefined);
+    vi.spyOn(comfyApi, "interrupt").mockRejectedValue(
       new Error("Interrupt failed: 502"),
     );
 
@@ -1048,30 +1049,29 @@ describe("useGenerationStore workflow rules", () => {
 
     const state = useGenerationStore.getState();
     const job = state.jobs.get(runningJob.id);
-    expect(job).toEqual(runningJob);
-    expect(state.activeJobId).toBe(runningJob.id);
+    expect(job?.status).toBe("error");
+    expect(job?.error).toContain("Cancel failed");
+    expect(state.activeJobId).toBeNull();
     expect(state.connectionStatus).toBe("error");
   });
 
-  it("leaves an accepted running interrupt to the delivery monitor", async () => {
+  it("marks active job as cancelled when interrupt succeeds", async () => {
     const runningJob = makeRunningJob("prompt-2");
     useGenerationStore.setState({
       jobs: new Map([[runningJob.id, runningJob]]),
       activeJobId: runningJob.id,
       connectionStatus: "connected",
     });
-    vi.spyOn(comfyApi, "cancelGenerations").mockResolvedValue({
-      requested: [runningJob.id],
-      cancelled: [],
-      uncancelled: [],
-    });
+    vi.spyOn(comfyApi, "deleteQueueItems").mockResolvedValue(undefined);
+    vi.spyOn(comfyApi, "interrupt").mockResolvedValue(undefined);
 
     await useGenerationStore.getState().cancelGeneration();
 
     const state = useGenerationStore.getState();
     const job = state.jobs.get(runningJob.id);
-    expect(job).toEqual(runningJob);
-    expect(state.activeJobId).toBe(runningJob.id);
+    expect(job?.status).toBe("error");
+    expect(job?.error).toBe("Generation cancelled by user");
+    expect(state.activeJobId).toBeNull();
   });
 
   it("revokes preview animation URLs when cancelling a running job", async () => {
@@ -1088,11 +1088,8 @@ describe("useGenerationStore workflow rules", () => {
         totalFrames: 3,
       },
     });
-    vi.spyOn(comfyApi, "cancelGenerations").mockResolvedValue({
-      requested: [runningJob.id],
-      cancelled: [runningJob.id],
-      uncancelled: [],
-    });
+    vi.spyOn(comfyApi, "deleteQueueItems").mockResolvedValue(undefined);
+    vi.spyOn(comfyApi, "interrupt").mockResolvedValue(undefined);
 
     await useGenerationStore.getState().cancelGeneration();
 

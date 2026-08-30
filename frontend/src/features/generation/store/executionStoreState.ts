@@ -1393,60 +1393,75 @@ export function buildExecutionStoreState(
       .map((job) => job.id);
   }
 
-  /** Cancel prompts without making local state more certain than ComfyUI is.
+  /**
+   * Cancel a set of prompts in ComfyUI and mark them cancelled locally.
    *
-   * A pending prompt is terminal only once the backend confirms it disappeared
-   * from the queue. A running prompt stays active until its delivery monitor
-   * observes interruption: an accepted interrupt is still only a request. This
-   * also lets a completion racing the cancel be imported normally instead of
-   * arriving against an optimistically terminal job and being discarded.
+   * Both calls are needed and neither is sufficient. ComfyUI's `delete` only
+   * touches *pending* entries, so a prompt that starts executing between these
+   * ids being collected and ComfyUI handling the delete would survive it — and
+   * run to completion while the frontend has already called it cancelled. The
+   * prompt-scoped `interrupt` closes that window, and cannot reach past this
+   * set: ComfyUI ignores it unless the id names the prompt it is executing.
+   *
+   * Both are scoped to exact ids because ComfyUI's queue is a single global
+   * FIFO. A bodyless clear or interrupt is what would hit work vlo does not
+   * own.
    */
   async function cancelPrompts(promptIds: string[]): Promise<void> {
     if (promptIds.length === 0) {
       return;
     }
 
-    try {
-      // Not filtered on local job status, which lags the delivery stream: an id
-      // that has just become the running prompt has to reach the interrupt the
-      // backend issues behind this call.
-      const result = await comfyApi.cancelGenerations(promptIds);
-      if (result.cancelled.length > 0) {
-        set((state) => {
-          let patched = state;
-          for (const promptId of result.cancelled) {
-            // A completion may have won the race while the request was in
-            // flight. Terminal delivery state is authoritative in that case.
-            if (!isActiveGenerationJob(patched.jobs.get(promptId))) {
-              continue;
-            }
-            patched = {
-              ...patched,
-              ...markJobError(
-                patched,
-                promptId,
-                GENERATION_CANCELLED_BY_USER_MESSAGE,
-                null,
-                { completedAt: Date.now() },
-              ),
-            };
-          }
-          return {
-            jobs: patched.jobs,
-            jobPreviewFrames: patched.jobPreviewFrames,
-            previewAnimation: patched.previewAnimation,
-            activeJobId: resolveActiveJobId(
-              patched.jobs,
-              patched.activeJobId,
-            ),
-          };
-        });
+    set((state) => {
+      let patched = state;
+      for (const promptId of promptIds) {
+        patched = {
+          ...patched,
+          ...markJobError(
+            patched,
+            promptId,
+            GENERATION_CANCELLED_BY_USER_MESSAGE,
+            null,
+            { completedAt: Date.now() },
+          ),
+        };
       }
-    } catch {
-      // A failed request says nothing about the generation's outcome. Keep the
-      // job live so a later delivery can still be imported, while surfacing the
-      // lost ComfyUI connection through the existing connection state.
-      set({ connectionStatus: "error" });
+      return {
+        jobs: patched.jobs,
+        jobPreviewFrames: patched.jobPreviewFrames,
+        previewAnimation: patched.previewAnimation,
+        activeJobId: resolveActiveJobId(patched.jobs, patched.activeJobId),
+      };
+    });
+
+    try {
+      await comfyApi.deleteQueueItems(promptIds);
+      // Not filtered on local job status, which lags the delivery stream: the
+      // whole point is to catch an id that has just become the running prompt.
+      await Promise.all(promptIds.map((promptId) => comfyApi.interrupt(promptId)));
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? `Cancel failed: ${error.message}`
+          : "Cancel failed: ComfyUI is unreachable";
+      set((state) => {
+        let patched = state;
+        for (const promptId of promptIds) {
+          patched = {
+            ...patched,
+            ...markJobError(patched, promptId, message, null, {
+              nextConnectionStatus: "error",
+              completedAt: Date.now(),
+            }),
+          };
+        }
+        return {
+          jobs: patched.jobs,
+          jobPreviewFrames: patched.jobPreviewFrames,
+          previewAnimation: patched.previewAnimation,
+          connectionStatus: patched.connectionStatus,
+        };
+      });
     }
   }
 

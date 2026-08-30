@@ -27,6 +27,10 @@ import type {
   WorkflowRules,
 } from "../services/workflowRules";
 import type { GenerationAspectRatioSelection } from "../utils/aspectRatioSelection";
+import type {
+  GenerationPanelSnapshot,
+  GenerationPanelValuesSnapshot,
+} from "../persistence/generationPanelSnapshot";
 
 export type ComfyUIConnectionStatus =
   | "disconnected"
@@ -70,6 +74,41 @@ export interface WorkflowReplayPanelState {
 }
 
 export interface GenerationWorkflowState {
+  /**
+   * The panel's own control values, mirrored out of the component so the
+   * project can save them (see `persistence/generationPanelSnapshot`). Nothing
+   * reads them for submission — that stays with the panel.
+   */
+  panelValues: GenerationPanelValuesSnapshot;
+  setPanelValues: (values: GenerationPanelValuesSnapshot) => void;
+  /**
+   * The saved panel state of the open project, waiting to be restored. Held
+   * until the panel mounts: restoring seeds media slots, which needs the
+   * timeline the project just loaded.
+   */
+  pendingPanelSnapshot: GenerationPanelSnapshot | null;
+  setPendingPanelSnapshot: (snapshot: GenerationPanelSnapshot | null) => void;
+  /**
+   * A restore is running. It holds `pendingPanelSnapshot` for its duration,
+   * so a restore that fails or is superseded cannot have its partial result
+   * saved over the project's state on disk.
+   */
+  isRestoringPanelSnapshot: boolean;
+  /**
+   * Bumped when the panel must drop the state it holds outside the store —
+   * the text and widget values that live in the component. Changing projects
+   * is the only thing that does this.
+   */
+  panelResetToken: number;
+  /** Reloads the saved workflow and puts its inputs and settings back. */
+  restorePanelSnapshot: (snapshot: GenerationPanelSnapshot) => Promise<void>;
+  /**
+   * Gives up on restoring: the user has taken the panel over (by choosing a
+   * workflow themselves), so what they do from here is what gets saved.
+   */
+  discardPendingPanelSnapshot: () => void;
+  /** Drops panel state belonging to a project that is being closed. */
+  clearPanelForProjectChange: () => void;
   syncedWorkflow: Record<string, unknown> | null;
   syncedGraphData: Record<string, unknown> | null;
   iframeWorkflowInstanceId: string | null;

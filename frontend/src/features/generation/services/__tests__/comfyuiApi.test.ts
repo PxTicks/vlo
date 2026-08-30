@@ -10,7 +10,7 @@ import {
   getWorkflowContent,
   getWorkflowMenuDefinition,
   getWorkflowRules,
-  cancelGenerations,
+  interrupt,
   listWorkflows,
   resolveWorkflowRules,
   saveWorkflowContent,
@@ -251,58 +251,14 @@ describe("comfyuiApi generate", () => {
 });
 
 describe("comfyuiApi simple endpoints", () => {
-  it("cancelGenerations posts the prompt ids and reports what it stopped", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({
-        body: { requested: ["a", "b"], cancelled: ["a"], uncancelled: ["b"] },
-      }),
-    );
-    // `uncancelled` is the half the caller has to act on: those prompts are
-    // still running and will deliver.
-    await expect(cancelGenerations(["a", "b"])).resolves.toEqual({
-      requested: ["a", "b"],
-      cancelled: ["a"],
-      uncancelled: ["b"],
-    });
-    const [url, options] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain("/comfy/generations/cancel");
-    expect(JSON.parse(String(options?.body))).toEqual({
-      prompt_ids: ["a", "b"],
-    });
+  it("interrupt resolves on success and throws on failure", async () => {
+    fetchMock.mockResolvedValueOnce(makeResponse({ text: "" }));
+    await expect(interrupt()).resolves.toBeUndefined();
 
     fetchMock.mockResolvedValueOnce(
       makeResponse({ ok: false, status: 503, contentType: "text/plain", text: "down" }),
     );
-    await expect(cancelGenerations(["a"])).rejects.toThrow(
-      /Cancel failed \(503\): down/,
-    );
-  });
-
-  it("cancelGenerations does not call ComfyUI for an empty id list", async () => {
-    await expect(cancelGenerations([])).resolves.toEqual({
-      requested: [],
-      cancelled: [],
-      uncancelled: [],
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("cancelGenerations rejects a response body it cannot parse", async () => {
-    fetchMock.mockResolvedValueOnce(makeResponse({ text: "" }));
-    await expect(cancelGenerations(["a"])).rejects.toThrow(
-      /invalid response/i,
-    );
-  });
-
-  it("cancelGenerations rejects an inconsistent success response", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({
-        body: { requested: [], cancelled: [], uncancelled: [] },
-      }),
-    );
-    await expect(cancelGenerations(["a"])).rejects.toThrow(
-      /invalid response/i,
-    );
+    await expect(interrupt()).rejects.toThrow(/Interrupt failed \(503\): down/);
   });
 
   it("getHealth and getConfig parse JSON", async () => {

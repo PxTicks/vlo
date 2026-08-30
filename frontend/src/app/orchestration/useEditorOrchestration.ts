@@ -3,6 +3,7 @@ import { registerPreSaveHook } from "../../core/persistence/preSaveHooks";
 import type { Asset } from "../../types/Asset";
 import {
   canRegenerateFromAssetMetadata,
+  installGenerationPanelPersistence,
   useGenerationStore,
 } from "../../features/generation";
 import { flushAllBrushMaskCommits } from "../../features/masks/api";
@@ -42,6 +43,10 @@ export function useEditorOrchestration(): void {
       }),
     [],
   );
+
+  // The generation panel's workflow and inputs belong to the project, so they
+  // are saved with it and handed back when it reopens.
+  useEffect(() => installGenerationPanelPersistence(), []);
 
   useEffect(() => {
     const unregisterBrushMaskFlush = registerPreSaveHook(

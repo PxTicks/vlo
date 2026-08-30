@@ -39,7 +39,6 @@ _BRIDGE_BOOTSTRAP_TAG = (
 )
 _IFRAME_EXTENSION_LIST_PATHS = {"api/extensions", "extensions"}
 _PROMPT_UPSTREAM_PATHS = {"/prompt", "/api/prompt"}
-_QUEUE_UPSTREAM_PATHS = {"/queue", "/api/queue"}
 _PROMPT_WATCHDOGS: set[asyncio.Task[None]] = set()
 
 
@@ -198,7 +197,7 @@ async def _proxy_with_prompt_adoption(
             pass
 
     if not is_prompt_submission:
-        return await proxy_queue_mutation(request, upstream_path)
+        return await proxy_http_request(request, upstream_path)
 
     # Fail-fast admission, taken *before* forwarding. Observe-only admission
     # cannot exclude anything: by the time adoption runs, ComfyUI already has
@@ -240,48 +239,6 @@ async def _proxy_with_prompt_adoption(
         _spawn_watchdog(
             generation_holding_service.watch_ambiguous_submission(ambiguous_lease)
         )
-    return response
-
-
-async def proxy_queue_mutation(request: Request, upstream_path: str) -> Response:
-    """Forward a queue request, and give a delete/clear vlo did not originate
-    its meaning.
-
-    ComfyUI's own Clear button posts straight through this proxy, and the only
-    trace it leaves behind is prompts silently absent from the next /queue poll
-    — which every monitor would otherwise settle as a failure.
-
-    The body is read before forwarding (Starlette caches it, so the forwarded
-    request is unaffected) but recorded only *after* ComfyUI accepts it. A
-    rejected mutation changed nothing, and a note that outlives its own request
-    would relabel a later, genuine failure as a cancellation.
-    """
-
-    normalized_path = f"/{upstream_path.lstrip('/')}".rstrip("/")
-    candidates: list[str] = []
-    if request.method == "POST" and normalized_path in _QUEUE_UPSTREAM_PATHS:
-        try:
-            payload: object = await request.json()
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            payload = None
-        # Resolved *before* forwarding, because a `clear` names no ids: they can
-        # only be read off the queue ComfyUI is about to empty. Reading the body
-        # here is free — Starlette caches it, so the forwarded request is
-        # unaffected.
-        candidates = await generation_holding_service.resolve_queue_mutation(
-            payload
-        )
-
-    response = await proxy_http_request(request, upstream_path)
-    if candidates and 200 <= response.status_code < 300:
-        # A queued prompt can start between the pre-mutation snapshot and
-        # ComfyUI handling the request. Confirm what actually disappeared so a
-        # spared running prompt is not given a cancellation it never received.
-        cancelled = await generation_holding_service.confirm_queue_mutation(
-            candidates
-        )
-        if cancelled:
-            await generation_holding_service.note_prompts_cancelled(cancelled)
     return response
 
 
@@ -386,7 +343,7 @@ async def proxy_prompt_root(request: Request, path: str = ""):
 @compat_router.api_route("/queue", methods=PROXY_HTTP_METHODS)
 @compat_router.api_route("/queue/{path:path}", methods=PROXY_HTTP_METHODS)
 async def proxy_queue_root(request: Request, path: str = ""):
-    return await proxy_queue_mutation(request, compose_upstream_path("queue", path))
+    return await proxy_http_request(request, compose_upstream_path("queue", path))
 
 
 @compat_router.api_route("/view", methods=PROXY_HTTP_METHODS)

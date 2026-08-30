@@ -36,6 +36,7 @@ import type {
   GenerationDeliveryMessage,
 } from "../../services/generationDeliveryApi";
 import type { ParsedBinaryPreview } from "../../services/previewBinary";
+import { shouldShowHistoricalGenerationJob } from "../../utils/panelDisplayJob";
 
 class FakeDeliveryClient {
   readonly acknowledgedDeliveryIds: string[] = [];
@@ -199,6 +200,37 @@ describe("deliveryEvents", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("settles a cancelled delivery without treating it as a failure", async () => {
+    client.emitConnectionChange("connected");
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "delivery_update",
+      data: {
+        delivery: makeCompletedManifest({
+          status: "cancelled",
+          error: "Generation cancelled by user",
+          outputs: [],
+        }),
+      },
+    });
+    await flushMicrotasks();
+
+    const job = useGenerationStore.getState().jobs.get("prompt-1");
+    // Terminal like an error, and carrying the cancellation as its message —
+    // which is what keeps it out of the panel's failure history.
+    expect(job?.status).toBe("error");
+    expect(job?.error).toBe("Generation cancelled by user");
+    expect(shouldShowHistoricalGenerationJob(job!)).toBe(false);
+    // Terminal means terminal: the delivery is acked and the queue advances,
+    // rather than the job sitting queued forever.
+    expect(client.acknowledgedDeliveryIds).toEqual(["delivery-1"]);
+    expect(mockProcessGenerationQueue).toHaveBeenCalledTimes(1);
+    expect(mockFrontendPostprocess).not.toHaveBeenCalled();
   });
 
   it("ingests completed deliveries and acknowledges only after persistence", async () => {

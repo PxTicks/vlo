@@ -10,6 +10,8 @@ import time
 import urllib.parse
 import uuid
 from pathlib import Path
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -75,6 +77,21 @@ MONITOR_BACKSTOP_QUEUED_MISS_THRESHOLD = 2
 # Backstop-only monitors (adopted in-editor generations) have no websocket to
 # race, so their first reconcile need not wait out the websocket grace window.
 MONITOR_BACKSTOP_ONLY_INITIAL_DELAY_SECONDS = 2.0
+
+#: A settled delivery. No later event may move a manifest out of one of these.
+TERMINAL_DELIVERY_STATUSES = frozenset(
+    {"completed_pending_ack", "error", "cancelled"}
+)
+#: Paired with the frontend's GENERATION_CANCELLED_BY_USER_MESSAGE and
+#: GENERATION_INTERRUPTED_MESSAGE constants: the panel recognises these exact
+#: strings as "stopped on purpose" and keeps them out of its failure history.
+GENERATION_CANCELLED_MESSAGE = "Generation cancelled by user"
+GENERATION_INTERRUPTED_MESSAGE = "Generation interrupted"
+#: How long a recorded cancellation stays consultable. It only has to outlive
+#: the reconcile pass that notices the prompt is gone (a few polls), and a
+#: prompt ComfyUI never drops would otherwise pin its note forever.
+CANCELLED_PROMPT_TTL_SECONDS = 900.0
+CANCELLED_PROMPT_MAX_ENTRIES = 512
 
 BINARY_PREVIEW_IMAGE = 1
 BINARY_PREVIEW_IMAGE_WITH_METADATA = 4
@@ -322,25 +339,43 @@ def _parse_history_outputs(history: Any, prompt_id: str) -> list[dict[str, Any]]
     return outputs
 
 
-def _parse_queue_prompt_ids(queue: Any) -> set[str]:
-    """Extract prompt ids from ComfyUI's /queue payload (running + pending)."""
+def _parse_queue_section_prompt_ids(entries: Any) -> set[str]:
     prompt_ids: set[str] = set()
-    if not isinstance(queue, dict):
+    if not isinstance(entries, list):
         return prompt_ids
-    for key in ("queue_running", "queue_pending"):
-        entries = queue.get(key)
-        if not isinstance(entries, list):
-            continue
-        for entry in entries:
-            if (
-                isinstance(entry, (list, tuple))
-                and len(entry) > 1
-                and isinstance(entry[1], str)
-            ):
-                prompt_ids.add(entry[1])
-            elif isinstance(entry, dict) and isinstance(entry.get("prompt_id"), str):
-                prompt_ids.add(entry["prompt_id"])
+    for entry in entries:
+        if (
+            isinstance(entry, (list, tuple))
+            and len(entry) > 1
+            and isinstance(entry[1], str)
+        ):
+            prompt_ids.add(entry[1])
+        elif isinstance(entry, dict) and isinstance(entry.get("prompt_id"), str):
+            prompt_ids.add(entry["prompt_id"])
     return prompt_ids
+
+
+def _parse_queue_sections(queue: Any) -> _QueueSections:
+    """Split ComfyUI's /queue payload into what is executing and what waits.
+
+    The two are not interchangeable. A ``clear`` drops pending work and spares
+    the running prompt, and a prompt that is merely pending can be deleted
+    outright — so anything reasoning about cancellation has to know which half
+    an id is in.
+    """
+
+    if not isinstance(queue, dict):
+        return _QueueSections(running=set(), pending=set())
+    return _QueueSections(
+        running=_parse_queue_section_prompt_ids(queue.get("queue_running")),
+        pending=_parse_queue_section_prompt_ids(queue.get("queue_pending")),
+    )
+
+
+def _parse_queue_prompt_ids(queue: Any) -> set[str]:
+    """Every prompt id ComfyUI holds, running or pending."""
+    sections = _parse_queue_sections(queue)
+    return sections.running | sections.pending
 
 
 def _extract_history_prompt_metadata(
@@ -402,6 +437,16 @@ def _extract_history_error(prompt_history: Any) -> str | None:
     return "Generation failed"
 
 
+class GenerationCancelError(RuntimeError):
+    """ComfyUI refused a cancellation outright; nothing was mutated."""
+
+
+@dataclass(frozen=True)
+class _QueueSections:
+    running: set[str]
+    pending: set[str]
+
+
 class _ProjectConsumer:
     def __init__(self, project_id: str, websocket: WebSocket) -> None:
         self.id = str(uuid.uuid4())
@@ -430,8 +475,11 @@ class GenerationHoldingService:
         # (taken_at, prompt_ids | None) — None means ComfyUI was unreachable,
         # which is cached too so a batch of backstops cannot stampede a
         # ComfyUI that is down.
-        self._queue_snapshot: tuple[float, set[str] | None] | None = None
+        self._queue_snapshot: tuple[float, _QueueSections | None] | None = None
         self._queue_snapshot_lock = asyncio.Lock()
+        # prompt_id -> monotonic time the cancellation was recorded. See
+        # `note_prompts_cancelled` for why intent has to be remembered.
+        self._cancelled_prompt_ids: dict[str, float] = {}
 
     async def _ensure_loaded(self) -> None:
         reattach_manifests: list[dict[str, Any]] = []
@@ -788,6 +836,9 @@ class GenerationHoldingService:
             "preview_frames": [],
             "prepared_mask": None,
             "last_delivery_error": None,
+            # Set when a cancellation is requested for this prompt, so an
+            # in-flight cancel survives a backend restart.
+            "cancel_requested": False,
         }
 
         async with self._lock:
@@ -1005,10 +1056,7 @@ class GenerationHoldingService:
             if (
                 manifest is None
                 or manifest.get("project_id") != project_id
-                or manifest.get("status") in {
-                    "completed_pending_ack",
-                    "error",
-                }
+                or manifest.get("status") in TERMINAL_DELIVERY_STATUSES
             ):
                 return False
         await self.mark_running(
@@ -1075,7 +1123,7 @@ class GenerationHoldingService:
             # bridge-forwarded update racing the backstop's finalize on an
             # adopted generation) must not flip a terminal manifest back to
             # running.
-            if manifest.get("status") in {"completed_pending_ack", "error"}:
+            if manifest.get("status") in TERMINAL_DELIVERY_STATUSES:
                 return
             manifest["status"] = "running"
             if progress is not None:
@@ -1102,6 +1150,10 @@ class GenerationHoldingService:
             manifest = self._deliveries.get(delivery_id)
             if not manifest:
                 return
+            if manifest.get("status") == "cancelled":
+                # Deliberately stopped, and already broadcast as such. A monitor
+                # racing an external cancel must not restate it as a failure.
+                return
             manifest["status"] = "error"
             manifest["error"] = error_message
             manifest["current_node"] = None
@@ -1112,6 +1164,289 @@ class GenerationHoldingService:
         settle_prompt(manifest.get("prompt_id") or "", "failed")
         await self._broadcast_payload(manifest["project_id"], {"type": "delivery_update", "data": {"delivery": serialized}})
 
+    async def note_prompts_cancelled(self, prompt_ids: Iterable[str]) -> None:
+        """Record that these prompts were removed from ComfyUI on purpose.
+
+        Reconciliation cannot tell a deliberate cancel from any other reason a
+        prompt might vanish — both read as "no longer known to ComfyUI" — so
+        the intent has to be recorded at the moment it is expressed, by
+        whichever path expresses it (vlo's own cancel, or a queue clear from
+        the in-editor ComfyUI). Only the settle paths consult it, so a note for
+        a prompt that goes on to complete normally is inert.
+
+        Notes for prompts vlo has a delivery for are written to the manifest as
+        well, because the in-memory half dies with the process and a backend
+        restart would otherwise turn the cancel that was in flight back into a
+        failure. A prompt without a delivery keeps the in-memory note only —
+        there is nowhere durable to put it, and its watchdog runs in this
+        process anyway.
+
+        Only ever call this for a mutation that actually happened. A note for a
+        request ComfyUI rejected outlives the request and would relabel a later,
+        genuine failure as a cancellation; see :meth:`discard_cancel_notes`.
+        """
+
+        now = time.monotonic()
+        noted: list[str] = []
+        for prompt_id in prompt_ids:
+            if prompt_id:
+                self._cancelled_prompt_ids[prompt_id] = now
+                noted.append(prompt_id)
+        self._prune_cancelled_prompts()
+
+        for prompt_id in noted:
+            async with self._lock:
+                delivery_id = self._find_delivery_id_for_prompt_locked(prompt_id)
+                manifest = self._deliveries.get(delivery_id) if delivery_id else None
+                if manifest is None or manifest.get("cancel_requested"):
+                    continue
+                manifest["cancel_requested"] = True
+                manifest["updated_at"] = _now_ms()
+                await self._persist_manifest(manifest)
+
+    async def discard_cancel_notes(self, prompt_ids: Iterable[str]) -> None:
+        """Undo notes for a mutation ComfyUI refused outright.
+
+        The request never reached the queue, so nothing about these prompts has
+        changed and the recorded intent is a lie that would outlive its own
+        request.
+        """
+
+        for prompt_id in prompt_ids:
+            self._cancelled_prompt_ids.pop(prompt_id, None)
+            async with self._lock:
+                delivery_id = self._find_delivery_id_for_prompt_locked(prompt_id)
+                manifest = self._deliveries.get(delivery_id) if delivery_id else None
+                if manifest is None or not manifest.get("cancel_requested"):
+                    continue
+                manifest["cancel_requested"] = False
+                manifest["updated_at"] = _now_ms()
+                await self._persist_manifest(manifest)
+
+    def _prune_cancelled_prompts(self) -> None:
+        now = time.monotonic()
+        for prompt_id in [
+            prompt_id
+            for prompt_id, noted_at in self._cancelled_prompt_ids.items()
+            if now - noted_at > CANCELLED_PROMPT_TTL_SECONDS
+        ]:
+            self._cancelled_prompt_ids.pop(prompt_id, None)
+        overflow = len(self._cancelled_prompt_ids) - CANCELLED_PROMPT_MAX_ENTRIES
+        if overflow > 0:
+            oldest = sorted(
+                self._cancelled_prompt_ids,
+                key=self._cancelled_prompt_ids.__getitem__,
+            )[:overflow]
+            for prompt_id in oldest:
+                self._cancelled_prompt_ids.pop(prompt_id, None)
+
+    def was_cancelled(self, prompt_id: str) -> bool:
+        """Whether this prompt's disappearance is already explained.
+
+        Expiry is decided per id rather than left to the prune pass: pruning
+        only runs when another note is added, so a stale note on a quiet system
+        would otherwise be consulted forever.
+        """
+
+        if not prompt_id:
+            return False
+        noted_at = self._cancelled_prompt_ids.get(prompt_id)
+        if noted_at is not None:
+            if time.monotonic() - noted_at <= CANCELLED_PROMPT_TTL_SECONDS:
+                return True
+            self._cancelled_prompt_ids.pop(prompt_id, None)
+        delivery_id = self._find_delivery_id_for_prompt_locked(prompt_id)
+        manifest = self._deliveries.get(delivery_id) if delivery_id else None
+        return bool(manifest and manifest.get("cancel_requested"))
+
+    async def resolve_queue_mutation(self, payload: object) -> list[str]:
+        """Which pending prompts a proxied queue mutation intends to remove.
+
+        This is the path vlo does not originate: the Clear button inside the
+        in-editor ComfyUI, whose request only ever reaches ComfyUI through the
+        proxy. A `clear` names nothing — the ids have to be read from the queue,
+        and only *before* ComfyUI empties it, which is why resolving and
+        recording are two steps. The proxy resolves here, forwards, and records
+        the result only if ComfyUI accepted the mutation.
+
+        Pending only: both delete and clear spare a prompt once it is running.
+        The proxy confirms these candidates after forwarding as well, because
+        one can start between this snapshot and ComfyUI applying the mutation.
+        """
+
+        if not isinstance(payload, dict):
+            return []
+        deleted = payload.get("delete")
+        if isinstance(deleted, list):
+            requested = [
+                prompt_id
+                for prompt_id in deleted
+                if isinstance(prompt_id, str) and prompt_id
+            ]
+            clear = False
+        elif payload.get("clear"):
+            requested = []
+            clear = True
+        else:
+            return []
+
+        pending = await self._pending_prompt_ids(force_refresh=True)
+        if pending is None:
+            return []
+        if clear:
+            return sorted(pending)
+        return [prompt_id for prompt_id in requested if prompt_id in pending]
+
+    async def confirm_queue_mutation(
+        self,
+        prompt_ids: Sequence[str],
+    ) -> list[str]:
+        """Return candidates now absent from both ComfyUI queue and history.
+
+        A successful queue response applies to the mutation request as a whole;
+        it does not prove each named prompt was deleted. In particular, the
+        worker can promote a pending prompt to running between the snapshot and
+        the mutation. Only disappearance from both sources proves that a
+        candidate was actually removed before it ran.
+        """
+
+        if not prompt_ids:
+            return []
+        # Force one post-mutation queue read; each reconcile below shares it.
+        await self._queue_sections(force_refresh=True)
+        candidates = list(dict.fromkeys(prompt_ids))
+        verdicts = await asyncio.gather(
+            *(self._reconcile_prompt_state(prompt_id) for prompt_id in candidates)
+        )
+        return [
+            prompt_id
+            for prompt_id, (verdict, _) in zip(candidates, verdicts, strict=True)
+            if verdict == "missing"
+        ]
+
+    async def mark_cancelled(
+        self,
+        delivery_id: str,
+        message: str = GENERATION_CANCELLED_MESSAGE,
+    ) -> bool:
+        """Settle a delivery as deliberately stopped rather than failed.
+
+        Distinct from :meth:`mark_error` in both directions it reports: the
+        ledger records ``cancelled``, so the Queue panel says "Cancelled"
+        instead of "Failed", and the manifest's terminal status tells the
+        generation panel this was not a generation that went wrong.
+        """
+
+        await self._ensure_loaded()
+        async with self._lock:
+            manifest = self._deliveries.get(delivery_id)
+            if not manifest:
+                return False
+            if manifest.get("status") in TERMINAL_DELIVERY_STATUSES:
+                return False
+            manifest["status"] = "cancelled"
+            manifest["error"] = message
+            manifest["current_node"] = None
+            manifest["completed_at"] = _now_ms()
+            manifest["updated_at"] = manifest["completed_at"]
+            await self._persist_manifest(manifest)
+            serialized = self._serialize_delivery(manifest)
+        settle_prompt(manifest.get("prompt_id") or "", "cancelled")
+        await self._broadcast_payload(
+            manifest["project_id"],
+            {"type": "delivery_update", "data": {"delivery": serialized}},
+        )
+        return True
+
+    async def cancel_prompts(self, prompt_ids: Sequence[str]) -> dict[str, list[str]]:
+        """Cancel prompts in ComfyUI and settle the ones it confirmably dropped.
+
+        The ordering is the whole point, and each step earns its place:
+
+        1. Read the *pending* half of ComfyUI's queue. Only a prompt that had
+           not started can be dropped outright, so this is the candidate set;
+           anything running is excluded before it can be mislabelled.
+        2. Record the intent, so a reconcile racing the delete cannot reach
+           "no longer known to ComfyUI" first and call this a failure.
+        3. Delete by id, then interrupt by id. Neither is sufficient alone:
+           `delete` only touches pending entries, so a prompt that started in
+           between would survive it, and `interrupt` reaches only the prompt
+           ComfyUI is executing. Both are id-scoped because the queue is one
+           global FIFO — a bodyless clear or interrupt would hit work vlo does
+           not own.
+        4. Re-read the queue and history. A candidate now absent from both was
+           deleted while pending: it never ran, so settling it — which releases
+           its GPU occupancy — is a fact rather than a guess.
+
+        Everything else is left to its monitor, which reads the same note and
+        settles it as cancelled the moment ComfyUI says what happened. That is
+        deliberately conservative: an interrupt is a request, not a stop, and
+        releasing occupancy while the sampler is still unwinding is what puts
+        two tenants on one card.
+
+        Raises :class:`GenerationCancelError` if ComfyUI refuses the delete, in
+        which case nothing was mutated and the notes are withdrawn.
+        """
+
+        await self._ensure_loaded()
+        prompt_ids = list(prompt_ids)
+        client = await get_http_client()
+
+        pending_before = await self._pending_prompt_ids(force_refresh=True)
+        candidates = (
+            [prompt_id for prompt_id in prompt_ids if prompt_id in pending_before]
+            if pending_before is not None
+            else []
+        )
+
+        await self.note_prompts_cancelled(prompt_ids)
+        try:
+            response = await client.post("/queue", json={"delete": prompt_ids})
+            response.raise_for_status()
+        except Exception as exc:
+            await self.discard_cancel_notes(prompt_ids)
+            raise GenerationCancelError(str(exc)) from exc
+
+        interrupt_failures: list[str] = []
+        for prompt_id in prompt_ids:
+            try:
+                response = await client.post(
+                    "/interrupt", json={"prompt_id": prompt_id}
+                )
+                response.raise_for_status()
+            except Exception as exc:
+                logger.warning("Interrupting prompt %s failed: %s", prompt_id, exc)
+                interrupt_failures.append(prompt_id)
+
+        confirmed = await self.confirm_queue_mutation(candidates)
+        cancelled: list[str] = []
+        for prompt_id in confirmed:
+            async with self._lock:
+                delivery_id = self._find_delivery_id_for_prompt_locked(prompt_id)
+            if delivery_id and await self.mark_cancelled(delivery_id):
+                cancelled.append(prompt_id)
+
+        # An interrupt is the only thing that can stop a prompt ComfyUI has
+        # started — `delete` is a no-op on it — so a failed interrupt on a
+        # prompt that was not confirmably deleted means it was not cancelled at
+        # all. It keeps running, and it will deliver: say so, rather than
+        # letting the caller record a cancellation that never happened and
+        # throw the outputs away when they arrive. Its note goes too, or the
+        # generation's own later failure would be reported as this cancel.
+        uncancelled = [
+            prompt_id
+            for prompt_id in interrupt_failures
+            if prompt_id not in cancelled
+        ]
+        if uncancelled:
+            await self.discard_cancel_notes(uncancelled)
+
+        return {
+            "requested": prompt_ids,
+            "cancelled": cancelled,
+            "uncancelled": uncancelled,
+        }
+
     async def mark_completed(
         self,
         delivery_id: str,
@@ -1121,6 +1456,14 @@ class GenerationHoldingService:
         async with self._lock:
             manifest = self._deliveries.get(delivery_id)
             if not manifest:
+                return
+            if manifest.get("status") == "cancelled":
+                # A cancellation is only written once ComfyUI has confirmed the
+                # prompt never ran (or that it was interrupted), so a completion
+                # arriving afterwards is a stale race, not a late success.
+                logger.warning(
+                    "Ignoring completion for cancelled delivery %s", delivery_id
+                )
                 return
             manifest["status"] = "completed_pending_ack"
             manifest["progress"] = 100
@@ -1648,16 +1991,22 @@ class GenerationHoldingService:
                 await self._persist_manifest(manifest)
         await self.mark_completed(delivery_id, outputs)
 
-    async def _queued_prompt_ids(self) -> set[str] | None:
-        """Prompt ids ComfyUI holds, or ``None`` when it could not be queried.
+    async def _queue_sections(
+        self,
+        *,
+        force_refresh: bool = False,
+    ) -> _QueueSections | None:
+        """What ComfyUI is running and what it has waiting, or ``None``.
 
         Shared across every delivery backstop with a short TTL — see
-        :data:`QUEUE_SNAPSHOT_TTL_SECONDS`.
+        :data:`QUEUE_SNAPSHOT_TTL_SECONDS`. ``force_refresh`` is for the caller
+        that cannot act on a cached answer: confirming a cancellation needs the
+        queue as it is *now*, not as it was up to a poll ago.
         """
 
         loop = asyncio.get_running_loop()
 
-        def _fresh() -> tuple[bool, set[str] | None]:
+        def _fresh() -> tuple[bool, _QueueSections | None]:
             snapshot = self._queue_snapshot
             if (
                 snapshot is not None
@@ -1666,27 +2015,51 @@ class GenerationHoldingService:
                 return True, snapshot[1]
             return False, None
 
-        hit, cached = _fresh()
-        if hit:
-            return cached
+        if not force_refresh:
+            hit, cached = _fresh()
+            if hit:
+                return cached
 
         async with self._queue_snapshot_lock:
             # Re-checked: pollers that queued behind the lock are served by the
-            # fetch they were waiting on rather than issuing their own.
+            # fetch they were waiting on rather than issuing their own. A forced
+            # refresh still re-checks, because a fetch that started *after* this
+            # caller asked is exactly the fresh answer it wanted.
+            snapshot_before = self._queue_snapshot
             hit, cached = _fresh()
-            if hit:
+            if hit and (
+                not force_refresh or snapshot_before is not self._queue_snapshot
+            ):
                 return cached
             try:
                 client = await get_http_client()
                 response = await client.get("/queue")
                 response.raise_for_status()
-                prompt_ids: set[str] | None = _parse_queue_prompt_ids(
+                sections: _QueueSections | None = _parse_queue_sections(
                     response.json()
                 )
             except Exception:
-                prompt_ids = None
-            self._queue_snapshot = (loop.time(), prompt_ids)
-            return prompt_ids
+                sections = None
+            self._queue_snapshot = (loop.time(), sections)
+            return sections
+
+    async def _queued_prompt_ids(
+        self,
+        *,
+        force_refresh: bool = False,
+    ) -> set[str] | None:
+        sections = await self._queue_sections(force_refresh=force_refresh)
+        return None if sections is None else sections.running | sections.pending
+
+    async def _pending_prompt_ids(
+        self,
+        *,
+        force_refresh: bool = False,
+    ) -> set[str] | None:
+        """Only the prompts ComfyUI has *not* started."""
+
+        sections = await self._queue_sections(force_refresh=force_refresh)
+        return None if sections is None else set(sections.pending)
 
     async def probe_comfyui_activity(self) -> str:
         """Whether ComfyUI has anything running or pending.
@@ -1760,7 +2133,15 @@ class GenerationHoldingService:
         while coordinator.token_for_prompt(prompt_id) is not None:
             verdict, error_message = await self._reconcile_prompt_state(prompt_id)
             if verdict == "completed":
-                settle_prompt(prompt_id, "failed" if error_message else "succeeded")
+                if error_message is None:
+                    settle_prompt(prompt_id, "succeeded")
+                elif (
+                    error_message == GENERATION_INTERRUPTED_MESSAGE
+                    or self.was_cancelled(prompt_id)
+                ):
+                    settle_prompt(prompt_id, "cancelled")
+                else:
+                    settle_prompt(prompt_id, "failed")
                 return
             if verdict == "pending":
                 misses = 0
@@ -1769,7 +2150,10 @@ class GenerationHoldingService:
                 unreachable = 0
                 misses += 1
                 if misses >= MONITOR_BACKSTOP_MISS_THRESHOLD:
-                    settle_prompt(prompt_id, "failed")
+                    settle_prompt(
+                        prompt_id,
+                        "cancelled" if self.was_cancelled(prompt_id) else "failed",
+                    )
                     return
             else:
                 unreachable += 1
@@ -1878,6 +2262,13 @@ class GenerationHoldingService:
             settled = True
             await self.mark_error(delivery_id, message)
 
+        async def _settle_cancelled(message: str) -> None:
+            nonlocal settled
+            if settled:
+                return
+            settled = True
+            await self.mark_cancelled(delivery_id, message)
+
         async def _handle_text_message(message: str) -> bool:
             """Process one JSON event; returns True when terminal."""
             nonlocal current_node
@@ -1939,7 +2330,9 @@ class GenerationHoldingService:
                 )
                 return True
             elif event_type == "execution_interrupted":
-                await _settle_error("Generation interrupted")
+                # Someone pressed stop — vlo's cancel, the in-editor ComfyUI's,
+                # or another client's. Never a fault of the generation.
+                await _settle_cancelled(GENERATION_INTERRUPTED_MESSAGE)
                 return True
             return False
 
@@ -2049,7 +2442,16 @@ class GenerationHoldingService:
                 )
                 if verdict == "completed":
                     if error_message is not None:
-                        await _settle_error(error_message)
+                        # ComfyUI's own history says whether the run was
+                        # interrupted, so a stopped generation reads as stopped
+                        # even when the event was missed and no note survives —
+                        # a dropped websocket, or a backend restart.
+                        if error_message == GENERATION_INTERRUPTED_MESSAGE:
+                            await _settle_cancelled(GENERATION_INTERRUPTED_MESSAGE)
+                        elif self.was_cancelled(prompt_id):
+                            await _settle_cancelled(GENERATION_CANCELLED_MESSAGE)
+                        else:
+                            await _settle_error(error_message)
                         return
                     if await _try_finalize():
                         return
@@ -2065,9 +2467,12 @@ class GenerationHoldingService:
                         else MONITOR_BACKSTOP_MISS_THRESHOLD
                     )
                     if misses >= threshold:
-                        await _settle_error(
-                            "Prompt is no longer known to ComfyUI"
-                        )
+                        if self.was_cancelled(prompt_id):
+                            await _settle_cancelled(GENERATION_CANCELLED_MESSAGE)
+                        else:
+                            await _settle_error(
+                                "Prompt is no longer known to ComfyUI"
+                            )
                         return
                 else:
                     # "unknown": ComfyUI unreachable — neither settle nor count.

@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   generate: vi.fn(),
-  interrupt: vi.fn(),
-  deleteQueueItems: vi.fn(),
+  cancelGenerations: vi.fn(),
   createGenerationPlan: vi.fn(),
   prepareGenerationPlan: vi.fn(),
   buildSubmittedGeneration: vi.fn(),
@@ -35,8 +34,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../services/comfyuiApi", () => ({
   generate: mocks.generate,
-  interrupt: mocks.interrupt,
-  deleteQueueItems: mocks.deleteQueueItems,
+  cancelGenerations: mocks.cancelGenerations,
 }));
 
 vi.mock("../../../project", () => ({
@@ -299,6 +297,11 @@ describe("buildExecutionStoreState", () => {
     mocks.getSaveImageWebsocketNodeIds.mockReturnValue(new Set(["1"]));
     mocks.buildGenerationFamilyRequestKey.mockResolvedValue("family-key");
     mocks.generate.mockResolvedValue({ promptId: "server-response" });
+    mocks.cancelGenerations.mockImplementation(async (promptIds: string[]) => ({
+      requested: promptIds,
+      cancelled: promptIds,
+      uncancelled: [],
+    }));
     mocks.buildSubmittedGeneration.mockReturnValue({
       promptId: "prompt-1",
       deliveryId: "delivery-1",
@@ -1087,7 +1090,7 @@ describe("buildExecutionStoreState", () => {
     expect(harness.state.generationQueue).toEqual([]);
   });
 
-  it("marks active jobs cancelled and reports interrupt failures", async () => {
+  it("marks confirmed cancellations and preserves jobs on request failure", async () => {
     const jobs = new Map([
       ["job-1", { id: "job-1", status: "running", error: null }],
     ]);
@@ -1095,24 +1098,27 @@ describe("buildExecutionStoreState", () => {
     await harness.actions.cancelGeneration();
     // Cancel must be scoped to our own prompt id so it can't touch the iframe's
     // jobs on the shared global queue.
-    expect(mocks.deleteQueueItems).toHaveBeenCalledWith(["job-1"]);
-    expect(mocks.interrupt).toHaveBeenCalledTimes(1);
-    expect(mocks.interrupt).toHaveBeenCalledWith("job-1");
+    expect(mocks.cancelGenerations).toHaveBeenCalledWith(["job-1"]);
     expect(harness.state.activeJobId).toBeNull();
 
     const failedJobs = new Map([
       ["job-2", { id: "job-2", status: "queued", error: null }],
     ]);
     const failed = createHarness({ jobs: failedJobs, activeJobId: "job-2" });
-    mocks.interrupt.mockRejectedValueOnce(new Error("offline"));
+    mocks.cancelGenerations.mockRejectedValueOnce(new Error("offline"));
     await failed.actions.interruptCurrentGeneration();
-    expect(mocks.markJobError).toHaveBeenLastCalledWith(
+    expect(mocks.markJobError).not.toHaveBeenCalledWith(
       expect.any(Object),
       "job-2",
-      "Cancel failed: offline",
-      null,
-      expect.objectContaining({ nextConnectionStatus: "error" }),
+      expect.stringContaining("Cancel failed"),
+      expect.anything(),
+      expect.anything(),
     );
+    expect((failed.state.jobs as Map<string, unknown>).get("job-2")).toEqual(
+      failedJobs.get("job-2"),
+    );
+    expect(failed.state.activeJobId).toBe("job-2");
+    expect(failed.state.connectionStatus).toBe("error");
   });
 
   it("submits the whole queue ahead instead of waiting on the running job", async () => {
@@ -1148,14 +1154,10 @@ describe("buildExecutionStoreState", () => {
     await harness.actions.clearGenerationQueue();
 
     expect(harness.state.generationQueue).toEqual([]);
-    expect(mocks.deleteQueueItems).toHaveBeenCalledWith(["job-2", "job-3"]);
-    // Each cleared id is also interrupted, because one of them may have become
-    // the running prompt between collecting the ids and ComfyUI deleting them
-    // — `delete` only touches pending entries, so it would miss that one.
-    expect(mocks.interrupt.mock.calls.flat()).toEqual(["job-2", "job-3"]);
-    // Clearing the queue is not an interrupt of the *current* generation: the
-    // prompt-scoped interrupt is a no-op for anything but its own id.
-    expect(mocks.interrupt).not.toHaveBeenCalledWith("job-1");
+    // Exact ids, and only the pending ones: the backend turns each into a
+    // scoped delete plus interrupt, so clearing the queue never reaches the
+    // running prompt or anything on the shared global queue that isn't ours.
+    expect(mocks.cancelGenerations).toHaveBeenCalledWith(["job-2", "job-3"]);
     expect(harness.state.activeJobId).toBe("job-1");
   });
 
@@ -1185,10 +1187,93 @@ describe("buildExecutionStoreState", () => {
 
     await harness.actions.clearGenerationQueue();
 
-    expect(mocks.deleteQueueItems).toHaveBeenCalledWith([
+    expect(mocks.cancelGenerations).toHaveBeenCalledWith([
       "panel-job",
       "iframe-job",
     ]);
+  });
+
+  it("leaves a job active when the backend could not actually stop it", async () => {
+    // `delete` is a no-op on a started prompt, so a failed interrupt cancelled
+    // nothing: the generation runs on and will deliver. Leaving it marked
+    // cancelled is what would make its outputs arrive against a terminal job
+    // and be dropped.
+    const running = {
+      id: "job-1",
+      status: "running",
+      error: null,
+      submittedAt: 1,
+    };
+    const harness = createHarness({
+      jobs: new Map([["job-1", running]]),
+      activeJobId: "job-1",
+    });
+    mocks.cancelGenerations.mockResolvedValueOnce({
+      requested: ["job-1"],
+      cancelled: [],
+      uncancelled: ["job-1"],
+    });
+
+    await harness.actions.interruptCurrentGeneration();
+
+    expect(mocks.cancelGenerations).toHaveBeenCalledWith(["job-1"]);
+    expect(
+      (harness.state.jobs as Map<string, unknown>).get("job-1"),
+    ).toEqual(running);
+    expect(harness.state.activeJobId).toBe("job-1");
+  });
+
+  it("keeps a job live while awaiting authority and preserves a racing completion", async () => {
+    let resolveCancel!: (result: {
+      requested: string[];
+      cancelled: string[];
+      uncancelled: string[];
+    }) => void;
+    mocks.cancelGenerations.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCancel = resolve;
+      }),
+    );
+    const running = {
+      id: "job-1",
+      status: "running",
+      error: null,
+      submittedAt: 1,
+    };
+    const harness = createHarness({
+      jobs: new Map([["job-1", running]]),
+      activeJobId: "job-1",
+    });
+
+    const cancelling = harness.actions.interruptCurrentGeneration();
+
+    expect((harness.state.jobs as Map<string, unknown>).get("job-1")).toEqual(
+      running,
+    );
+    expect(harness.state.activeJobId).toBe("job-1");
+
+    const completed = {
+      ...running,
+      status: "completed",
+      outputs: [{ filename: "finished.png" }],
+    };
+    (
+      harness.set as unknown as (update: Record<string, unknown>) => void
+    )({
+      jobs: new Map([["job-1", completed]]),
+      activeJobId: null,
+    });
+    resolveCancel({
+      requested: ["job-1"],
+      cancelled: ["job-1"],
+      uncancelled: [],
+    });
+    await cancelling;
+
+    expect((harness.state.jobs as Map<string, unknown>).get("job-1")).toEqual(
+      completed,
+    );
+    expect(harness.state.activeJobId).toBeNull();
   });
 
   it("cancels a single queued prompt but refuses the running one", async () => {
@@ -1201,12 +1286,10 @@ describe("buildExecutionStoreState", () => {
     });
 
     await harness.actions.cancelQueuedGeneration("job-1");
-    expect(mocks.deleteQueueItems).not.toHaveBeenCalled();
+    expect(mocks.cancelGenerations).not.toHaveBeenCalled();
 
     await harness.actions.cancelQueuedGeneration("job-2");
-    expect(mocks.deleteQueueItems).toHaveBeenCalledWith(["job-2"]);
-    // Same race as a queue clear: scoped to job-2, never the running prompt.
-    expect(mocks.interrupt.mock.calls.flat()).toEqual(["job-2"]);
+    expect(mocks.cancelGenerations).toHaveBeenCalledWith(["job-2"]);
   });
 
   it("does nothing destructive when no active job exists", async () => {
@@ -1216,7 +1299,7 @@ describe("buildExecutionStoreState", () => {
       generationQueue: [],
     });
     await harness.actions.interruptCurrentGeneration();
-    expect(mocks.interrupt).not.toHaveBeenCalled();
+    expect(mocks.cancelGenerations).not.toHaveBeenCalled();
   });
 });
 

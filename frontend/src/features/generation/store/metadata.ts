@@ -202,7 +202,7 @@ export async function resolveMetadataWorkflowMatch(
 export const REPLAY_EXTRACTION_REQUEST_ID = 1;
 
 export async function restoreMediaInputsFromMetadata(
-  metadata: Readonly<{ inputs: GeneratedCreationMetadata["inputs"] }>,
+  metadata: GeneratedCreationMetadata,
   workflowInputs: WorkflowInput[],
   derivedMaskMappings: DerivedMaskMapping[],
   actions: Pick<
@@ -469,23 +469,34 @@ export async function restoreMediaInputsFromMetadata(
   }
 }
 
-/**
- * The media a generation ran on, in the serializable form replay restores
- * from. Shared by generated-asset metadata and the project's saved panel
- * state, which restore through the same path.
- */
-export function buildGeneratedCreationInputs(
-  workflowInputs: WorkflowInput[],
-  mediaInputs: Record<string, GenerationMediaInputValue | null>,
-): GeneratedCreationMetadata["inputs"] {
+export function buildGeneratedCreationMetadata(
+  options: {
+    workflowName: string;
+    workflowSourceId: string | null;
+    workflowRules: WorkflowRules | null;
+    workflowInputs: WorkflowInput[];
+    mediaInputs: Record<string, GenerationMediaInputValue | null>;
+    slotValues: Record<string, import("../utils/pipeline").SlotValue>;
+    targetResolution: number;
+    exactAspectRatio: boolean;
+    aspectRatioSelection: GenerationAspectRatioSelection;
+    maskCropMode: WorkflowMaskCroppingMode;
+    maskCropDilation: number;
+    frontendStateWidgetValues: Record<string, unknown>;
+    widgetModes: Record<string, "fixed" | "randomize">;
+    derivedWidgetInputs: Record<string, string>;
+    bypassNodeIds?: readonly string[];
+    activateNodeIds?: readonly string[];
+  },
+): GeneratedCreationMetadata {
   const inputs: GeneratedCreationMetadata["inputs"] = [];
-  const inputById = buildWorkflowInputLookup(workflowInputs);
+  const inputById = buildWorkflowInputLookup(options.workflowInputs);
 
-  for (const workflowInput of workflowInputs) {
+  for (const workflowInput of options.workflowInputs) {
     const repeatableMax = workflowInput.presentation?.repeatable?.max ?? 1;
     for (let index = 0; index < repeatableMax; index += 1) {
       const value = getWorkflowInputSlotValue(
-        mediaInputs,
+        options.mediaInputs,
         workflowInput,
         index,
         inputById,
@@ -537,60 +548,11 @@ export function buildGeneratedCreationInputs(
     }
   }
 
-  return inputs;
-}
-
-function collectSubmittedTextValues(
-  workflowInputs: WorkflowInput[],
-  slotValues: Record<string, import("../utils/pipeline").SlotValue>,
-): Record<string, string> {
-  const textValues: Record<string, string> = {};
-  for (const input of workflowInputs) {
-    if (input.inputType !== "text") {
-      continue;
-    }
-    const inputId = getWorkflowInputId(input);
-    const slotValue = slotValues[inputId];
-    if (slotValue?.type !== "text") {
-      continue;
-    }
-    textValues[inputId] = slotValue.value;
-  }
-  return textValues;
-}
-
-export function buildGeneratedCreationMetadata(
-  options: {
-    workflowName: string;
-    workflowSourceId: string | null;
-    workflowRules: WorkflowRules | null;
-    workflowInputs: WorkflowInput[];
-    mediaInputs: Record<string, GenerationMediaInputValue | null>;
-    slotValues: Record<string, import("../utils/pipeline").SlotValue>;
-    targetResolution: number;
-    exactAspectRatio: boolean;
-    aspectRatioSelection: GenerationAspectRatioSelection;
-    maskCropMode: WorkflowMaskCroppingMode;
-    maskCropDilation: number;
-    frontendStateWidgetValues: Record<string, unknown>;
-    widgetModes: Record<string, "fixed" | "randomize">;
-    derivedWidgetInputs: Record<string, string>;
-    bypassNodeIds?: readonly string[];
-    activateNodeIds?: readonly string[];
-  },
-): GeneratedCreationMetadata {
-  const inputs = buildGeneratedCreationInputs(
-    options.workflowInputs,
-    options.mediaInputs,
-  );
   const replayState = buildGeneratedCreationReplayState({
     workflowSourceId: options.workflowSourceId,
     workflowRules: options.workflowRules,
     workflowInputs: options.workflowInputs,
-    textValues: collectSubmittedTextValues(
-      options.workflowInputs,
-      options.slotValues,
-    ),
+    slotValues: options.slotValues,
     frontendStateWidgetValues: options.frontendStateWidgetValues,
     widgetModes: options.widgetModes,
     derivedWidgetInputs: options.derivedWidgetInputs,
@@ -721,7 +683,7 @@ export function parseReplayWorkflowInputs(
 }
 
 export function extractReplayPanelState(
-  metadata: Partial<GeneratedCreationMetadata>,
+  metadata: GeneratedCreationMetadata,
 ): WorkflowReplayPanelState | null {
   const replayState = metadata.replayState;
   if (!replayState) {
@@ -890,17 +852,11 @@ function buildWorkflowInputSnapshot(
   return snapshot;
 }
 
-/**
- * Everything the panel has to put back to reproduce a run: text and widget
- * values, randomize modes, bypasses, and the pipeline settings around them.
- * Text arrives already resolved per input id, so a caller that has no
- * submission (the project's saved panel state) can build one too.
- */
-export function buildGeneratedCreationReplayState(options: {
+function buildGeneratedCreationReplayState(options: {
   workflowSourceId: string | null;
   workflowRules: WorkflowRules | null;
   workflowInputs: WorkflowInput[];
-  textValues: Record<string, string>;
+  slotValues: Record<string, import("../utils/pipeline").SlotValue>;
   frontendStateWidgetValues: Record<string, unknown>;
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetInputs: Record<string, string>;
@@ -912,7 +868,18 @@ export function buildGeneratedCreationReplayState(options: {
   maskCropMode: WorkflowMaskCroppingMode;
   maskCropDilation: number;
 }): GeneratedCreationReplayState | undefined {
-  const textValues = options.textValues;
+  const textValues: Record<string, string> = {};
+  for (const input of options.workflowInputs) {
+    if (input.inputType !== "text") {
+      continue;
+    }
+    const inputId = getWorkflowInputId(input);
+    const slotValue = options.slotValues[inputId];
+    if (slotValue?.type !== "text") {
+      continue;
+    }
+    textValues[inputId] = slotValue.value;
+  }
 
   const pipelineInputs = buildWorkflowReplayPipelineInputs(options.workflowRules, {
     targetResolution: options.targetResolution,
@@ -964,7 +931,7 @@ export function buildGeneratedCreationReplayState(options: {
 
 export function getReplayTargetResolution(
   rules: WorkflowRules | null | undefined,
-  metadata: Partial<GeneratedCreationMetadata>,
+  metadata: GeneratedCreationMetadata,
 ): number | undefined {
   const replayState = metadata.replayState;
   const replayPipelineValue = getWorkflowReplayPipelineValue(

@@ -1347,3 +1347,511 @@ async def test_unreachable_queue_snapshot_reports_unknown_without_stampeding(
     assert attempts == 1
     assert all(result is None for result in results)
     assert await service.probe_comfyui_activity() == "unknown"
+
+
+class _FakeComfyHttpClient:
+    """A ComfyUI whose queue and history the test drives.
+
+    `queue_responses` is consumed one entry per GET /queue, so a test can say
+    what the queue looked like before a delete and after it.
+    """
+
+    def __init__(
+        self,
+        *,
+        queue_responses: list[dict],
+        history: dict[str, object] | None = None,
+        fail_delete: bool = False,
+    ) -> None:
+        self._queue_responses = list(queue_responses)
+        self._history = history or {}
+        self._fail_delete = fail_delete
+        self.posts: list[tuple[str, dict]] = []
+
+    async def get(self, path: str) -> _FakeResponse:
+        if path == "/queue":
+            payload = (
+                self._queue_responses.pop(0)
+                if len(self._queue_responses) > 1
+                else self._queue_responses[0]
+            )
+            return _FakeResponse(payload)
+        if path.startswith("/history/"):
+            prompt_id = path.rsplit("/", 1)[1]
+            entry = self._history.get(prompt_id)
+            return _FakeResponse({prompt_id: entry} if entry is not None else {})
+        raise AssertionError(f"unexpected GET {path}")
+
+    async def post(self, path: str, json: dict) -> _FakeResponse:
+        self.posts.append((path, json))
+        if path == "/queue" and self._fail_delete:
+            raise RuntimeError("comfyui is down")
+        return _FakeResponse({})
+
+
+def _queue(*, running: list[str] = (), pending: list[str] = ()) -> dict:
+    return {
+        "queue_running": [[0, prompt_id] for prompt_id in running],
+        "queue_pending": [[0, prompt_id] for prompt_id in pending],
+    }
+
+
+def _use_comfy(
+    monkeypatch: pytest.MonkeyPatch,
+    client: _FakeComfyHttpClient,
+) -> None:
+    async def _get_client() -> _FakeComfyHttpClient:
+        return client
+
+    monkeypatch.setattr(delivery_service_module, "get_http_client", _get_client)
+    monkeypatch.setattr(delivery_service_module, "QUEUE_SNAPSHOT_TTL_SECONDS", 0)
+
+
+async def _make_delivery(
+    service: GenerationHoldingService,
+    prompt_id: str,
+    delivery_id: str | None = None,
+) -> str:
+    delivery_id = delivery_id or f"delivery-{prompt_id}"
+    await service.create_delivery(
+        project_id="project-1",
+        delivery_id=delivery_id,
+        prompt_id=prompt_id,
+        client_id="client-1",
+        delivery_context=_delivery_context(),
+    )
+    return delivery_id
+
+
+@pytest.mark.anyio
+async def test_cancel_settles_only_a_prompt_confirmed_deleted_while_pending(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Settling releases the GPU, so it needs a fact, not a status guess.
+
+    `pending -> gone from both queue and history` is that fact: the prompt
+    never ran, so nothing is still using the card.
+    """
+
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await _make_delivery(service, "prompt-1")
+    client = _FakeComfyHttpClient(
+        queue_responses=[_queue(pending=["prompt-1"]), _queue()],
+    )
+    _use_comfy(monkeypatch, client)
+
+    result = await service.cancel_prompts(["prompt-1"])
+
+    assert result["cancelled"] == ["prompt-1"]
+    assert client.posts == [
+        ("/queue", {"delete": ["prompt-1"]}),
+        ("/interrupt", {"prompt_id": "prompt-1"}),
+    ]
+    delivery = await service.get_delivery("project-1", "delivery-prompt-1")
+    assert delivery is not None
+    assert delivery["status"] == "cancelled"
+
+
+@pytest.mark.anyio
+async def test_cancel_leaves_a_running_prompt_to_its_monitor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An interrupt is a request, not a stop.
+
+    The sampler unwinds when it gets there; releasing its occupancy before
+    ComfyUI says it stopped is how two tenants end up on one card. Note that
+    the manifest still says "queued" here — a websocket progress event may not
+    have arrived yet, which is exactly why the queue, not the manifest, decides.
+    """
+
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await _make_delivery(service, "prompt-1")
+    client = _FakeComfyHttpClient(queue_responses=[_queue(running=["prompt-1"])])
+    _use_comfy(monkeypatch, client)
+
+    result = await service.cancel_prompts(["prompt-1"])
+
+    assert result["cancelled"] == []
+    delivery = await service.get_delivery("project-1", "delivery-prompt-1")
+    assert delivery is not None
+    assert delivery["status"] == "queued"
+    # The note is what makes its monitor settle it as cancelled, not failed.
+    assert service.was_cancelled("prompt-1") is True
+
+
+@pytest.mark.anyio
+async def test_cancel_leaves_a_prompt_that_ran_anyway_to_its_monitor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The delete raced execution and lost. History is the proof."""
+
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await _make_delivery(service, "prompt-1")
+    client = _FakeComfyHttpClient(
+        queue_responses=[_queue(pending=["prompt-1"]), _queue()],
+        history={"prompt-1": {"status": {"status_str": "success"}}},
+    )
+    _use_comfy(monkeypatch, client)
+
+    assert (await service.cancel_prompts(["prompt-1"]))["cancelled"] == []
+    delivery = await service.get_delivery("project-1", "delivery-prompt-1")
+    assert delivery is not None
+    assert delivery["status"] == "queued"
+
+
+@pytest.mark.anyio
+async def test_cancel_withdraws_its_notes_when_comfyui_refuses(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected delete changed nothing, so the recorded intent is a lie.
+
+    Left behind, it would relabel this prompt's later, genuine failure as a
+    cancellation for as long as the note lives.
+    """
+
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await _make_delivery(service, "prompt-1")
+    client = _FakeComfyHttpClient(
+        queue_responses=[_queue(pending=["prompt-1"])],
+        fail_delete=True,
+    )
+    _use_comfy(monkeypatch, client)
+
+    with pytest.raises(delivery_service_module.GenerationCancelError):
+        await service.cancel_prompts(["prompt-1"])
+
+    assert service.was_cancelled("prompt-1") is False
+    delivery = await service.get_delivery("project-1", "delivery-prompt-1")
+    assert delivery is not None
+    assert delivery["status"] == "queued"
+    assert service._deliveries["delivery-prompt-1"]["cancel_requested"] is False
+
+
+@pytest.mark.anyio
+async def test_cancelled_prompt_settles_as_cancelled_not_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fast_delivery_timings: None,
+) -> None:
+    """The whole point of recording the intent.
+
+    A cancelled prompt and one that vanished for any other reason are the same
+    observation from ComfyUI's side, so without the note this settles as
+    "Prompt is no longer known to ComfyUI" — a failure per cleared item.
+    """
+
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await _make_delivery(service, "prompt-1", "delivery-1")
+    await service.note_prompts_cancelled(["prompt-1"])
+
+    async def _missing(_prompt_id: str) -> tuple[str, str | None]:
+        return "missing", None
+
+    monkeypatch.setattr(service, "_reconcile_prompt_state", _missing)
+    monkeypatch.setattr(
+        delivery_service_module, "MONITOR_BACKSTOP_MISS_THRESHOLD", 2
+    )
+    monkeypatch.setattr(delivery_service_module, "MONITOR_RECONNECT_ATTEMPTS", 0)
+    monkeypatch.setattr(
+        delivery_service_module.websockets,
+        "connect",
+        lambda *_args, **_kwargs: _FakeComfyConnect(_FakeComfyWebSocket([])),
+    )
+
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+    )
+
+    delivery = await service.get_delivery("project-1", "delivery-1")
+    assert delivery is not None
+    assert delivery["status"] == "cancelled"
+    assert delivery["error"] == delivery_service_module.GENERATION_CANCELLED_MESSAGE
+
+
+@pytest.mark.anyio
+async def test_history_interruption_settles_as_cancelled_without_a_note(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fast_delivery_timings: None,
+) -> None:
+    """ComfyUI's history says the run was interrupted, so no note is needed.
+
+    This is the path that survives a dropped websocket or a backend restart,
+    and it covers an interrupt issued from the in-editor ComfyUI, which vlo
+    never sees.
+    """
+
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await _make_delivery(service, "prompt-1", "delivery-1")
+
+    async def _interrupted(_prompt_id: str) -> tuple[str, str | None]:
+        return "completed", delivery_service_module.GENERATION_INTERRUPTED_MESSAGE
+
+    monkeypatch.setattr(service, "_reconcile_prompt_state", _interrupted)
+    monkeypatch.setattr(delivery_service_module, "MONITOR_RECONNECT_ATTEMPTS", 0)
+    monkeypatch.setattr(
+        delivery_service_module.websockets,
+        "connect",
+        lambda *_args, **_kwargs: _FakeComfyConnect(_FakeComfyWebSocket([])),
+    )
+
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+    )
+
+    delivery = await service.get_delivery("project-1", "delivery-1")
+    assert delivery is not None
+    assert delivery["status"] == "cancelled"
+    assert service.was_cancelled("prompt-1") is False
+
+
+@pytest.mark.anyio
+async def test_history_failure_is_still_a_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fast_delivery_timings: None,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await _make_delivery(service, "prompt-1", "delivery-1")
+
+    async def _failed(_prompt_id: str) -> tuple[str, str | None]:
+        return "completed", "CUDA out of memory"
+
+    monkeypatch.setattr(service, "_reconcile_prompt_state", _failed)
+    monkeypatch.setattr(delivery_service_module, "MONITOR_RECONNECT_ATTEMPTS", 0)
+    monkeypatch.setattr(
+        delivery_service_module.websockets,
+        "connect",
+        lambda *_args, **_kwargs: _FakeComfyConnect(_FakeComfyWebSocket([])),
+    )
+
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+    )
+
+    delivery = await service.get_delivery("project-1", "delivery-1")
+    assert delivery is not None
+    assert delivery["status"] == "error"
+    assert delivery["error"] == "CUDA out of memory"
+
+
+@pytest.mark.anyio
+async def test_interrupted_prompt_settles_as_cancelled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fast_delivery_timings: None,
+) -> None:
+    """`execution_interrupted` means somebody pressed stop, from wherever."""
+
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await _make_delivery(service, "prompt-1", "delivery-1")
+
+    async def _pending(_prompt_id: str) -> tuple[str, str | None]:
+        return "pending", None
+
+    monkeypatch.setattr(service, "_reconcile_prompt_state", _pending)
+    monkeypatch.setattr(
+        delivery_service_module.websockets,
+        "connect",
+        lambda *_args, **_kwargs: _FakeComfyConnect(
+            _FakeComfyWebSocket(
+                [
+                    json.dumps(
+                        {
+                            "type": "execution_interrupted",
+                            "data": {"prompt_id": "prompt-1"},
+                        }
+                    )
+                ]
+            )
+        ),
+    )
+
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+    )
+
+    delivery = await service.get_delivery("project-1", "delivery-1")
+    assert delivery is not None
+    assert delivery["status"] == "cancelled"
+    assert (
+        delivery["error"] == delivery_service_module.GENERATION_INTERRUPTED_MESSAGE
+    )
+
+
+@pytest.mark.anyio
+async def test_a_cancelled_delivery_cannot_be_restated(tmp_path: Path) -> None:
+    """Terminal means terminal, or the panel gets contradictory outcomes."""
+
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    for prompt_id in ("prompt-1", "prompt-2"):
+        await _make_delivery(service, prompt_id)
+    await service.mark_cancelled("delivery-prompt-1")
+    await service.mark_cancelled("delivery-prompt-2")
+
+    await service.mark_error("delivery-prompt-1", "Prompt is no longer known")
+    await service.mark_completed("delivery-prompt-2", [{"filename": "out.png"}])
+
+    first = await service.get_delivery("project-1", "delivery-prompt-1")
+    second = await service.get_delivery("project-1", "delivery-prompt-2")
+    assert first is not None and first["status"] == "cancelled"
+    assert second is not None and second["status"] == "cancelled"
+    assert second["outputs"] == []
+
+
+@pytest.mark.anyio
+async def test_resolve_queue_mutation_names_deletes_and_pending_clears(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    client = _FakeComfyHttpClient(
+        queue_responses=[_queue(running=["running-1"], pending=["pending-1"])]
+    )
+    _use_comfy(monkeypatch, client)
+
+    assert await service.resolve_queue_mutation({"delete": ["pending-1", 7, ""]}) == [
+        "pending-1"
+    ]
+    # A successful delete request does not mean a running or unknown id was
+    # removed; ComfyUI only deletes entries still waiting in its queue.
+    assert await service.resolve_queue_mutation({"delete": ["running-1"]}) == []
+    # ComfyUI's clear spares the prompt it is executing, so naming that one
+    # would mislabel its eventual, genuine failure as a cancellation.
+    assert await service.resolve_queue_mutation({"clear": True}) == ["pending-1"]
+    # A read of the queue claims nothing about anyone's intent.
+    assert await service.resolve_queue_mutation({"queue_pending": []}) == []
+    assert await service.resolve_queue_mutation("not a payload") == []
+    # Resolving names ids; it never records them. The proxy does that only once
+    # ComfyUI has accepted the mutation.
+    assert service.was_cancelled("prompt-1") is False
+    assert service.was_cancelled("pending-1") is False
+
+
+@pytest.mark.anyio
+async def test_confirm_queue_mutation_excludes_a_candidate_that_started(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    client = _FakeComfyHttpClient(
+        queue_responses=[
+            _queue(pending=["started-while-clearing", "removed"]),
+            _queue(running=["started-while-clearing"]),
+        ]
+    )
+    _use_comfy(monkeypatch, client)
+
+    candidates = await service.resolve_queue_mutation({"clear": True})
+    cancelled = await service.confirm_queue_mutation(candidates)
+
+    assert candidates == ["removed", "started-while-clearing"]
+    assert cancelled == ["removed"]
+
+
+@pytest.mark.anyio
+async def test_cancel_reports_a_prompt_it_could_not_stop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed interrupt on a running prompt cancelled nothing.
+
+    `delete` is a no-op once ComfyUI has started a prompt, so the interrupt is
+    the only thing that could have stopped it. Reporting success there would
+    leave the caller's job marked cancelled while the generation runs on — and
+    its outputs would be dropped when they arrived.
+    """
+
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await _make_delivery(service, "prompt-running")
+    await _make_delivery(service, "prompt-pending")
+
+    class _InterruptRefusingClient(_FakeComfyHttpClient):
+        async def post(self, path: str, json: dict) -> _FakeResponse:
+            self.posts.append((path, json))
+            if path == "/interrupt" and json["prompt_id"] == "prompt-running":
+                raise RuntimeError("interrupt refused")
+            return _FakeResponse({})
+
+    client = _InterruptRefusingClient(
+        queue_responses=[
+            _queue(running=["prompt-running"], pending=["prompt-pending"]),
+            _queue(running=["prompt-running"]),
+        ],
+    )
+    _use_comfy(monkeypatch, client)
+
+    result = await service.cancel_prompts(["prompt-running", "prompt-pending"])
+
+    assert result["cancelled"] == ["prompt-pending"]
+    assert result["uncancelled"] == ["prompt-running"]
+    # Its note goes too: the generation is still running, and if it later fails
+    # on its own that failure is not this cancel.
+    assert service.was_cancelled("prompt-running") is False
+    assert service.was_cancelled("prompt-pending") is True
+    running = await service.get_delivery("project-1", "delivery-prompt-running")
+    assert running is not None and running["status"] == "queued"
+    assert service._deliveries["delivery-prompt-running"]["cancel_requested"] is False
+
+
+@pytest.mark.anyio
+async def test_a_cancellation_note_survives_a_backend_restart(
+    tmp_path: Path,
+) -> None:
+    """The in-memory note dies with the process; the manifest does not.
+
+    Without this, a restart between the cancel and the reconcile that notices
+    turns the cancellation back into a failure.
+    """
+
+    root = tmp_path / "holding"
+    service = GenerationHoldingService(root=root)
+    await _make_delivery(service, "prompt-1", "delivery-1")
+    await service.note_prompts_cancelled(["prompt-1"])
+
+    restarted = GenerationHoldingService(root=root)
+    await restarted.list_project_deliveries("project-1")
+    assert restarted._cancelled_prompt_ids == {}
+    assert restarted.was_cancelled("prompt-1") is True
+
+
+@pytest.mark.anyio
+async def test_cancellation_notes_expire_and_are_capped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    monkeypatch.setattr(
+        delivery_service_module, "CANCELLED_PROMPT_MAX_ENTRIES", 2
+    )
+
+    await service.note_prompts_cancelled(["prompt-1"])
+    await service.note_prompts_cancelled(["prompt-2"])
+    await service.note_prompts_cancelled(["prompt-3"])
+    assert service.was_cancelled("prompt-1") is False
+    assert service.was_cancelled("prompt-3") is True
+
+    # Expiry is decided per id, not by the prune pass: pruning only runs when a
+    # note is added, so a stale note on a quiet system would live forever.
+    monkeypatch.setattr(
+        delivery_service_module, "CANCELLED_PROMPT_TTL_SECONDS", -1
+    )
+    assert service.was_cancelled("prompt-3") is False
+    assert service.was_cancelled("prompt-2") is False
+    assert service._cancelled_prompt_ids == {}

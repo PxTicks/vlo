@@ -13,7 +13,6 @@ import {
   ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
   COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
   EXTENSION_STORAGE_DOCUMENT_SCHEMA_VERSION,
-  GENERATION_PANEL_DOCUMENT_SCHEMA_VERSION,
   PROJECT_MANIFEST_SCHEMA_VERSION,
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
   VLO_APP_VERSION,
@@ -33,7 +32,6 @@ import {
   legacyProjectDocumentSchema,
   projectManifestDocumentSchema,
   extensionStorageDocumentSchema,
-  generationPanelDocumentSchema,
   timelineDocumentSchema,
   timelineDocumentSchemaV2,
   timelineDocumentSchemaV1,
@@ -41,7 +39,6 @@ import {
   type AssetMetadataDocument,
   type CompositeLibraryDocument,
   type ExtensionStorageDocument,
-  type GenerationPanelDocument,
   type LegacyProjectDocument,
   type PersistedAssetIndexEntry,
   type ProjectManifestDocument,
@@ -101,14 +98,6 @@ const EXTENSION_STORAGE_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
   documentType: "vlo.extension-storage",
   documentLabel: "Extension storage data",
   supportedSchemaVersion: EXTENSION_STORAGE_DOCUMENT_SCHEMA_VERSION,
-};
-
-const GENERATION_PANEL_PATH = `${PROJECT_DIR}/${PROJECT_PERSISTENCE_FILE_NAMES.generationPanel}`;
-const GENERATION_PANEL_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
-  path: GENERATION_PANEL_PATH,
-  documentType: "vlo.generation-panel",
-  documentLabel: "Generation panel state",
-  supportedSchemaVersion: GENERATION_PANEL_DOCUMENT_SCHEMA_VERSION,
 };
 
 export interface LoadedProjectPersistenceDocuments {
@@ -296,15 +285,6 @@ function createCompositeLibraryDocument(
     schemaVersion: COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
     updated_at: Date.now(),
     composites: overrides.composites ?? {},
-  };
-}
-
-function createGenerationPanelDocument(): GenerationPanelDocument {
-  return {
-    documentType: "vlo.generation-panel",
-    schemaVersion: GENERATION_PANEL_DOCUMENT_SCHEMA_VERSION,
-    updated_at: Date.now(),
-    panel: null,
   };
 }
 
@@ -537,7 +517,6 @@ export class ProjectPersistenceService {
   private assetIndexCache: AssetIndexDocument | null = null;
   private compositeLibraryCache: CompositeLibraryDocument | null = null;
   private extensionStorageCache: ExtensionStorageDocument | null = null;
-  private generationPanelCache: GenerationPanelDocument | null = null;
   private assetMetadataCache = new Map<string, AssetMetadataDocument | null>();
 
   private enqueue<T>(key: string, operation: () => Promise<T>): Promise<T> {
@@ -878,48 +857,6 @@ export class ProjectPersistenceService {
     });
   }
 
-  /**
-   * The generation panel's saved state, or a document with no panel when the
-   * project predates it. A missing file is the normal case, not an error.
-   */
-  async readGenerationPanel(): Promise<GenerationPanelDocument> {
-    if (this.generationPanelCache) {
-      return clone(this.generationPanelCache);
-    }
-    try {
-      const file = await fileSystemService.readFile(GENERATION_PANEL_PATH);
-      const raw = JSON.parse(await file.text()) as unknown;
-      throwIfNewerSchemaVersion(raw, GENERATION_PANEL_NEWER_SCHEMA_CHECK);
-      const document = generationPanelDocumentSchema.parse(raw);
-      this.generationPanelCache = document;
-      return clone(document);
-    } catch (error) {
-      if (!isNotFoundError(error)) {
-        throw error;
-      }
-      const empty = createGenerationPanelDocument();
-      this.generationPanelCache = empty;
-      return clone(empty);
-    }
-  }
-
-  /** Replaces the saved panel state wholesale; `null` clears it. */
-  async writeGenerationPanel(
-    panel: JsonValue | null,
-  ): Promise<GenerationPanelDocument> {
-    return this.enqueue(GENERATION_PANEL_PATH, async () => {
-      const next: GenerationPanelDocument = {
-        documentType: "vlo.generation-panel",
-        schemaVersion: GENERATION_PANEL_DOCUMENT_SCHEMA_VERSION,
-        updated_at: Date.now(),
-        panel: panel === undefined ? null : panel,
-      };
-      await writeJson(GENERATION_PANEL_PATH, next, generationPanelDocumentSchema);
-      this.generationPanelCache = next;
-      return clone(next);
-    });
-  }
-
   async readAssetMetadata(
     assetId: string,
     metadataRef?: string,
@@ -1183,7 +1120,6 @@ export class ProjectPersistenceService {
     this.assetIndexCache = null;
     this.compositeLibraryCache = null;
     this.extensionStorageCache = null;
-    this.generationPanelCache = null;
     this.assetMetadataCache.clear();
   }
 
@@ -1198,7 +1134,6 @@ export type {
   AssetIndexDocument,
   AssetMetadataDocument,
   CompositeLibraryDocument,
-  GenerationPanelDocument,
   PersistedAssetIndexEntry,
   ProjectManifestDocument,
   TimelineDocument,

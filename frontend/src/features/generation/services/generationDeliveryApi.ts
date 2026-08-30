@@ -18,7 +18,14 @@ export interface GenerationDeliveryManifest {
   project_id: string;
   prompt_id: string | null;
   client_id?: string | null;
-  status: "queued" | "running" | "completed_pending_ack" | "error";
+  // "cancelled" is terminal like "error", and carries the same `error` text —
+  // it says the generation was stopped on purpose rather than that it failed.
+  status:
+    | "queued"
+    | "running"
+    | "completed_pending_ack"
+    | "error"
+    | "cancelled";
   progress?: number | null;
   current_node?: string | null;
   error?: string | null;

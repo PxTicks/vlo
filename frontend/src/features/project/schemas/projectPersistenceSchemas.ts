@@ -23,7 +23,6 @@ import {
   ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
   COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
   EXTENSION_STORAGE_DOCUMENT_SCHEMA_VERSION,
-  GENERATION_PANEL_DOCUMENT_SCHEMA_VERSION,
   PROJECT_MANIFEST_SCHEMA_VERSION,
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
 } from "../constants";
@@ -39,7 +38,6 @@ const PROJECT_FILE_NAMES = {
   composites: "composites.json",
   assetMetadataDir: "asset-metadata",
   extensionStorage: "extension-storage.json",
-  generationPanel: "generation-panel.json",
 } as const;
 
 export const HEAVY_ASSET_METADATA_INLINE_THRESHOLD_BYTES = 16 * 1024;
@@ -382,23 +380,6 @@ export const extensionStorageDocumentSchema = z.object({
 
 export type ExtensionStorageDocument = z.infer<
   typeof extensionStorageDocumentSchema
->;
-
-/**
- * The generation panel's last active state for this project: which workflow
- * was loaded and what its inputs held. The payload itself is opaque here —
- * the generation feature owns and validates its shape — so this layer only
- * guarantees that what round-trips is JSON.
- */
-export const generationPanelDocumentSchema = z.object({
-  documentType: z.literal("vlo.generation-panel"),
-  schemaVersion: z.literal(GENERATION_PANEL_DOCUMENT_SCHEMA_VERSION),
-  updated_at: z.number(),
-  panel: jsonValueSchema.nullable(),
-});
-
-export type GenerationPanelDocument = z.infer<
-  typeof generationPanelDocumentSchema
 >;
 
 /** v1 composites only carried their canonical content and legacy bake pointer. */

@@ -411,21 +411,18 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
     const state = get();
     const clamped = clamp(ticks, 0, state.durationTicks);
     const ticksPerFrame = state._internal.ticksPerFrame;
-    const playheadTicks = ticksPerFrame
-      ? clamp(
-          Math.round(clamped / ticksPerFrame) * ticksPerFrame,
-          0,
-          state.durationTicks,
-        )
-      : clamped;
-    if (playheadTicks === state.playheadTicks) return;
-    set({ playheadTicks });
+    set({
+      playheadTicks: ticksPerFrame
+        ? clamp(
+            Math.round(clamped / ticksPerFrame) * ticksPerFrame,
+            0,
+            state.durationTicks,
+          )
+        : clamped,
+    });
   },
 
-  setPlaying: (playing) => {
-    if (playing === get().isPlaying) return;
-    set({ isPlaying: playing });
-  },
+  setPlaying: (playing) => set({ isPlaying: playing }),
 
   save: async () => {
     const state = get();

@@ -9,26 +9,24 @@ import { useProjectStore } from "../../project";
 const {
   mockBridgeReadActive,
   mockDeliveryWsInstances,
-  mockDeleteQueueItems,
+  mockCancelGenerations,
   mockFrontendPostprocess,
   mockFrontendPreprocess,
   mockGenerate,
   mockGetConfig,
   mockGetRuntimeStatus,
-  mockInterrupt,
   mockListWorkflows,
   mockPreResolvePrompt,
   mockWsInstances,
 } = vi.hoisted(() => ({
   mockBridgeReadActive: vi.fn(),
-  mockDeleteQueueItems: vi.fn(),
+  mockCancelGenerations: vi.fn(),
   mockDeliveryWsInstances: [] as unknown[],
   mockFrontendPostprocess: vi.fn(),
   mockFrontendPreprocess: vi.fn(),
   mockGenerate: vi.fn(),
   mockGetConfig: vi.fn(),
   mockGetRuntimeStatus: vi.fn(),
-  mockInterrupt: vi.fn(),
   mockListWorkflows: vi.fn(),
   mockPreResolvePrompt: vi.fn(),
   mockWsInstances: [] as unknown[],
@@ -222,8 +220,7 @@ vi.mock("../services/comfyuiApi", async (importOriginal) => {
     ...actual,
     generate: mockGenerate,
     getConfig: mockGetConfig,
-    interrupt: mockInterrupt,
-    deleteQueueItems: mockDeleteQueueItems,
+    cancelGenerations: mockCancelGenerations,
     listWorkflows: mockListWorkflows,
   };
 });
@@ -460,7 +457,7 @@ describe("useGenerationStore pipeline phases", () => {
     mockGenerate.mockReset();
     mockGetConfig.mockReset();
     mockGetRuntimeStatus.mockReset();
-    mockInterrupt.mockReset();
+    mockCancelGenerations.mockReset();
     mockListWorkflows.mockReset();
     mockPreResolvePrompt.mockReset();
     mockBridgeReadActive.mockReset();
@@ -515,7 +512,11 @@ describe("useGenerationStore pipeline phases", () => {
         error: null,
       },
     });
-    mockInterrupt.mockResolvedValue(undefined);
+    mockCancelGenerations.mockImplementation(async (promptIds: string[]) => ({
+      requested: promptIds,
+      cancelled: promptIds,
+      uncancelled: [],
+    }));
     mockListWorkflows.mockResolvedValue([]);
     mockPreResolvePrompt.mockResolvedValue({
       output: {
@@ -2172,7 +2173,7 @@ describe("useGenerationStore pipeline phases", () => {
     const submitPromise = useGenerationStore.getState().submitGeneration({});
     await useGenerationStore.getState().cancelGeneration();
 
-    expect(mockInterrupt).not.toHaveBeenCalled();
+    expect(mockCancelGenerations).not.toHaveBeenCalled();
     expect(useGenerationStore.getState().pipelineStatus.phase).toBe("idle");
     expect(useGenerationStore.getState().jobs.size).toBe(0);
 
@@ -2612,7 +2613,7 @@ describe("useGenerationStore pipeline phases", () => {
     await useGenerationStore.getState().cancelGeneration();
 
     expect(useGenerationStore.getState().generationQueue).toHaveLength(0);
-    expect(mockInterrupt).toHaveBeenCalledTimes(1);
+    expect(mockCancelGenerations).toHaveBeenCalledTimes(1);
   });
 
   it("interrupts the active generation without clearing queued future generations", async () => {
@@ -2683,7 +2684,7 @@ describe("useGenerationStore pipeline phases", () => {
     await useGenerationStore.getState().interruptCurrentGeneration();
 
     expect(useGenerationStore.getState().generationQueue).toHaveLength(1);
-    expect(mockInterrupt).toHaveBeenCalledTimes(1);
+    expect(mockCancelGenerations).toHaveBeenCalledTimes(1);
   });
 
   it("clears queued future generations without interrupting the active one", async () => {
@@ -2754,6 +2755,6 @@ describe("useGenerationStore pipeline phases", () => {
     const state = useGenerationStore.getState();
     expect(state.generationQueue).toHaveLength(0);
     expect(state.activeJobId).toBe(runningJob.id);
-    expect(mockInterrupt).not.toHaveBeenCalled();
+    expect(mockCancelGenerations).not.toHaveBeenCalled();
   });
 });

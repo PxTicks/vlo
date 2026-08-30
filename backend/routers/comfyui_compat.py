@@ -258,7 +258,7 @@ async def proxy_queue_mutation(request: Request, upstream_path: str) -> Response
     """
 
     normalized_path = f"/{upstream_path.lstrip('/')}".rstrip("/")
-    cancelled: list[str] = []
+    candidates: list[str] = []
     if request.method == "POST" and normalized_path in _QUEUE_UPSTREAM_PATHS:
         try:
             payload: object = await request.json()
@@ -268,13 +268,20 @@ async def proxy_queue_mutation(request: Request, upstream_path: str) -> Response
         # only be read off the queue ComfyUI is about to empty. Reading the body
         # here is free — Starlette caches it, so the forwarded request is
         # unaffected.
-        cancelled = await generation_holding_service.resolve_queue_mutation(payload)
+        candidates = await generation_holding_service.resolve_queue_mutation(
+            payload
+        )
 
     response = await proxy_http_request(request, upstream_path)
-    # Recorded only once ComfyUI accepts it: a note for a rejected mutation
-    # would outlive its own request and relabel a later, genuine failure.
-    if cancelled and 200 <= response.status_code < 300:
-        await generation_holding_service.note_prompts_cancelled(cancelled)
+    if candidates and 200 <= response.status_code < 300:
+        # A queued prompt can start between the pre-mutation snapshot and
+        # ComfyUI handling the request. Confirm what actually disappeared so a
+        # spared running prompt is not given a cancellation it never received.
+        cancelled = await generation_holding_service.confirm_queue_mutation(
+            candidates
+        )
+        if cancelled:
+            await generation_holding_service.note_prompts_cancelled(cancelled)
     return response
 
 

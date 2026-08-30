@@ -512,7 +512,11 @@ describe("useGenerationStore pipeline phases", () => {
         error: null,
       },
     });
-    mockCancelGenerations.mockResolvedValue(undefined);
+    mockCancelGenerations.mockImplementation(async (promptIds: string[]) => ({
+      requested: promptIds,
+      cancelled: promptIds,
+      uncancelled: [],
+    }));
     mockListWorkflows.mockResolvedValue([]);
     mockPreResolvePrompt.mockResolvedValue({
       output: {

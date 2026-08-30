@@ -1260,7 +1260,7 @@ class GenerationHoldingService:
         return bool(manifest and manifest.get("cancel_requested"))
 
     async def resolve_queue_mutation(self, payload: object) -> list[str]:
-        """Which prompts a proxied ComfyUI queue delete/clear would cancel.
+        """Which pending prompts a proxied queue mutation intends to remove.
 
         This is the path vlo does not originate: the Clear button inside the
         in-editor ComfyUI, whose request only ever reaches ComfyUI through the
@@ -1269,24 +1269,60 @@ class GenerationHoldingService:
         recording are two steps. The proxy resolves here, forwards, and records
         the result only if ComfyUI accepted the mutation.
 
-        Pending only: ComfyUI's clear wipes the waiting queue and leaves the
-        running prompt alone, so naming that one would relabel its eventual,
-        genuine failure as a cancellation.
+        Pending only: both delete and clear spare a prompt once it is running.
+        The proxy confirms these candidates after forwarding as well, because
+        one can start between this snapshot and ComfyUI applying the mutation.
         """
 
         if not isinstance(payload, dict):
             return []
         deleted = payload.get("delete")
         if isinstance(deleted, list):
-            return [
+            requested = [
                 prompt_id
                 for prompt_id in deleted
                 if isinstance(prompt_id, str) and prompt_id
             ]
-        if payload.get("clear"):
-            prompt_ids = await self._pending_prompt_ids(force_refresh=True)
-            return sorted(prompt_ids or ())
-        return []
+            clear = False
+        elif payload.get("clear"):
+            requested = []
+            clear = True
+        else:
+            return []
+
+        pending = await self._pending_prompt_ids(force_refresh=True)
+        if pending is None:
+            return []
+        if clear:
+            return sorted(pending)
+        return [prompt_id for prompt_id in requested if prompt_id in pending]
+
+    async def confirm_queue_mutation(
+        self,
+        prompt_ids: Sequence[str],
+    ) -> list[str]:
+        """Return candidates now absent from both ComfyUI queue and history.
+
+        A successful queue response applies to the mutation request as a whole;
+        it does not prove each named prompt was deleted. In particular, the
+        worker can promote a pending prompt to running between the snapshot and
+        the mutation. Only disappearance from both sources proves that a
+        candidate was actually removed before it ran.
+        """
+
+        if not prompt_ids:
+            return []
+        # Force one post-mutation queue read; each reconcile below shares it.
+        await self._queue_sections(force_refresh=True)
+        candidates = list(dict.fromkeys(prompt_ids))
+        verdicts = await asyncio.gather(
+            *(self._reconcile_prompt_state(prompt_id) for prompt_id in candidates)
+        )
+        return [
+            prompt_id
+            for prompt_id, (verdict, _) in zip(candidates, verdicts, strict=True)
+            if verdict == "missing"
+        ]
 
     async def mark_cancelled(
         self,
@@ -1382,15 +1418,9 @@ class GenerationHoldingService:
                 logger.warning("Interrupting prompt %s failed: %s", prompt_id, exc)
                 interrupt_failures.append(prompt_id)
 
-        # One forced read, shared by every candidate's reconcile below.
-        await self._queue_sections(force_refresh=True)
+        confirmed = await self.confirm_queue_mutation(candidates)
         cancelled: list[str] = []
-        for prompt_id in candidates:
-            verdict, _ = await self._reconcile_prompt_state(prompt_id)
-            if verdict != "missing":
-                # Started, finished, or ComfyUI is unreachable. Not ours to
-                # settle: the prompt may still own the GPU.
-                continue
+        for prompt_id in confirmed:
             async with self._lock:
                 delivery_id = self._find_delivery_id_for_prompt_locked(prompt_id)
             if delivery_id and await self.mark_cancelled(delivery_id):

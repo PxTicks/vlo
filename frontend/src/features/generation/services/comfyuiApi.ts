@@ -160,6 +160,48 @@ export interface CancelGenerationsResult {
   uncancelled: string[];
 }
 
+function parseCancelGenerationsResult(
+  payload: unknown,
+  promptIds: readonly string[],
+  status: number,
+): CancelGenerationsResult {
+  if (!isRecord(payload)) {
+    throw new ComfyApiError(
+      "Cancel returned an invalid response",
+      status,
+      payload,
+    );
+  }
+
+  const readIds = (value: unknown): string[] | null =>
+    Array.isArray(value) && value.every((id) => typeof id === "string")
+      ? value
+      : null;
+  const requested = readIds(payload.requested);
+  const cancelled = readIds(payload.cancelled);
+  const uncancelled = readIds(payload.uncancelled);
+  const requestedMatches =
+    requested?.length === promptIds.length &&
+    requested.every((promptId, index) => promptId === promptIds[index]);
+  const requestedIds = new Set(requested ?? []);
+  const outcomesAreDisjoint =
+    cancelled !== null &&
+    uncancelled !== null &&
+    cancelled.every((promptId) => requestedIds.has(promptId)) &&
+    uncancelled.every((promptId) => requestedIds.has(promptId)) &&
+    cancelled.every((promptId) => !uncancelled.includes(promptId));
+
+  if (!requestedMatches || !outcomesAreDisjoint) {
+    throw new ComfyApiError(
+      "Cancel returned an invalid response",
+      status,
+      payload,
+    );
+  }
+
+  return { requested, cancelled, uncancelled };
+}
+
 /**
  * Cancel prompts vlo owns, through the backend.
  *
@@ -185,13 +227,7 @@ export async function cancelGenerations(
     await throwRequestError("Cancel", resp);
   }
   const payload: unknown = await resp.json().catch(() => null);
-  const readIds = (value: unknown): string[] =>
-    Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
-  return {
-    requested: readIds(isRecord(payload) ? payload.requested : null),
-    cancelled: readIds(isRecord(payload) ? payload.cancelled : null),
-    uncancelled: readIds(isRecord(payload) ? payload.uncancelled : null),
-  };
+  return parseCancelGenerationsResult(payload, promptIds, resp.status);
 }
 
 export async function getHealth(): Promise<{ status: string }> {

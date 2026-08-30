@@ -1726,9 +1726,12 @@ async def test_resolve_queue_mutation_names_deletes_and_pending_clears(
     )
     _use_comfy(monkeypatch, client)
 
-    assert await service.resolve_queue_mutation({"delete": ["prompt-1", 7, ""]}) == [
-        "prompt-1"
+    assert await service.resolve_queue_mutation({"delete": ["pending-1", 7, ""]}) == [
+        "pending-1"
     ]
+    # A successful delete request does not mean a running or unknown id was
+    # removed; ComfyUI only deletes entries still waiting in its queue.
+    assert await service.resolve_queue_mutation({"delete": ["running-1"]}) == []
     # ComfyUI's clear spares the prompt it is executing, so naming that one
     # would mislabel its eventual, genuine failure as a cancellation.
     assert await service.resolve_queue_mutation({"clear": True}) == ["pending-1"]
@@ -1739,6 +1742,27 @@ async def test_resolve_queue_mutation_names_deletes_and_pending_clears(
     # ComfyUI has accepted the mutation.
     assert service.was_cancelled("prompt-1") is False
     assert service.was_cancelled("pending-1") is False
+
+
+@pytest.mark.anyio
+async def test_confirm_queue_mutation_excludes_a_candidate_that_started(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    client = _FakeComfyHttpClient(
+        queue_responses=[
+            _queue(pending=["started-while-clearing", "removed"]),
+            _queue(running=["started-while-clearing"]),
+        ]
+    )
+    _use_comfy(monkeypatch, client)
+
+    candidates = await service.resolve_queue_mutation({"clear": True})
+    cancelled = await service.confirm_queue_mutation(candidates)
+
+    assert candidates == ["removed", "started-while-clearing"]
+    assert cancelled == ["removed"]
 
 
 @pytest.mark.anyio

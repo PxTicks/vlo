@@ -287,13 +287,22 @@ describe("comfyuiApi simple endpoints", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("cancelGenerations tolerates a response body it cannot parse", async () => {
+  it("cancelGenerations rejects a response body it cannot parse", async () => {
     fetchMock.mockResolvedValueOnce(makeResponse({ text: "" }));
-    await expect(cancelGenerations(["a"])).resolves.toEqual({
-      requested: [],
-      cancelled: [],
-      uncancelled: [],
-    });
+    await expect(cancelGenerations(["a"])).rejects.toThrow(
+      /invalid response/i,
+    );
+  });
+
+  it("cancelGenerations rejects an inconsistent success response", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse({
+        body: { requested: [], cancelled: [], uncancelled: [] },
+      }),
+    );
+    await expect(cancelGenerations(["a"])).rejects.toThrow(
+      /invalid response/i,
+    );
   });
 
   it("getHealth and getConfig parse JSON", async () => {

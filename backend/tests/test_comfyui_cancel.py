@@ -77,6 +77,13 @@ class _RecordingService:
             return list(self.queue_pending)
         return []
 
+    async def confirm_queue_mutation(self, prompt_ids):
+        return [
+            prompt_id
+            for prompt_id in prompt_ids
+            if prompt_id not in self.queue_pending
+        ]
+
     async def note_prompts_cancelled(self, prompt_ids) -> None:
         self.noted.extend(prompt_ids)
 

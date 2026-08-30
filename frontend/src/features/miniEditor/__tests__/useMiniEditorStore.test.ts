@@ -259,6 +259,25 @@ describe("useMiniEditorStore", () => {
     });
   });
 
+  it("does not notify subscribers for unchanged playback state", async () => {
+    await useMiniEditorStore.getState().open({
+      prepare: vi.fn(async () => source()),
+      frameConstraint: { fps: 30, frameStep: 1 },
+    });
+    const listener = vi.fn();
+    const unsubscribe = useMiniEditorStore.subscribe(listener);
+
+    useMiniEditorStore.getState().setPlayhead(0);
+    useMiniEditorStore.getState().setPlayhead(1);
+    useMiniEditorStore.getState().setPlaying(false);
+
+    expect(listener).not.toHaveBeenCalled();
+
+    useMiniEditorStore.getState().setPlaying(true);
+    expect(listener).toHaveBeenCalledOnce();
+    unsubscribe();
+  });
+
   it("saves the edit, revokes the URL, and closes", async () => {
     const prepared = source();
     const onSave = vi.fn(async () => undefined);

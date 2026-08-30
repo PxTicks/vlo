@@ -154,6 +154,111 @@ describe("MiniEditorModal", () => {
     expect(useMiniEditorStore.getState().isPlaying).toBe(false);
   });
 
+  it("seeks paused media to the frame-snapped playhead", async () => {
+    installAnimationFrameMock();
+    await act(async () => {
+      await useMiniEditorStore.getState().open({
+        prepare: vi.fn(async () => preparedSource()),
+        frameConstraint: { fps: 4, frameStep: 1 },
+      });
+    });
+    render(<MiniEditorModal />);
+    const video = document.querySelector("video") as HTMLVideoElement;
+
+    fireEvent.play(video);
+    video.currentTime = 1.4;
+    fireEvent.pause(video);
+
+    expect(useMiniEditorStore.getState().playheadTicks).toBe(
+      mediaSecondsToTick(1.5),
+    );
+    expect(video.currentTime).toBe(1.5);
+  });
+
+  it("synchronizes video playback from presented frames and cancels the callback", async () => {
+    const callbacks = new Map<number, VideoFrameRequestCallback>();
+    let nextId = 1;
+    const requestVideoFrameCallback = vi.fn(
+      (callback: VideoFrameRequestCallback) => {
+        const id = nextId++;
+        callbacks.set(id, callback);
+        return id;
+      },
+    );
+    const cancelVideoFrameCallback = vi.fn((id: number) => {
+      callbacks.delete(id);
+    });
+    const requestDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLVideoElement.prototype,
+      "requestVideoFrameCallback",
+    );
+    const cancelDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLVideoElement.prototype,
+      "cancelVideoFrameCallback",
+    );
+    Object.defineProperties(HTMLVideoElement.prototype, {
+      requestVideoFrameCallback: {
+        configurable: true,
+        value: requestVideoFrameCallback,
+      },
+      cancelVideoFrameCallback: {
+        configurable: true,
+        value: cancelVideoFrameCallback,
+      },
+    });
+
+    try {
+      await act(async () => {
+        await useMiniEditorStore.getState().open({
+          prepare: vi.fn(async () => preparedSource()),
+        });
+      });
+      render(<MiniEditorModal />);
+      const video = document.querySelector("video") as HTMLVideoElement;
+
+      fireEvent.play(video);
+      expect(requestVideoFrameCallback).toHaveBeenCalledOnce();
+
+      video.currentTime = 1.5;
+      const [[callbackId, callback]] = callbacks.entries();
+      callbacks.delete(callbackId);
+      act(() => callback(100, {} as VideoFrameCallbackMetadata));
+      expect(useMiniEditorStore.getState().playheadTicks).toBe(
+        mediaSecondsToTick(1.5),
+      );
+      expect(requestVideoFrameCallback).toHaveBeenCalledTimes(2);
+
+      fireEvent.pause(video);
+      expect(cancelVideoFrameCallback).toHaveBeenCalledOnce();
+      expect(callbacks.size).toBe(0);
+    } finally {
+      if (requestDescriptor) {
+        Object.defineProperty(
+          HTMLVideoElement.prototype,
+          "requestVideoFrameCallback",
+          requestDescriptor,
+        );
+      } else {
+        Reflect.deleteProperty(
+          HTMLVideoElement.prototype,
+          "requestVideoFrameCallback",
+        );
+      }
+      if (cancelDescriptor) {
+        Object.defineProperty(
+          HTMLVideoElement.prototype,
+          "cancelVideoFrameCallback",
+          cancelDescriptor,
+        );
+      } else {
+        Reflect.deleteProperty(
+          HTMLVideoElement.prototype,
+          "cancelVideoFrameCallback",
+        );
+      }
+    }
+  });
+
   it("synchronizes native audio seeking with the editor playhead", async () => {
     const source = { ...preparedSource(), mediaType: "audio" as const };
     await act(async () => {

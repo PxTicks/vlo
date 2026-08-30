@@ -20,6 +20,8 @@ import { mediaSecondsToTick, tickToMediaSeconds } from "../../core/time";
 import { EditorTrack } from "./components/EditorTrack";
 import { useMiniEditorStore } from "./useMiniEditorStore";
 
+const PLAYHEAD_PUBLISH_INTERVAL_MS = 1000 / 15;
+
 function formatTicks(ticks: number): string {
   const totalSeconds = tickToMediaSeconds(Math.max(0, ticks));
   const minutes = Math.floor(totalSeconds / 60);
@@ -48,12 +50,13 @@ interface MiniEditorPreviewProps {
 export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps) {
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const videoFrameRef = useRef<number | null>(null);
+  const videoFrameOwnerRef = useRef<HTMLVideoElement | null>(null);
   const isOpen = useMiniEditorStore((state) => state.isOpen);
   const title = useMiniEditorStore((state) => state.title);
   const status = useMiniEditorStore((state) => state.status);
   const error = useMiniEditorStore((state) => state.error);
   const source = useMiniEditorStore((state) => state.source);
-  const playheadTicks = useMiniEditorStore((state) => state.playheadTicks);
   const isPlaying = useMiniEditorStore((state) => state.isPlaying);
   const cropStartTicks = useMiniEditorStore((state) => state.cropStartTicks);
   const cropEndTicks = useMiniEditorStore((state) => state.cropEndTicks);
@@ -115,20 +118,46 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
   }, [isPlaying, setPlaying, status]);
 
   useEffect(() => {
-    const media = mediaRef.current;
-    if (!media || isPlaying) return;
-    const target = tickToMediaSeconds(playheadTicks);
-    if (Math.abs(media.currentTime - target) > 0.02) media.currentTime = target;
-  }, [isPlaying, playheadTicks]);
+    function syncPausedMedia(playheadTicks: number) {
+      const media = mediaRef.current;
+      if (!media) return;
+      const target = tickToMediaSeconds(playheadTicks);
+      if (Math.abs(media.currentTime - target) > 0.02) media.currentTime = target;
+    }
+
+    syncPausedMedia(useMiniEditorStore.getState().playheadTicks);
+    return useMiniEditorStore.subscribe((state, previous) => {
+      if (
+        state.isPlaying ||
+        state.playheadTicks === previous.playheadTicks
+      ) {
+        return;
+      }
+      syncPausedMedia(state.playheadTicks);
+    });
+  }, [source?.sourceUrl]);
 
   useEffect(() => {
     const media = mediaRef.current;
     if (!media) return;
     if (!isPlaying) {
+      setPlayhead(mediaSecondsToTick(media.currentTime));
       media.pause();
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
+      }
+      if (
+        videoFrameOwnerRef.current &&
+        videoFrameRef.current !== null &&
+        typeof videoFrameOwnerRef.current.cancelVideoFrameCallback ===
+          "function"
+      ) {
+        videoFrameOwnerRef.current.cancelVideoFrameCallback(
+          videoFrameRef.current,
+        );
+        videoFrameRef.current = null;
+        videoFrameOwnerRef.current = null;
       }
       return;
     }
@@ -139,18 +168,56 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
       media.currentTime = cropStartSec;
     }
     void media.play().catch(() => undefined);
-    const tick = () => {
+    let lastPublishedAt = Number.NEGATIVE_INFINITY;
+
+    const tick = (now: number) => {
       const current = mediaRef.current;
       if (!current) return;
       if (current.currentTime >= cropEndSec) current.currentTime = cropStartSec;
-      setPlayhead(mediaSecondsToTick(current.currentTime));
-      rafRef.current = requestAnimationFrame(tick);
+      if (now - lastPublishedAt >= PLAYHEAD_PUBLISH_INTERVAL_MS) {
+        setPlayhead(mediaSecondsToTick(current.currentTime));
+        lastPublishedAt = now;
+      }
+      scheduleNextFrame();
     };
-    rafRef.current = requestAnimationFrame(tick);
+
+    const scheduleNextFrame = () => {
+      const current = mediaRef.current;
+      if (
+        current instanceof HTMLVideoElement &&
+        typeof current.requestVideoFrameCallback === "function"
+      ) {
+        videoFrameOwnerRef.current = current;
+        videoFrameRef.current = current.requestVideoFrameCallback((now) => {
+          videoFrameRef.current = null;
+          videoFrameOwnerRef.current = null;
+          tick(now);
+        });
+        return;
+      }
+      rafRef.current = requestAnimationFrame((now) => {
+        rafRef.current = null;
+        tick(now);
+      });
+    };
+
+    scheduleNextFrame();
     return () => {
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
+      }
+      if (
+        videoFrameOwnerRef.current &&
+        videoFrameRef.current !== null &&
+        typeof videoFrameOwnerRef.current.cancelVideoFrameCallback ===
+          "function"
+      ) {
+        videoFrameOwnerRef.current.cancelVideoFrameCallback(
+          videoFrameRef.current,
+        );
+        videoFrameRef.current = null;
+        videoFrameOwnerRef.current = null;
       }
     };
   }, [cropEndTicks, cropStartTicks, isPlaying, setPlayhead]);
@@ -160,6 +227,14 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
       setPlayhead(mediaSecondsToTick(media.currentTime));
     },
     [setPlayhead],
+  );
+
+  const handleMediaStopped = useCallback(
+    (media: HTMLMediaElement) => {
+      setPlaying(false);
+      syncPlayheadFromMedia(media);
+    },
+    [setPlaying, syncPlayheadFromMedia],
   );
 
   if (status === "preparing") {
@@ -234,8 +309,8 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
             src={source?.sourceUrl}
             controls
             onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
-            onEnded={() => setPlaying(false)}
+            onPause={(event) => handleMediaStopped(event.currentTarget)}
+            onEnded={(event) => handleMediaStopped(event.currentTarget)}
             onSeeked={(event) => syncPlayheadFromMedia(event.currentTarget)}
             style={{ display: "block", width: "100%" }}
           />
@@ -248,8 +323,8 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
           controls
           autoPlay={autoPlay}
           onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
+          onPause={(event) => handleMediaStopped(event.currentTarget)}
+          onEnded={(event) => handleMediaStopped(event.currentTarget)}
           onSeeked={(event) => syncPlayheadFromMedia(event.currentTarget)}
           style={{
             maxHeight: fillStage ? "100%" : 360,

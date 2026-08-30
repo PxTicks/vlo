@@ -44,6 +44,11 @@ import {
   TEMP_WORKFLOW_ID,
 } from "./constants";
 import type {
+  GeneratedCreationInput,
+  GeneratedCreationReplayState,
+} from "../../../types/Asset";
+import { EMPTY_GENERATION_PANEL_VALUES } from "../persistence/generationPanelSnapshot";
+import type {
   GenerationStoreGet,
   GenerationStoreSet,
   GenerationWorkflowState,
@@ -67,12 +72,29 @@ import {
 } from "./workflowCatalog";
 import { carryOverMediaInputs } from "../utils/workflowInputCarryover";
 import { pruneMediaInputs } from "./mediaInputState";
+import { getAssetById } from "../../userAssets/api";
 interface WorkflowStoreStateOptions {
   getNextWorkflowLoadRequestId: () => number;
   isCurrentWorkflowLoadRequestId: (requestId: number) => boolean;
 }
 
 const METADATA_REPLAY_INPUT_WAIT_TIMEOUT_MS = 4_000;
+/** How long a restore waits for the project's asset index to hydrate. */
+const RESTORE_ASSET_WAIT_TIMEOUT_MS = 15_000;
+const RESTORE_ASSET_WAIT_POLL_MS = 100;
+
+/**
+ * Restores are long-running and cross project boundaries, so each one runs
+ * against a token. Opening a session invalidates the one before it — a
+ * project change is exactly that, and it must strand the restore it interrupts.
+ */
+let panelRestoreGeneration = 0;
+
+function openPanelRestoreSession(): { isStale: () => boolean } {
+  panelRestoreGeneration += 1;
+  const generation = panelRestoreGeneration;
+  return { isStale: () => generation !== panelRestoreGeneration };
+}
 const METADATA_REPLAY_INPUT_WAIT_POLL_MS = 50;
 
 /**
@@ -142,6 +164,152 @@ function reconcileTargetResolutionForRules(
       ? controlDefault
       : (ladder.values[ladder.values.length - 1] ?? targetResolution);
   set({ targetResolution: fallback, targetResolutionIsCustom: false });
+}
+
+/**
+ * Puts back the panel-wide settings a saved run carried, and queues its
+ * per-control values for the panel to hydrate once its inputs are visible.
+ * Shared by asset regeneration and by the project's saved panel state.
+ */
+function applyReplayPanelSettings(
+  get: GenerationStoreGet,
+  set: GenerationStoreSet,
+  replayState: GeneratedCreationReplayState,
+): void {
+  const rules = get().activeWorkflowRules;
+  const replayMaskCropMode = getReplayMaskCropMode(rules, replayState);
+  const replayMaskCropDilation = getReplayMaskCropDilation(rules, replayState);
+
+  set({
+    exactAspectRatio: replayState.exactAspectRatio ?? false,
+    aspectRatioSelection: getReplayAspectRatioSelection(replayState),
+    maskCropMode: replayMaskCropMode ?? get().maskCropMode,
+    maskCropDilation:
+      typeof replayMaskCropDilation === "number"
+        ? Math.max(0, Math.min(0.5, replayMaskCropDilation))
+        : get().maskCropDilation,
+    pendingReplayPanelState: extractReplayPanelState({ replayState }),
+  });
+}
+
+/**
+ * Waits for the asset library to hydrate the assets a saved run referenced.
+ *
+ * Reopening a project restores the panel and loads the asset index at the
+ * same time, and neither waits on the other. Returns the ids that never
+ * arrived: on a project whose index is slow (or whose asset is genuinely
+ * gone) the rest of the restore still lands.
+ */
+async function waitForRestorableAssets(
+  assetIds: readonly string[],
+  isStale: () => boolean,
+): Promise<Set<string>> {
+  const missing = new Set(assetIds);
+  const deadline = Date.now() + RESTORE_ASSET_WAIT_TIMEOUT_MS;
+
+  while (missing.size > 0 && Date.now() < deadline) {
+    for (const assetId of [...missing]) {
+      if (getAssetById(assetId)) missing.delete(assetId);
+    }
+    if (missing.size === 0 || isStale()) break;
+    await new Promise((resolve) =>
+      globalThis.setTimeout(resolve, RESTORE_ASSET_WAIT_POLL_MS),
+    );
+  }
+
+  for (const assetId of [...missing]) {
+    if (getAssetById(assetId)) missing.delete(assetId);
+  }
+
+  if (missing.size > 0) {
+    console.warn(
+      "[Generation] Restoring panel state without assets that are not in this project",
+      [...missing],
+    );
+  }
+
+  return missing;
+}
+
+/**
+ * Seeds the media slots a saved run used. Extraction of timeline selections
+ * continues in the background; the panel observes it through `isExtracting`.
+ */
+interface RestoreSavedMediaInputsOptions {
+  isStale?: () => boolean;
+  /**
+   * Wait for the asset index and skip what never arrives, instead of failing.
+   * Set when reopening a project, where the restore and the asset load run
+   * concurrently. Regeneration keeps the strict behavior: an asset that is
+   * missing there is missing for good, and the user should be told.
+   */
+  toleratePendingAssets?: boolean;
+}
+
+async function restoreSavedMediaInputs(
+  get: GenerationStoreGet,
+  set: GenerationStoreSet,
+  inputs: GeneratedCreationInput[],
+  options: RestoreSavedMediaInputsOptions = {},
+): Promise<void> {
+  if (inputs.length === 0) return;
+
+  const isStale = options.isStale ?? (() => false);
+
+  await waitForReplayWorkflowInputs(get);
+  if (isStale()) return;
+
+  set({
+    isWorkflowLoading: true,
+    workflowLoadState: "loading",
+    workflowLoadError: null,
+    isWorkflowReady: false,
+  });
+
+  try {
+    let restorable = inputs;
+    if (options.toleratePendingAssets) {
+      const missingAssetIds = await waitForRestorableAssets(
+        inputs.flatMap((input) =>
+          input.kind === "draggedAsset" ? [input.parentAssetId] : [],
+        ),
+        isStale,
+      );
+      if (isStale()) return;
+
+      restorable = inputs.filter(
+        (input) =>
+          input.kind !== "draggedAsset" ||
+          !missingAssetIds.has(input.parentAssetId),
+      );
+    }
+
+    const loadedState = get();
+    await restoreMediaInputsFromMetadata(
+      { inputs: restorable },
+      loadedState.workflowInputs,
+      loadedState.derivedMaskMappings,
+      {
+        setMediaInputAsset: loadedState.setMediaInputAsset,
+        setMediaInputFrameWithSelection:
+          loadedState.setMediaInputFrameWithSelection,
+        setMediaInputTimelineSelection:
+          loadedState.setMediaInputTimelineSelection,
+        setMediaInputItemOption: loadedState.setMediaInputItemOption,
+      },
+      { getMediaInputs: () => get().mediaInputs },
+    );
+  } finally {
+    // The loading state above is asserted by hand, so it has to come back
+    // down on every path — a throw here must not strand the panel.
+    if (!isStale()) {
+      set((currentState) => ({
+        isWorkflowLoading: false,
+        workflowLoadState: currentState.syncedGraphData ? "ready" : "error",
+        isWorkflowReady: currentState.syncedGraphData !== null,
+      }));
+    }
+  }
 }
 
 async function waitForReplayWorkflowInputs(
@@ -222,6 +390,118 @@ export function buildWorkflowStoreState(
       set({ preResolvedPromptEnabled }),
     exactAspectRatio: false,
     setExactAspectRatio: (exactAspectRatio) => set({ exactAspectRatio }),
+    panelValues: EMPTY_GENERATION_PANEL_VALUES,
+    setPanelValues: (panelValues) => set({ panelValues }),
+    pendingPanelSnapshot: null,
+    isRestoringPanelSnapshot: false,
+    panelResetToken: 0,
+    setPendingPanelSnapshot: (pendingPanelSnapshot) =>
+      set({ pendingPanelSnapshot }),
+
+    restorePanelSnapshot: async (snapshot) => {
+      // The snapshot stays pending for the whole restore: it is what blocks
+      // saving, and a restore that fails or is superseded must leave the
+      // project's state on disk untouched rather than record a partial one.
+      if (get().isRestoringPanelSnapshot) return;
+      const session = openPanelRestoreSession();
+      set({ isRestoringPanelSnapshot: true });
+
+      try {
+        await get().loadWorkflow(snapshot.workflowId);
+
+        // Project switched, or the user took the panel over while ComfyUI was
+        // still loading the workflow. Either way this snapshot is not what
+        // belongs on screen any more.
+        if (session.isStale()) return;
+        if (get().selectedWorkflowId !== snapshot.workflowId) return;
+        if (get().workflowLoadState === "error") return;
+
+        if (typeof snapshot.targetResolution === "number") {
+          const rules = get().activeWorkflowRules;
+          const supportedResolutions = getSupportedWorkflowResolutions(rules);
+          const restoredResolution =
+            snapshot.targetResolutionIsCustom === true ||
+            supportedResolutions.length === 0
+              ? snapshot.targetResolution
+              : getClosestWorkflowResolution(
+                  snapshot.targetResolution,
+                  supportedResolutions,
+                );
+          get().setTargetResolution(
+            restoredResolution,
+            snapshot.targetResolutionIsCustom === true,
+          );
+        }
+
+        if (snapshot.replayState) {
+          applyReplayPanelSettings(get, set, snapshot.replayState);
+        }
+
+        await restoreSavedMediaInputs(get, set, snapshot.inputs, {
+          isStale: session.isStale,
+          toleratePendingAssets: true,
+        });
+        if (session.isStale()) return;
+
+        // Restored in full: from here the panel is this project's live state
+        // and may be saved over what is on disk.
+        set({ pendingPanelSnapshot: null });
+      } finally {
+        if (!session.isStale()) set({ isRestoringPanelSnapshot: false });
+      }
+    },
+
+    discardPendingPanelSnapshot: () =>
+      set({ pendingPanelSnapshot: null, isRestoringPanelSnapshot: false }),
+
+    clearPanelForProjectChange: () => {
+      // Invalidates any restore still in flight, plus the workflow load it is
+      // waiting on, so nothing of the outgoing project can land in the
+      // incoming one after the switch.
+      openPanelRestoreSession();
+      options.getNextWorkflowLoadRequestId();
+
+      set((state) => ({
+        pendingPanelSnapshot: null,
+        isRestoringPanelSnapshot: false,
+        pendingReplayPanelState: null,
+        panelValues: EMPTY_GENERATION_PANEL_VALUES,
+        panelResetToken: state.panelResetToken + 1,
+        // Nothing here belongs to the incoming project: media points at the
+        // outgoing project's assets and timeline, and the workflow selection
+        // would otherwise be saved into a project that never chose it.
+        mediaInputs: pruneMediaInputs(state.mediaInputs, []),
+        selectedWorkflowId: null,
+        tempWorkflow: null,
+        availableWorkflows: removeWorkflowOption(
+          state.availableWorkflows,
+          TEMP_WORKFLOW_ID,
+        ),
+        syncedWorkflow: null,
+        syncedGraphData: null,
+        iframeWorkflowInstanceId: null,
+        iframeWorkflowRevision: null,
+        workflowInputs: [],
+        hasInferredInputs: false,
+        derivedMaskMappings: [],
+        activeWorkflowRules: null,
+        rulesWorkflowSourceId: null,
+        activeRulesWarnings: [],
+        workflowRuleWarnings: [],
+        suspectRuleLossCount: 0,
+        workflowWarning: null,
+        workflowLoadError: null,
+        isWorkflowLoading: false,
+        workflowLoadState: "idle" as const,
+        isWorkflowReady: false,
+        targetResolution: DEFAULT_GENERATION_TARGET_RESOLUTION,
+        targetResolutionIsCustom: false,
+        aspectRatioSelection: DEFAULT_ASPECT_RATIO_SELECTION,
+        exactAspectRatio: false,
+        maskCropMode: "crop" as const,
+        maskCropDilation: 0.1,
+      }));
+    },
     maskCropMode: "crop",
     setMaskCropMode: (maskCropMode) => set({ maskCropMode }),
     maskCropDilation: 0.1,
@@ -1166,59 +1446,10 @@ export function buildWorkflowStoreState(
 
         const savedReplayState = metadata.replayState;
         if (savedReplayState) {
-          const replayMaskCropMode = getReplayMaskCropMode(
-            get().activeWorkflowRules,
-            savedReplayState,
-          );
-          const replayMaskCropDilation = getReplayMaskCropDilation(
-            get().activeWorkflowRules,
-            savedReplayState,
-          );
-          set({
-            exactAspectRatio: savedReplayState.exactAspectRatio ?? false,
-            aspectRatioSelection:
-              getReplayAspectRatioSelection(savedReplayState),
-            maskCropMode: replayMaskCropMode ?? get().maskCropMode,
-            maskCropDilation:
-              typeof replayMaskCropDilation === "number"
-                ? Math.max(0, Math.min(0.5, replayMaskCropDilation))
-                : get().maskCropDilation,
-            pendingReplayPanelState: extractReplayPanelState(metadata),
-          });
+          applyReplayPanelSettings(get, set, savedReplayState);
         }
 
-        if (metadata.inputs.length > 0) {
-          await waitForReplayWorkflowInputs(get);
-
-          set({
-            isWorkflowLoading: true,
-            workflowLoadState: "loading",
-            workflowLoadError: null,
-            isWorkflowReady: false,
-          });
-
-          const loadedState = get();
-          await restoreMediaInputsFromMetadata(
-            metadata,
-            loadedState.workflowInputs,
-            loadedState.derivedMaskMappings,
-            {
-              setMediaInputAsset: loadedState.setMediaInputAsset,
-              setMediaInputFrameWithSelection:
-                loadedState.setMediaInputFrameWithSelection,
-              setMediaInputTimelineSelection:
-                loadedState.setMediaInputTimelineSelection,
-              setMediaInputItemOption: loadedState.setMediaInputItemOption,
-            },
-            { getMediaInputs: () => get().mediaInputs },
-          );
-
-          set((currentState) => ({
-            isWorkflowLoading: false,
-            workflowLoadState: currentState.syncedGraphData ? "ready" : "error",
-            isWorkflowReady: currentState.syncedGraphData !== null,
-          }));
-        }
+        await restoreSavedMediaInputs(get, set, metadata.inputs);
       } catch (error) {
         const message =
           error instanceof Error

@@ -72,6 +72,7 @@ vi.mock("../../features/userAssets", () => ({
 
 vi.mock("../../features/generation", () => ({
   canRegenerateFromAssetMetadata: vi.fn(() => false),
+  installGenerationPanelPersistence: vi.fn(() => () => {}),
   COMFYUI_CANVAS_DROP_ID: "comfyui-editor-canvas-drop",
   COMFYUI_EDITOR_DROP_SINK_ID: "comfyui-editor-drop-sink",
   useGenerationStore: Object.assign(

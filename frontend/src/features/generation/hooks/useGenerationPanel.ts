@@ -51,6 +51,7 @@ import type {
 } from "../../miniEditor";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { resolveWidgetInputs } from "../store/workflowState";
+import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
 import { parseInputsFromGraphData } from "../services/workflowBridge";
 import { parseInputsFromApiWorkflow } from "../services/apiWorkflowInputs";
 import { addLocalAsset, getAssets, useAssetStore } from "../../userAssets";
@@ -186,6 +187,20 @@ function setNodeParamValue(
     ...current,
     [nodeId]: { ...(current[nodeId] ?? {}), [param]: value },
   };
+}
+
+/**
+ * Marks a slot busy for the whole of a click-to-select flow — the render that
+ * produces the value included, which happens before there is any value to hang
+ * `isExtracting` on. Always paired with {@link endMediaInputPreparation} in a
+ * `finally`, or the slot would spin forever after a failure.
+ */
+function beginMediaInputPreparation(inputId: string): void {
+  useMediaInputPreparationStore.getState().beginMediaInputPreparation(inputId);
+}
+
+function endMediaInputPreparation(inputId: string): void {
+  useMediaInputPreparationStore.getState().endMediaInputPreparation(inputId);
 }
 
 interface AudioSelectionExtractionOptions {
@@ -1447,6 +1462,10 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
             closeFrameSelection();
 
+            // Rendering the frame out of the timeline can take seconds, and
+            // nothing lands in the slot until it is done; mark the slot so the
+            // wait is visible rather than looking like the click was ignored.
+            beginMediaInputPreparation(inputId);
             try {
               const frameFile = await captureFramePngAtTick(
                 selectedTick,
@@ -1459,6 +1478,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
               );
             } catch (error) {
               console.error("Failed to capture generation image frame", error);
+            } finally {
+              endMediaInputPreparation(inputId);
             }
           })();
         });
@@ -1544,6 +1565,11 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             useExtractStore.getState().setOnConfirmSelection(null);
           };
 
+          // Held from the moment the range is confirmed: the thumbnail render
+          // that precedes the slot's first value takes seconds of its own, and
+          // `isExtracting` on that value cannot describe a value that does not
+          // exist yet.
+          beginMediaInputPreparation(inputId);
           try {
             const { selectionStartTick, selectionEndTick } =
               useTimelineSelectionStore.getState();
@@ -1630,6 +1656,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             );
           } finally {
             closeSelectionMode();
+            endMediaInputPreparation(inputId);
           }
         })();
       });

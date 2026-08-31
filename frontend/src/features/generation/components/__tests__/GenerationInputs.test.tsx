@@ -9,6 +9,7 @@ import {
   resolveAutodiscoveredLoraWidgetInputs,
 } from "../../utils/loraLoaderWidgets";
 import { reconcileNodeBypassWidgetTargets } from "../../utils/nodeBypassWidgets";
+import { useMediaInputPreparationStore } from "../../store/useMediaInputPreparationStore";
 
 const LORA_WORKFLOW = {
   "12": {
@@ -1238,5 +1239,142 @@ describe("GenerationInputs", () => {
       "image-input",
       videoFile,
     );
+  });
+  it("shows a slot working from the moment a timeline selection is confirmed", () => {
+    const videoInput = {
+      id: "30:file",
+      nodeId: "30",
+      classType: "vloMemoryLoadVideo",
+      inputType: "video" as const,
+      param: "file",
+      label: "Video",
+      currentValue: null,
+      origin: "rule" as const,
+    };
+    const renderPanel = (
+      mediaInputs: Record<string, unknown> = {},
+    ) => (
+      <GenerationInputs
+        inputs={[videoInput]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={mediaInputs as never}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />
+    );
+
+    try {
+      // The thumbnail render runs before any value reaches the store, so the
+      // marker is all the slot has to go on.
+      useMediaInputPreparationStore
+        .getState()
+        .beginMediaInputPreparation("30:file");
+      const view = render(renderPanel());
+      expect(
+        screen.getByText("Rendering timeline video…"),
+      ).toBeInTheDocument();
+
+      // The value lands still extracting: the wait continues, and the
+      // thumbnail must not present it as finished.
+      useMediaInputPreparationStore
+        .getState()
+        .endMediaInputPreparation("30:file");
+      const selectionValue = (isExtracting: boolean) => ({
+        kind: "timelineSelection" as const,
+        mediaType: "video" as const,
+        timelineSelection: { start: 0, end: 100 },
+        thumbnailFile: new File(["png"], "thumb.png", { type: "image/png" }),
+        thumbnailUrl: "blob:selection-thumb",
+        isExtracting,
+        extractionRequestId: 1,
+        extractionError: null,
+      });
+      view.rerender(renderPanel({ "30:file": selectionValue(true) }));
+      expect(
+        screen.getByText("Rendering timeline video…"),
+      ).toBeInTheDocument();
+      expect(
+        document.querySelector('img[src="blob:selection-thumb"]'),
+      ).toBeNull();
+
+      view.rerender(renderPanel({ "30:file": selectionValue(false) }));
+      expect(screen.queryByText("Rendering timeline video…")).toBeNull();
+      expect(
+        document.querySelector('img[src="blob:selection-thumb"]'),
+      ).not.toBeNull();
+    } finally {
+      useMediaInputPreparationStore
+        .getState()
+        .endMediaInputPreparation("30:file");
+    }
+  });
+
+  it("holds a batch position for the item being prepared", () => {
+    const input = {
+      id: "141:images",
+      nodeId: "141",
+      classType: "vloMemoryLoadImageBatch",
+      inputType: "image" as const,
+      param: "images",
+      label: "Image inputs",
+      currentValue: null,
+      origin: "rule" as const,
+      presentation: { repeatable: { max: 3 } },
+    };
+    const renderPanel = () => (
+      <GenerationInputs
+        inputs={[input]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{
+          "141:images": {
+            kind: "frame" as const,
+            file: new File(["first"], "first.png", { type: "image/png" }),
+            previewUrl: "blob:first.png",
+            timelineSelection: null,
+          },
+        }}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />
+    );
+
+    try {
+      useMediaInputPreparationStore
+        .getState()
+        .beginMediaInputPreparation("141:images::repeat::1");
+      render(renderPanel());
+      // One filled item, the position being prepared, and the add tile.
+      expect(document.querySelectorAll("[data-drop-slot-id]")).toHaveLength(3);
+      const preparingTile = document.querySelector(
+        '[data-drop-slot-id="141:images::repeat::1"]',
+      );
+      expect(preparingTile).not.toBeNull();
+      expect(preparingTile).toHaveAttribute("title", "Capturing frame…");
+      expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    } finally {
+      useMediaInputPreparationStore
+        .getState()
+        .endMediaInputPreparation("141:images::repeat::1");
+    }
   });
 });

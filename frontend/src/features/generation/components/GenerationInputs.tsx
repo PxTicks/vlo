@@ -40,6 +40,7 @@ import {
   getWorkflowInputId,
   getWorkflowInputValue,
 } from "../utils/workflowInputs";
+import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
 import { isAspectRatioWidget } from "../utils/aspectRatioWidgets";
 import { getNodeBypassWidgetKey } from "../utils/nodeBypassWidgets";
 
@@ -162,13 +163,54 @@ function toSlotValue(
     };
   }
 
+  // A confirmed selection lands in the store long before its video or audio
+  // has been rendered out of the timeline, so the slot has to say so; without
+  // this a finished-looking thumbnail sits there for the seconds the render
+  // takes.
+  const selectionStatus = value.isExtracting
+    ? ("preparing" as const)
+    : value.extractionError
+      ? ("error" as const)
+      : undefined;
   return {
     type: value.mediaType,
     name: `Timeline selection (${value.timelineSelection.start}-${value.timelineSelection.end ?? value.timelineSelection.start})`,
-    ...(value.mediaType === "video"
+    ...(value.mediaType === "video" && !selectionStatus
       ? { thumbnail: value.thumbnailUrl }
       : {}),
+    ...(selectionStatus ? { status: selectionStatus } : {}),
+    ...(selectionStatus === "preparing"
+      ? { statusMessage: PREPARING_MESSAGE[value.mediaType] }
+      : selectionStatus === "error"
+        ? { statusMessage: value.extractionError ?? "Extraction failed" }
+        : {}),
   };
+}
+
+const PREPARING_MESSAGE: Record<"image" | "video" | "audio", string> = {
+  image: "Capturing frame…",
+  video: "Rendering timeline video…",
+  audio: "Extracting audio…",
+};
+
+/**
+ * The slot's appearance while its value is being produced. Applies to both
+ * halves of that wait: before a value exists at all (the marker in
+ * {@link useMediaInputPreparationStore}) and after one lands still extracting.
+ */
+function toPreparingSlotValue(
+  base: AssetDropSlotValue | null,
+  inputType: "image" | "video" | "audio",
+): AssetDropSlotValue {
+  const statusMessage = PREPARING_MESSAGE[inputType];
+  return base
+    ? { ...base, thumbnail: undefined, status: "preparing", statusMessage }
+    : {
+        type: inputType,
+        name: statusMessage,
+        status: "preparing",
+        statusMessage,
+      };
 }
 
 /** Media-specific drop allowances beyond the slot's eventual output type. */
@@ -903,10 +945,13 @@ function MediaInputSection({
   const acceptTypes = resolveAcceptTypes(mediaInputType);
   const acceptAsset = acceptAssetForInputType(mediaInputType);
   const acceptExternalTypes = resolveExternalAcceptTypes(mediaInputType);
-  const slotValue = useMemo(
-    () => toSlotValue(value, mediaInputType),
-    [mediaInputType, value],
+  const preparing = useMediaInputPreparationStore((state) =>
+    state.preparingInputIds.has(inputId),
   );
+  const slotValue = useMemo(() => {
+    const base = toSlotValue(value, mediaInputType);
+    return preparing ? toPreparingSlotValue(base, mediaInputType) : base;
+  }, [mediaInputType, preparing, value]);
 
   return (
     <PanelSection title={input.label} bgColor={bgColor} defaultOpen={true}>
@@ -923,7 +968,7 @@ function MediaInputSection({
         value={slotValue}
         onClear={() => onInputClear(inputId)}
         onEdit={
-          mediaInputType === "video" && slotValue && onEditMedia
+          mediaInputType === "video" && slotValue && !preparing && onEditMedia
             ? () => onEditMedia(inputId, "video")
             : undefined
         }
@@ -983,12 +1028,26 @@ function BatchMediaInputSection({
   const slotLabelBase =
     input.label.replace(/\s+inputs?$/i, "").trim() || input.label;
 
+  const preparingInputIds = useMediaInputPreparationStore(
+    (state) => state.preparingInputIds,
+  );
+
   const items = useMemo<AssetBatchSlotItem[]>(() => {
     const collected: AssetBatchSlotItem[] = [];
     for (let index = 0; index < max; index += 1) {
       const slotId = buildRepeatableInputSlotId(input, index);
       const value = index === 0 ? firstValue : mediaInputs[slotId];
+      const preparing = preparingInputIds.has(slotId);
       const slotValue = toSlotValue(value, mediaInputType);
+      // A position being prepared holds the place it will occupy, so the strip
+      // shows the work rather than staying one tile short until it finishes.
+      if (preparing) {
+        collected.push({
+          slotId,
+          value: toPreparingSlotValue(slotValue, mediaInputType),
+        });
+        continue;
+      }
       if (!value || !slotValue) continue;
       collected.push({
         slotId,
@@ -1010,7 +1069,15 @@ function BatchMediaInputSection({
       });
     }
     return collected;
-  }, [firstValue, input, max, mediaInputs, mediaInputType, supportsAudioOption]);
+  }, [
+    firstValue,
+    input,
+    max,
+    mediaInputs,
+    mediaInputType,
+    preparingInputIds,
+    supportsAudioOption,
+  ]);
 
   /**
    * Maps a strip position to the slot that backs it. Filled positions answer
@@ -1025,11 +1092,13 @@ function BatchMediaInputSection({
       for (let candidate = 0; candidate < max; candidate += 1) {
         const slotId = buildRepeatableInputSlotId(input, candidate);
         const value = candidate === 0 ? firstValue : mediaInputs[slotId];
-        if (!value) return slotId;
+        // A slot that is still being prepared counts as taken: its value is on
+        // its way and would otherwise be overwritten by the next drop.
+        if (!value && !preparingInputIds.has(slotId)) return slotId;
       }
       return buildRepeatableInputSlotId(input, max - 1);
     },
-    [firstValue, input, items, max, mediaInputs],
+    [firstValue, input, items, max, mediaInputs, preparingInputIds],
   );
 
   /**
@@ -1125,6 +1194,10 @@ function MediaInputGroupSection({
   onClickSelect,
   onEditMedia,
 }: MediaInputGroupSectionProps) {
+  const preparingInputIds = useMediaInputPreparationStore(
+    (state) => state.preparingInputIds,
+  );
+
   return (
     <PanelSection title={title} bgColor={bgColor} defaultOpen={true}>
       <Box
@@ -1140,7 +1213,11 @@ function MediaInputGroupSection({
           const mediaInputType = input.inputType;
           const acceptTypes = resolveAcceptTypes(mediaInputType);
           const value = getWorkflowInputValue(mediaInputs, input);
-          const slotValue = toSlotValue(value, mediaInputType);
+          const preparing = preparingInputIds.has(inputId);
+          const baseSlotValue = toSlotValue(value, mediaInputType);
+          const slotValue = preparing
+            ? toPreparingSlotValue(baseSlotValue, mediaInputType)
+            : baseSlotValue;
 
           return (
             <Box key={inputId} sx={{ display: "flex", flexDirection: "column" }}>
@@ -1151,13 +1228,20 @@ function MediaInputGroupSection({
                 acceptAsset={acceptAssetForInputType(mediaInputType)}
                 acceptExternal={resolveExternalAcceptTypes(mediaInputType)}
                 value={slotValue}
-                reorderData={slotValue ? { type: "media-input", inputId } : null}
+                reorderData={
+                  slotValue && !preparing
+                    ? { type: "media-input", inputId }
+                    : null
+                }
                 onReorderDrop={(data) =>
                   onSwapMediaInputs(data.inputId, inputId)
                 }
                 onClear={() => onInputClear(inputId)}
                 onEdit={
-                  mediaInputType === "video" && slotValue && onEditMedia
+                  mediaInputType === "video" &&
+                  slotValue &&
+                  !preparing &&
+                  onEditMedia
                     ? () => onEditMedia(inputId, "video")
                     : undefined
                 }

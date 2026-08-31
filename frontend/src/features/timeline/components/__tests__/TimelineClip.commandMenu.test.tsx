@@ -89,7 +89,7 @@ const track: TimelineTrack = {
   isLocked: false,
 };
 
-// The clip menu's delete/copy/mute items dispatch through the host command
+// The clip menu's delete/copy items dispatch through the host command
 // table, gated on the project.open context key — the same wiring production
 // installs at runtime bootstrap.
 describe("TimelineClip command-backed context menu items", () => {
@@ -142,15 +142,12 @@ describe("TimelineClip command-backed context menu items", () => {
     expect(useTimelineStore.getState().clips).toHaveLength(2);
   });
 
-  it("Mute toggles the clip through timeline.clip.toggle-mute", () => {
+  it("omits Mute from the menu now that the clip overlay owns the toggle", () => {
     render(<TimelineClipItem clip={baseClip} isOverlay={false} />);
     fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Mute" }));
 
-    const updated = useTimelineStore
-      .getState()
-      .clips.find((candidate) => candidate.id === baseClip.id);
-    expect(updated).toMatchObject({ isMuted: true });
+    expect(screen.queryByRole("menuitem", { name: "Mute" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Unmute" })).toBeNull();
   });
 
   it("renders command items disabled when no project is open", () => {

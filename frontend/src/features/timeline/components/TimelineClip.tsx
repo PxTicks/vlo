@@ -12,8 +12,6 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import GraphicEqIcon from "@mui/icons-material/GraphicEq";
 import MusicOffIcon from "@mui/icons-material/MusicOff";
-import VolumeOffIcon from "@mui/icons-material/VolumeOff";
-import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import FastRewindIcon from "@mui/icons-material/FastRewind";
 
 import { styled } from "@mui/material/styles";
@@ -235,14 +233,6 @@ function TimelineClipComponent({
       projectAspectRatio,
       projectFps,
     ]);
-  const isClipMuted =
-    timelineClip !== null && timelineClip.type !== "mask"
-      ? timelineClip.isMuted === true
-      : false;
-  const canMute =
-    timelineClip !== null &&
-    timelineClip.type !== "mask";
-
   // --- SELECTORS ---
   const isSelected = useTimelineStore((state) =>
     state.selectedClipIds.includes(clip.id),
@@ -579,23 +569,6 @@ function TimelineClipComponent({
             group: "1_clip",
             disabled: isReversingClip,
             run: () => void handleReverseClip(),
-          } satisfies HostMenuItemDescriptor,
-        ]
-      : []),
-    ...(canMute
-      ? [
-          {
-            kind: "command",
-            id: "toggle-mute",
-            command: "timeline.clip.toggle-mute",
-            subject: { clipId: clip.id },
-            label: isClipMuted ? "Unmute" : "Mute",
-            icon: isClipMuted ? (
-              <VolumeUpIcon fontSize="small" />
-            ) : (
-              <VolumeOffIcon fontSize="small" />
-            ),
-            group: "1_clip",
           } satisfies HostMenuItemDescriptor,
         ]
       : []),

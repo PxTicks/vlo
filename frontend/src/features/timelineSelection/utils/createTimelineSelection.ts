@@ -181,19 +181,32 @@ export function createTimelineSelectionFromClipIds({
   };
 }
 
-export function getDefaultSelectionEnd(startTick: number): number {
+export interface DefaultSelectionEndGrid {
+  fps?: number | null;
+  frameStep?: number | null;
+  frameOffset?: number | null;
+}
+
+/**
+ * Seeds the range a selection opens with. The grid is taken from `grid` when
+ * the caller already knows what the upcoming selection requires — the store
+ * still holds the *previous* selection's values at this point, and reading
+ * them would seed, say, a plain extraction with the last workflow's step.
+ */
+export function getDefaultSelectionEnd(
+  startTick: number,
+  grid?: DefaultSelectionEndGrid,
+): number {
   const fps = useProjectStore.getState().config.fps;
-  const { selectionFpsOverride, selectionFrameStep, selectionFrameOffset } =
-    useTimelineSelectionStore.getState();
   const effectiveFps = resolveSelectionFps(
-    { fps: selectionFpsOverride },
+    { fps: grid?.fps ?? null },
     fps,
   );
   const frameStep = resolveSelectionFrameStep({
-    frameStep: selectionFrameStep,
+    frameStep: grid?.frameStep ?? null,
   });
   const frameOffset = resolveSelectionFrameOffset({
-    frameOffset: selectionFrameOffset,
+    frameOffset: grid?.frameOffset ?? null,
   });
   const ticksPerFrame = getTicksPerFrame(effectiveFps);
   const maxDuration = getTimelineDuration();

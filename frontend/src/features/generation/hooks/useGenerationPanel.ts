@@ -1485,11 +1485,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         selectionConfig.maxFrames > 0
           ? frameToTick(selectionConfig.maxFrames, recommendedFps ?? projectFps)
           : null;
-      timelineSelectionStore.setSelectionFpsOverride(recommendedFps);
-      timelineSelectionStore.setSelectionFrameStep(recommendedFrameStep ?? 1);
-      timelineSelectionStore.setSelectionFrameOffset(
-        recommendedFrameOffset ?? 1,
-      );
       // The dispatch's own target resolution, offered as the selection's
       // default: rendering the source at the size the workflow will use skips
       // a resample inside ComfyUI and the upload of pixels it discards. It is
@@ -1519,7 +1514,14 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       });
 
       const selectionStartTick = playbackClock.time;
-      const selectionEndTick = getDefaultSelectionEnd(selectionStartTick);
+      // The workflow's grid and fps seed the range and then own the selection:
+      // they are passed in rather than written to the store beforehand, which
+      // still describes whatever selection ran last.
+      const selectionEndTick = getDefaultSelectionEnd(selectionStartTick, {
+        fps: recommendedFps,
+        frameStep: recommendedFrameStep,
+        frameOffset: recommendedFrameOffset,
+      });
 
       timelineSelectionStore.enterSelectionMode(
         selectionStartTick,
@@ -1527,6 +1529,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         {
           message: selectionConfig?.message ?? null,
           includeTracks: selectionConfig?.includeTracks === true,
+          frameStep: recommendedFrameStep,
+          frameOffset: recommendedFrameOffset,
+          fpsOverride: recommendedFps,
         },
       );
       extractStore.setOnConfirmSelection(() => {

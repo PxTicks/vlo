@@ -358,8 +358,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
 
     const selectionStore = useTimelineSelectionStore.getState();
     selectionStore.clearSelectionRecommendations();
-    selectionStore.setSelectionFpsOverride(null);
-    selectionStore.setSelectionFrameStep(1);
+    // The grid, fps and resolution reset themselves on enterSelectionMode
+    // below; this selection declares none of them.
     const startTick = playbackClock.time;
     const endTick = getDefaultSelectionEnd(startTick);
     const settingsSnapshot = structuredClone(selectionSettings);

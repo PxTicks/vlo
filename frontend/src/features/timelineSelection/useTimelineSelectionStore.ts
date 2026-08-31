@@ -36,6 +36,10 @@ export interface TimelineSelectionState {
       includeTracks?: boolean;
       allowIncludeAll?: boolean;
       includedTrackIds?: string[];
+      frameStep?: number | null;
+      frameOffset?: number | null;
+      fpsOverride?: number | null;
+      resolutionOverride?: number | null;
     },
   ) => void;
   updateSelectionStart: (tick: number) => void;
@@ -58,6 +62,21 @@ export interface TimelineSelectionState {
   }) => void;
   clearSelectionRecommendations: () => void;
   exitSelectionMode: () => void;
+}
+
+function toPositiveIntegerOrNull(
+  value: number | null | undefined,
+): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.round(value))
+    : null;
+}
+
+function toPositiveInteger(
+  value: number | null | undefined,
+  fallback: number,
+): number {
+  return toPositiveIntegerOrNull(value) ?? fallback;
 }
 
 export const useTimelineSelectionStore = create<TimelineSelectionState>((set) => ({
@@ -88,6 +107,16 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
         typeof options?.message === "string" && options.message.trim().length > 0
           ? options.message.trim()
           : null,
+      selectionFrameStep: toPositiveInteger(options?.frameStep, 1),
+      selectionFrameOffset: toPositiveInteger(options?.frameOffset, 1),
+      selectionFpsOverride: toPositiveIntegerOrNull(options?.fpsOverride),
+      // Held to the offered rungs here for the same reason the setter is: a
+      // short edge the project config would reject must not reach a render.
+      selectionResolutionOverride: isProjectOutputResolution(
+        options?.resolutionOverride,
+      )
+        ? options.resolutionOverride
+        : null,
       selectionIncludeModeEnabled: options?.includeTracks === true,
       selectionAllowIncludeAll:
         options?.includeTracks === true && options?.allowIncludeAll === true,
@@ -145,12 +174,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
       };
     }),
   setSelectionFpsOverride: (fps) =>
-    set({
-      selectionFpsOverride:
-        typeof fps === "number" && Number.isFinite(fps) && fps > 0
-          ? Math.max(1, Math.round(fps))
-          : null,
-    }),
+    set({ selectionFpsOverride: toPositiveIntegerOrNull(fps) }),
   setSelectionResolutionOverride: (resolution) =>
     set({
       // Only the offered rungs are storable: an arbitrary short edge would be
@@ -161,19 +185,9 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
         : null,
     }),
   setSelectionFrameStep: (step) =>
-    set({
-      selectionFrameStep:
-        typeof step === "number" && Number.isFinite(step) && step > 0
-          ? Math.max(1, Math.round(step))
-          : 1,
-    }),
+    set({ selectionFrameStep: toPositiveInteger(step, 1) }),
   setSelectionFrameOffset: (offset) =>
-    set({
-      selectionFrameOffset:
-        typeof offset === "number" && Number.isFinite(offset) && offset > 0
-          ? Math.max(1, Math.round(offset))
-          : 1,
-    }),
+    set({ selectionFrameOffset: toPositiveInteger(offset, 1) }),
   setSelectionRecommendations: ({
     fps,
     resolution,
@@ -230,6 +244,13 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
       selectionIncludeModeEnabled: false,
       selectionAllowIncludeAll: false,
       selectionIncludedTrackIds: [],
+      // The grid, fps and resolution belong to the selection that just ended,
+      // exactly like the recommendations below. Leaving them behind is what
+      // made a plain extraction inherit the previous workflow's settings.
+      selectionFrameStep: 1,
+      selectionFrameOffset: 1,
+      selectionFpsOverride: null,
+      selectionResolutionOverride: null,
       selectionRecommendedResolution: null,
       selectionRecommendedFps: null,
       selectionRecommendedFrameStep: null,

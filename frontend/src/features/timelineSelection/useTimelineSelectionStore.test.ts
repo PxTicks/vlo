@@ -15,7 +15,9 @@ describe("useTimelineSelectionStore", () => {
       selectionAllowIncludeAll: false,
       selectionIncludedTrackIds: [],
       selectionFpsOverride: null,
+      selectionResolutionOverride: null,
       selectionFrameStep: 1,
+      selectionFrameOffset: 1,
       selectionRecommendedFps: null,
       selectionRecommendedFrameStep: null,
       selectionRecommendedMaxTicks: null,
@@ -148,6 +150,113 @@ describe("useTimelineSelectionStore", () => {
     expect(result.current.selectionRecommendedFps).toBeNull();
     expect(result.current.selectionRecommendedFrameStep).toBeNull();
     expect(result.current.selectionRecommendedMaxTicks).toBeNull();
+  });
+
+  describe("frame grid", () => {
+    it("adopts the grid the caller declares on entry", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.enterSelectionMode(0, 5_000, {
+          frameStep: 17,
+          frameOffset: 5,
+        });
+      });
+
+      expect(result.current.selectionFrameStep).toBe(17);
+      expect(result.current.selectionFrameOffset).toBe(5);
+    });
+
+    // The bug this guards: a MiniMax selection left 17/5 behind, and the next
+    // plain extraction snapped its range to that workflow's grid.
+    it("does not inherit the previous selection's grid", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.enterSelectionMode(0, 5_000, {
+          frameStep: 17,
+          frameOffset: 5,
+        });
+        result.current.exitSelectionMode();
+      });
+
+      expect(result.current.selectionFrameStep).toBe(1);
+      expect(result.current.selectionFrameOffset).toBe(1);
+
+      act(() => {
+        result.current.enterSelectionMode(0, 5_000);
+      });
+
+      expect(result.current.selectionFrameStep).toBe(1);
+      expect(result.current.selectionFrameOffset).toBe(1);
+    });
+
+    // Even without the exit that normally clears it — a hand-typed grid from
+    // the selection overlay must not outlive its own selection either.
+    it("resets a leftover grid on the next entry", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.setSelectionFrameStep(17);
+        result.current.setSelectionFrameOffset(5);
+        result.current.enterSelectionMode(0, 5_000);
+      });
+
+      expect(result.current.selectionFrameStep).toBe(1);
+      expect(result.current.selectionFrameOffset).toBe(1);
+    });
+  });
+
+  describe("render settings", () => {
+    it("adopts the fps and resolution the caller declares on entry", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.enterSelectionMode(0, 5_000, {
+          fpsOverride: 16,
+          resolutionOverride: 720,
+        });
+      });
+
+      expect(result.current.selectionFpsOverride).toBe(16);
+      expect(result.current.selectionResolutionOverride).toBe(720);
+    });
+
+    // Off-ladder short edges are rejected on entry for the same reason the
+    // setter rejects them: the project config would not honour them.
+    it("ignores a resolution off the offered rungs", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.enterSelectionMode(0, 5_000, {
+          resolutionOverride: 1234,
+        });
+      });
+
+      expect(result.current.selectionResolutionOverride).toBeNull();
+    });
+
+    it("does not inherit the previous selection's fps or resolution", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.enterSelectionMode(0, 5_000, { fpsOverride: 16 });
+        result.current.setSelectionResolutionOverride(720);
+        result.current.exitSelectionMode();
+      });
+
+      expect(result.current.selectionFpsOverride).toBeNull();
+      expect(result.current.selectionResolutionOverride).toBeNull();
+
+      act(() => {
+        result.current.setSelectionFpsOverride(16);
+        result.current.setSelectionResolutionOverride(720);
+        result.current.enterSelectionMode(0, 5_000);
+      });
+
+      expect(result.current.selectionFpsOverride).toBeNull();
+      expect(result.current.selectionResolutionOverride).toBeNull();
+    });
   });
 
   it("validates fps override and frame step", () => {

@@ -4,7 +4,6 @@ export { getViewportContentTarget, useViewport } from "./hooks/useViewport";
 export { useAudioTrack } from "./hooks/useAudioTrack";
 export { useExportJobController } from "./hooks/useExportJobController";
 export { AudioTrackLayer } from "./components/AudioTrackLayer";
-export { AudioLiveParamLayer } from "./components/AudioLiveParamLayer";
 export { TrackRenderEngine } from "./services/TrackRenderEngine";
 export {
   createCompositeSourcePolicySnapshot,

@@ -1,8 +1,8 @@
 {
   "id": "8f2c1d34-6b90-4d21-9c5e-7ab3f0e15d42",
   "revision": 0,
-  "last_node_id": 40,
-  "last_link_id": 56,
+  "last_node_id": 36,
+  "last_link_id": 48,
   "nodes": [
     {
       "id": 1,
@@ -222,9 +222,7 @@
           "links": [
             5,
             7,
-            9,
-            50,
-            53
+            9
           ]
         }
       ],
@@ -263,9 +261,7 @@
           "links": [
             6,
             8,
-            10,
-            51,
-            54
+            10
           ]
         }
       ],
@@ -566,7 +562,8 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            18
+            18,
+            19
           ]
         },
         {
@@ -902,6 +899,52 @@
       }
     },
     {
+      "id": 15,
+      "type": "VHS_SelectImages",
+      "pos": [
+        -460,
+        220
+      ],
+      "size": [
+        250,
+        110
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 19
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            29
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VHS_SelectImages",
+        "widget_ue_connectable": {}
+      },
+      "title": "First frame",
+      "widgets_values": [
+        "0",
+        true,
+        true
+      ],
+      "widgets_values_named": {
+        "indexes": "0",
+        "err_if_missing": true,
+        "err_if_empty": true
+      }
+    },
+    {
       "id": 18,
       "type": "CLIPLoader",
       "pos": [
@@ -975,13 +1018,12 @@
         {
           "name": "first_frame",
           "type": "IMAGE",
-          "link": 55,
-          "shape": 7
+          "link": 29
         },
         {
           "name": "last_frame",
           "type": "IMAGE",
-          "link": 56,
+          "link": null,
           "shape": 7
         },
         {
@@ -1818,240 +1860,6 @@
         "bit_depth": "auto",
         "color_space": "sRGB"
       }
-    },
-    {
-      "id": 37,
-      "type": "vloMemoryLoadImage",
-      "pos": [
-        -1720,
-        1940
-      ],
-      "size": [
-        300,
-        340
-      ],
-      "flags": {},
-      "order": 36,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            49
-          ]
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "vloMemoryLoadImage",
-        "cnr_id": "comfyui-vlo",
-        "ver": "0.2.0",
-        "widget_ue_connectable": {}
-      },
-      "title": "Start frame",
-      "widgets_values": [
-        "",
-        false,
-        "refresh",
-        false,
-        "image"
-      ],
-      "widgets_values_named": {
-        "image": "",
-        "Auto-refresh after generation": false,
-        "refresh": "refresh",
-        "disable_in_memory": false,
-        "upload": "image"
-      }
-    },
-    {
-      "id": 38,
-      "type": "vloMemoryLoadImage",
-      "pos": [
-        -1720,
-        2320
-      ],
-      "size": [
-        300,
-        340
-      ],
-      "flags": {},
-      "order": 37,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            52
-          ]
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "vloMemoryLoadImage",
-        "cnr_id": "comfyui-vlo",
-        "ver": "0.2.0",
-        "widget_ue_connectable": {}
-      },
-      "title": "End frame",
-      "widgets_values": [
-        "",
-        false,
-        "refresh",
-        false,
-        "image"
-      ],
-      "widgets_values_named": {
-        "image": "",
-        "Auto-refresh after generation": false,
-        "refresh": "refresh",
-        "disable_in_memory": false,
-        "upload": "image"
-      }
-    },
-    {
-      "id": 39,
-      "type": "ResizeImageMaskNode",
-      "pos": [
-        -1380,
-        1940
-      ],
-      "size": [
-        270,
-        154
-      ],
-      "flags": {},
-      "order": 38,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "input",
-          "type": "IMAGE,MASK",
-          "link": 49
-        },
-        {
-          "name": "resize_type.width",
-          "type": "INT",
-          "widget": {
-            "name": "resize_type.width"
-          },
-          "link": 50
-        },
-        {
-          "name": "resize_type.height",
-          "type": "INT",
-          "widget": {
-            "name": "resize_type.height"
-          },
-          "link": 51
-        }
-      ],
-      "outputs": [
-        {
-          "name": "resized",
-          "type": "COMFY_MATCHTYPE_V3",
-          "links": [
-            55
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ResizeImageMaskNode",
-        "widget_ue_connectable": {}
-      },
-      "title": "Fit start frame to canvas",
-      "widgets_values": [
-        "scale dimensions",
-        848,
-        480,
-        "center",
-        "area"
-      ],
-      "widgets_values_named": {
-        "resize_type": "scale dimensions",
-        "resize_type.width": 848,
-        "resize_type.height": 480,
-        "resize_type.crop": "center",
-        "scale_method": "area"
-      }
-    },
-    {
-      "id": 40,
-      "type": "ResizeImageMaskNode",
-      "pos": [
-        -1380,
-        2320
-      ],
-      "size": [
-        270,
-        154
-      ],
-      "flags": {},
-      "order": 39,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "input",
-          "type": "IMAGE,MASK",
-          "link": 52
-        },
-        {
-          "name": "resize_type.width",
-          "type": "INT",
-          "widget": {
-            "name": "resize_type.width"
-          },
-          "link": 53
-        },
-        {
-          "name": "resize_type.height",
-          "type": "INT",
-          "widget": {
-            "name": "resize_type.height"
-          },
-          "link": 54
-        }
-      ],
-      "outputs": [
-        {
-          "name": "resized",
-          "type": "COMFY_MATCHTYPE_V3",
-          "links": [
-            56
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ResizeImageMaskNode",
-        "widget_ue_connectable": {}
-      },
-      "title": "Fit end frame to canvas",
-      "widgets_values": [
-        "scale dimensions",
-        848,
-        480,
-        "center",
-        "area"
-      ],
-      "widgets_values_named": {
-        "resize_type": "scale dimensions",
-        "resize_type.width": 848,
-        "resize_type.height": 480,
-        "resize_type.crop": "center",
-        "scale_method": "area"
-      }
     }
   ],
   "links": [
@@ -2200,6 +2008,14 @@
       "IMAGE"
     ],
     [
+      19,
+      9,
+      0,
+      15,
+      0,
+      "IMAGE"
+    ],
+    [
       20,
       19,
       0,
@@ -2270,6 +2086,14 @@
       26,
       1,
       "LATENT"
+    ],
+    [
+      29,
+      15,
+      0,
+      16,
+      2,
+      "IMAGE"
     ],
     [
       30,
@@ -2414,70 +2238,6 @@
       36,
       0,
       "IMAGE"
-    ],
-    [
-      49,
-      37,
-      0,
-      39,
-      0,
-      "IMAGE"
-    ],
-    [
-      50,
-      20,
-      0,
-      39,
-      1,
-      "INT"
-    ],
-    [
-      51,
-      21,
-      0,
-      39,
-      2,
-      "INT"
-    ],
-    [
-      52,
-      38,
-      0,
-      40,
-      0,
-      "IMAGE"
-    ],
-    [
-      53,
-      20,
-      0,
-      40,
-      1,
-      "INT"
-    ],
-    [
-      54,
-      21,
-      0,
-      40,
-      2,
-      "INT"
-    ],
-    [
-      55,
-      39,
-      0,
-      16,
-      2,
-      "IMAGE"
-    ],
-    [
-      56,
-      40,
-      0,
-      16,
-      3,
-      "IMAGE"
     ]
   ],
   "groups": [
@@ -2501,18 +2261,6 @@
         1360,
         1900,
         480
-      ],
-      "color": "#3f789e",
-      "flags": {}
-    },
-    {
-      "id": 3,
-      "title": "Keyframes (optional)",
-      "bounding": [
-        -1760,
-        1880,
-        720,
-        800
       ],
       "color": "#3f789e",
       "flags": {}

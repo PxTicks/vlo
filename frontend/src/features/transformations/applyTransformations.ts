@@ -13,7 +13,7 @@ import type {
 import type { TimelineClip } from "../../types/TimelineTypes";
 import { getIdempotentTimeMap } from "./utils/timeCalculation";
 import { resolveScalar } from "./utils/resolveScalar";
-import type { ScalarParameter, SpeedTransform } from "./types";
+import type { ScalarParameter } from "./types";
 import { liveParamStore } from "../../core/liveParams/liveParamStore";
 import { livePreviewParamStore } from "../../core/liveParams/livePreviewParamStore";
 
@@ -145,93 +145,6 @@ export interface ApplyTransformStackContext {
   visualDuration?: number;
 }
 
-/**
- * Backward speed pass: pull `time` back through every enabled speed transform
- * to get each transform's effective time and the fully-resolved source time.
- */
-function resolveStackTimes(
-  transformations: readonly ClipTransform[] | undefined,
-  time: number,
-): { effectiveTimes: number[]; sourceTimeTicks: number } {
-  if (!transformations || transformations.length === 0) {
-    return { effectiveTimes: [], sourceTimeTicks: time };
-  }
-
-  let pulledTime = time;
-  const effectiveTimes = new Array<number>(transformations.length).fill(time);
-  for (let i = transformations.length - 1; i >= 0; i--) {
-    const transform = transformations[i];
-    effectiveTimes[i] = pulledTime;
-    if (transform.isEnabled && transform.type === "speed") {
-      const params = (transform as unknown as SpeedTransform).parameters;
-      pulledTime = getIdempotentTimeMap(params.factor, pulledTime);
-    }
-  }
-  return { effectiveTimes, sourceTimeTicks: pulledTime };
-}
-
-/**
- * Publish every enabled transform's resolved parameter values to
- * `liveParamStore` so panel controls track the playhead.
- */
-function notifyStackLiveParams(
-  transformations: readonly ClipTransform[],
-  effectiveTimes: readonly number[],
-  sourceTimeTicks: number,
-): void {
-  transformations.forEach((transform, i) => {
-    if (!transform.isEnabled) return;
-
-    if (transform.type === "speed") {
-      // Speed-transform live param notifications use post-speed (input) time.
-      const speedParams = (transform as unknown as SpeedTransform).parameters;
-      const sampleTime = getIdempotentTimeMap(
-        speedParams.factor,
-        effectiveTimes[i],
-      );
-      for (const [paramName, param] of Object.entries(transform.parameters)) {
-        liveParamStore.notify(
-          transform.id,
-          paramName,
-          resolveScalar(param as ScalarParameter, sampleTime, 1),
-        );
-      }
-      return;
-    }
-
-    const effectiveTransform = applyLivePreviewOverrides(transform);
-    for (const [paramName, param] of Object.entries(
-      effectiveTransform.parameters,
-    )) {
-      liveParamStore.notify(
-        effectiveTransform.id,
-        paramName,
-        resolveScalar(param as ScalarParameter, sourceTimeTicks, 0),
-      );
-    }
-  });
-}
-
-/**
- * Publish a clip's live parameter values without rendering it. Clips with no
- * visual pass (audio) use this so their panel controls still follow the
- * playhead; the time mapping matches `applyClipTransforms`.
- *
- * @param clipVisualTimeTicks - Clip-local visual tick (effective track tick
- *   minus `clip.start`), the same `time` `applyClipTransforms` receives.
- */
-export function notifyClipLiveParams(
-  clip: TimelineClip,
-  clipVisualTimeTicks: number,
-): void {
-  if (!clip.transformations || clip.transformations.length === 0) return;
-  const { effectiveTimes, sourceTimeTicks } = resolveStackTimes(
-    clip.transformations,
-    clipVisualTimeTicks + (clip.transformedOffset || 0),
-  );
-  notifyStackLiveParams(clip.transformations, effectiveTimes, sourceTimeTicks);
-}
-
 export interface ApplyTransformStackOptions {
   baseLayoutMode?: FitMode | "origin";
   notifyLiveParams?: boolean;
@@ -274,13 +187,50 @@ export function applyTransformStack(
     ...layoutDefaults,
   } as TransformState;
   const shouldNotifyLiveParams = options.notifyLiveParams !== false;
-  const { effectiveTimes, sourceTimeTicks } = resolveStackTimes(
-    transformations,
-    time || 0,
-  );
+
+  const defaultTime = time || 0;
+  let sourceTimeTicks = defaultTime;
 
   if (transformations && transformations.length > 0) {
-    // Forward dispatch of non-speed transforms.
+    let pulledTime = sourceTimeTicks;
+    const effectiveTimes = new Array(transformations.length).fill(pulledTime);
+
+    // Pass 1: Backward time propagation through speed transforms.
+    for (let i = transformations.length - 1; i >= 0; i--) {
+      const transform = transformations[i];
+      effectiveTimes[i] = pulledTime;
+      if (transform.isEnabled && transform.type === "speed") {
+        const params = (
+          transform as unknown as import("./types").SpeedTransform
+        ).parameters;
+        pulledTime = getIdempotentTimeMap(params.factor, pulledTime);
+      }
+    }
+    sourceTimeTicks = pulledTime;
+
+    if (shouldNotifyLiveParams) {
+      // Speed-transform live param notifications use post-speed (input) time.
+      for (let i = 0; i < transformations.length; i++) {
+        const transform = transformations[i];
+        if (!transform.isEnabled || transform.type !== "speed") continue;
+        const speedParams = (
+          transform as unknown as import("./types").SpeedTransform
+        ).parameters;
+        const sampleTime = getIdempotentTimeMap(
+          speedParams.factor,
+          effectiveTimes[i],
+        );
+        for (const [paramName, param] of Object.entries(transform.parameters)) {
+          liveParamStore.notify(
+            transform.id,
+            paramName,
+            resolveScalar(param as ScalarParameter, sampleTime, 1),
+          );
+        }
+      }
+    }
+
+    // Pass 2: Forward dispatch of non-speed transforms.
     //
     // Source-time anchoring: every value transform samples its keyframes at the
     // fully-resolved `sourceTimeTicks` (source-media time in project ticks, after
@@ -295,18 +245,28 @@ export function applyTransformStack(
     transformations.forEach((transform) => {
       if (!transform.isEnabled) return;
       if (transform.type === "speed") return;
-      dispatchTransform(state, applyLivePreviewOverrides(transform), {
+      const effectiveTransform = applyLivePreviewOverrides(transform);
+
+      dispatchTransform(state, effectiveTransform, {
         container: ctx.container,
         content: ctx.content,
         time: sourceTimeTicks,
-        visualTime: ctx.visualTime ?? (time || 0),
+        visualTime: ctx.visualTime ?? defaultTime,
         visualDuration: ctx.visualDuration,
       });
-    });
 
-    if (shouldNotifyLiveParams) {
-      notifyStackLiveParams(transformations, effectiveTimes, sourceTimeTicks);
-    }
+      if (shouldNotifyLiveParams) {
+        for (const [paramName, param] of Object.entries(
+          effectiveTransform.parameters,
+        )) {
+          liveParamStore.notify(
+            effectiveTransform.id,
+            paramName,
+            resolveScalar(param as ScalarParameter, sourceTimeTicks, 0),
+          );
+        }
+      }
+    });
   }
 
   return { state, sourceTimeTicks };

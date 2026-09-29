@@ -328,7 +328,6 @@ vi.mock("../hooks/usePixiApp", () => ({
 }));
 
 vi.mock("../../renderer", () => ({
-  AudioLiveParamLayer: () => null,
   AudioTrackLayer: () => null,
   LiveFrameGraphCoordinator: class {
     constructor() {

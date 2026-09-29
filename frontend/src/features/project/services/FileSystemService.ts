@@ -4,10 +4,6 @@
  */
 
 import { projectMutationGuard } from "../../../core/project/projectMutationGuard";
-import {
-  describeFileSystemAccessIssue,
-  getFileSystemAccessIssue,
-} from "../utils/browser";
 
 export class FileSystemService {
   private projectHandle: FileSystemDirectoryHandle | null = null;
@@ -46,11 +42,6 @@ export class FileSystemService {
   async pickDirectory(
     options: Omit<DirectoryPickerOptions, "mode"> = {},
   ): Promise<FileSystemDirectoryHandle> {
-    // Without this, callers surface "showDirectoryPicker is not a function",
-    // which says nothing about how to fix it.
-    const issue = getFileSystemAccessIssue();
-    if (issue) throw new Error(describeFileSystemAccessIssue(issue));
-
     return await window.showDirectoryPicker({
       ...options,
       mode: "readwrite",

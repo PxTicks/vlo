@@ -163,33 +163,11 @@ function regionsOverlap(
   return left.some((region) => right.includes(region));
 }
 
-const NON_TEXT_INPUT_TYPES = new Set([
-  "range",
-  "checkbox",
-  "radio",
-  "button",
-  "submit",
-  "reset",
-  "color",
-  "file",
-  "image",
-]);
-
-/**
- * Whether the focused element owns this key press. Text entry owns every key
- * (typing, native undo, clipboard). Non-text inputs such as a slider thumb only
- * own the plain keys they act on (arrows, Space, Shift+arrow steps); a
- * Ctrl/Cmd/Alt chord still dispatches, otherwise Mod+Z after dragging a slider
- * is silently swallowed until focus moves elsewhere.
- */
-function targetOwnsKey(target: EventTarget | null, event: KeyboardEvent): boolean {
+function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   const tag = target.tagName;
-  if (tag === "TEXTAREA" || tag === "SELECT") return true;
-  if (tag !== "INPUT") return false;
-  if (!NON_TEXT_INPUT_TYPES.has((target as HTMLInputElement).type)) return true;
-  return !(event.ctrlKey || event.metaKey || event.altKey);
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
 /**
@@ -280,8 +258,8 @@ export class HostKeybindingRegistry {
 
   /**
    * Routes one key event to the first active, region-matching binding whose
-   * command the executor accepts. Keys the focused control owns never
-   * dispatch, so bindings cannot swallow typing or slider/checkbox keys.
+   * command the executor accepts. Editable targets never dispatch, so bindings
+   * cannot swallow typing.
    */
   dispatch(
     event: KeyboardEvent,
@@ -289,7 +267,7 @@ export class HostKeybindingRegistry {
     execute: (commandId: string) => boolean,
   ): boolean {
     if (event.defaultPrevented) return false;
-    if (targetOwnsKey(event.target, event)) return false;
+    if (isEditableTarget(event.target)) return false;
     const isMac = this.isMac();
     const eventKey = event.key.toLowerCase();
     for (const entry of this.entries) {

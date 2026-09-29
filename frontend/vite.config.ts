@@ -178,7 +178,14 @@ export default defineConfig(({ mode }) => {
       setupFiles: "./src/setupTests.ts",
       // Playwright specs stay out of Vitest, while e2e/__tests__ pins the
       // Node-side fixture harness against production persistence schemas.
-      exclude: ["node_modules", "dist", "e2e/**/*.spec.ts"],
+      // `*.perf.test.*` files are the timing lane (`npm run bench:timeline`),
+      // too slow and too noisy for the default run.
+      exclude: [
+        "node_modules",
+        "dist",
+        "e2e/**/*.spec.ts",
+        ...(process.env.VLO_PERF_LANE === "1" ? [] : ["**/*.perf.test.{ts,tsx}"]),
+      ],
       coverage: {
         provider: "v8",
         include: ["src/**/*.{ts,tsx}"],

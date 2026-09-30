@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { WorkflowWidgetInput } from "../../types";
-import type { WorkflowRules } from "../../services/workflowRules";
+import {
+  resolveWidgetInputs,
+  type WorkflowRules,
+} from "../../services/workflowRules";
 import { buildGenerationNodeCatalogue } from "../../services/workflowNodeCatalogue";
 import {
   LORA_LOADERS_SECTION_ID,
+  collectBypassDiscoveryNodeIds,
+  mergeAutodiscoveredLoraWidgetInputs,
   resolveAutodiscoveredLoraWidgetInputs,
 } from "../loraLoaderWidgets";
 import {
@@ -551,4 +558,68 @@ describe("sidecar controls on a stacked loader", () => {
     expect(packed.widgetValues["150"]).not.toHaveProperty("block_weights");
     expect(packed.widgetValues["153"]?.block_weights).toBe("mid");
   });
+});
+
+describe("shipped MiniMax i2v LoRA stack", () => {
+  const CONFIG_DIR = resolve(
+    __dirname,
+    "../../../../../../backend/assets/.config",
+  );
+
+  /** The panel's widget list for a shipped workflow, as the hook builds it. */
+  function shippedWidgets(profile: string) {
+    const dir = resolve(CONFIG_DIR, profile);
+    const graphData = JSON.parse(
+      readFileSync(resolve(dir, "vlo_minimax_h3_i2v.json"), "utf-8"),
+    ) as Record<string, unknown>;
+    const rules = JSON.parse(
+      readFileSync(resolve(dir, "vlo_minimax_h3_i2v.rules.json"), "utf-8"),
+    ) as WorkflowRules;
+    const widgetInputs = mergeAutodiscoveredLoraWidgetInputs(
+      resolveWidgetInputs(null, rules, {
+        graphData,
+        objectInfo: OBJECT_INFO,
+      }),
+      resolveAutodiscoveredLoraWidgetInputs(
+        buildGenerationNodeCatalogue(null, OBJECT_INFO, graphData),
+        new Set([
+          ...collectBypassDiscoveryNodeIds(rules),
+          ...collectLoraStackNodeIds(rules),
+        ]),
+      ),
+    );
+    return { rules, widgetInputs };
+  }
+
+  it.each(["default_workflows", "high_vram_workflows"])(
+    "reveals %s's four loaders one at a time and packs from the front",
+    (profile) => {
+      const { rules, widgetInputs } = shippedWidgets(profile);
+      const targets = mountedTargets(widgetInputs);
+
+      expect(
+        visibleSlots(presentLoraStackWidgetInputs(widgetInputs, rules, targets)),
+      ).toEqual([["LoRA 1", "150"]]);
+
+      targets.delete(key("150"));
+      expect(
+        visibleSlots(presentLoraStackWidgetInputs(widgetInputs, rules, targets)),
+      ).toEqual([
+        ["LoRA 1", "150"],
+        ["LoRA 2", "153"],
+      ]);
+
+      // A pick left on the last loader is dispatched through the first.
+      const packed = packLoraStacks({
+        widgetInputs,
+        widgetValues: { "155": { lora_name: "b.safetensors" } },
+        bypassedWidgetTargets: new Set([key("150"), key("153"), key("154")]),
+        rules,
+      });
+      expect(packed.widgetValues["150"]?.lora_name).toBe("b.safetensors");
+      expect([...packed.bypassedWidgetTargets].sort()).toEqual(
+        [key("153"), key("154"), key("155")].sort(),
+      );
+    },
+  );
 });

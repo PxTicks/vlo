@@ -1,8 +1,8 @@
 {
   "id": "8f1c0d4e-6a2b-4f77-9c31-5b0e7a92d4c8",
   "revision": 0,
-  "last_node_id": 152,
-  "last_link_id": 237,
+  "last_node_id": 155,
+  "last_link_id": 240,
   "nodes": [
     {
       "id": 117,
@@ -1465,7 +1465,7 @@
           "localized_name": "model",
           "name": "model",
           "type": "MODEL",
-          "link": 235
+          "link": 240
         },
         {
           "localized_name": "attention",
@@ -1684,7 +1684,7 @@
       "id": 150,
       "type": "LoraLoaderModelOnly",
       "pos": [
-        -760.7638880185406,
+        -1640,
         4555.004590087017
       ],
       "size": [
@@ -1739,6 +1739,192 @@
             "directory": "loras"
           }
         ]
+      },
+      "widgets_values": [
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 153,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -1350,
+        4555.004590087017
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 25,
+      "mode": 4,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 235
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            238
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 154,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -1060,
+        4555.004590087017
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 26,
+      "mode": 4,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 238
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            239
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 155,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -770,
+        4555.004590087017
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 4,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 239
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            240
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
       },
       "widgets_values": [
         "minimax_h3_turbo_v4_step600_ema.safetensors",
@@ -1963,7 +2149,7 @@
       235,
       150,
       0,
-      151,
+      153,
       0,
       "MODEL"
     ],
@@ -1982,6 +2168,30 @@
       152,
       0,
       "IMAGE"
+    ],
+    [
+      238,
+      153,
+      0,
+      154,
+      0,
+      "MODEL"
+    ],
+    [
+      239,
+      154,
+      0,
+      155,
+      0,
+      "MODEL"
+    ],
+    [
+      240,
+      155,
+      0,
+      151,
+      0,
+      "MODEL"
     ]
   ],
   "groups": [

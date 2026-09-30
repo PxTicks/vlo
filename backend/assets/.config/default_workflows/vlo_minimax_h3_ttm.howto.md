@@ -1,8 +1,8 @@
 ## Dual-clock denoising
 
 **This workflow brings a rough animation to life.** It blends a
-coarsely animated moving object into a background image or video, and needs a
-coherent first frame to start from.
+coarsely animated moving object into a background image or video. Optional
+start and end frames anchor the first and last frames of the result.
 
 ### Step by step
 
@@ -26,7 +26,10 @@ coherent first frame to start from.
 3. **Select the whole area.** Click the main **load video** drop slot. The
    timeline selection view will ask which layer contains the moving object.
 
-4. **Generate.**
+4. **Add keyframes (highly recommended).** Drop the original image into **Start frame** and/or
+   **End frame** to pin it as the first or last frame of the result. You want a clean, coherent frame to serve as the start or end of the animation.
+
+5. **Generate.**
 
 ### Choosing the start and end steps
 

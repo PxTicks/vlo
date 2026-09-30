@@ -7,6 +7,7 @@ export type {
   LayoutGroup,
   PanelLayoutConfig,
   TransformationLayoutConfig,
+  ControlCommitOptions,
   ControlRenderProps,
   CustomControlComponent,
   CustomControlRenderProps,

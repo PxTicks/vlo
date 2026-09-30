@@ -458,7 +458,11 @@ if "%WANT_SAM_AUDIO%"=="0" (
 )
 
 echo [INFO]  Installing SAM-Audio into the backend virtual environment...
-call "%UV_BIN%" pip install --python "%VENV_PY%" --overrides "%SCRIPT_DIR%backend\overrides-sam-audio.txt" -r "%SCRIPT_DIR%backend\requirements-sam-audio.txt"
+:: uv splits an --overrides value at spaces even when it is quoted (the flag
+:: shares its parser with the space-separated UV_OVERRIDE), so an absolute path
+:: breaks in a folder like "M:\Git Repos\vlo". Pass it relative to backend\.
+cd /d "%SCRIPT_DIR%backend"
+call "%UV_BIN%" pip install --python "%VENV_PY%" --overrides overrides-sam-audio.txt -r "%SCRIPT_DIR%backend\requirements-sam-audio.txt"
 if %errorlevel% neq 0 (
     set "PROFILE_STATUS_SAM_AUDIO=failed"
     echo [WARN]  SAM-Audio installation failed. The app will report it as blocked, with the command to retry.

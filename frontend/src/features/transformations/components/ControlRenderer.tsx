@@ -6,7 +6,10 @@ import {
   FormControlLabel,
   IconButton,
 } from "@mui/material";
-import type { ControlDefinition } from "../../panelUI/types";
+import type {
+  ControlCommitOptions,
+  ControlDefinition,
+} from "../../panelUI/types";
 import { getCustomControl } from "../../panelUI/customControlRegistry";
 import { SelectControl } from "../../panelUI/components/SelectControl";
 import { LinkControl } from "../../panelUI/components/LinkControl";
@@ -26,7 +29,7 @@ import type { GraphTimeAxis } from "../utils/clipTimeDomains";
 interface NumericControlProps {
   control: ControlDefinition;
   value: unknown;
-  onCommit: (val: unknown) => void;
+  onCommit: (val: unknown, options?: ControlCommitOptions) => void;
   minTime: number;
   duration: number;
   timeAxis?: GraphTimeAxis;
@@ -155,6 +158,8 @@ function ScalarControl({
 }
 
 // --- Slider Control ---
+let sliderGestureSequence = 0;
+
 function TransformSliderControl({
   control,
   value,
@@ -220,6 +225,16 @@ function TransformSliderControl({
   const sliderRef = useRef<HTMLSpanElement>(null);
   // Guard: don't override DOM while the user is dragging the slider handle.
   const isDraggingRef = useRef(false);
+  // Every commit within one gesture shares a history key so the gesture is one
+  // undo step. A drag commits per tick until a transformId exists to preview
+  // against (first edit of a default group, or speed), then once on release.
+  const gestureKeyRef = useRef<string | null>(null);
+  const gestureCommitOptions = (end: boolean): ControlCommitOptions => {
+    gestureKeyRef.current ??= `slider:${control.name}:${++sliderGestureSequence}`;
+    const options = { historyCoalesce: { key: gestureKeyRef.current, end } };
+    if (end) gestureKeyRef.current = null;
+    return options;
+  };
 
   useLiveParamSync(transformId, control.name, localValue, (modelVal) => {
     const displayVal = control.valueTransform?.toView
@@ -256,7 +271,7 @@ function TransformSliderControl({
     setLocalValue(nextValue);
 
     if (!transformId || !canPreviewWithoutCommit) {
-      onCommit(nextValue);
+      onCommit(nextValue, gestureCommitOptions(false));
       return;
     }
 
@@ -271,7 +286,7 @@ function TransformSliderControl({
     newValue: number | number[],
   ) => {
     const nextValue = newValue as number;
-    onCommit(nextValue);
+    onCommit(nextValue, gestureCommitOptions(true));
     if (transformId && canPreviewWithoutCommit) {
       livePreviewParamStore.clear(transformId, control.name);
     }
@@ -343,8 +358,11 @@ interface ControlRendererProps {
 
   // Pre-wrapped commit handler: (value) => void
   // The ControlGroup render prop already wraps with groupId and controlName
-  onCommit: (value: unknown) => void;
-  onCommitMany?: (values: Readonly<Record<string, unknown>>) => void;
+  onCommit: (value: unknown, options?: ControlCommitOptions) => void;
+  onCommitMany?: (
+    values: Readonly<Record<string, unknown>>,
+    options?: ControlCommitOptions,
+  ) => void;
 
   // Identifiers for this specific control instance
   groupId: string;
@@ -403,8 +421,11 @@ export const ControlRenderer = memo(function ControlRenderer({
               control: parameterControl,
               value: values[parameterControl.name],
               values,
-              onCommit: (nextValue: unknown) =>
-                onCommitMany?.({ [parameterControl.name]: nextValue }),
+              onCommit: (nextValue: unknown, options?: ControlCommitOptions) => {
+                const values = { [parameterControl.name]: nextValue };
+                if (options) onCommitMany?.(values, options);
+                else onCommitMany?.(values);
+              },
               onCommitMany,
               groupId,
               transformId,

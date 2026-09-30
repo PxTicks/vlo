@@ -11,6 +11,7 @@ import {
   setTimelineClipTransformsAndShape,
   updateTimelineClipMask,
   useMaskClipsForParent,
+  type TimelineHistoryOptions,
   useSelectedTimelineClipIds,
   useTimelineClip,
   getTimelinePresentationContext,
@@ -224,7 +225,7 @@ export function useTransformationController(
   );
 
   const applyTargetTransforms = useCallback(
-    (nextTransforms: ClipTransform[]) => {
+    (nextTransforms: ClipTransform[], options?: TimelineHistoryOptions) => {
       const currentTarget = activeTargetRef.current;
       if (!currentTarget) return;
 
@@ -257,11 +258,12 @@ export function useTransformationController(
             currentTarget.clipId,
             nextTransforms,
             shapeUpdate,
+            options,
           );
           return;
         }
 
-        setTimelineClipTransforms(currentTarget.clipId, nextTransforms);
+        setTimelineClipTransforms(currentTarget.clipId, nextTransforms, options);
         return;
       }
 
@@ -269,15 +271,19 @@ export function useTransformationController(
         setTimelineClipMaskCompositeTransforms(
           currentTarget.clipId,
           nextTransforms,
+          options,
         );
         return;
       }
 
       if (!currentTarget.maskId) return;
       // For mask targets, set the mask-local transforms via updateClipMask
-      updateTimelineClipMask(currentTarget.clipId, currentTarget.maskId, {
-        transformations: nextTransforms,
-      });
+      updateTimelineClipMask(
+        currentTarget.clipId,
+        currentTarget.maskId,
+        { transformations: nextTransforms },
+        options,
+      );
     },
     [
       getChangedClipShapeUpdate,
@@ -361,11 +367,12 @@ export function useTransformationController(
     (
       transformId: string,
       updates: Partial<Omit<ClipTransform, "id" | "type">>,
+      options?: TimelineHistoryOptions,
     ) => {
       const nextTransforms = activeTransformsRef.current.map((transform) =>
         transform.id === transformId ? { ...transform, ...updates } : transform,
       );
-      applyTargetTransforms(nextTransforms);
+      applyTargetTransforms(nextTransforms, options);
     },
     [applyTargetTransforms],
   );
@@ -568,6 +575,7 @@ export function useTransformationController(
       controlName: string,
       value: unknown,
       transformId?: string,
+      options?: TimelineHistoryOptions,
     ) => {
       const currentTarget = activeTargetRef.current;
       if (!currentTarget) return;
@@ -599,12 +607,16 @@ export function useTransformationController(
       });
 
       if (commit.mode === "update") {
-        updateTargetTransform(commit.existingTransform.id, {
-          parameters: commit.parameters,
-          ...(commit.keyframeTimes !== undefined
-            ? { keyframeTimes: commit.keyframeTimes }
-            : {}),
-        });
+        updateTargetTransform(
+          commit.existingTransform.id,
+          {
+            parameters: commit.parameters,
+            ...(commit.keyframeTimes !== undefined
+              ? { keyframeTimes: commit.keyframeTimes }
+              : {}),
+          },
+          options,
+        );
       } else {
         const nextTransforms = isDefaultTransform(commit.createdTransform.type)
           ? insertTransformRespectingDefaultOrder(
@@ -612,7 +624,7 @@ export function useTransformationController(
               commit.createdTransform,
             )
           : [...currentTransforms, commit.createdTransform];
-        applyTargetTransforms(nextTransforms);
+        applyTargetTransforms(nextTransforms, options);
       }
     },
     [applyTargetTransforms, updateTargetTransform],
@@ -623,6 +635,7 @@ export function useTransformationController(
       groupId: string,
       values: Readonly<Record<string, unknown>>,
       transformId?: string,
+      options?: TimelineHistoryOptions,
     ) => {
       const currentTarget = activeTargetRef.current;
       if (!currentTarget || Object.keys(values).length === 0) return;
@@ -645,6 +658,7 @@ export function useTransformationController(
           pointEpsilonTicks: POINT_EPSILON_TICKS,
           keyframeSourceTimeTicks,
         }),
+        options,
       );
     },
     [applyTargetTransforms],

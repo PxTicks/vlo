@@ -33,7 +33,11 @@ import { useProjectStore } from "../useProjectStore";
 import type { AspectRatio } from "../useProjectStore";
 import { isPresetAspectRatio } from "../aspectRatioOptions";
 import { DEFAULT_PROJECT_OUTPUT_RESOLUTION } from "../outputResolutionOptions";
-import { isNonChromiumBrowser } from "../utils/browser";
+import {
+  describeFileSystemAccessIssue,
+  getFileSystemAccessIssue,
+  isNonChromiumBrowser,
+} from "../utils/browser";
 import { CustomAspectRatioDialog } from "./CustomAspectRatioDialog";
 
 const BRAND_PRIMARY = "#73CEBD";
@@ -88,9 +92,16 @@ export function ProjectManager() {
     useState<AspectRatio>("16:9");
   const [customAspectRatioOpen, setCustomAspectRatioOpen] = useState(false);
   const directorySelectedThisSession = useRef(false);
-  // UA capability check is stable for the component lifetime; compute it
-  // lazily once instead of via a post-mount effect.
-  const [isNonChromium] = useState<boolean>(() => isNonChromiumBrowser());
+  // Browser capability checks are stable for the component lifetime; compute
+  // them lazily once instead of via a post-mount effect. A missing folder
+  // picker is the more specific (and actionable) problem, so it wins.
+  const [browserWarning] = useState<string | null>(() => {
+    const issue = getFileSystemAccessIssue();
+    if (issue) return describeFileSystemAccessIssue(issue);
+    return isNonChromiumBrowser()
+      ? "vlo requires Chromium-based browsers (Chrome, Edge, Brave, Opera) for Local File System Access API support."
+      : null;
+  });
 
   const loadProject = useProjectStore((state) => state.loadProject);
   const createProject = useProjectStore((state) => state.createProject);
@@ -150,8 +161,10 @@ export function ProjectManager() {
         console.warn("Failed to persist the new-project directory", error);
       }
     } catch (e: unknown) {
-      if ((e as Error).name !== "AbortError") {
-        console.error(e);
+      const err = e as Error;
+      if (err.name !== "AbortError") {
+        console.error(err);
+        alert("Failed to select project directory: " + err.message);
       }
     }
   }, []);
@@ -368,10 +381,9 @@ export function ProjectManager() {
               maxWidth: 520,
             }}
           >
-            {isNonChromium && (
+            {browserWarning && (
               <Alert severity="warning" sx={{ mb: 1, borderRadius: 3 }}>
-                vlo requires Chromium-based browsers (Chrome, Edge, Brave,
-                Opera) for Local File System Access API support.
+                {browserWarning}
               </Alert>
             )}
 

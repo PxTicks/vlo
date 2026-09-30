@@ -7,7 +7,7 @@ import type {
   ClipTransform,
   TimelineClip,
 } from "../../../types/TimelineTypes";
-import type { LayoutGroup } from "../../panelUI/types";
+import type { ControlCommitOptions, LayoutGroup } from "../../panelUI/types";
 
 /**
  * Effect masking applies to clip-local filter transforms only (v1): speed,
@@ -39,11 +39,13 @@ interface SortableTransformationItemProps {
     controlName: string,
     val: unknown,
     transformId?: string,
+    options?: ControlCommitOptions,
   ) => void;
   onCommitMany?: (
     groupId: string,
     values: Readonly<Record<string, unknown>>,
     transformId?: string,
+    options?: ControlCommitOptions,
   ) => void;
   minTime?: number;
   duration?: number;

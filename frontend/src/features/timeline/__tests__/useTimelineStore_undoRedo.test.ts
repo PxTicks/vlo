@@ -426,6 +426,76 @@ describe("useTimelineStore undo/redo", () => {
     expect(useTimelineStore.getState().redoLabel).toBe(redoLabel);
   });
 
+  it("folds coalesced mask and composite transform commits into one undo step", () => {
+    const clip = createClip("masked", "track_current", 0, 120);
+    const mask: ClipMask = {
+      id: "mask-edge",
+      isEnabled: true,
+      type: "rectangle",
+      mode: "apply",
+      inverted: false,
+      parameters: { baseWidth: 1, baseHeight: 1 },
+      transformations: [],
+    };
+    const grow = (amount: number): ClipTransform => ({
+      id: "grow",
+      type: "mask_grow",
+      isEnabled: true,
+      parameters: { amount },
+    });
+
+    act(() => {
+      useTimelineStore.getState().addClip(clip);
+      useTimelineStore.getState().addClipMask(clip.id, mask);
+    });
+    const { tracks, clips } = useTimelineStore.getState();
+    act(() => {
+      useTimelineStore.getState().replaceTimelineSnapshot({ tracks, clips });
+    });
+    const before = JSON.stringify(useTimelineStore.getState().clips);
+
+    // A drag: first tick materializes the transform, later ticks and the
+    // release update it — all under one gesture key.
+    act(() => {
+      const state = useTimelineStore.getState();
+      [3, 40, 83].forEach((amount, index, amounts) => {
+        const historyCoalesce = {
+          key: "composite-drag",
+          end: index === amounts.length - 1,
+        };
+        state.setClipMaskCompositeTransforms(clip.id, [grow(amount)], {
+          historyCoalesce,
+        });
+      });
+      // Edge transforms live on the composite; masks keep their own layout.
+      [5, 50].forEach((x, index, xs) => {
+        useTimelineStore.getState().updateClipMask(
+          clip.id,
+          mask.id,
+          {
+            transformations: [
+              { id: "layout", type: "layout", isEnabled: true, parameters: { x } },
+            ],
+          },
+          {
+            historyCoalesce: {
+              key: "mask-drag",
+              end: index === xs.length - 1,
+            },
+          },
+        );
+      });
+    });
+    expect(JSON.stringify(useTimelineStore.getState().clips)).not.toBe(before);
+
+    act(() => {
+      expect(useTimelineStore.getState().undo()).toBe(true);
+      expect(useTimelineStore.getState().undo()).toBe(true);
+    });
+    expect(JSON.stringify(useTimelineStore.getState().clips)).toBe(before);
+    expect(useTimelineStore.getState().canUndo).toBe(false);
+  });
+
   it("hot-swaps a clip asset and records the change in undo history", () => {
     const baseClip = createClip("clip-family", "track_current", 0, 120);
     const clip: TimelineClip = {

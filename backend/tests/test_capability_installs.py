@@ -128,15 +128,39 @@ def test_a_profile_override_file_rides_along_with_the_requirements(
 
     assert plan is not None
     assert plan.argv[5] == "--overrides"
-    assert (
-        Path(plan.argv[6]) == PROJECT_ROOT / "backend" / "overrides-sam-audio.txt"
-    )
+    assert plan.argv[6] == "backend/overrides-sam-audio.txt"
     assert plan.argv[-2] == "-r"
     assert (
         Path(plan.argv[-1])
         == PROJECT_ROOT / "backend" / "requirements-sam-audio.txt"
     )
     # The file has to exist, or the install stops before the installer runs.
+    validate_plan(plan)
+
+
+def test_the_override_file_survives_a_project_path_with_spaces(
+    with_uv: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # uv splits an --overrides value at spaces even as one argv entry, so an
+    # absolute path under "M:\Git Repos\vlo" failed with "File not found:
+    # `M:\Git`" (issue #10). The value stays relative to the installer's cwd.
+    project = tmp_path / "Git Repos" / "vlo"
+    (project / "backend").mkdir(parents=True)
+    for name in ("overrides-sam-audio.txt", "requirements-sam-audio.txt"):
+        (project / "backend" / name).write_text(
+            (PROJECT_ROOT / "backend" / name).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(installs, "PROJECT_ROOT", project)
+
+    plan = install_plan_for_capability("sam-audio")
+
+    assert plan is not None
+    overrides = plan.argv[plan.argv.index("--overrides") + 1]
+    assert " " not in overrides
+    assert (project / overrides).is_file()
     validate_plan(plan)
 
 

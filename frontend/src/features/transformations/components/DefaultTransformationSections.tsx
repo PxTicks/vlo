@@ -4,6 +4,7 @@ import type {
   ClipTransform,
   TimelineClip,
 } from "../../../types/TimelineTypes";
+import type { ControlCommitOptions } from "../../panelUI/types";
 import type { TransformationDefinition } from "../catalogue/types";
 import { getTransformLayerDomain } from "../utils/layerDomain";
 import { getSectionGroupKeyframeColor } from "../utils/sectionKeyframes";
@@ -23,6 +24,7 @@ interface DefaultTransformationSectionsProps {
     controlName: string,
     value: unknown,
     transformId?: string,
+    options?: ControlCommitOptions,
   ) => void;
   onSetDefaultGroupsEnabled: (groupIds: string[], enabled: boolean) => void;
   /** Drop the stored transforms for these groups, returning them to defaults. */

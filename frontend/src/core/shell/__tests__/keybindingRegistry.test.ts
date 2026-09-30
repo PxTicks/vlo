@@ -90,6 +90,55 @@ describe("HostKeybindingRegistry", () => {
     input.remove();
   });
 
+  it("dispatches modifier chords from non-text inputs but leaves their own keys alone", () => {
+    const registry = new HostKeybindingRegistry(() => false);
+    registry.registerHostDefault({
+      id: "host.undo",
+      chord: "Mod+Z",
+      commandId: "app.undo",
+    });
+    registry.registerHostDefault({
+      id: "host.step",
+      chord: "ArrowUp",
+      commandId: "app.step",
+    });
+    registry.registerHostDefault({
+      id: "host.shift-step",
+      chord: "Shift+ArrowUp",
+      commandId: "app.shift-step",
+    });
+    const execute = vi.fn(() => true);
+    const dispatchFrom = (
+      target: HTMLElement,
+      init: KeyboardEventInit & { key: string },
+    ) => {
+      const event = keyEvent(init);
+      Object.defineProperty(event, "target", { value: target });
+      return registry.dispatch(event, null, execute);
+    };
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    expect(dispatchFrom(slider, { key: "z", ctrlKey: true })).toBe(true);
+    expect(execute).toHaveBeenLastCalledWith("app.undo");
+    expect(dispatchFrom(slider, { key: "ArrowUp" })).toBe(false);
+    expect(dispatchFrom(slider, { key: "ArrowUp", shiftKey: true })).toBe(false);
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    expect(dispatchFrom(checkbox, { key: "z", ctrlKey: true })).toBe(true);
+
+    // Text entry keeps its native undo.
+    const text = document.createElement("input");
+    const numeric = document.createElement("input");
+    numeric.type = "number";
+    const textarea = document.createElement("textarea");
+    expect(dispatchFrom(text, { key: "z", ctrlKey: true })).toBe(false);
+    expect(dispatchFrom(numeric, { key: "z", ctrlKey: true })).toBe(false);
+    expect(dispatchFrom(textarea, { key: "z", ctrlKey: true })).toBe(false);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
   it("skips bindings whose command refuses execution", () => {
     const registry = new HostKeybindingRegistry(() => false);
     registry.registerHostDefault({

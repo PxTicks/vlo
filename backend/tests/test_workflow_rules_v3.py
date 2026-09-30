@@ -698,6 +698,53 @@ def test_schema_rejects_oversize_extension_section_config():
         )
 
 
+def test_schema_accepts_lora_stacks():
+    rules_model, warnings = normalize_rules_model(
+        {
+            "version": 3,
+            "lora_stacks": [
+                {
+                    "id": "model",
+                    "nodes": ["150", " 153 ", "12:5"],
+                    "section_id": "lora_loaders",
+                    "group_title": "LoRA",
+                    "group_order": 2,
+                }
+            ],
+        }
+    )
+
+    assert warnings == []
+    [stack] = rules_model.lora_stacks
+    assert stack.nodes == ["150", "153", "12:5"]
+    assert dump_resolved_rules(rules_model)["lora_stacks"][0]["group_order"] == 2
+
+
+@pytest.mark.parametrize(
+    ("lora_stacks", "message"),
+    [
+        ([{"id": " ", "nodes": ["1"]}], "LoRA stack id must be non-empty"),
+        ([{"id": "a", "nodes": []}], "at least 1 item"),
+        ([{"id": "a", "nodes": ["1", ""]}], "lists an empty node id"),
+        ([{"id": "a", "nodes": ["1", " 1"]}], "lists a node more than once"),
+        (
+            [{"id": "a", "nodes": ["1"]}, {"id": "a", "nodes": ["2"]}],
+            "LoRA stack ids must be unique",
+        ),
+        (
+            [{"id": "a", "nodes": ["1"]}, {"id": "b", "nodes": ["1"]}],
+            "node '1' belongs to LoRA stacks 'a' and 'b'",
+        ),
+        ([{"id": "a", "nodes": ["1"], "order": 1}], "Extra inputs are not permitted"),
+    ],
+)
+def test_schema_rejects_invalid_lora_stacks(lora_stacks, message):
+    with pytest.raises(ValidationError, match=message):
+        ResolvedWorkflowRules.model_validate(
+            {"version": 3, "lora_stacks": lora_stacks}
+        )
+
+
 def test_schema_rejects_legacy_fields():
     rules_model, warnings = normalize_rules_model(
         {

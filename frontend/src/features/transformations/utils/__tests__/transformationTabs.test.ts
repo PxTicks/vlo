@@ -19,7 +19,7 @@ describe("transformationTabs", () => {
       )
       .map((definition) => definition.type);
 
-    expect(displayTypes).toEqual(["layout", "fitMode", "opacity", "blendMode"]);
+    expect(displayTypes).toEqual(["layout", "fitMode", "blendMode"]);
   });
 
   it("places speed in its own tab", () => {

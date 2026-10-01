@@ -49,11 +49,7 @@ import {
 } from "../timeline/api";
 import { useInteractionStore } from "../timeline/hooks/useInteractionStore";
 import { useProjectStore } from "../project/useProjectStore";
-import {
-  LibraryBrowserGrid,
-  type LibraryBrowserGridApi,
-  type LibraryBrowserMarqueeHandlers,
-} from "../libraryBrowser";
+import { LibraryBrowserGrid, type LibraryBrowserGridApi } from "../libraryBrowser";
 import {
   useRegionFocus,
   useEditorFocusStore,
@@ -70,7 +66,7 @@ import { useAssetBrowserRevealStore } from "./useAssetBrowserRevealStore";
 import { useAssetBrowserSelectionStore } from "./useAssetBrowserSelectionStore";
 import {
   deleteAssetBatchWithConfirmation,
-  deleteSelectedAssetsWithConfirmation,
+  deleteAssetWithConfirmation,
 } from "./utils/deleteAssetWithConfirmation";
 import { isAssetVisibleInBrowser } from "./utils/assetVisibility";
 import { getAssetsForFamilyId, getFamilyMembers } from "./utils/familyMembers";
@@ -724,22 +720,35 @@ function AssetBrowserComponent({
       event.stopPropagation();
       isDeletingSelectedAssetsRef.current = true;
 
-      const existingAssetIds = new Set(assets.map((asset) => asset.id));
-      const assetIdsToDelete = selectedAssetIds.filter((assetId) =>
-        existingAssetIds.has(assetId),
-      );
+      const assetIdsToDelete = [...selectedAssetIds];
 
       void (async () => {
-        try {
-          const wasDeleted = await deleteSelectedAssetsWithConfirmation({
-            assetIds: assetIdsToDelete,
-            deleteAsset,
-            getTimelineClipCount: getTimelineClipCountForAsset,
-          });
+        let remainingAssetIds: string[] = [];
 
-          // A cancelled prompt keeps the selection so the user can adjust it.
-          if (wasDeleted) {
-            setSelectedAssetIds([]);
+        try {
+          for (let index = 0; index < assetIdsToDelete.length; index += 1) {
+            const assetId = assetIdsToDelete[index];
+            const assetStillExists = assets.some((asset) => asset.id === assetId);
+
+            if (!assetStillExists) {
+              continue;
+            }
+
+            const wasDeleted = await deleteAssetWithConfirmation({
+              assetId,
+              deleteAsset,
+              timelineClipCount: getTimelineClipCountForAsset(assetId),
+            });
+
+            if (!wasDeleted) {
+              remainingAssetIds = assetIdsToDelete.slice(index);
+              break;
+            }
+          }
+
+          setSelectedAssetIds(remainingAssetIds);
+
+          if (remainingAssetIds.length === 0) {
             selectTimelineClip(null);
           }
         } finally {
@@ -822,34 +831,6 @@ function AssetBrowserComponent({
       selectAsset(assetId);
     },
     [selectAsset, selectedAssetIds, setSelectedAssetIds],
-  );
-
-  // A modifier-held marquee extends the selection it started from; a plain one
-  // replaces it.
-  const marqueeBaseSelectionRef = useRef<readonly string[]>([]);
-  const assetMarquee = useMemo<LibraryBrowserMarqueeHandlers>(
-    () => ({
-      onStart: ({ additive }) => {
-        marqueeBaseSelectionRef.current = additive
-          ? useAssetBrowserSelectionStore.getState().selectedAssetIds
-          : [];
-      },
-      onChange: (assetIds) => {
-        const baseAssetIds = marqueeBaseSelectionRef.current;
-        const baseAssetIdSet = new Set(baseAssetIds);
-        const nextSelectedAssetIds = [
-          ...baseAssetIds,
-          ...assetIds.filter((assetId) => !baseAssetIdSet.has(assetId)),
-        ];
-
-        setSelectedAssetIds(nextSelectedAssetIds);
-
-        if (nextSelectedAssetIds.length === 0) {
-          selectTimelineClip(null);
-        }
-      },
-    }),
-    [setSelectedAssetIds],
   );
 
   const previewIndex = React.useMemo(
@@ -1238,7 +1219,6 @@ function AssetBrowserComponent({
         testId="asset-browser-scroll-region"
         isScrollLocked={isAssetDragActive}
         onBackgroundClick={handleBrowserBackgroundClick}
-        marquee={assetMarquee}
         renderItem={(asset) => (
           <AssetCard
             asset={asset}

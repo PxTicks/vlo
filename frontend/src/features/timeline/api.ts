@@ -52,10 +52,7 @@ import {
   selectTimelineClipsForTrack,
   selectTimelineDuration,
 } from "./selectors/timelineSelectors";
-import {
-  useTimelineStore,
-  type TimelineHistoryOptions,
-} from "./useTimelineStore";
+import { useTimelineStore } from "./useTimelineStore";
 import { useTimelineViewStore } from "./hooks/useTimelineViewStore";
 import { useProjectStore } from "../project/useProjectStore";
 import type { ExtensionTimelineCommand } from "./model/extensionTimelineCommands";
@@ -1005,7 +1002,7 @@ export function updateTimelineClipTransform(
 export function setTimelineClipTransforms(
   clipId: string,
   transforms: ClipTransform[],
-  options?: TimelineHistoryOptions,
+  options?: Parameters<TimelineStoreState["setClipTransforms"]>[2],
 ): void {
   if (options === undefined) {
     useTimelineStore.getState().setClipTransforms(clipId, transforms);
@@ -1018,33 +1015,19 @@ export function setTimelineClipTransformsAndShape(
   clipId: string,
   transforms: ClipTransform[],
   shape: TimelineClipShape,
-  options?: TimelineHistoryOptions,
 ): void {
-  if (options === undefined) {
-    useTimelineStore
-      .getState()
-      .setClipTransformsAndShape(clipId, transforms, shape);
-    return;
-  }
   useTimelineStore
     .getState()
-    .setClipTransformsAndShape(clipId, transforms, shape, options);
+    .setClipTransformsAndShape(clipId, transforms, shape);
 }
 
 export function setTimelineClipMaskCompositeTransforms(
   clipId: string,
   transforms: ClipTransform[],
-  options?: TimelineHistoryOptions,
 ): void {
-  if (options === undefined) {
-    useTimelineStore
-      .getState()
-      .setClipMaskCompositeTransforms(clipId, transforms);
-    return;
-  }
   useTimelineStore
     .getState()
-    .setClipMaskCompositeTransforms(clipId, transforms, options);
+    .setClipMaskCompositeTransforms(clipId, transforms);
 }
 
 export function removeTimelineClipTransform(
@@ -1127,13 +1110,8 @@ export function updateTimelineClipMask(
   clipId: string,
   maskId: string,
   updates: TimelineMaskUpdate,
-  options?: TimelineHistoryOptions,
 ): void {
-  if (options === undefined) {
-    useTimelineStore.getState().updateClipMask(clipId, maskId, updates);
-    return;
-  }
-  useTimelineStore.getState().updateClipMask(clipId, maskId, updates, options);
+  useTimelineStore.getState().updateClipMask(clipId, maskId, updates);
 }
 
 export function removeTimelineClipMask(
@@ -1206,7 +1184,6 @@ export async function flushPendingTimelinePersistence(): Promise<void> {
 export type {
   AddTimelineClipsOnNewTracksEntry,
   ExtensionTimelineCommand,
-  TimelineHistoryOptions,
   TimelineStoreState,
   UpdateTimelineClipComponentFn,
   UpdateTimelineClipTransformPayload,

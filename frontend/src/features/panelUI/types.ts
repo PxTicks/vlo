@@ -81,24 +81,12 @@ export type TransformationLayoutConfig = PanelLayoutConfig;
 
 // === Render prop interface ===
 
-export interface ControlCommitOptions {
-  /**
-   * Fold this commit into one undo entry with earlier commits sharing `key`,
-   * closing the entry when `end` is true. A drag that commits more than once
-   * (e.g. the first tick materializes a default transform) stays one undo step.
-   */
-  historyCoalesce?: { key: string; end: boolean };
-}
-
 export interface ControlRenderProps {
   control: ControlDefinition;
   value: unknown;
   values: Readonly<Record<string, unknown>>;
-  onCommit: (value: unknown, options?: ControlCommitOptions) => void;
-  onCommitMany: (
-    values: Readonly<Record<string, unknown>>,
-    options?: ControlCommitOptions,
-  ) => void;
+  onCommit: (value: unknown) => void;
+  onCommitMany: (values: Readonly<Record<string, unknown>>) => void;
   groupId: string;
   transformId?: string;
   disabled?: boolean;

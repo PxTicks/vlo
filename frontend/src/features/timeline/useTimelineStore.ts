@@ -93,7 +93,10 @@ import {
   selectMaskClipsForParent,
   selectResolvedMaskBooleanExpressionForParent,
 } from "./selectors/timelineSelectors";
-import { createTimelineMutationPipeline } from "./store/timelineMutationPipeline";
+import {
+  createTimelineMutationPipeline,
+  type TimelineHistoryDiagnostics,
+} from "./store/timelineMutationPipeline";
 import {
   applyExtensionTimelineCommands,
   ExtensionTimelineCommandError,
@@ -132,19 +135,6 @@ export {
   selectMaskClipsForParent,
   selectResolvedMaskBooleanExpressionForParent,
 };
-
-/**
- * Folds a run of commits into one undo entry: commits sharing `key` merge
- * until one arrives with `end: true` (or an unrelated commit intervenes).
- */
-export interface TimelineHistoryCoalesce {
-  key: string;
-  end: boolean;
-}
-
-export interface TimelineHistoryOptions {
-  historyCoalesce?: TimelineHistoryCoalesce;
-}
 
 interface TimelineState extends TimelineModelState {
   selectedClipIds: string[];
@@ -258,18 +248,21 @@ interface TimelineState extends TimelineModelState {
   setClipTransforms: (
     clipId: string,
     transforms: ClipTransform[],
-    options?: TimelineHistoryOptions,
+    options?: {
+      historyCoalesce?: {
+        key: string;
+        end: boolean;
+      };
+    },
   ) => void;
   setClipTransformsAndShape: (
     clipId: string,
     transforms: ClipTransform[],
     shape: TimelineClipShape,
-    options?: TimelineHistoryOptions,
   ) => void;
   setClipMaskCompositeTransforms: (
     clipId: string,
     transforms: ClipTransform[],
-    options?: TimelineHistoryOptions,
   ) => void;
   setClipMaskCompositionAlgebra: (
     clipId: string,
@@ -290,7 +283,6 @@ interface TimelineState extends TimelineModelState {
     clipId: string,
     maskId: string,
     updates: TimelineMaskUpdate,
-    options?: TimelineHistoryOptions,
   ) => void;
 
   removeClipMask: (clipId: string, maskId: string) => void;
@@ -333,6 +325,8 @@ interface TimelineState extends TimelineModelState {
   flushPendingPersistence: () => Promise<void>;
 
   getClipsAtTime: (timeTicks: number) => TimelineClip[];
+  /** Undo-history sizes for the performance lane; serializes every patch. */
+  getHistoryDiagnostics: () => TimelineHistoryDiagnostics;
 }
 
 export const useTimelineStore = create<TimelineState>((set, get) => {
@@ -923,26 +917,16 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       );
     },
 
-    setClipTransformsAndShape: (clipId, transforms, shape, options) => {
-      mutationPipeline.commitModelMutation(
-        (draft) => {
-          setClipTransformsAndShapeInDraft(draft, clipId, transforms, shape);
-        },
-        {
-          coalesce: options?.historyCoalesce,
-        },
-      );
+    setClipTransformsAndShape: (clipId, transforms, shape) => {
+      mutationPipeline.commitModelMutation((draft) => {
+        setClipTransformsAndShapeInDraft(draft, clipId, transforms, shape);
+      });
     },
 
-    setClipMaskCompositeTransforms: (clipId, transforms, options) => {
-      mutationPipeline.commitModelMutation(
-        (draft) => {
-          setClipMaskCompositeTransformsInDraft(draft, clipId, transforms);
-        },
-        {
-          coalesce: options?.historyCoalesce,
-        },
-      );
+    setClipMaskCompositeTransforms: (clipId, transforms) => {
+      mutationPipeline.commitModelMutation((draft) => {
+        setClipMaskCompositeTransformsInDraft(draft, clipId, transforms);
+      });
     },
 
     setClipMaskCompositionAlgebra: (clipId, algebra) => {
@@ -985,15 +969,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return didCommit ? duplicatedMaskId : null;
     },
 
-    updateClipMask: (clipId, maskId, updates, options) => {
-      mutationPipeline.commitModelMutation(
-        (draft) => {
-          updateClipMaskInDraft(draft, clipId, maskId, updates);
-        },
-        {
-          coalesce: options?.historyCoalesce,
-        },
-      );
+    updateClipMask: (clipId, maskId, updates) => {
+      mutationPipeline.commitModelMutation((draft) => {
+        updateClipMaskInDraft(draft, clipId, maskId, updates);
+      });
     },
 
     removeClipMask: (clipId, maskId) => {
@@ -1104,6 +1083,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     flushPendingPersistence: mutationPipeline.flushPendingPersistence,
 
     getClipsAtTime: (timeTicks) => getTimelineClipsAtTime(get().clips, timeTicks),
+    getHistoryDiagnostics: mutationPipeline.getHistoryDiagnostics,
   };
 });
 

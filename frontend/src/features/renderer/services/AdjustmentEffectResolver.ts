@@ -23,7 +23,6 @@ export class AdjustmentEffectResolver {
   private clips: readonly TimelineClip[] = [];
   private fps = 30;
   private presentationLookup: TimelineClipPresentationLookup | null = null;
-  private readonly sourceListeners = new Set<() => void>();
 
   setAdjustmentSource(
     tracks: readonly TimelineTrack[],
@@ -34,19 +33,6 @@ export class AdjustmentEffectResolver {
     this.clips = clips;
     this.fps = fps;
     this.presentationLookup = null;
-    for (const listener of this.sourceListeners) listener();
-  }
-
-  /**
-   * Notified after each `setAdjustmentSource`. The source is pushed from a
-   * parent effect, so child effects reacting to the same edit run first and
-   * read the stale lookup; paused consumers re-read here instead.
-   */
-  subscribeToSource(listener: () => void): () => void {
-    this.sourceListeners.add(listener);
-    return () => {
-      this.sourceListeners.delete(listener);
-    };
   }
 
   deriveGroups(currentTick: number): DerivedRenderGroup[] {

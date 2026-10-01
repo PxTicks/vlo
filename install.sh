@@ -619,15 +619,12 @@ install_profile_requirements() {
     # An overrides file *replaces* a dependency's declared constraint instead of
     # intersecting with it, which is the only way to install a profile whose
     # transitive pin is stale (SAM-Audio: dacvae caps protobuf below 3.20).
-    # uv splits an --overrides value at spaces even when it is quoted (the flag
-    # shares its parser with the space-separated UV_OVERRIDE), so it is passed
-    # relative to the repository root, where the subshell below runs uv.
     if [ -n "$overrides" ]; then
-        override_args=(--overrides "$overrides")
+        override_args=(--overrides "$SCRIPT_DIR/$overrides")
     fi
 
     info "Installing ${label} into the backend virtual environment..."
-    if (cd "$SCRIPT_DIR" && "$UV_BIN" pip install --python "$VENV_PY" "${override_args[@]}" -r "$SCRIPT_DIR/$requirements"); then
+    if "$UV_BIN" pip install --python "$VENV_PY" "${override_args[@]}" -r "$SCRIPT_DIR/$requirements"; then
         record_profile_status "$profile" installed
         info "${label} installed."
         return 0

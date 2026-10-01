@@ -9,7 +9,7 @@ import {
 import {
   resolveClipRenderTime,
 } from "../utils/clipRenderTime";
-import { findActiveClipAtPresentation } from "../utils/clipLookup";
+import { resolveLiveActiveClip } from "../utils/clipLookup";
 import type { ScalarParameter } from "../../transformations";
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 import type { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
@@ -243,12 +243,38 @@ export class TrackAudioRenderer {
       );
     }
 
-    return findActiveClipAtPresentation(
-      this.adjustmentEffectResolver,
-      this.trackId,
-      trackClips,
-      presentationTick,
-    );
+    if (this.adjustmentEffectResolver && this.trackId) {
+      // Lookup owns identity + timing; re-bind to the live clip by id so volume
+      // /timing edits aren't served from the stale cache. See clipLookup.
+      const resolved = resolveLiveActiveClip(
+        this.adjustmentEffectResolver,
+        this.trackId,
+        trackClips,
+        presentationTick,
+      );
+      if (resolved) {
+        return { clip: resolved.clip, effectiveTick: resolved.effectiveTick };
+      }
+    }
+
+    // No resolver, or an audio-only composite that expanded into synthetic lane
+    // clips not present in the adjustment lookup. They already carry parent
+    // timing, so scan the supplied lane directly as a fallback.
+    //
+    // Only for those clips. A clip the lookup has placed was just reported
+    // inactive here, and its raw placement is not where it plays: after a
+    // ripple retime shortens the timeline, raw placement outlasts the
+    // presented footprint, and treating the clip as active there asks its
+    // source for time past its end.
+    const lookup = this.adjustmentEffectResolver?.getPresentationLookup();
+    for (const candidate of trackClips) {
+      if (lookup?.getPresentation(candidate.id)) continue;
+      const clipEnd = candidate.start + candidate.timelineDuration;
+      if (candidate.start <= presentationTick && presentationTick < clipEnd) {
+        return { clip: candidate, effectiveTick: presentationTick };
+      }
+    }
+    return null;
   }
 
   private getSourceTicksAtPresentationTick(

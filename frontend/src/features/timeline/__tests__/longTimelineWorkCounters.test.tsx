@@ -135,6 +135,33 @@ describe("long timeline work counters", () => {
     expect(container.querySelector(`[data-clip-id="${laterClip.id}"]`)).not.toBeNull();
   });
 
+  it("places an off-screen selected follower at the drag offset when it mounts", () => {
+    renderTimeline();
+    const laterClip = middleVideoClip();
+    const firstClip = nonMaskClips().find(
+      (clip): clip is VideoTimelineClip => clip.type === "video",
+    )!;
+    const container = screen.getByTestId("timeline-scroll-container");
+    act(() => useTimelineStore.setState({
+      selectedClipIds: [firstClip.id, laterClip.id],
+    }));
+    expect(container.querySelector(`[data-clip-id="${laterClip.id}"]`)).toBeNull();
+
+    // The follower mounts in the same render that sees the delta, so its
+    // mount-time sync must place it rather than a later delta update.
+    act(() => {
+      useInteractionStore.getState().startDrag(firstClip.id, firstClip, "move");
+      useInteractionStore.getState().updateDelta(120, 0);
+    });
+    const follower = container.querySelector<HTMLElement>(
+      `[data-clip-id="${laterClip.id}"]`,
+    );
+    expect(follower?.style.transform).toBe("translate3d(120px, 0px, 0)");
+
+    act(() => useInteractionStore.getState().updateDelta(200, 0));
+    expect(follower?.style.transform).toBe("translate3d(200px, 0px, 0)");
+  });
+
   it("mounts only transitions overlapping the visible window", () => {
     renderTimeline();
     const mountedTransitions = document.querySelectorAll(

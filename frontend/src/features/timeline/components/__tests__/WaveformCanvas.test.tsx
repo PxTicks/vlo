@@ -10,7 +10,7 @@ import {
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { ThumbnailCanvas } from "../ThumbnailCanvas";
 import { useTimelineViewStore } from "../../hooks/useTimelineViewStore";
-import type { TimelineViewState } from "../../hooks/useTimelineViewStore";
+import { createMockTimelineView, type MockTimelineView } from "./mockTimelineView";
 import { AudioAnalysisService, useAsset } from "../../../userAssets";
 import type { Input, InputAudioTrack, WrappedAudioBuffer } from "mediabunny";
 import { TICKS_PER_SECOND } from "../../constants";
@@ -90,11 +90,7 @@ describe("WaveformCanvas", () => {
     fillRect: Mock;
     fillStyle: string;
   };
-  let mockScrollContainer: Partial<HTMLElement> & {
-    addEventListener: Mock;
-    removeEventListener: Mock;
-  };
-  let scrollListener: EventListener | null = null;
+  let view: MockTimelineView;
   let audioAnalysis: AudioAnalysisService;
 
   beforeEach(async () => {
@@ -127,32 +123,8 @@ describe("WaveformCanvas", () => {
       mockContext as unknown as ReturnType<HTMLCanvasElement["getContext"]>,
     );
 
-    mockScrollContainer = {
-      scrollLeft: 0,
-      clientWidth: 1000,
-      addEventListener: vi.fn((event, handler) => {
-        if (event === "scroll") {
-          scrollListener = handler as EventListener;
-        }
-      }),
-      removeEventListener: vi.fn(),
-    };
-
-    vi.mocked(useTimelineViewStore).mockImplementation(
-      (selector: (state: TimelineViewState) => unknown) => {
-        const state = {
-          scrollContainer: mockScrollContainer as unknown as HTMLElement,
-          zoomScale: 1,
-          setZoomScale: vi.fn(),
-          minZoomScale: 0.1,
-          setMinZoomScale: vi.fn(),
-          ticksToPx: (ticks: number) => ticks,
-          pxToTicks: (px: number) => px,
-          setScrollContainer: vi.fn(),
-        };
-        return selector ? selector(state) : state;
-      },
-    );
+    view = createMockTimelineView();
+    vi.mocked(useTimelineViewStore).mockImplementation(view.useStore as never);
 
     vi.mocked(useAsset).mockReturnValue({
       id: "asset-1",
@@ -181,7 +153,6 @@ describe("WaveformCanvas", () => {
   afterEach(() => {
     waveformCacheService.clearAll();
     vi.restoreAllMocks();
-    scrollListener = null;
   });
 
   it("shows the audio fallback while loading and hides it once waveform buckets are ready", async () => {
@@ -345,12 +316,9 @@ describe("WaveformCanvas", () => {
     );
     expect(initialMaxX).toBeLessThan(2200);
 
-    mockScrollContainer.scrollLeft = 5000;
+    view.scrollTo(5000);
 
     await act(async () => {
-      if (scrollListener) {
-        scrollListener(new Event("scroll"));
-      }
       await new Promise((resolve) => setTimeout(resolve, 200));
     });
 
@@ -383,19 +351,7 @@ describe("WaveformCanvas", () => {
     waveformCacheService.setBucket("asset-1", 0, 0, bucket);
 
     vi.mocked(useTimelineViewStore).mockImplementation(
-      (selector: (state: TimelineViewState) => unknown) => {
-        const state = {
-          scrollContainer: mockScrollContainer as unknown as HTMLElement,
-          zoomScale: 20,
-          setZoomScale: vi.fn(),
-          minZoomScale: 0.1,
-          setMinZoomScale: vi.fn(),
-          ticksToPx: (ticks: number) => ticks,
-          pxToTicks: (px: number) => px,
-          setScrollContainer: vi.fn(),
-        };
-        return selector ? selector(state) : state;
-      },
+      createMockTimelineView({ zoomScale: 20 }).useStore as never,
     );
 
     const clip = {

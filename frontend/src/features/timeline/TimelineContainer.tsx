@@ -54,7 +54,6 @@ import {
   clipsInVisibleTimelineRange,
   visiblePixelWindowForViewport,
   visibleTickRangeForPixelWindow,
-  type VisiblePixelWindow,
 } from "./utils/visibleTimelineClips";
 
 const containerStyles = {
@@ -172,7 +171,9 @@ function TimelineContainerComponent({
       setScrollContainer: state.setScrollContainer,
     })),
   );
-  const [visiblePixelWindow, setVisiblePixelWindow] = useState<VisiblePixelWindow | null>(null);
+  const visiblePixelWindow = useTimelineViewStore(
+    (state) => state.visiblePixelWindow,
+  );
   const visibleTickRange = React.useMemo(
     () => visibleTickRangeForPixelWindow(visiblePixelWindow, zoomScale),
     [visiblePixelWindow, zoomScale],
@@ -325,7 +326,8 @@ function TimelineContainerComponent({
   );
 
   // One scroll listener shifts the pixel window only when the viewport nears
-  // an edge; zoom converts that stable window to ticks during render.
+  // an edge; zoom converts that stable window to ticks during render. Clip
+  // canvases follow the same published window instead of listening to scroll.
   const [viewportWidth, setViewportWidth] = useState(0);
   const refreshVisibleWindowRef = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
@@ -337,9 +339,13 @@ function TimelineContainerComponent({
       pendingFrame = null;
       const width = observedWidth || container.clientWidth;
       setViewportWidth(width);
-      setVisiblePixelWindow((previous) =>
-        visiblePixelWindowForViewport(container.scrollLeft, width, previous),
+      const view = useTimelineViewStore.getState();
+      const next = visiblePixelWindowForViewport(
+        container.scrollLeft,
+        width,
+        view.visiblePixelWindow,
       );
+      if (next !== view.visiblePixelWindow) view.setVisiblePixelWindow(next);
     };
     refreshVisibleWindowRef.current = update;
     const scheduleUpdate = () => {
@@ -360,6 +366,7 @@ function TimelineContainerComponent({
       observer.disconnect();
       if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
       refreshVisibleWindowRef.current = null;
+      useTimelineViewStore.getState().setVisiblePixelWindow(null);
     };
   }, [scrollContainerRef]);
 

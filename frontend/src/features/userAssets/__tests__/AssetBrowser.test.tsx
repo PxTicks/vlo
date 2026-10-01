@@ -838,6 +838,69 @@ describe("AssetBrowser Component", () => {
     );
   });
 
+  function selectVacationAndSoloCards() {
+    const firstCard = screen
+      .getByText("vacation.mp4")
+      .closest('[data-testid="asset-card"]');
+    const secondCard = screen
+      .getByText("solo.mp4")
+      .closest('[data-testid="asset-card"]');
+
+    fireEvent.click(firstCard as HTMLElement);
+    fireEvent.click(secondCard as HTMLElement, { ctrlKey: true });
+
+    return { firstCard, secondCard };
+  }
+
+  it("deletes a multi-selection behind a single confirmation that flags timeline usage", async () => {
+    mockStore({ assets: mockAssets, families: mockFamilies });
+    useTimelineStore.setState({
+      clips: [createTimelineClip("clip-1", "1")],
+      selectedClipIds: [],
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<AssetBrowser />);
+
+    selectVacationAndSoloCards();
+    useEditorFocusStore.getState().setRegion("assetBrowser");
+    fireEvent.keyDown(window, { key: "Delete" });
+
+    await waitFor(() => {
+      expect(mockDeleteAsset).toHaveBeenCalledTimes(2);
+    });
+
+    expect(mockDeleteAsset).toHaveBeenCalledWith("1");
+    expect(mockDeleteAsset).toHaveBeenCalledWith("solo-video");
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Are you sure you want to delete these 2 assets? They will be removed from disk permanently. This cannot be undone.\n\n1 of these assets is used by clips on the Timeline.\nClips on the Timeline derived from these assets will be deleted.",
+    );
+  });
+
+  it("omits the timeline note and keeps the selection when a multi-delete is cancelled", async () => {
+    mockStore({ assets: mockAssets, families: mockFamilies });
+    useTimelineStore.setState({ clips: [], selectedClipIds: [] });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(<AssetBrowser />);
+
+    const { firstCard, secondCard } = selectVacationAndSoloCards();
+    useEditorFocusStore.getState().setRegion("assetBrowser");
+    fireEvent.keyDown(window, { key: "Delete" });
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+    });
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Are you sure you want to delete these 2 assets? They will be removed from disk permanently. This cannot be undone.",
+    );
+    expect(mockDeleteAsset).not.toHaveBeenCalled();
+    expect(firstCard).toHaveAttribute("data-selected", "true");
+    expect(secondCard).toHaveAttribute("data-selected", "true");
+  });
+
   it("reveals a requested asset by switching tabs, clearing favourite-only mode, and opening the family scope when needed", async () => {
     useProjectStore.setState((state) => ({
       ...state,

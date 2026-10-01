@@ -156,9 +156,42 @@ describe("long timeline work counters", () => {
       useTimelineStore.getState().toggleClipMute(middleVideoClip().id);
     });
 
-    // B4 + A should narrow this to the edited clip and clips whose
-    // presentation changed. For now, only the mounted set re-renders.
+    // Workstream A: the commit deep-clones every clip, so every mounted clip
+    // gets a new `clip` prop. B4 already keeps the other props stable.
     expect(new Set(thumbnailRenders).size).toBe(mountedThumbnailClips);
+  });
+
+  it("re-renders only the edited clip after a structurally shared update", () => {
+    renderTimeline();
+    const mounted = new Set(thumbnailRenders);
+    expect(mounted.size).toBeGreaterThan(1);
+    const edited = nonMaskClips().find((clip) => mounted.has(clip.id))!;
+    thumbnailRenders.length = 0;
+
+    // The shape workstream A's commits will produce: one new clip object,
+    // every other clip and the tracks array kept by identity.
+    act(() => {
+      useTimelineStore.setState((state) => ({
+        clips: state.clips.map((clip) =>
+          clip.id === edited.id ? { ...clip, name: `${clip.name} (edited)` } : clip,
+        ),
+      }));
+    });
+
+    expect([...new Set(thumbnailRenders)]).toEqual([edited.id]);
+  });
+
+  it("re-renders only the clips whose selection changed", () => {
+    renderTimeline();
+    const mounted = nonMaskClips().filter((clip) => thumbnailRenders.includes(clip.id));
+    expect(mounted.length).toBeGreaterThan(2);
+    const [first, second] = mounted;
+    act(() => useTimelineStore.getState().selectClip(first.id));
+    thumbnailRenders.length = 0;
+
+    act(() => useTimelineStore.getState().selectClip(second.id));
+
+    expect(new Set(thumbnailRenders)).toEqual(new Set([first.id, second.id]));
   });
 
   it("replaces other tracks' clip arrays on a one-clip commit", () => {

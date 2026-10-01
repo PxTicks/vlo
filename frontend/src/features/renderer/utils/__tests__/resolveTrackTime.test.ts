@@ -1,11 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   AdjustmentTimelineClip,
   ClipTransform,
   TimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
-import { buildTrackTimeResolver } from "../../../timeline/time/resolveTrackTime";
+import {
+  buildTrackTimeResolver,
+  trackTimeWarpsEqual,
+} from "../../../timeline/time/resolveTrackTime";
+import { extensionInterpolationRegistry } from "../../../transformations/animation";
 
 function adjustmentTrack(id: string): TimelineTrack {
   return {
@@ -174,5 +178,55 @@ describe("buildTrackTimeResolver", () => {
 
     const resolver = buildTrackTimeResolver(tracks, clips);
     expect(resolver.resolveEffectiveTrackTick("v1", 40)).toBe(40);
+  });
+
+  describe("per-track warps", () => {
+    const tracks: TimelineTrack[] = [adjustmentTrack("adj"), visualTrack("v1")];
+    const speedClip = (factor: number) =>
+      adjustmentClip({
+        id: "A",
+        trackId: "adj",
+        start: 100,
+        timelineDuration: 50,
+        sourceDuration: 100,
+        depth: 1,
+        transformations: [speedTransform(factor)],
+      });
+
+    it("keeps mapping the values it was built from after an in-place edit", () => {
+      const clip = speedClip(2);
+      const warp = buildTrackTimeResolver(tracks, [clip]).forTrack("v1");
+      expect(warp.resolveEffectiveTrackTick(110)).toBe(120);
+
+      (clip.transformations[0].parameters as { factor: number }).factor = 4;
+
+      // A later snapshot carrying the original values still matches, so the
+      // warp it would reuse must still map those values.
+      const restored = buildTrackTimeResolver(tracks, [speedClip(2)]).forTrack("v1");
+      expect(trackTimeWarpsEqual(warp, restored)).toBe(true);
+      expect(warp.resolveEffectiveTrackTick(110)).toBe(120);
+    });
+
+    it("differs when a speed provider registry changes", () => {
+      const before = buildTrackTimeResolver(tracks, [speedClip(2)]).forTrack("v1");
+      const revision = extensionInterpolationRegistry.getRevision();
+      vi.spyOn(extensionInterpolationRegistry, "getRevision").mockReturnValue(revision + 1);
+      try {
+        const after = buildTrackTimeResolver(tracks, [speedClip(2)]).forTrack("v1");
+        expect(trackTimeWarpsEqual(before, after)).toBe(false);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it("compares unwarped tracks as equal regardless of providers", () => {
+      const before = buildTrackTimeResolver(tracks, []).forTrack("v1");
+      vi.spyOn(extensionInterpolationRegistry, "getRevision").mockReturnValue(-1);
+      try {
+        expect(trackTimeWarpsEqual(before, buildTrackTimeResolver(tracks, []).forTrack("v1"))).toBe(true);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
   });
 });

@@ -46,7 +46,7 @@ import type { TimelineClipOverlayDefinition } from "./clipOverlayApi";
 import { useTimelineSelectionStore } from "../timelineSelection";
 import { useAssetBrowserSelectionStore } from "../userAssets/useAssetBrowserSelectionStore";
 import { useAssetBrowserRevealStore } from "../userAssets/useAssetBrowserRevealStore";
-import { getTimelineTime } from "./time/index";
+import { getTimelineTime, liveClipOffsetMapping } from "./time/index";
 import { resolveTransitions } from "./model/transitionModel";
 import { TransitionOverlay } from "../transitions/components/TransitionOverlay";
 import {
@@ -79,6 +79,17 @@ const scrollStyles = {
   },
 };
 
+// Module-level so `useSensor` returns the same descriptor each render. A new
+// options object rebuilds dnd-kit's activators and internal context, which
+// re-renders every mounted draggable clip whenever the container renders.
+const POINTER_SENSOR_OPTIONS = {
+  activationConstraint: {
+    distance: 3,
+  },
+};
+
+const NO_CLIP_OVERLAYS: readonly TimelineClipOverlayDefinition[] = [];
+
 const MIN_TIMELINE_DURATION_TICKS = mediaSecondsToTickExact(15);
 const TIMELINE_END_BUFFER_TICKS = mediaSecondsToTickExact(10);
 
@@ -99,7 +110,7 @@ export interface TimelineContainerProps {
 function TimelineContainerComponent({
   scrollContainerRef,
   insertGapIndex: externalInsertGapIndexProp,
-  clipOverlays = [],
+  clipOverlays = NO_CLIP_OVERLAYS,
 }: TimelineContainerProps) {
   const {
     tracks,
@@ -226,13 +237,7 @@ function TimelineContainerComponent({
       ? externalInsertGapIndexProp
       : externalInsertGapIndex;
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 3,
-      },
-    }),
-  );
+  const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
 
   // Ref to store the exact time and mouse position *before* the zoom update
   const zoomAnchorRef = useRef<{
@@ -635,7 +640,7 @@ function TimelineContainerComponent({
                   key={clip.id}
                   clip={clip}
                   presentation={clipPresentationById.get(clip.id)}
-                  timelineTime={timelineTime}
+                  timelineTime={liveClipOffsetMapping}
                   clipOverlays={clipOverlays}
                 />
               ))}

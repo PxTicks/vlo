@@ -1,14 +1,24 @@
 import React, { memo, useMemo } from "react";
 import { Box, IconButton, Typography } from "@mui/material";
-import type { LayoutGroup, ControlRenderProps } from "../types";
+import type {
+  ControlCommitOptions,
+  LayoutGroup,
+  ControlRenderProps,
+} from "../types";
 
 interface ControlGroupProps {
   group: LayoutGroup;
   values: Record<string, unknown>;
-  onCommit: (groupId: string, controlName: string, value: unknown) => void;
+  onCommit: (
+    groupId: string,
+    controlName: string,
+    value: unknown,
+    options?: ControlCommitOptions,
+  ) => void;
   onCommitMany?: (
     groupId: string,
     values: Readonly<Record<string, unknown>>,
+    options?: ControlCommitOptions,
   ) => void;
   renderControl: (props: ControlRenderProps) => React.ReactNode;
   headerActions?: React.ReactNode;
@@ -168,14 +178,15 @@ export const ControlGroup = memo(function ControlGroup({
               control,
               value: displayValues[control.name],
               values: displayValues,
-              onCommit: (val: unknown) => onCommit(group.id, control.name, val),
-              onCommitMany: (nextValues) => {
+              onCommit: (val: unknown, options?: ControlCommitOptions) =>
+                onCommit(group.id, control.name, val, options),
+              onCommitMany: (nextValues, options) => {
                 if (onCommitMany) {
-                  onCommitMany(group.id, nextValues);
+                  onCommitMany(group.id, nextValues, options);
                   return;
                 }
                 Object.entries(nextValues).forEach(([name, nextValue]) => {
-                  onCommit(group.id, name, nextValue);
+                  onCommit(group.id, name, nextValue, options);
                 });
               },
               groupId: group.id,

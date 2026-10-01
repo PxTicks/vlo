@@ -39,6 +39,17 @@ describe("FileSystemService", () => {
     });
   });
 
+  it("explains a missing folder picker instead of a TypeError", async () => {
+    // Brave ships the picker disabled, which surfaced as the opaque
+    // "window.showDirectoryPicker is not a function" (issue #10).
+    vi.stubGlobal("window", { isSecureContext: true, chrome: {} });
+    vi.stubGlobal("navigator", { userAgent: "", brave: {} });
+
+    await expect(new FileSystemService().pickDirectory()).rejects.toThrow(
+      "brave://flags/#file-system-access-api",
+    );
+  });
+
   it("stores the selected handle when opening a directory", async () => {
     const handle = { name: "Project" } as FileSystemDirectoryHandle;
     const service = new FileSystemService();

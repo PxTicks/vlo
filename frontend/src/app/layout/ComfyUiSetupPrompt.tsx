@@ -196,7 +196,18 @@ export function ComfyUiSetupPrompt() {
   const busy = pickerPurpose !== null || submitting;
 
   return (
-    <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
+    <Dialog
+      open={open}
+      onClose={(_event, reason) => {
+        // The prompt can appear while the app is still loading, so a stray
+        // click elsewhere must not lose it; only Escape or an explicit
+        // choice dismisses it.
+        if (reason === "backdropClick") return;
+        setOpen(false);
+      }}
+      fullWidth
+      maxWidth="sm"
+    >
       <DialogTitle>Connect vlo to ComfyUI</DialogTitle>
       <DialogContent>
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>

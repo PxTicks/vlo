@@ -64,9 +64,10 @@ export function useThumbnailRenderer({
     clipStart,
     fullCanvasWidth,
     leftWingPx,
+    scrollContainer,
     isNearViewport,
     updateCanvasGeometry,
-    subscribeToVisibleWindow,
+    updateViewportState,
   } = useClipCanvasWindow({
     canvasRef,
     clip,
@@ -239,6 +240,7 @@ export function useThumbnailRenderer({
     const { signal } = abortController;
 
     const generateThumbnails = async () => {
+      updateViewportState();
       // Off-screen clips do no work at all — no source hydration, metadata
       // probe, or image load — so mounting or committing a long timeline
       // costs only what is near the viewport.
@@ -423,10 +425,11 @@ export function useThumbnailRenderer({
 
     let debounceTimer: ReturnType<typeof setTimeout>;
 
-    const onVisibleWindowChange = () => {
+    const onScroll = () => {
       if (isDragging) return;
-      // A pinned clip (e.g. the active drag) can sit outside the window; its
-      // canvas is not visible to repaint.
+      updateViewportState();
+      // Every clip listens, so off-screen clips must bail before scheduling
+      // anything; their canvases are not visible to repaint.
       if (!isNearViewport()) return;
 
       // Fast Path: Draw existing cache immediately
@@ -449,11 +452,13 @@ export function useThumbnailRenderer({
       }
     };
 
-    const unsubscribe = subscribeToVisibleWindow(onVisibleWindowChange);
+    if (scrollContainer)
+      scrollContainer.addEventListener("scroll", onScroll, { passive: true });
 
     return () => {
       abortController.abort();
-      unsubscribe();
+      if (scrollContainer)
+        scrollContainer.removeEventListener("scroll", onScroll);
       clearTimeout(debounceTimer);
       pendingDrawRef.current = false;
     };
@@ -468,9 +473,10 @@ export function useThumbnailRenderer({
     clipOffset,
     clipSourceDuration,
     clipStart,
-    subscribeToVisibleWindow,
+    scrollContainer,
     isNearViewport,
     updateCanvasGeometry,
+    updateViewportState,
     enabled,
     isDragging,
     asset,

@@ -19,6 +19,7 @@ const INITIAL_WING_SIZE = 1000;
 const WING_GROWTH_CHUNK = 2000;
 const EXPANSION_THRESHOLD = 300;
 const MAX_DRAGGING_CANVAS_WIDTH = 16384;
+const VIEWPORT_BUFFER_PX = 1000;
 
 export interface ClipCanvasGeometry {
   localStart: number;
@@ -40,17 +41,14 @@ interface UseClipCanvasWindowResult {
   clipStart: number | null;
   fullCanvasWidth: number;
   leftWingPx: number;
+  scrollContainer: HTMLElement | null;
   /**
-   * Whether the clip's canvas window overlaps the timeline's visible pixel
-   * window. Pure: never touches the canvas.
+   * Whether the clip's canvas window overlaps the buffered viewport, as of
+   * the last `updateViewportState`. Pure: never touches the canvas.
    */
   isNearViewport: () => boolean;
   updateCanvasGeometry: () => ClipCanvasGeometry | null;
-  /**
-   * Call `listener` after the visible pixel window moves. The window moves in
-   * overscan-sized steps, so this replaces a per-clip scroll listener.
-   */
-  subscribeToVisibleWindow: (listener: () => void) => () => void;
+  updateViewportState: () => void;
 }
 
 export function useClipCanvasWindow({
@@ -74,13 +72,10 @@ export function useClipCanvasWindow({
     canvasHeight: -1,
     canvasWidth: -1,
   });
-  const visibleWindow = useTimelineViewStore(
-    (state) => state.visiblePixelWindow,
+  const viewportRef = useRef({ scrollLeft: 0, containerWidth: 0 });
+  const scrollContainer = useTimelineViewStore(
+    (state) => state.scrollContainer,
   );
-  // Read through a ref so a window move doesn't rebuild the geometry
-  // callbacks, which would restart the consumers' fetch effects.
-  const visibleWindowRef = useRef(visibleWindow);
-  const windowListenersRef = useRef(new Set<() => void>());
 
   // Reset wing sizes during render whenever the active clip/asset changes or
   // the hook is re-enabled, using the "store previous render value" pattern.
@@ -93,23 +88,16 @@ export function useClipCanvasWindow({
     setDynamicWings({ left: INITIAL_WING_SIZE, right: INITIAL_WING_SIZE });
   }
 
-  useLayoutEffect(() => {
-    if (visibleWindowRef.current === visibleWindow) {
+  const updateViewportState = useCallback(() => {
+    if (!scrollContainer) {
       return;
     }
-    visibleWindowRef.current = visibleWindow;
-    for (const listener of windowListenersRef.current) {
-      listener();
-    }
-  }, [visibleWindow]);
 
-  const subscribeToVisibleWindow = useCallback((listener: () => void) => {
-    const listeners = windowListenersRef.current;
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
+    viewportRef.current = {
+      scrollLeft: scrollContainer.scrollLeft,
+      containerWidth: scrollContainer.clientWidth,
     };
-  }, []);
+  }, [scrollContainer]);
 
   useEffect(() => {
     if (!enabled) {
@@ -141,6 +129,14 @@ export function useClipCanvasWindow({
     return () => unsubscribe();
   }, [clip.id, enabled]);
 
+  useLayoutEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    updateViewportState();
+  }, [enabled, isDragging, updateViewportState]);
+
   useEffect(() => {
     // Invalidate scratch layout cache when the underlying asset swaps so the
     // next render re-measures the canvas geometry from scratch.
@@ -168,9 +164,9 @@ export function useClipCanvasWindow({
     : Math.min(Math.max(0, maxRightPx), dynamicWings.right);
   const fullCanvasWidth = leftWingPx + visibleDurationPx + rightWingPx;
 
-  // The slice of the canvas window inside the visible pixel window, or null
-  // when the clip is entirely outside it. The window already overscans the
-  // viewport. Dragged/unplaced clips always use the whole (capped) window.
+  // The slice of the canvas window inside the buffered viewport, or null when
+  // the clip is entirely off-screen. Dragged/unplaced clips always use the
+  // whole (capped) window.
   const resolveVisibleSpan = useCallback((): ClipCanvasGeometry | null => {
     if (isDragging || clipStart === null) {
       return {
@@ -182,18 +178,14 @@ export function useClipCanvasWindow({
       };
     }
 
-    const pixelWindow = visibleWindowRef.current;
-    if (!pixelWindow) {
-      return null;
-    }
+    const { scrollLeft, containerWidth } = viewportRef.current;
     const layoutStart = presentationStart ?? clipStart;
     const clipGlobalStart = ticksToPx(layoutStart, zoomScale);
     const virtualGlobalStart = clipGlobalStart - leftWingPx;
-    const localStart = Math.max(0, pixelWindow.start - virtualGlobalStart);
-    const localEnd = Math.min(
-      fullCanvasWidth,
-      pixelWindow.end - virtualGlobalStart,
-    );
+    const viewStart = scrollLeft - VIEWPORT_BUFFER_PX;
+    const viewEnd = scrollLeft + containerWidth + VIEWPORT_BUFFER_PX;
+    const localStart = Math.max(0, viewStart - virtualGlobalStart);
+    const localEnd = Math.min(fullCanvasWidth, viewEnd - virtualGlobalStart);
 
     if (localEnd <= localStart) {
       return null;
@@ -213,12 +205,12 @@ export function useClipCanvasWindow({
   ]);
 
   const isNearViewport = useCallback(
-    () => visibleWindowRef.current !== null && resolveVisibleSpan() !== null,
-    [resolveVisibleSpan],
+    () => scrollContainer !== null && resolveVisibleSpan() !== null,
+    [resolveVisibleSpan, scrollContainer],
   );
 
   const updateCanvasGeometry = useCallback((): ClipCanvasGeometry | null => {
-    if (!visibleWindowRef.current || !canvasRef.current) {
+    if (!scrollContainer || !canvasRef.current) {
       return null;
     }
 
@@ -259,14 +251,16 @@ export function useClipCanvasWindow({
     height,
     leftWingPx,
     resolveVisibleSpan,
+    scrollContainer,
   ]);
 
   return {
     clipStart,
     fullCanvasWidth,
     leftWingPx,
+    scrollContainer,
     isNearViewport,
     updateCanvasGeometry,
-    subscribeToVisibleWindow,
+    updateViewportState,
   };
 }

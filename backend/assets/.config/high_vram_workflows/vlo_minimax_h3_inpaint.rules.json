@@ -73,8 +73,7 @@
         "export_fps": "project",
         "frame_step": 4,
         "max_frames": 360,
-        "message": "Select and prepare the reference video in vlo",
-        "include_tracks": true
+        "message": "Select and prepare the reference video in vlo"
       }
     },
     "85": {

@@ -4,6 +4,7 @@ import { projectMutationGuard } from "../../core/project/projectMutationGuard";
 import { Box } from "@mui/material";
 import { RenderTexture } from "pixi.js";
 import {
+  AudioLiveParamLayer,
   AudioTrackLayer,
   getSharedDecoderWorkerPool,
   getProjectDimensions,
@@ -225,6 +226,12 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
   // --- ORCHESTRATOR ---
   const visualTracks = useMemo(() => {
     return tracks.filter((t) => t.type === "visual" && t.isVisible);
+  }, [tracks]);
+
+  // Live param publishing ignores mute/visibility: a muted clip is still
+  // selectable, and its panel controls should follow the playhead.
+  const audioCapableTracks = useMemo(() => {
+    return tracks.filter((t) => t.type === "audio" || t.type === "visual");
   }, [tracks]);
 
   const tracksWithAudio = useMemo(() => {
@@ -1089,6 +1096,13 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
             />
           ))}
         <CanvasToolBar activeToolId={activeExtensionCanvasToolId} />
+        {audioCapableTracks.map((track) => (
+          <AudioLiveParamLayer
+            key={track.id}
+            trackId={track.id}
+            adjustmentEffectResolver={adjustmentEffectResolver}
+          />
+        ))}
         {/* Render Audio Layers (Invisible) */}
         {tracksWithAudio.map((track) => (
           <AudioTrackLayer

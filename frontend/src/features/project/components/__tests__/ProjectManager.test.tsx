@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => {
     loadProject: vi.fn(),
     createProject: vi.fn(),
     isNonChromiumBrowser: vi.fn(() => false),
+    getFileSystemAccessIssue: vi.fn((): string | null => null),
   };
 });
 
@@ -70,6 +71,8 @@ vi.mock("../../useProjectStore", () => ({
 
 vi.mock("../../utils/browser", () => ({
   isNonChromiumBrowser: mocks.isNonChromiumBrowser,
+  getFileSystemAccessIssue: mocks.getFileSystemAccessIssue,
+  describeFileSystemAccessIssue: (issue: string) => `issue: ${issue}`,
 }));
 
 function recentProject(id = "recent-1", name = "Recent project") {
@@ -92,6 +95,7 @@ describe("ProjectManager", () => {
     mocks.getProjectDirectory.mockResolvedValue(null);
     mocks.setProjectDirectory.mockResolvedValue(undefined);
     mocks.isNonChromiumBrowser.mockReturnValue(false);
+    mocks.getFileSystemAccessIssue.mockReturnValue(null);
     vi.stubGlobal("alert", vi.fn());
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
@@ -168,6 +172,19 @@ describe("ProjectManager", () => {
       screen.getByText(/requires Chromium-based browsers/),
     ).toBeInTheDocument();
     expect(await screen.findByText("No recent projects yet")).toBeInTheDocument();
+  });
+
+  it("names a missing folder picker ahead of the generic browser warning", () => {
+    // Brave is Chromium but ships the picker disabled (issue #10), so the
+    // browser family alone cannot say whether projects can be opened.
+    mocks.isNonChromiumBrowser.mockReturnValue(true);
+    mocks.getFileSystemAccessIssue.mockReturnValue("brave-flag");
+    render(<ProjectManager />);
+
+    expect(screen.getByText("issue: brave-flag")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/requires Chromium-based browsers/),
+    ).not.toBeInTheDocument();
   });
 
   it("opens a selected project and handles picker failures", async () => {
@@ -420,5 +437,9 @@ describe("ProjectManager", () => {
       screen.getByRole("button", { name: "Select project directory" }),
     );
     await waitFor(() => expect(errorSpy).toHaveBeenCalled());
+    // A failure used to be console-only, so the button appeared to do nothing.
+    expect(globalThis.alert).toHaveBeenCalledWith(
+      "Failed to select project directory: picker failed",
+    );
   });
 });

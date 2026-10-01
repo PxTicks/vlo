@@ -156,6 +156,19 @@ def _requirements_path(requirements: str) -> Path:
     return PROJECT_ROOT / requirements
 
 
+def _overrides_argument(overrides: str) -> str:
+    """A project-relative ``--overrides`` file, left relative for ``argv``.
+
+    Unlike ``-r``, uv splits an ``--overrides`` value at whitespace even when it
+    arrives as a single argument (the flag shares its parser with the
+    space-separated ``UV_OVERRIDE``), so an absolute path breaks under a folder
+    like ``Git Repos``. :func:`run_install` starts the installer in
+    :data:`PROJECT_ROOT`, which is what this path resolves against.
+    """
+
+    return Path(overrides).as_posix()
+
+
 #: How a failing package check is named, so a failure can be read back to the
 #: package that produced it. Mirrors :attr:`PackageSpec.check_id`.
 _PACKAGE_CHECK_PREFIX = "package."
@@ -282,7 +295,7 @@ def install_plan_for_capability(
     # fail earlier and less legibly than the resolution error itself does.
     overrides: tuple[str, ...] = ()
     if profile.overrides and tool == "uv":
-        overrides = ("--overrides", str(_requirements_path(profile.overrides)))
+        overrides = ("--overrides", _overrides_argument(profile.overrides))
     return InstallPlan(
         capability_id=capability_id,
         summary=(
@@ -370,7 +383,9 @@ def validate_plan(plan: InstallPlan) -> None:
 
     for index, argument in enumerate(plan.argv):
         if argument in ("-r", "--overrides") and index + 1 < len(plan.argv):
-            requirements = Path(plan.argv[index + 1])
+            # Relative to the directory the installer runs in, not this
+            # process's; an absolute path is unaffected by the join.
+            requirements = PROJECT_ROOT / plan.argv[index + 1]
             if not requirements.is_file():
                 raise InstallNotAvailableError(
                     f"The requirements file for this install is missing: "

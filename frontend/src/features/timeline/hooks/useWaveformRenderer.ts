@@ -200,9 +200,10 @@ export function useWaveformRenderer({
     clipStart,
     fullCanvasWidth,
     leftWingPx,
+    scrollContainer,
     isNearViewport,
     updateCanvasGeometry,
-    subscribeToVisibleWindow,
+    updateViewportState,
   } = useClipCanvasWindow({
     canvasRef,
     clip,
@@ -574,6 +575,7 @@ export function useWaveformRenderer({
     };
 
     const generateWaveforms = async () => {
+      updateViewportState();
       // Off-screen clips do no analysis work; they fetch on scrolling into view.
       if (!isNearViewport()) {
         return;
@@ -642,13 +644,14 @@ export function useWaveformRenderer({
 
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const onVisibleWindowChange = () => {
+    const onScroll = () => {
       if (isDragging) {
         return;
       }
 
-      // A pinned clip (e.g. the active drag) can sit outside the window; its
-      // canvas is not visible to repaint.
+      updateViewportState();
+      // Every clip listens, so off-screen clips must bail before scheduling
+      // anything; their canvases are not visible to repaint.
       if (!isNearViewport()) {
         return;
       }
@@ -672,12 +675,16 @@ export function useWaveformRenderer({
       }
     };
 
-    const unsubscribe = subscribeToVisibleWindow(onVisibleWindowChange);
+    if (scrollContainer) {
+      scrollContainer.addEventListener("scroll", onScroll, { passive: true });
+    }
 
     return () => {
       abortController.abort();
       pendingDrawRef.current = false;
-      unsubscribe();
+      if (scrollContainer) {
+        scrollContainer.removeEventListener("scroll", onScroll);
+      }
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
@@ -699,8 +706,9 @@ export function useWaveformRenderer({
     isNearViewport,
     leftWingPx,
     mapPresentationOffsetToClipOffset,
-    subscribeToVisibleWindow,
+    scrollContainer,
     updateCanvasGeometry,
+    updateViewportState,
     zoomScale,
   ]);
 

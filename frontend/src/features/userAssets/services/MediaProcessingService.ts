@@ -27,6 +27,47 @@ function createExtractedAudioFilename(
   return `${baseName}-audio.${extension}`;
 }
 
+export const PROXY_STALL_TIMEOUT_MS = 30_000;
+
+/**
+ * Runs a conversion, giving up once it has gone `stallTimeoutMs` without
+ * progress. A wedged WebCodecs encoder never settles `execute()`, and ingest
+ * awaits the proxy inside the serial asset queue, so one stall would otherwise
+ * hold every later import (generated outputs included) forever. Measured from
+ * the last progress tick rather than the start, so long sources still finish.
+ *
+ * Mediabunny only reports when the least advanced output track moves, so this
+ * suits single-track conversions; with several, a track that ends early would
+ * read as a stall.
+ */
+async function executeWithStallTimeout(
+  conversion: Conversion,
+  stallTimeoutMs: number,
+): Promise<void> {
+  let lastProgressAt = Date.now();
+  conversion.onProgress = () => {
+    lastProgressAt = Date.now();
+  };
+
+  let watchdog: ReturnType<typeof setInterval> | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    watchdog = setInterval(() => {
+      if (Date.now() - lastProgressAt < stallTimeoutMs) return;
+      // Not awaited: cancelling a wedged encoder can hang too.
+      void conversion.cancel().catch(() => undefined);
+      reject(
+        new Error(`Conversion made no progress for ${stallTimeoutMs / 1000}s`),
+      );
+    }, Math.min(1000, stallTimeoutMs));
+  });
+
+  try {
+    await Promise.race([conversion.execute(), stalled]);
+  } finally {
+    clearInterval(watchdog);
+  }
+}
+
 export class MediaFileProcessor {
   private file: File;
   private input: Input | null = null;
@@ -379,8 +420,12 @@ export class MediaFileProcessor {
           keyFrameInterval: 1.0,
           bitrate: 500_000,
         },
+        // Proxies only feed timeline thumbnails. Keeping it to one track also
+        // keeps the stall watchdog honest: mediabunny reports the least
+        // advanced track, which freezes once a shorter audio track ends.
+        audio: { discard: true },
       });
-      await conversion.execute();
+      await executeWithStallTimeout(conversion, PROXY_STALL_TIMEOUT_MS);
 
       // Do NOT dispose input
 

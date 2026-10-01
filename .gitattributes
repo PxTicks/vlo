@@ -259,8 +259,6 @@
 /frontend/src/features/timeline/api.ts extension-surface=adapter
 /frontend/src/features/timeline/hostCommands.ts extension-surface=adapter
 /frontend/src/features/timeline/components/TimelineClip.tsx extension-surface=adapter
-/frontend/src/features/timeline/TimelineContainer.tsx extension-surface=host
-/frontend/src/features/timeline/utils/visibleTimelineClips.ts extension-surface=host
 /frontend/src/features/timeline/components/TimelineToolbar.tsx extension-surface=adapter
 /frontend/src/features/timeline/model/** extension-surface=adapter
 /frontend/src/features/timeline/useTimelineStore.ts extension-surface=adapter

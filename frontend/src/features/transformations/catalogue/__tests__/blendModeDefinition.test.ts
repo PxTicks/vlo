@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { AlphaFilter } from "pixi.js";
 import type { ClipTransform } from "../../../../types/TimelineTypes";
 import type { ClipTransformTarget, TransformState } from "../types";
 import {
@@ -11,6 +12,7 @@ import {
   TransformationSystem,
   getDefaultTransforms,
 } from "../TransformationRegistry";
+import { filterApplicator } from "../filterFactory";
 
 function createBaseState(): TransformState {
   return {
@@ -78,14 +80,67 @@ describe("blendModeApplicator", () => {
   });
 });
 
+describe("blendModeApplicator on a filtered target", () => {
+  function createFilteredTarget(filters: AlphaFilter[]) {
+    return { ...createTarget(), filters };
+  }
+
+  it("moves a standard mode onto the last filter and draws the target normally", () => {
+    const [first, last] = [new AlphaFilter(), new AlphaFilter()];
+    const target = createFilteredTarget([first, last]);
+    const state = createBaseState();
+    state.blendMode = "multiply";
+
+    blendModeApplicator(target, state);
+
+    expect(target.blendMode).toBe("normal");
+    expect(first.blendMode).toBe("normal");
+    expect(last.blendMode).toBe("multiply");
+  });
+
+  it("restores a filter's own mode once it is no longer last or the mode resets", () => {
+    const [first, last] = [new AlphaFilter(), new AlphaFilter()];
+    first.blendMode = "none";
+    const state = createBaseState();
+    state.blendMode = "screen";
+
+    blendModeApplicator(createFilteredTarget([first]), state);
+    expect(first.blendMode).toBe("screen");
+
+    blendModeApplicator(createFilteredTarget([first, last]), state);
+    expect(first.blendMode).toBe("none");
+    expect(last.blendMode).toBe("screen");
+
+    const target = createFilteredTarget([first, last]);
+    blendModeApplicator(target, createBaseState());
+    expect(last.blendMode).toBe("normal");
+    expect(target.blendMode).toBe("normal");
+  });
+
+  it("keeps an advanced mode on the target, which filters cannot carry", () => {
+    const filter = new AlphaFilter();
+    const target = createFilteredTarget([filter]);
+    const state = createBaseState();
+    state.blendMode = "overlay";
+
+    blendModeApplicator(target, state);
+
+    expect(target.blendMode).toBe("overlay");
+    expect(filter.blendMode).toBe("normal");
+  });
+});
+
 describe("blend mode registration", () => {
   it("is an always-visible default for visual clips", () => {
     const types = getDefaultTransforms().map((d) => d.type);
     expect(types).toContain("blendMode");
   });
 
-  it("registers the applicator in the runtime system", () => {
-    expect(TransformationSystem.applicators).toContain(blendModeApplicator);
+  it("registers the applicator after the filter applicator", () => {
+    const { applicators } = TransformationSystem;
+    expect(applicators.indexOf(blendModeApplicator)).toBeGreaterThan(
+      applicators.indexOf(filterApplicator),
+    );
   });
 
   it("exposes Normal as the first option and default", () => {

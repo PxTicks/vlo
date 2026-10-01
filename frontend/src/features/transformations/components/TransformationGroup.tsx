@@ -2,7 +2,11 @@ import { memo, useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 import { ControlGroup } from "../../panelUI/components/ControlGroup";
 import { ControlRenderer } from "./ControlRenderer";
-import type { LayoutGroup, ControlRenderProps } from "../../panelUI/types";
+import type {
+  ControlCommitOptions,
+  ControlRenderProps,
+  LayoutGroup,
+} from "../../panelUI/types";
 import type {
   ClipTransform,
   TimelineClip,
@@ -22,11 +26,13 @@ interface TransformationGroupProps {
     controlName: string,
     value: unknown,
     transformId?: string,
+    options?: ControlCommitOptions,
   ) => void;
   onCommitMany?: (
     groupId: string,
     values: Readonly<Record<string, unknown>>,
     transformId?: string,
+    options?: ControlCommitOptions,
   ) => void;
   minTime?: number;
   duration?: number;
@@ -94,9 +100,14 @@ export const TransformationGroup = memo(function TransformationGroup({
 
   // Adapt: wrap onCommit to include transformId
   const handleCommit = useCallback(
-    (groupId: string, controlName: string, value: unknown) => {
+    (
+      groupId: string,
+      controlName: string,
+      value: unknown,
+      options?: ControlCommitOptions,
+    ) => {
       onGroupEdited?.();
-      onCommit(groupId, controlName, value, transform?.id);
+      onCommit(groupId, controlName, value, transform?.id, options);
     },
     [onGroupEdited, onCommit, transform?.id],
   );
@@ -136,14 +147,18 @@ export const TransformationGroup = memo(function TransformationGroup({
   );
 
   const handleCommitMany = useCallback(
-    (groupId: string, nextValues: Readonly<Record<string, unknown>>) => {
+    (
+      groupId: string,
+      nextValues: Readonly<Record<string, unknown>>,
+      options?: ControlCommitOptions,
+    ) => {
       onGroupEdited?.();
       if (onCommitMany) {
-        onCommitMany(groupId, nextValues, transform?.id);
+        onCommitMany(groupId, nextValues, transform?.id, options);
         return;
       }
       Object.entries(nextValues).forEach(([name, nextValue]) => {
-        onCommit(groupId, name, nextValue, transform?.id);
+        onCommit(groupId, name, nextValue, transform?.id, options);
       });
     },
     [onCommit, onCommitMany, onGroupEdited, transform?.id],

@@ -26,6 +26,31 @@
     },
     "2": {},
 
+    "37": {
+      "present": {
+        "label": "Start frame",
+        "group_id": "frames",
+        "group_title": "Frames",
+        "group_order": 0,
+        "required": false,
+        "input_type": "image",
+        "param": "image",
+        "class_type": "vloMemoryLoadImage"
+      }
+    },
+    "38": {
+      "present": {
+        "label": "End frame",
+        "group_id": "frames",
+        "group_title": "Frames",
+        "group_order": 1,
+        "required": false,
+        "input_type": "image",
+        "param": "image",
+        "class_type": "vloMemoryLoadImage"
+      }
+    },
+
     "16": {
       "present": {
         "label": "Prompt",
@@ -174,13 +199,23 @@
   "validation": {
     "inputs": [
       { "kind": "required", "input": "1", "message": "A reference video is required." },
-      { "kind": "required", "input": "16:prompt", "message": "A prompt is required." }
+      { "kind": "required", "input": "16:prompt", "message": "A prompt is required." },
+      { "kind": "optional", "input": "37" },
+      { "kind": "optional", "input": "38" }
     ]
   },
 
   "derived_widgets": [],
 
   "rewrites": [
+    {
+      "when": { "kind": "input_presence", "inputs": ["37"], "match": "all_missing" },
+      "bypass": ["37", "39"]
+    },
+    {
+      "when": { "kind": "input_presence", "inputs": ["38"], "match": "all_missing" },
+      "bypass": ["38", "40"]
+    },
     {
       "when": {
         "kind": "compare",

@@ -132,6 +132,10 @@ async function measureScroll(page: Page): Promise<FrameStats> {
     );
 }
 
+async function countMountedClips(page: Page): Promise<number> {
+    return page.getByTestId('timeline-clip').count();
+}
+
 /**
  * Scrolls to the middle of the timeline and returns the video clip drawn
  * nearest the viewport centre. The edit sample must change something on
@@ -198,7 +202,7 @@ test('long timeline responsiveness', async ({ page, baseURL }) => {
     });
     await expect(editor.timeline.clips.first()).toBeVisible({ timeout: 120_000 });
     const openMs = Date.now() - openStart;
-    const mountedClips = await editor.timeline.getClipCount();
+    const mountedClips = await countMountedClips(page);
 
     // 2. Horizontal scroll, one step per animation frame.
     const scroll = await measureScroll(page);

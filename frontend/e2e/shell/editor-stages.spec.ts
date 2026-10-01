@@ -41,9 +41,9 @@ test.describe('Editor stage surfaces', () => {
 
         // Timeline editing still works through the surface mount.
         await timeline.clickClip(0);
-        const clip = timeline.getClip(0);
+        const clip = await timeline.getClip(0);
         const initial = (await clip.boundingBox())!;
-        const handle = timeline.getClipResizeHandle(0, 'right');
+        const handle = await timeline.getClipResizeHandle(0, 'right');
         const handleBox = (await handle.boundingBox())!;
         await page.mouse.move(
             handleBox.x + handleBox.width / 2,

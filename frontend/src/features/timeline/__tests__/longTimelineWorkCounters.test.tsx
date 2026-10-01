@@ -1,16 +1,18 @@
 import React from "react";
-import { act, render, renderHook, screen } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TimelineContainer } from "../TimelineContainer";
 import { useTimelineStore } from "../useTimelineStore";
 import { useTimelineClipsForTrack } from "../api";
-import type { TimelineClip } from "../../../types/TimelineTypes";
+import type { TimelineClip, VideoTimelineClip } from "../../../types/TimelineTypes";
 import {
   PROJECT_CURRENT_BEAT_AUDIO,
   buildLongTimelineFixture,
   type LongTimelineFixture,
 } from "./fixtures/longTimelineFixture";
 import { readProjectCurrentTimeline } from "./fixtures/longTimelineFixtureSource";
+import { ticksToPx } from "../../../core/time/pixelGrid";
+import { useInteractionStore } from "../hooks/useInteractionStore";
 
 /**
  * Work counters for long timelines (docs/long-timeline-performance-plan.md,
@@ -58,7 +60,7 @@ function nonMaskClips(): TimelineClip[] {
 }
 
 /** A video clip in the middle of the timeline, away from both ends. */
-function middleVideoClip(): TimelineClip {
+function middleVideoClip(): VideoTimelineClip {
   const videos = nonMaskClips().filter((clip) => clip.type === "video");
   return videos[Math.floor(videos.length / 2)];
 }
@@ -75,23 +77,73 @@ function renderTimeline() {
 describe("long timeline work counters", () => {
   beforeEach(() => {
     thumbnailRenders.length = 0;
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
     loadFixture();
   });
 
   afterEach(() => {
     act(() => {
+      useInteractionStore.getState().stopDrag();
       useTimelineStore.getState().replaceTimelineSnapshot(null);
     });
+    vi.restoreAllMocks();
   });
 
-  it("mounts one timeline-clip node per non-mask clip", () => {
+  it("mounts clips in the viewport and mounts later clips when scrolled into view", async () => {
     renderTimeline();
+    const laterClip = middleVideoClip();
+    const container = screen.getByTestId("timeline-scroll-container");
 
-    // Workstream B: bound this by the visible range plus overscan, selection
-    // and the drag target, independent of timeline length.
-    expect(screen.getAllByTestId("timeline-clip")).toHaveLength(
-      nonMaskClips().length,
-    );
+    expect(screen.getAllByTestId("timeline-clip").length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId("timeline-clip").length).toBeLessThan(nonMaskClips().length);
+    expect(container.querySelector(`[data-clip-id="${laterClip.id}"]`)).toBeNull();
+
+    container.scrollLeft = ticksToPx(laterClip.start, 1);
+    fireEvent.scroll(container);
+
+    await waitFor(() => {
+      expect(container.querySelector(`[data-clip-id="${laterClip.id}"]`)).not.toBeNull();
+    });
+    expect(screen.getAllByTestId("timeline-clip").length).toBeLessThan(nonMaskClips().length);
+  });
+
+  it("keeps a large selection virtualized until a move drag needs its followers", () => {
+    renderTimeline();
+    const laterClip = middleVideoClip();
+    const firstClip = nonMaskClips().find(
+      (clip): clip is VideoTimelineClip => clip.type === "video",
+    )!;
+    const container = screen.getByTestId("timeline-scroll-container");
+    expect(container.querySelector(`[data-clip-id="${laterClip.id}"]`)).toBeNull();
+
+    act(() => useTimelineStore.setState({
+      selectedClipIds: nonMaskClips().map((clip) => clip.id),
+    }));
+    expect(container.querySelector(`[data-clip-id="${laterClip.id}"]`)).toBeNull();
+    expect(screen.getAllByTestId("timeline-clip").length).toBeLessThan(nonMaskClips().length);
+
+    act(() => useInteractionStore.getState().startDrag(firstClip.id, firstClip, "move"));
+    expect(container.querySelector(`[data-clip-id="${laterClip.id}"]`)).not.toBeNull();
+
+    act(() => {
+      useInteractionStore.getState().stopDrag();
+      useTimelineStore.getState().selectClip(null);
+    });
+    expect(container.querySelector(`[data-clip-id="${laterClip.id}"]`)).toBeNull();
+
+    act(() => useInteractionStore.getState().startDrag(laterClip.id, laterClip, "resize_right"));
+    expect(container.querySelector(`[data-clip-id="${laterClip.id}"]`)).not.toBeNull();
+  });
+
+  it("mounts only transitions overlapping the visible window", () => {
+    renderTimeline();
+    const mountedTransitions = document.querySelectorAll(
+      '[data-testid^="transition-overlay-"]',
+    ).length;
+
+    expect(fixture.transitions.length).toBeGreaterThan(1);
+    expect(mountedTransitions).toBeGreaterThan(0);
+    expect(mountedTransitions).toBeLessThan(fixture.transitions.length);
   });
 
   it("re-renders every thumbnail clip after a one-clip commit", () => {
@@ -104,9 +156,8 @@ describe("long timeline work counters", () => {
       useTimelineStore.getState().toggleClipMute(middleVideoClip().id);
     });
 
-    // Workstream B4 + A: only the edited clip (and clips whose presentation
-    // changed) should render. Today the per-commit `timelineTime` prop and
-    // the deep-cloned clips defeat `memo` for every clip.
+    // B4 + A should narrow this to the edited clip and clips whose
+    // presentation changed. For now, only the mounted set re-renders.
     expect(new Set(thumbnailRenders).size).toBe(mountedThumbnailClips);
   });
 

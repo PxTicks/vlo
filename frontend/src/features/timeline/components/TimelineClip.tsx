@@ -39,6 +39,7 @@ import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { useSamAudioExtractDialogStore } from "../../samAudio";
 import { reverseTimelineClip } from "../utils/reverseClip";
+import { useClipReversalStore, useIsClipReversing } from "../hooks/useClipReversalStore";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
 import {
@@ -154,7 +155,7 @@ function TimelineClipComponent({
     x: number;
     y: number;
   } | null>(null);
-  const [isReversingClip, setIsReversingClip] = useState(false);
+  const isReversingClip = useIsClipReversing(clip.id);
 
   const startTime =
     presentation?.start ??
@@ -512,20 +513,21 @@ function TimelineClipComponent({
   };
 
   const handleReverseClip = async () => {
-    if (!timelineClip || !canReverseClip) {
+    if (
+      !timelineClip ||
+      !canReverseClip ||
+      useClipReversalStore.getState().reversingClipIds.has(timelineClip.id)
+    ) {
       closeContextMenu();
       return;
     }
     closeContextMenu();
-    setIsReversingClip(true);
     try {
       await reverseTimelineClip(timelineClip.id);
     } catch (error) {
       window.alert(
         error instanceof Error ? error.message : "Failed to reverse the clip.",
       );
-    } finally {
-      setIsReversingClip(false);
     }
   };
 

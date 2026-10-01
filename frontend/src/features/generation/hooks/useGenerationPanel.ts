@@ -128,12 +128,6 @@ import {
   mergeAutodiscoveredLoraWidgetInputs,
   resolveAutodiscoveredLoraWidgetInputs,
 } from "../utils/loraLoaderWidgets";
-import {
-  collectLoraStackDiagnostics,
-  collectLoraStackNodeIds,
-  packLoraStacks,
-  presentLoraStackWidgetInputs,
-} from "../utils/loraStacks";
 import { collectWidgetSubmissionState } from "../utils/widgetSubmissionState";
 import {
   createReplayPanelCarry,
@@ -485,8 +479,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const bypassedWidgetTargetsRef = useRef<ReadonlySet<string>>(new Set());
   const bypassWorkflowSourceRef = useRef<string | null>(null);
   const appliedBypassDefaultsRef = useRef<ReadonlySet<string>>(new Set());
-  /** Whether each bypassable loader's node shipped bypassed when last seen. */
-  const shippedBypassRef = useRef<ReadonlyMap<string, boolean>>(new Map());
   const randomizeTogglesRef = useRef<Record<string, boolean>>({});
   /** The workflow the panel's widget values were last reconciled against. */
   const widgetValuesWorkflowRef = useRef<string | null>(null);
@@ -724,43 +716,26 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     () => collectBypassDiscoveryNodeIds(activeWorkflowRules),
     [activeWorkflowRules],
   );
-  // Stack members are opted in by membership alone. They stay out of the
-  // opt-in diagnostics, which would call an active member ineffective.
-  const loraDiscoveryNodeIds = useMemo(() => {
-    const stackNodeIds = collectLoraStackNodeIds(activeWorkflowRules);
-    return stackNodeIds.size === 0
-      ? bypassDiscoveryNodeIds
-      : new Set([...bypassDiscoveryNodeIds, ...stackNodeIds]);
-  }, [activeWorkflowRules, bypassDiscoveryNodeIds]);
   const autodiscoveredLoraWidgetInputs = useMemo(
     () =>
       resolveAutodiscoveredLoraWidgetInputs(
         generationNodes,
-        loraDiscoveryNodeIds,
-      ),
-    [generationNodes, loraDiscoveryNodeIds],
-  );
-  // An ineffective discovery opt-in or stack member is advisory, like other
-  // rule warnings.
-  useEffect(() => {
-    for (const diagnostic of [
-      ...collectBypassDiscoveryDiagnostics(
-        generationNodes,
         bypassDiscoveryNodeIds,
       ),
-      ...collectLoraStackDiagnostics(generationNodes, activeWorkflowRules),
-    ]) {
+    [bypassDiscoveryNodeIds, generationNodes],
+  );
+  // An ineffective discovery opt-in is advisory, like other rule warnings.
+  useEffect(() => {
+    for (const diagnostic of collectBypassDiscoveryDiagnostics(
+      generationNodes,
+      bypassDiscoveryNodeIds,
+    )) {
       console.debug("[GenerationPanel] Workflow rule warning", {
         workflowId: selectedWorkflowId,
         message: diagnostic,
       });
     }
-  }, [
-    activeWorkflowRules,
-    bypassDiscoveryNodeIds,
-    generationNodes,
-    selectedWorkflowId,
-  ]);
+  }, [bypassDiscoveryNodeIds, generationNodes, selectedWorkflowId]);
   const authoredWidgetInputs = useMemo(
     () =>
       mergeAutodiscoveredLoraWidgetInputs(
@@ -781,17 +756,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     [authoredWidgetInputs, widgetValues],
   );
   const widgetInputs = boundedWidgetInputs.widgetInputs;
-  // What the panel draws. Reconciliation and submission keep reading
-  // `widgetInputs`, so presentation cannot change what a generation sends.
-  const presentedWidgetInputs = useMemo(
-    () =>
-      presentLoraStackWidgetInputs(
-        widgetInputs,
-        activeWorkflowRules,
-        bypassedWidgetTargets,
-      ),
-    [activeWorkflowRules, bypassedWidgetTargets, widgetInputs],
-  );
 
   // A bound that moved under a value out of range pulls it back in, so the
   // panel never submits a window past the last step the sampler runs.
@@ -817,7 +781,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     bypassWorkflowSourceRef.current = selectedWorkflowId;
     // A new workflow gets its rule defaults applied afresh.
     appliedBypassDefaultsRef.current = new Set();
-    shippedBypassRef.current = new Map();
     if (replayCarryRef.current?.workflowId !== selectedWorkflowId) {
       replayCarryRef.current = null;
     }
@@ -842,11 +805,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       widgetInputs,
       previousTargets: bypassedWidgetTargetsRef.current,
       appliedDefaults: appliedBypassDefaultsRef.current,
-      previousShippedBypass: shippedBypassRef.current,
       preserveMissing: isReloadingSameWorkflow(),
     });
     appliedBypassDefaultsRef.current = reconciliation.appliedDefaults;
-    shippedBypassRef.current = reconciliation.shippedBypass;
     if (!reconciliation.changed) return;
     bypassedWidgetTargetsRef.current = reconciliation.targets;
     setBypassedWidgetTargets(reconciliation.targets);
@@ -1117,7 +1078,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     const clearedBypasses = new Set<string>();
     bypassedWidgetTargetsRef.current = clearedBypasses;
     appliedBypassDefaultsRef.current = clearedBypasses;
-    shippedBypassRef.current = new Map();
     bypassWorkflowSourceRef.current = null;
     setBypassedWidgetTargets(clearedBypasses);
     widgetValuesWorkflowRef.current = null;
@@ -1358,22 +1318,13 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         }
       }
 
-      // Stacked LoRAs are packed into their stack's leading loaders here, at
-      // dispatch, and nowhere else: the panel and its saved state keep each
-      // selection on the node the user picked it on.
-      const packedLoras = packLoraStacks({
-        widgetInputs: widgetInputsRef.current,
-        widgetValues: currentWidgetValues,
-        bypassedWidgetTargets: bypassedWidgetTargetsRef.current,
-        rules: store.activeWorkflowRules,
-      });
       // Widget overrides and randomization modes, from the same collector the
       // project's saved panel state is built from.
       const widgetSubmission = collectWidgetSubmissionState({
         widgetInputs: widgetInputsRef.current,
-        widgetValues: packedLoras.widgetValues,
+        widgetValues: currentWidgetValues,
         randomizeToggles,
-        bypassedWidgetTargets: packedLoras.bypassedWidgetTargets,
+        bypassedWidgetTargets: bypassedWidgetTargetsRef.current,
       });
       for (const nodeId of widgetSubmission.bypassNodeIds) {
         bypassNodeIds.add(nodeId);
@@ -2713,7 +2664,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
     // Widget state
     widgetInputs,
-    presentedWidgetInputs,
     generationNodes,
     widgetValues,
     bypassedWidgetTargets,

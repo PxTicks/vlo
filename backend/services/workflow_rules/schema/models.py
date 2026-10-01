@@ -793,37 +793,6 @@ class EffectSwitch(WorkflowRuleBaseModel):
     cases: list[EffectSwitchCase] = Field(default_factory=list)
 
 
-class WorkflowLoraStack(WorkflowRuleBaseModel):
-    """Interchangeable LoRA loaders the panel presents as one growable list.
-
-    The panel shows every loader with a model selected plus one empty slot, and
-    submission packs the selected models into the first nodes in ``nodes``
-    order, so which physical loader carries which LoRA is not the user's
-    concern. The listed nodes are discovered even when they ship bypassed.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    nodes: list[str] = Field(min_length=1)
-    section_id: str | None = None
-    # Numbered per visible slot: "LoRA 1", "LoRA 2", ...
-    group_title: str | None = None
-    group_order: int | None = None
-
-    @model_validator(mode="after")
-    def validate_stack(self) -> "WorkflowLoraStack":
-        if not self.id.strip():
-            raise ValueError("LoRA stack id must be non-empty")
-        node_ids = [node_id.strip() for node_id in self.nodes]
-        if any(not node_id for node_id in node_ids):
-            raise ValueError(f"LoRA stack '{self.id}' lists an empty node id")
-        if len(node_ids) != len(set(node_ids)):
-            raise ValueError(f"LoRA stack '{self.id}' lists a node more than once")
-        self.nodes = node_ids
-        return self
-
-
 class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -841,7 +810,6 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     slots: dict[str, WorkflowRuleSlot] = Field(default_factory=dict)
     media_fallbacks: list[WorkflowMediaFallback] = Field(default_factory=list)
     pipeline: list[WorkflowPipelineStage] = Field(default_factory=list)
-    lora_stacks: list[WorkflowLoraStack] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -849,23 +817,6 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
         if isinstance(data, dict):
             _normalize_legacy_condition_inplace(data)
         return data
-
-    @model_validator(mode="after")
-    def validate_lora_stacks(self) -> "ResolvedWorkflowRules":
-        stack_ids = [stack.id for stack in self.lora_stacks]
-        if len(stack_ids) != len(set(stack_ids)):
-            raise ValueError("LoRA stack ids must be unique")
-        # Packing moves models between a stack's nodes, so a node shared by
-        # two stacks could be handed two different LoRAs in one submission.
-        owners: dict[str, str] = {}
-        for stack in self.lora_stacks:
-            for node_id in stack.nodes:
-                owner = owners.setdefault(node_id, stack.id)
-                if owner != stack.id:
-                    raise ValueError(
-                        f"node '{node_id}' belongs to LoRA stacks '{owner}' and '{stack.id}'"
-                    )
-        return self
 
     @model_validator(mode="after")
     def validate_pipeline_graph(self) -> "ResolvedWorkflowRules":

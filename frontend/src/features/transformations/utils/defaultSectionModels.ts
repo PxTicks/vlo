@@ -2,9 +2,15 @@ import type { TransformationDefinition } from "../catalogue/types";
 import { getDefaultSectionId } from "./sectionIds";
 
 const DISPLAY_SECTION_TYPE = "display";
-// Layout (position/scale/rotation), Fit Mode and Blend Mode are unified into a
-// single "Display" section — one section with a titled sub-group per transform.
-const DISPLAY_DEFINITION_TYPES = new Set(["layout", "fitMode", "blendMode"]);
+// Layout (position/scale/rotation), Fit Mode, Opacity and Blend Mode are
+// unified into a single "Display" section — one section with a titled
+// sub-group per transform.
+const DISPLAY_DEFINITION_TYPES = new Set([
+  "layout",
+  "fitMode",
+  "opacity",
+  "blendMode",
+]);
 
 const AUDIO_SECTION_TYPE = "audio";
 

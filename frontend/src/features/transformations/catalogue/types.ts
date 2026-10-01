@@ -34,6 +34,9 @@ export interface TransformState {
    *  color-burn, ...) require the advanced-blend-modes extension + back buffer
    *  (see core/pixi/advancedBlendModes). */
   blendMode?: string;
+  /** Clip opacity in [0, 1]. Realized by `applyClipTransforms` as an
+   *  AlphaFilter op after the effect stack; absent means fully opaque. */
+  opacity?: number;
   /** Feather compositing state */
   feather?: {
     mode: "hard_outer" | "soft_inner" | "two_way";

@@ -325,7 +325,6 @@ export function GenerationPanel() {
 
     // Widget state
     widgetInputs,
-    presentedWidgetInputs,
     generationNodes,
     widgetValues,
     bypassedWidgetTargets,
@@ -632,12 +631,6 @@ export function GenerationPanel() {
     ],
   );
   const displayWidgetInputs = useMemo(
-    () => [...pipelineWidgetInputs, ...presentedWidgetInputs],
-    [pipelineWidgetInputs, presentedWidgetInputs],
-  );
-  // The session is keyed by widget target, not by how the panel lays widgets
-  // out, so it reads the list before LoRA-stack presentation reorders it.
-  const sessionWidgetInputs = useMemo(
     () => [...pipelineWidgetInputs, ...widgetInputs],
     [pipelineWidgetInputs, widgetInputs],
   );
@@ -779,7 +772,7 @@ export function GenerationPanel() {
     nodes: generationNodes,
     workflowInputs,
     textValues,
-    widgetInputs: sessionWidgetInputs,
+    widgetInputs: displayWidgetInputs,
     widgetValues,
     selectedWorkflowId,
     hasWorkflowError: workflowLoadError !== null,

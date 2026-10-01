@@ -225,14 +225,6 @@ export interface WorkflowInputCondition {
   message?: string | null;
 }
 
-export interface WorkflowLoraStack {
-  id: string;
-  nodes: Array<string>;
-  section_id?: string | null;
-  group_title?: string | null;
-  group_order?: number | null;
-}
-
 export interface WorkflowMaskProcessingStage {
   id: string;
   enabled?: boolean;
@@ -472,5 +464,4 @@ export interface WorkflowRules {
   slots?: Record<string, WorkflowRuleSlot>;
   media_fallbacks?: Array<WorkflowMediaFallback>;
   pipeline?: Array<WorkflowMaskProcessingStage | WorkflowAspectRatioStage | WorkflowOutputAssemblyStage>;
-  lora_stacks?: Array<WorkflowLoraStack>;
 }

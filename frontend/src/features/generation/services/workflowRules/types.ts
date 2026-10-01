@@ -50,7 +50,6 @@ export type {
   WorkflowExtensionSection,
   WorkflowFrontendControl,
   WorkflowInputCondition,
-  WorkflowLoraStack,
   WorkflowMaskProcessingStage,
   WorkflowMediaFallback,
   WorkflowOptionalInputValidationRule,
@@ -173,9 +172,6 @@ export function createDefaultWorkflowRules(
     pipeline: cloneJsonValue(overrides.pipeline ?? []),
     ...(overrides.media_fallbacks !== undefined
       ? { media_fallbacks: cloneJsonValue(overrides.media_fallbacks) }
-      : {}),
-    ...(overrides.lora_stacks !== undefined
-      ? { lora_stacks: cloneJsonValue(overrides.lora_stacks) }
       : {}),
   };
 }

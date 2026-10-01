@@ -17,10 +17,6 @@ WORKFLOW_DIRS = (
 )
 
 
-# The model LoRA stack, in packing order: submission fills these front to back.
-LORA_STACK_NODE_IDS = (150, 153, 154, 155)
-
-
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -227,30 +223,6 @@ def test_minimax_h3_image_to_video_lora_loader_defaults_to_none():
     assert loader["widgets_values_named"]["lora_name"].endswith(".safetensors")
 
 
-def test_minimax_h3_image_to_video_lora_stack_matches_the_graph():
-    rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
-    [stack] = rules["lora_stacks"]
-    assert stack["nodes"] == [str(node_id) for node_id in LORA_STACK_NODE_IDS]
-    assert stack["section_id"] == "lora_loaders"
-
-    workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
-    nodes = {node["id"]: node for node in workflow["nodes"]}
-    for node_id in LORA_STACK_NODE_IDS:
-        loader = nodes[node_id]
-        # One class, so packing can move every strength between members.
-        assert loader["type"] == "LoraLoaderModelOnly"
-        # Bypassed for the same reason as node 150: the missing-model scan
-        # skips bypassed nodes, so the placeholder name raises no dialog, and
-        # stack membership is what still puts the loader on the panel.
-        assert loader["mode"] == 4
-    # Only the first loader advertises a download for the placeholder.
-    assert "models" in nodes[150]["properties"]
-    assert all(
-        "models" not in nodes[node_id]["properties"]
-        for node_id in LORA_STACK_NODE_IDS[1:]
-    )
-
-
 def test_minimax_h3_image_to_video_advanced_settings_toggle_model_patches():
     rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
 
@@ -300,15 +272,12 @@ def test_minimax_h3_image_to_video_model_chain_passes_through_bypasses():
     nodes = {node["id"]: node for node in workflow["nodes"]}
     links = {link[0]: tuple(link[1:5]) for link in workflow["links"]}
 
-    for node_id in LORA_STACK_NODE_IDS:
-        assert nodes[node_id]["type"] == "LoraLoaderModelOnly"
+    assert nodes[150]["type"] == "LoraLoaderModelOnly"
     assert nodes[151]["type"] == "ModelAttentionBackend"
     assert nodes[148]["type"] == "SpectrumApplyMiniMaxH3"
 
-    # UNETLoader -> the LoRA stack -> attention -> spectrum, then on to
-    # guider/scheduler.
-    model_chain = (127, *LORA_STACK_NODE_IDS, 151, 148)
-    for source_id, target_id in zip(model_chain, model_chain[1:]):
+    # UNETLoader -> LoRA -> attention -> spectrum, then on to guider/scheduler.
+    for source_id, target_id in ((127, 150), (150, 151), (151, 148)):
         assert any(
             link[0] == source_id and link[2] == target_id for link in links.values()
         ), f"no link {source_id} -> {target_id}"
@@ -319,7 +288,7 @@ def test_minimax_h3_image_to_video_model_chain_passes_through_bypasses():
 
     # Every optional patch is MODEL in / MODEL out, which is what lets ComfyUI
     # pass the model straight through when the panel bypasses one of them.
-    for node_id in (*LORA_STACK_NODE_IDS, 151, 148):
+    for node_id in (150, 151, 148):
         node = nodes[node_id]
         assert node["inputs"][_input_index(node, "model")]["type"] == "MODEL"
         assert node["outputs"][0]["type"] == "MODEL"

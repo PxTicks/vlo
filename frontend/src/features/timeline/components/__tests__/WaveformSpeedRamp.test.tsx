@@ -9,7 +9,7 @@ import {
 import { act, render } from "@testing-library/react";
 import { ThumbnailCanvas } from "../ThumbnailCanvas";
 import { useTimelineViewStore } from "../../hooks/useTimelineViewStore";
-import type { TimelineViewState } from "../../hooks/useTimelineViewStore";
+import { createMockTimelineView } from "./mockTimelineView";
 import { AudioAnalysisService, useAsset } from "../../../userAssets";
 import type { Input, InputAudioTrack } from "mediabunny";
 import { TICKS_PER_SECOND } from "../../constants";
@@ -75,24 +75,7 @@ describe("WaveformCanvas Speed Ramp", () => {
     } as unknown as ReturnType<HTMLCanvasElement["getContext"]>);
 
     vi.mocked(useTimelineViewStore).mockImplementation(
-      (selector: (state: TimelineViewState) => unknown) => {
-        const state = {
-          scrollContainer: {
-            scrollLeft: 0,
-            clientWidth: 1000,
-            addEventListener: vi.fn(),
-            removeEventListener: vi.fn(),
-          } as unknown as HTMLElement,
-          zoomScale: 1,
-          setZoomScale: vi.fn(),
-          minZoomScale: 0.1,
-          setMinZoomScale: vi.fn(),
-          ticksToPx: (ticks: number) => ticks,
-          pxToTicks: (px: number) => px,
-          setScrollContainer: vi.fn(),
-        };
-        return selector ? selector(state) : state;
-      },
+      createMockTimelineView().useStore as never,
     );
 
     vi.mocked(useAsset).mockReturnValue({

@@ -51,6 +51,24 @@ interface TimelineMutationPipelineOptions<State extends TimelineMutationState> {
   migrateTimelineSnapshot: (snapshot: TimelineSnapshot) => TimelineSnapshot;
 }
 
+/**
+ * What the undo history retains, for the long-timeline performance lane.
+ * `patchJsonBytes` is the UTF-8 size of the patches serialized as JSON, a
+ * proxy for retained memory. It serializes every patch, so call it from
+ * tests and diagnostics only, never per commit.
+ */
+export interface TimelineHistoryDiagnostics {
+  undoEntries: TimelineHistoryEntryDiagnostics[];
+  redoEntryCount: number;
+}
+
+export interface TimelineHistoryEntryDiagnostics {
+  label: string;
+  forwardPatchCount: number;
+  inversePatchCount: number;
+  patchJsonBytes: number;
+}
+
 export interface TimelineMutationCommitOptions {
   label?: string;
   persist?: boolean;
@@ -60,6 +78,10 @@ export interface TimelineMutationCommitOptions {
     key: string;
     end: boolean;
   };
+}
+
+function utf8ByteLength(text: string): number {
+  return new TextEncoder().encode(text).byteLength;
 }
 
 let didRegisterBeforeUnloadListener = false;
@@ -572,9 +594,22 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     }
   };
 
+  const getHistoryDiagnostics = (): TimelineHistoryDiagnostics => ({
+    undoEntries: undoStack.map((entry) => ({
+      label: entry.label,
+      forwardPatchCount: entry.forwardPatches.length,
+      inversePatchCount: entry.inversePatches.length,
+      patchJsonBytes:
+        utf8ByteLength(JSON.stringify(entry.forwardPatches)) +
+        utf8ByteLength(JSON.stringify(entry.inversePatches)),
+    })),
+    redoEntryCount: redoStack.length,
+  });
+
   return {
     commitModelMutation,
     flushPendingPersistence,
+    getHistoryDiagnostics,
     redo,
     registerBeforeUnloadPersistence,
     replaceTimelineSnapshot,

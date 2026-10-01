@@ -10,7 +10,7 @@ import {
 import { render, act } from "@testing-library/react";
 import { ThumbnailCanvas } from "../ThumbnailCanvas";
 import { useTimelineViewStore } from "../../hooks/useTimelineViewStore";
-import type { TimelineViewState } from "../../hooks/useTimelineViewStore";
+import { createMockTimelineView, type MockTimelineView } from "./mockTimelineView";
 import { useAsset } from "../../../userAssets";
 import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../../constants";
 import { thumbnailCacheService } from "../../services/ThumbnailCacheService";
@@ -82,11 +82,7 @@ describe("ThumbnailCanvas Virtualization", () => {
     drawImage: Mock;
     clearRect: Mock;
   };
-  let mockScrollContainer: Partial<HTMLElement> & {
-    addEventListener: Mock;
-    removeEventListener: Mock;
-  };
-  let scrollListener: EventListener | null = null;
+  let view: MockTimelineView;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -105,32 +101,8 @@ describe("ThumbnailCanvas Virtualization", () => {
       mockContext as any,
     );
 
-    // 2. Mock Scroll Container
-    mockScrollContainer = {
-      scrollLeft: 0,
-      clientWidth: 1000, // Viewport width of 1000px
-      addEventListener: vi.fn((event, handler) => {
-        if (event === "scroll") scrollListener = handler as EventListener;
-      }),
-      removeEventListener: vi.fn(),
-    };
-
-    // 3. Setup Store Mocks
-    vi.mocked(useTimelineViewStore).mockImplementation(
-      (selector: (state: TimelineViewState) => unknown) => {
-        const state = {
-          scrollContainer: mockScrollContainer as unknown as HTMLElement,
-          zoomScale: 1,
-          setZoomScale: vi.fn(),
-          minZoomScale: 0.1,
-          setMinZoomScale: vi.fn(),
-          ticksToPx: (ticks: number) => ticks,
-          pxToTicks: (px: number) => px,
-          setScrollContainer: vi.fn(),
-        };
-        return selector ? selector(state) : state;
-      },
-    );
+    view = createMockTimelineView();
+    vi.mocked(useTimelineViewStore).mockImplementation(view.useStore as never);
 
     vi.mocked(useAsset).mockReturnValue({
       id: "asset-1",
@@ -188,10 +160,8 @@ describe("ThumbnailCanvas Virtualization", () => {
     });
 
     // --- Check 1: Initial Render at scrollLeft = 0 ---
-    // Viewport: 0 to 1000px
-    // Buffer: 50% of 1000px = 500px
-    // Expected Render Range: -500px to 1500px
-    // Since clip starts at 0, we expect draws from 0 to ~1500px.
+    // Viewport: 0 to 1000px. The published window overscans one viewport on
+    // each side, clamped at 0: 0 to 2000px.
 
     const initialCalls = mockContext.drawImage.mock.calls;
     expect(initialCalls.length).toBeGreaterThan(0);
@@ -206,11 +176,10 @@ describe("ThumbnailCanvas Virtualization", () => {
 
     // --- Check 2: Scroll Behavior ---
     // Scroll to 5000px
-    mockScrollContainer.scrollLeft = 5000;
+    view.scrollTo(5000);
 
     await act(async () => {
-      if (scrollListener) scrollListener(new Event("scroll"));
-      // Wait for debounce (150ms in hook)
+      // Wait for the throttled fetch
       await new Promise((resolve) => setTimeout(resolve, 200));
     });
 
@@ -222,9 +191,8 @@ describe("ThumbnailCanvas Virtualization", () => {
     const lastX = lastCall[1];
 
     // The canvas should implement a sliding window.
-    // viewport is at 5000. Buffer is 500.
-    // The canvas should be positioned around 4500.
-    // The internal draw coordinates should be relative to the canvas start (0 to ~2000).
+    // Viewport is at 5000, so the window is 4000 to 7000px.
+    // The internal draw coordinates are relative to the canvas start (0 to 3000).
 
     expect(lastX).toBeLessThan(3100); // Should be within the local canvas width
 
@@ -233,10 +201,51 @@ describe("ThumbnailCanvas Virtualization", () => {
     const canvas = document.getElementById(`thumbnail-canvas-${clip.id}`);
     expect(canvas).toBeTruthy();
 
-    // The transform should be approximately translateX(4500px)
+    // The transform should be approximately translateX(4000px)
     // allowing for some math variances (floor/ceil)
     const transform = canvas?.style.transform;
     expect(transform).toMatch(/translateX\(calc\(40\d+px/);
+  });
+
+  it("redraws only when the visible window moves, not on every scroll", async () => {
+    const clip = {
+      id: "clip-1",
+      assetId: "asset-1",
+      start: 0,
+      offset: 0,
+      timelineDuration: 3600 * TICKS_PER_SECOND,
+      transformedOffset: 0,
+      transformedDuration: 3600 * TICKS_PER_SECOND,
+      type: "video",
+    };
+    render(
+      <ThumbnailCanvas
+        clip={
+          clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip
+        }
+      />,
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    const canvas = document.getElementById(`thumbnail-canvas-${clip.id}`);
+    const transformBefore = canvas?.style.transform;
+    mockContext.fillRect.mockClear();
+
+    // Still inside the window's margin: the canvas already covers it.
+    view.scrollTo(400);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    expect(mockContext.fillRect).not.toHaveBeenCalled();
+    expect(canvas?.style.transform).toBe(transformBefore);
+
+    view.scrollTo(1500);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    expect(mockContext.fillRect).toHaveBeenCalled();
+    expect(canvas?.style.transform).not.toBe(transformBefore);
   });
 
   it("should not render anything if the clip is completely offscreen", async () => {
@@ -260,20 +269,18 @@ describe("ThumbnailCanvas Virtualization", () => {
     );
 
     // Move viewport far away from the clip
-    mockScrollContainer.scrollLeft = 5000;
-
-    // Trigger scroll update
+    view.scrollTo(5000);
     await act(async () => {
-      if (scrollListener) scrollListener(new Event("scroll"));
       await new Promise((resolve) => setTimeout(resolve, 200));
     });
 
     // Clear previous calls from initial mount
     mockContext.drawImage.mockClear();
 
-    // Trigger a redraw attempt (e.g. via another scroll or update)
+    // Trigger a redraw attempt with another window move
+    view.scrollTo(9000);
     await act(async () => {
-      if (scrollListener) scrollListener(new Event("scroll"));
+      await new Promise((resolve) => setTimeout(resolve, 200));
     });
 
     // Should not draw anything because clip (at 0) is far from viewport (at 5000)
@@ -306,16 +313,14 @@ describe("ThumbnailCanvas Virtualization", () => {
       />,
     );
     await act(async () => {
-      if (scrollListener) scrollListener(new Event("scroll"));
       await new Promise((resolve) => setTimeout(resolve, 100));
     });
 
     expect(loadMetadata).not.toHaveBeenCalled();
     expect(getContext).not.toHaveBeenCalled();
 
-    mockScrollContainer.scrollLeft = clipStartPx - 200;
+    view.scrollTo(clipStartPx - 200);
     await act(async () => {
-      if (scrollListener) scrollListener(new Event("scroll"));
       await new Promise((resolve) => setTimeout(resolve, 200));
     });
 

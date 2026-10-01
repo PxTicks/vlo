@@ -44,6 +44,9 @@ const viewStoreMocks = vi.hoisted(() => {
       setCurrentTime: vi.fn(),
       setScrollContainer: vi.fn(),
       scrollContainer: null,
+      // Wide enough that every clip in these specs mounts.
+      visiblePixelWindow: { start: 0, end: 1e9, contentWidth: 1000 },
+      setVisiblePixelWindow: vi.fn(),
     })),
   };
 });
@@ -199,6 +202,9 @@ describe("TimelineContainer", () => {
       setCurrentTime: vi.fn(),
       setScrollContainer: vi.fn(),
       scrollContainer: null,
+      // Wide enough that every clip in these specs mounts.
+      visiblePixelWindow: { start: 0, end: 1e9, contentWidth: 1000 },
+      setVisiblePixelWindow: vi.fn(),
     });
 
     useAssetBrowserSelectionStore.setState({ selectedAssetIds: [] });

@@ -19,7 +19,7 @@ test.describe('Timeline Interactions', () => {
         // Drag a clip in first
         await dragAssetToTimeline(editor.page);
 
-        const clip = editor.timeline.getClip(0);
+        const clip = await editor.timeline.getClip(0);
         await expect(clip).toBeVisible();
 
         // Click timeline background (deselect), then clip (select), then background again
@@ -58,20 +58,20 @@ test.describe('Timeline with Pre-loaded Clips', () => {
         // Deselect first
         await timeline.deselectAll();
         expect(await timeline.isClipSelected(0)).toBe(false);
-        await expect(timeline.getClipResizeHandle(0, 'left')).toHaveCount(0);
-        await expect(timeline.getClipResizeHandle(0, 'right')).toHaveCount(0);
+        await expect(await timeline.getClipResizeHandle(0, 'left')).toHaveCount(0);
+        await expect(await timeline.getClipResizeHandle(0, 'right')).toHaveCount(0);
 
         // Click the first clip to select it
         await timeline.clickClip(0);
         expect(await timeline.isClipSelected(0)).toBe(true);
-        await expect(timeline.getClipResizeHandle(0, 'left')).toBeVisible();
-        await expect(timeline.getClipResizeHandle(0, 'right')).toBeVisible();
+        await expect(await timeline.getClipResizeHandle(0, 'left')).toBeVisible();
+        await expect(await timeline.getClipResizeHandle(0, 'right')).toBeVisible();
 
         // Deselect by clicking background
         await timeline.deselectAll();
         expect(await timeline.isClipSelected(0)).toBe(false);
-        await expect(timeline.getClipResizeHandle(0, 'left')).toHaveCount(0);
-        await expect(timeline.getClipResizeHandle(0, 'right')).toHaveCount(0);
+        await expect(await timeline.getClipResizeHandle(0, 'left')).toHaveCount(0);
+        await expect(await timeline.getClipResizeHandle(0, 'right')).toHaveCount(0);
     });
 
     test('Delete clip removes it from timeline', async ({ editorWithClips }) => {
@@ -152,7 +152,7 @@ test.describe('Timeline with Pre-loaded Clips', () => {
         const toggle = timeline.getTrackVisibilityToggle(0);
         await expect(toggle).toBeVisible();
 
-        const clip = timeline.getClip(0);
+        const clip = await timeline.getClip(0);
         await expect(toggle).toHaveAttribute('aria-pressed', 'true');
         await expect(clip).toHaveAttribute('data-track-visible', 'true');
 

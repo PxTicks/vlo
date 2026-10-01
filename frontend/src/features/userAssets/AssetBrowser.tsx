@@ -49,7 +49,11 @@ import {
 } from "../timeline/api";
 import { useInteractionStore } from "../timeline/hooks/useInteractionStore";
 import { useProjectStore } from "../project/useProjectStore";
-import { LibraryBrowserGrid, type LibraryBrowserGridApi } from "../libraryBrowser";
+import {
+  LibraryBrowserGrid,
+  type LibraryBrowserGridApi,
+  type LibraryBrowserMarqueeHandlers,
+} from "../libraryBrowser";
 import {
   useRegionFocus,
   useEditorFocusStore,
@@ -820,6 +824,34 @@ function AssetBrowserComponent({
     [selectAsset, selectedAssetIds, setSelectedAssetIds],
   );
 
+  // A modifier-held marquee extends the selection it started from; a plain one
+  // replaces it.
+  const marqueeBaseSelectionRef = useRef<readonly string[]>([]);
+  const assetMarquee = useMemo<LibraryBrowserMarqueeHandlers>(
+    () => ({
+      onStart: ({ additive }) => {
+        marqueeBaseSelectionRef.current = additive
+          ? useAssetBrowserSelectionStore.getState().selectedAssetIds
+          : [];
+      },
+      onChange: (assetIds) => {
+        const baseAssetIds = marqueeBaseSelectionRef.current;
+        const baseAssetIdSet = new Set(baseAssetIds);
+        const nextSelectedAssetIds = [
+          ...baseAssetIds,
+          ...assetIds.filter((assetId) => !baseAssetIdSet.has(assetId)),
+        ];
+
+        setSelectedAssetIds(nextSelectedAssetIds);
+
+        if (nextSelectedAssetIds.length === 0) {
+          selectTimelineClip(null);
+        }
+      },
+    }),
+    [setSelectedAssetIds],
+  );
+
   const previewIndex = React.useMemo(
     () =>
       previewAssetId
@@ -1206,6 +1238,7 @@ function AssetBrowserComponent({
         testId="asset-browser-scroll-region"
         isScrollLocked={isAssetDragActive}
         onBackgroundClick={handleBrowserBackgroundClick}
+        marquee={assetMarquee}
         renderItem={(asset) => (
           <AssetCard
             asset={asset}

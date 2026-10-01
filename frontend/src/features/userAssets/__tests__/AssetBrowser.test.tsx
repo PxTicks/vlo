@@ -807,6 +807,48 @@ describe("AssetBrowser Component", () => {
     expect(secondCard).toHaveAttribute("data-drag-disabled", "true");
   });
 
+  it("marquee-selects assets by dragging from empty space and keeps the selection after release", async () => {
+    mockStore({ assets: mockAssets, families: mockFamilies });
+    useTimelineStore.setState({
+      clips: [
+        createTimelineClip("clip-1", "1"),
+        createTimelineClip("clip-2", "solo-video"),
+      ],
+      selectedClipIds: [],
+    });
+
+    render(<AssetBrowser />);
+
+    const scrollRegion = screen.getByTestId("asset-browser-scroll-region");
+    // jsdom has no layout; the test setup measures rows at 2000px each.
+    Object.defineProperty(scrollRegion, "clientWidth", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(scrollRegion, "scrollHeight", {
+      configurable: true,
+      value: 10000,
+    });
+
+    fireEvent.pointerDown(scrollRegion, { pointerId: 1, clientX: 2, clientY: 2 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 398, clientY: 9000 });
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 398, clientY: 9000 });
+    fireEvent.click(scrollRegion);
+
+    const cards = screen.getAllByTestId("asset-card");
+    expect(cards.length).toBeGreaterThan(1);
+    for (const card of cards) {
+      expect(card).toHaveAttribute("data-selected", "true");
+    }
+
+    await waitFor(() => {
+      expect(useTimelineStore.getState().selectedClipIds).toEqual([
+        "clip-1",
+        "clip-2",
+      ]);
+    });
+  });
+
   it("deletes the selected asset with the existing confirmation flow", async () => {
     mockStore({ assets: mockAssets, families: mockFamilies });
     useTimelineStore.setState({

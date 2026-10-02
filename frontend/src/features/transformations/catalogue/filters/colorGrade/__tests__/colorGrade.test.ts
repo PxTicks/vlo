@@ -251,6 +251,41 @@ describe("Color Grade transformation", () => {
     vi.useRealTimers();
   });
 
+  it("re-allocates grade textures when the grade count changes", () => {
+    // PixiJS 8.15 uploads a height-only resize as a failed texSubImage2D, so
+    // a second grade would read stale rows (curves visible → black frame).
+    const textures = new FusedColorGradeTextures();
+    const oneGrade = [
+      normalizeColorGradeLayer({ transformId: "a", parameters: {} }),
+    ];
+    const twoGrades = [
+      ...oneGrade,
+      normalizeColorGradeLayer({ transformId: "b", parameters: { exposure: -2 } }),
+    ];
+    textures.update(oneGrade);
+    const parameterUnload = vi.spyOn(textures.parameterSource, "unload");
+    const curveUnload = vi.spyOn(textures.curveSource, "unload");
+
+    textures.update([
+      normalizeColorGradeLayer({ transformId: "a", parameters: { exposure: 1 } }),
+    ]);
+    expect(parameterUnload).not.toHaveBeenCalled();
+    expect(curveUnload).not.toHaveBeenCalled();
+
+    textures.update(twoGrades);
+    expect(parameterUnload).toHaveBeenCalledTimes(1);
+    expect(curveUnload).toHaveBeenCalledTimes(1);
+    expect(textures.parameterSource.height).toBe(2);
+    expect(textures.curveSource.height).toBe(4);
+
+    textures.update(oneGrade);
+    expect(parameterUnload).toHaveBeenCalledTimes(2);
+    expect(curveUnload).toHaveBeenCalledTimes(2);
+    expect(textures.parameterSource.height).toBe(1);
+    expect(textures.curveSource.height).toBe(2);
+    textures.destroy();
+  });
+
   it("accepts repeated property assignment updates used by filter pooling", () => {
     const filter = new ColorGradeFilter();
     filter.exposure = 2;

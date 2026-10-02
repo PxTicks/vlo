@@ -278,14 +278,21 @@ export function useThumbnailRenderer({
           if (!hydratedVideoAsset) return;
 
           let metadata = thumbnailCacheService.getMetadata(clip.assetId!);
+          // The proxy arrives in the background after import and is encoded
+          // from its own first frame, so a first timestamp probed from the
+          // source must not clamp requests made against the proxy.
+          const usesProxy = Boolean(hydratedVideoAsset.proxyFile);
+          const isMetadataCurrent = (candidate: ThumbnailAssetMetadata) =>
+            hasVideoThumbnailMetadata(candidate) &&
+            Boolean(candidate.probedFromProxy) === usesProxy;
 
-          if (!metadata || !hasVideoThumbnailMetadata(metadata)) {
+          if (!metadata || !isMetadataCurrent(metadata)) {
             const cachedAspectRatio = metadata?.aspectRatio;
             // Shared per asset: sibling clips await the same probe rather
             // than each opening the source.
             metadata = await thumbnailCacheService.loadMetadata(
               clip.assetId!,
-              hasVideoThumbnailMetadata,
+              isMetadataCurrent,
               async () => {
                 const source = hydratedVideoAsset.proxyFile
                   ? new BlobSource(hydratedVideoAsset.proxyFile)
@@ -297,6 +304,7 @@ export function useThumbnailRenderer({
                   aspectRatio:
                     cachedAspectRatio || vt.displayWidth / vt.displayHeight,
                   firstTimestampSeconds: await vt.getFirstTimestamp(),
+                  probedFromProxy: usesProxy,
                 };
               },
             );

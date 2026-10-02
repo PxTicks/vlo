@@ -359,6 +359,51 @@ describe("ThumbnailCanvas Virtualization", () => {
     expect(thumbnailCacheService.getMetadata("asset-1")).toEqual({
       aspectRatio: 2,
       firstTimestampSeconds: 0,
+      probedFromProxy: false,
+    });
+  });
+
+  it("re-probes the first timestamp once a background proxy replaces the source", async () => {
+    thumbnailCacheService.acquire("asset-1");
+    thumbnailCacheService.setMetadata("asset-1", {
+      aspectRatio: 2,
+      firstTimestampSeconds: 0.5,
+      probedFromProxy: false,
+    });
+    vi.mocked(useAsset).mockReturnValue({
+      id: "asset-1",
+      type: "video",
+      src: "blob:test.mp4",
+      proxyFile: new Blob(["proxy"]),
+    } as never);
+    const loadMetadata = vi.spyOn(thumbnailCacheService, "loadMetadata");
+    const clip = {
+      id: "clip-proxy",
+      assetId: "asset-1",
+      start: 0,
+      offset: 0,
+      timelineDuration: 10 * TICKS_PER_SECOND,
+      transformedOffset: 0,
+      transformedDuration: 10 * TICKS_PER_SECOND,
+      type: "video",
+    };
+
+    render(
+      <ThumbnailCanvas
+        clip={
+          clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip
+        }
+      />,
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    expect(loadMetadata).toHaveBeenCalledTimes(1);
+    expect(thumbnailCacheService.getMetadata("asset-1")).toEqual({
+      aspectRatio: 2,
+      firstTimestampSeconds: 0,
+      probedFromProxy: true,
     });
   });
 

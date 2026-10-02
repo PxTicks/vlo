@@ -641,6 +641,43 @@ describe("MediaFileProcessor", () => {
       );
     });
 
+    it("does not start a conversion that was cancelled during setup", async () => {
+      mockVideoInput();
+      const controller = new AbortController();
+      const execute = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(Conversion.init).mockImplementationOnce(async () => {
+        // Cancelled while the conversion was still being initialised.
+        controller.abort();
+        return { execute, cancel: vi.fn() } as never;
+      });
+
+      await expect(
+        new MediaFileProcessor(file).generateProxyVideo({
+          signal: controller.signal,
+        }),
+      ).resolves.toBeNull();
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("cancels a running conversion when its signal aborts", async () => {
+      mockVideoInput();
+      const controller = new AbortController();
+      const cancel = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(Conversion.init).mockResolvedValueOnce({
+        execute: vi.fn(() => new Promise<void>(() => undefined)),
+        cancel,
+      } as never);
+
+      const proxy = new MediaFileProcessor(file).generateProxyVideo({
+        signal: controller.signal,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      controller.abort();
+
+      await expect(proxy).resolves.toBeNull();
+      expect(cancel).toHaveBeenCalledTimes(1);
+    });
+
     it("lets a slow conversion finish while it keeps reporting progress", async () => {
       mockVideoInput();
       const conversion = {

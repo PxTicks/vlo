@@ -560,7 +560,7 @@ describe("sidecar controls on a stacked loader", () => {
   });
 });
 
-describe("shipped MiniMax LoRA stacks", () => {
+describe("shipped workflow LoRA stacks", () => {
   const CONFIG_DIR = resolve(
     __dirname,
     "../../../../../../backend/assets/.config",
@@ -570,28 +570,29 @@ describe("shipped MiniMax LoRA stacks", () => {
   function shippedWidgets(profile: string, workflow: string) {
     const dir = resolve(CONFIG_DIR, profile);
     const graphData = JSON.parse(
-      readFileSync(resolve(dir, `vlo_minimax_h3_${workflow}.json`), "utf-8"),
+      readFileSync(resolve(dir, `${workflow}.json`), "utf-8"),
     ) as Record<string, unknown>;
     const rules = JSON.parse(
-      readFileSync(resolve(dir, `vlo_minimax_h3_${workflow}.rules.json`), "utf-8"),
+      readFileSync(resolve(dir, `${workflow}.rules.json`), "utf-8"),
     ) as WorkflowRules;
+    const catalogue = buildGenerationNodeCatalogue(null, OBJECT_INFO, graphData);
     const widgetInputs = mergeAutodiscoveredLoraWidgetInputs(
       resolveWidgetInputs(null, rules, {
         graphData,
         objectInfo: OBJECT_INFO,
       }),
       resolveAutodiscoveredLoraWidgetInputs(
-        buildGenerationNodeCatalogue(null, OBJECT_INFO, graphData),
+        catalogue,
         new Set([
           ...collectBypassDiscoveryNodeIds(rules),
           ...collectLoraStackNodeIds(rules),
         ]),
       ),
     );
-    return { rules, widgetInputs };
+    return { rules, widgetInputs, catalogue };
   }
 
-  const workflows = [
+  const minimaxWorkflows = [
     { workflow: "i2v", nodes: ["150", "153", "154", "155"] },
     { workflow: "r2v", nodes: ["148", "150", "151", "152"] },
     { workflow: "inpaint", nodes: ["99", "100", "101", "102"] },
@@ -600,6 +601,21 @@ describe("shipped MiniMax LoRA stacks", () => {
     { workflow: "masked_guide", nodes: ["106", "107", "108", "109"] },
     { workflow: "ttm", nodes: ["23", "41", "42", "43"] },
   ];
+  const workflows = [
+    ...minimaxWorkflows.map(({ workflow, nodes }) => ({
+      workflow: `vlo_minimax_h3_${workflow}`,
+      nodes,
+    })),
+    {
+      workflow: "vlo_krea2_turbo",
+      nodes: ["30:15", "30:55", "30:56", "30:57"],
+    },
+    { workflow: "vlo_klein_multi", nodes: ["167", "168", "169", "170"] },
+    {
+      workflow: "vlo_qwen_image_2_1_edit",
+      nodes: ["459:477", "459:478", "459:479", "459:480"],
+    },
+  ];
   const cases = ["default_workflows", "high_vram_workflows"].flatMap(
     (profile) => workflows.map((workflow) => ({ profile, ...workflow })),
   );
@@ -607,9 +623,17 @@ describe("shipped MiniMax LoRA stacks", () => {
   it.each(cases)(
     "reveals $profile/$workflow's four loaders one at a time and packs from the front",
     ({ profile, workflow, nodes }) => {
-      const { rules, widgetInputs } = shippedWidgets(profile, workflow);
+      const { rules, widgetInputs, catalogue } = shippedWidgets(profile, workflow);
       const targets = mountedTargets(widgetInputs);
       expect(rules.lora_stacks?.[0].nodes).toEqual(nodes);
+      expect(collectLoraStackDiagnostics(catalogue, rules)).toEqual([]);
+      expect([...targets].sort()).toEqual(nodes.map(key).sort());
+      expect(
+        widgetInputs
+          .filter((widget) => widget.param === "strength_model")
+          .map((widget) => widget.nodeId)
+          .sort(),
+      ).toEqual([...nodes].sort());
 
       expect(
         visibleSlots(presentLoraStackWidgetInputs(widgetInputs, rules, targets)),

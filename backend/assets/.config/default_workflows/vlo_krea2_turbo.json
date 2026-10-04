@@ -317,8 +317,8 @@
         "version": 1,
         "state": {
           "lastGroupId": 10,
-          "lastNodeId": 54,
-          "lastLinkId": 79,
+          "lastNodeId": 57,
+          "lastLinkId": 82,
           "lastRerouteId": 0
         },
         "revision": 0,
@@ -638,7 +638,7 @@
                 "localized_name": "model",
                 "name": "model",
                 "type": "MODEL",
-                "link": 75
+                "link": 82
               },
               {
                 "localized_name": "positive",
@@ -1479,6 +1479,198 @@
             ],
             "color": "#322",
             "bgcolor": "#533"
+          },
+          {
+            "id": 55,
+            "type": "LoraLoaderModelOnly",
+            "pos": [
+              60,
+              -320
+            ],
+            "size": [
+              270,
+              82
+            ],
+            "flags": {},
+            "order": 18,
+            "mode": 4,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 75
+              },
+              {
+                "localized_name": "lora_name",
+                "name": "lora_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "lora_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "strength_model",
+                "name": "strength_model",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "strength_model"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  80
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "LoraLoaderModelOnly",
+              "cnr_id": "comfy-core",
+              "ver": "0.25.0"
+            },
+            "widgets_values": [
+              "krea2_darkbrush.safetensors",
+              0.8
+            ],
+            "widgets_values_named": {
+              "lora_name": "krea2_darkbrush.safetensors",
+              "strength_model": 0.8
+            }
+          },
+          {
+            "id": 56,
+            "type": "LoraLoaderModelOnly",
+            "pos": [
+              350,
+              -320
+            ],
+            "size": [
+              270,
+              82
+            ],
+            "flags": {},
+            "order": 19,
+            "mode": 4,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 80
+              },
+              {
+                "localized_name": "lora_name",
+                "name": "lora_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "lora_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "strength_model",
+                "name": "strength_model",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "strength_model"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  81
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "LoraLoaderModelOnly",
+              "cnr_id": "comfy-core",
+              "ver": "0.25.0"
+            },
+            "widgets_values": [
+              "krea2_darkbrush.safetensors",
+              0.8
+            ],
+            "widgets_values_named": {
+              "lora_name": "krea2_darkbrush.safetensors",
+              "strength_model": 0.8
+            }
+          },
+          {
+            "id": 57,
+            "type": "LoraLoaderModelOnly",
+            "pos": [
+              640,
+              -320
+            ],
+            "size": [
+              270,
+              82
+            ],
+            "flags": {},
+            "order": 20,
+            "mode": 4,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 81
+              },
+              {
+                "localized_name": "lora_name",
+                "name": "lora_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "lora_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "strength_model",
+                "name": "strength_model",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "strength_model"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  82
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "LoraLoaderModelOnly",
+              "cnr_id": "comfy-core",
+              "ver": "0.25.0"
+            },
+            "widgets_values": [
+              "krea2_darkbrush.safetensors",
+              0.8
+            ],
+            "widgets_values_named": {
+              "lora_name": "krea2_darkbrush.safetensors",
+              "strength_model": 0.8
+            }
           }
         ],
         "groups": [
@@ -1796,7 +1988,7 @@
             "id": 75,
             "origin_id": 15,
             "origin_slot": 0,
-            "target_id": 3,
+            "target_id": 55,
             "target_slot": 0,
             "type": "MODEL"
           },
@@ -1831,6 +2023,30 @@
             "target_id": 28,
             "target_slot": 1,
             "type": "STRING"
+          },
+          {
+            "id": 80,
+            "origin_id": 55,
+            "origin_slot": 0,
+            "target_id": 56,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 81,
+            "origin_id": 56,
+            "origin_slot": 0,
+            "target_id": 57,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 82,
+            "origin_id": 57,
+            "origin_slot": 0,
+            "target_id": 3,
+            "target_slot": 0,
+            "type": "MODEL"
           }
         ],
         "extra": {}

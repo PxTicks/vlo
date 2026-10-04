@@ -15,6 +15,14 @@
       "default_open": false
     }
   ],
+  "lora_stacks": [
+    {
+      "id": "model_loras",
+      "nodes": ["30:15", "30:55", "30:56", "30:57"],
+      "section_id": "lora_loaders",
+      "group_title": "LoRA"
+    }
+  ],
   "nodes": {
     "30:19": {
       "present": {

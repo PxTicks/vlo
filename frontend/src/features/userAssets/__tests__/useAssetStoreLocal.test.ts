@@ -51,6 +51,7 @@ vi.mock("../../project/services/FileSystemService", () => ({
         }),
     }),
     writeFile: vi.fn(),
+    getHandle: vi.fn(() => null),
   },
 }));
 
@@ -63,6 +64,7 @@ vi.mock("../services/MediaProcessingService", () => ({
       .fn()
       .mockResolvedValue({ duration: 10, thumbnail: null, fps: 30 }),
     generateImageThumbnail: vi.fn().mockResolvedValue(new Blob([])),
+    generateProxyVideo: vi.fn().mockResolvedValue(null),
     createProcessor: vi.fn(() => ({
       detectMimeType: vi.fn(),
       computeDuration: vi.fn().mockResolvedValue(10),

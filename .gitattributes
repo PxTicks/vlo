@@ -158,7 +158,6 @@
 /frontend/src/features/generation/types.ts extension-surface=adapter
 /frontend/src/features/generation/utils/loraLoaderWidgets.ts extension-surface=adapter
 /frontend/src/features/generation/utils/nodeBypassWidgets.ts extension-surface=adapter
-/frontend/src/features/generation/utils/loraStacks.ts extension-surface=adapter
 # The owner-neutral generation session seam. Native panel controls and the
 # extension generation adapter share this transaction path, so a change here
 # changes both (docs/generation-native-extension-seams-plan.md §3.2, §4).
@@ -260,6 +259,8 @@
 /frontend/src/features/timeline/api.ts extension-surface=adapter
 /frontend/src/features/timeline/hostCommands.ts extension-surface=adapter
 /frontend/src/features/timeline/components/TimelineClip.tsx extension-surface=adapter
+/frontend/src/features/timeline/TimelineContainer.tsx extension-surface=host
+/frontend/src/features/timeline/utils/visibleTimelineClips.ts extension-surface=host
 /frontend/src/features/timeline/components/TimelineToolbar.tsx extension-surface=adapter
 /frontend/src/features/timeline/model/** extension-surface=adapter
 /frontend/src/features/timeline/useTimelineStore.ts extension-surface=adapter

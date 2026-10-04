@@ -3,45 +3,19 @@
   "name": "MiniMax H3 Masked Guides (Base)",
   "sections": [
     {
-      "id": "lora_loaders",
-      "title": "LoRA loaders",
-      "order": 3,
-      "default_open": true
-    },
-    {
       "id": "guides",
       "title": "Guides",
-      "order": 4,
+      "order": 3,
       "default_open": true
     },
     {
       "id": "advanced_settings",
       "title": "Advanced Settings",
-      "order": 5,
+      "order": 4,
       "default_open": false
     }
   ],
-  "lora_stacks": [
-    {
-      "id": "model_loras",
-      "nodes": ["106", "107", "108", "109"],
-      "section_id": "lora_loaders",
-      "group_title": "LoRA"
-    }
-  ],
   "nodes": {
-    "106": {
-      "widgets": {
-        "lora_name": {
-          "label": "Model",
-          "discover_when_bypassed": true,
-          "default_node_bypass": true,
-          "section_id": "lora_loaders",
-          "group_id": "lora_model",
-          "group_title": "Model LoRA"
-        }
-      }
-    },
     "53": {
       "present": {
         "label": "Source video",

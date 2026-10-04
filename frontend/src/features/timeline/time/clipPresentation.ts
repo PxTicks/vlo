@@ -6,7 +6,9 @@ import type {
 import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../types/TimelineTypes";
 import {
   buildTrackTimeResolver,
+  trackTimeWarpsEqual,
   type TrackTimeResolver,
+  type TrackTimeWarp,
 } from "./resolveTrackTime";
 import { snapTickToFrameGrid, ticksPerFrame } from "../../../core/time/frameGrid";
 
@@ -112,6 +114,30 @@ interface InternalClipPresentation extends TimelineClipPresentation {
   resolvePresentationInputTick: (presentationTick: number) => number;
 }
 
+/**
+ * Everything `buildPresentation` reads. When all of it matches, a previous
+ * entry maps every tick the same way and can be reused as is.
+ */
+interface PresentationInputs {
+  fps: number;
+  trackId: string;
+  storedStart: number;
+  storedDuration: number;
+  warp: TrackTimeWarp;
+  layoutWarp: TrackTimeWarp;
+}
+
+interface ReusablePresentation {
+  inputs: PresentationInputs;
+  presentation: InternalClipPresentation;
+}
+
+// Keyed by lookup so callers pass the lookup back rather than a reuse handle.
+const reusableEntriesByLookup = new WeakMap<
+  TimelineClipPresentationLookup,
+  ReadonlyMap<string, ReusablePresentation>
+>();
+
 export function resolveClipOffsetForPresentationOffset(
   presentation: TimelineClipPresentation | undefined,
   presentationOffset: number,
@@ -216,24 +242,15 @@ export function computeQuantizedPresentation(
 
 function buildPresentation(
   clip: TimelineClip,
-  resolver: TrackTimeResolver,
-  layoutResolver: TrackTimeResolver,
-  fps: number,
+  { fps, trackId, storedStart, storedDuration, warp, layoutWarp }: PresentationInputs,
 ): InternalClipPresentation {
   // Ripple-mode adjustments choose the clip's lane position. Static-mode
   // adjustments are then rebased around that position so they retime only the
   // clip content they visibly cover, not every later clip on the track.
-  const rawStart = layoutResolver.resolvePresentationTick(
-    clip.trackId,
-    clip.start,
-  );
-  const baseEffectiveTick = resolver.resolveEffectiveTrackTick(
-    clip.trackId,
-    rawStart,
-  );
-  const rawPresentationEnd = resolver.resolvePresentationTick(
-    clip.trackId,
-    baseEffectiveTick + clip.timelineDuration,
+  const rawStart = layoutWarp.resolvePresentationTick(storedStart);
+  const baseEffectiveTick = warp.resolveEffectiveTrackTick(rawStart);
+  const rawPresentationEnd = warp.resolvePresentationTick(
+    baseEffectiveTick + storedDuration,
   );
   const rawEnd = rawStart + Math.max(0, rawPresentationEnd - rawStart);
   // The footprint IS the frame grid the renderer samples — quantize the raw
@@ -247,38 +264,45 @@ function buildPresentation(
     fps,
   );
 
-  const resolveEffectiveTrackTick = (presentationTick: number): number => {
-    const effectiveTick = resolver.resolveEffectiveTrackTick(
-      clip.trackId,
-      presentationTick,
-    );
-    return clip.start + (effectiveTick - baseEffectiveTick);
-  };
+  const resolveEffectiveTrackTick = (presentationTick: number): number =>
+    storedStart +
+    (warp.resolveEffectiveTrackTick(presentationTick) - baseEffectiveTick);
   const resolvePresentationInputTick = (presentationTick: number): number =>
     presentationTick;
 
   return {
     clipId: clip.id,
-    trackId: clip.trackId,
+    trackId,
     start: startTick,
     end: endTick,
     duration: durationTicks,
     mapPresentationOffsetToClipOffset(presentationOffset) {
       return (
-        resolveEffectiveTrackTick(startTick + presentationOffset) - clip.start
+        resolveEffectiveTrackTick(startTick + presentationOffset) - storedStart
       );
     },
     mapClipOffsetToPresentationOffset(clipOffset) {
       return (
-        resolver.resolvePresentationTick(
-          clip.trackId,
-          baseEffectiveTick + clipOffset,
-        ) - startTick
+        warp.resolvePresentationTick(baseEffectiveTick + clipOffset) - startTick
       );
     },
     resolveEffectiveTrackTick,
     resolvePresentationInputTick,
   };
+}
+
+function presentationInputsEqual(
+  left: PresentationInputs,
+  right: PresentationInputs,
+): boolean {
+  return (
+    left.fps === right.fps &&
+    left.trackId === right.trackId &&
+    left.storedStart === right.storedStart &&
+    left.storedDuration === right.storedDuration &&
+    trackTimeWarpsEqual(left.warp, right.warp) &&
+    trackTimeWarpsEqual(left.layoutWarp, right.layoutWarp)
+  );
 }
 
 function indexClipsByTrack(
@@ -301,16 +325,34 @@ function buildInternalPresentationMap(
   layoutResolver: TrackTimeResolver,
   clips: readonly TimelineClip[],
   fps: number,
-): Map<string, InternalClipPresentation> {
-  const presentationByClipId = new Map<string, InternalClipPresentation>();
+  previous?: ReadonlyMap<string, ReusablePresentation>,
+): {
+  presentations: Map<string, InternalClipPresentation>;
+  reusable: Map<string, ReusablePresentation>;
+} {
+  const presentations = new Map<string, InternalClipPresentation>();
+  const reusable = new Map<string, ReusablePresentation>();
   for (const clip of clips) {
     if (clip.type === "mask") continue;
-    presentationByClipId.set(
-      clip.id,
-      buildPresentation(clip, resolver, layoutResolver, fps),
-    );
+    const inputs: PresentationInputs = {
+      fps,
+      trackId: clip.trackId,
+      storedStart: clip.start,
+      storedDuration: clip.timelineDuration,
+      warp: resolver.forTrack(clip.trackId),
+      layoutWarp: layoutResolver.forTrack(clip.trackId),
+    };
+    // Reusing the entry keeps its identity across snapshots, so memoized UI
+    // keyed on it skips clips whose placement did not change.
+    const prior = previous?.get(clip.id);
+    const entry =
+      prior && presentationInputsEqual(prior.inputs, inputs)
+        ? prior
+        : { inputs, presentation: buildPresentation(clip, inputs) };
+    presentations.set(clip.id, entry.presentation);
+    reusable.set(clip.id, entry);
   }
-  return presentationByClipId;
+  return { presentations, reusable };
 }
 
 /**
@@ -326,7 +368,7 @@ export function buildTimelineClipPresentationIndex(
 ): Map<string, TimelineClipPresentation> {
   const resolver = buildTrackTimeResolver(tracks, clips);
   const layoutResolver = buildRippleLayoutResolver(tracks, clips);
-  const internalMap = buildInternalPresentationMap(
+  const { presentations: internalMap } = buildInternalPresentationMap(
     resolver,
     layoutResolver,
     clips,
@@ -343,23 +385,30 @@ export function buildTimelineClipPresentationIndex(
  * Renderer-facing index: same presentation map plus the active-clip lookup the
  * renderer / audio engine consume. The lookup encapsulates static rebases and
  * ripple placement so call sites no longer touch the internal resolver.
+ *
+ * Pass the previous snapshot's lookup as `previous` to keep its entry objects
+ * for clips whose placement inputs are unchanged. Reuse is decided by value,
+ * so any earlier lookup is safe to pass, even one from another timeline.
  */
 export function buildTimelineClipPresentationLookup(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
   fps: number,
+  previous?: TimelineClipPresentationLookup,
 ): TimelineClipPresentationLookup {
   const resolver = buildTrackTimeResolver(tracks, clips);
   const layoutResolver = buildRippleLayoutResolver(tracks, clips);
-  const internalMap = buildInternalPresentationMap(
-    resolver,
-    layoutResolver,
-    clips,
-    fps,
-  );
+  const { presentations: internalMap, reusable } =
+    buildInternalPresentationMap(
+      resolver,
+      layoutResolver,
+      clips,
+      fps,
+      previous ? reusableEntriesByLookup.get(previous) : undefined,
+    );
   const byTrack = indexClipsByTrack(internalMap);
 
-  return {
+  const lookup: TimelineClipPresentationLookup = {
     findActiveClipAt(trackId, presentationTick) {
       const list = byTrack.get(trackId);
       if (!list || list.length === 0) return null;
@@ -399,6 +448,8 @@ export function buildTimelineClipPresentationLookup(
       return entry.resolveEffectiveTrackTick(presentationTick);
     },
   };
+  reusableEntriesByLookup.set(lookup, reusable);
+  return lookup;
 }
 
 /**

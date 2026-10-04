@@ -703,8 +703,8 @@
         "version": 1,
         "state": {
           "lastGroupId": 37,
-          "lastNodeId": 480,
-          "lastLinkId": 734,
+          "lastNodeId": 476,
+          "lastLinkId": 730,
           "lastRerouteId": 9
         },
         "revision": 0,
@@ -1537,7 +1537,7 @@
                 "localized_name": "model",
                 "name": "model",
                 "type": "MODEL",
-                "link": 734
+                "link": 688
               },
               {
                 "localized_name": "device",
@@ -1759,238 +1759,6 @@
               "negative_prompt": "",
               "resolution": 1024
             }
-          },
-          {
-            "id": 477,
-            "type": "LoraLoaderModelOnly",
-            "pos": [
-              -190,
-              250
-            ],
-            "size": [
-              270,
-              82
-            ],
-            "flags": {},
-            "order": 9,
-            "mode": 4,
-            "inputs": [
-              {
-                "name": "model",
-                "type": "MODEL",
-                "link": 688
-              },
-              {
-                "name": "lora_name",
-                "type": "COMBO",
-                "widget": {
-                  "name": "lora_name"
-                },
-                "link": null
-              },
-              {
-                "name": "strength_model",
-                "type": "FLOAT",
-                "widget": {
-                  "name": "strength_model"
-                },
-                "link": null
-              }
-            ],
-            "outputs": [
-              {
-                "name": "MODEL",
-                "type": "MODEL",
-                "links": [
-                  731
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "LoraLoaderModelOnly"
-            },
-            "widgets_values": [
-              "None",
-              1
-            ],
-            "widgets_values_named": {
-              "lora_name": "None",
-              "strength_model": 1
-            }
-          },
-          {
-            "id": 478,
-            "type": "LoraLoaderModelOnly",
-            "pos": [
-              100,
-              250
-            ],
-            "size": [
-              270,
-              82
-            ],
-            "flags": {},
-            "order": 10,
-            "mode": 4,
-            "inputs": [
-              {
-                "name": "model",
-                "type": "MODEL",
-                "link": 731
-              },
-              {
-                "name": "lora_name",
-                "type": "COMBO",
-                "widget": {
-                  "name": "lora_name"
-                },
-                "link": null
-              },
-              {
-                "name": "strength_model",
-                "type": "FLOAT",
-                "widget": {
-                  "name": "strength_model"
-                },
-                "link": null
-              }
-            ],
-            "outputs": [
-              {
-                "name": "MODEL",
-                "type": "MODEL",
-                "links": [
-                  732
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "LoraLoaderModelOnly"
-            },
-            "widgets_values": [
-              "None",
-              1
-            ],
-            "widgets_values_named": {
-              "lora_name": "None",
-              "strength_model": 1
-            }
-          },
-          {
-            "id": 479,
-            "type": "LoraLoaderModelOnly",
-            "pos": [
-              390,
-              250
-            ],
-            "size": [
-              270,
-              82
-            ],
-            "flags": {},
-            "order": 11,
-            "mode": 4,
-            "inputs": [
-              {
-                "name": "model",
-                "type": "MODEL",
-                "link": 732
-              },
-              {
-                "name": "lora_name",
-                "type": "COMBO",
-                "widget": {
-                  "name": "lora_name"
-                },
-                "link": null
-              },
-              {
-                "name": "strength_model",
-                "type": "FLOAT",
-                "widget": {
-                  "name": "strength_model"
-                },
-                "link": null
-              }
-            ],
-            "outputs": [
-              {
-                "name": "MODEL",
-                "type": "MODEL",
-                "links": [
-                  733
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "LoraLoaderModelOnly"
-            },
-            "widgets_values": [
-              "None",
-              1
-            ],
-            "widgets_values_named": {
-              "lora_name": "None",
-              "strength_model": 1
-            }
-          },
-          {
-            "id": 480,
-            "type": "LoraLoaderModelOnly",
-            "pos": [
-              680,
-              250
-            ],
-            "size": [
-              270,
-              82
-            ],
-            "flags": {},
-            "order": 12,
-            "mode": 4,
-            "inputs": [
-              {
-                "name": "model",
-                "type": "MODEL",
-                "link": 733
-              },
-              {
-                "name": "lora_name",
-                "type": "COMBO",
-                "widget": {
-                  "name": "lora_name"
-                },
-                "link": null
-              },
-              {
-                "name": "strength_model",
-                "type": "FLOAT",
-                "widget": {
-                  "name": "strength_model"
-                },
-                "link": null
-              }
-            ],
-            "outputs": [
-              {
-                "name": "MODEL",
-                "type": "MODEL",
-                "links": [
-                  734
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "LoraLoaderModelOnly"
-            },
-            "widgets_values": [
-              "None",
-              1
-            ],
-            "widgets_values_named": {
-              "lora_name": "None",
-              "strength_model": 1
-            }
           }
         ],
         "groups": [
@@ -2088,7 +1856,7 @@
             "id": 688,
             "origin_id": 451,
             "origin_slot": 0,
-            "target_id": 477,
+            "target_id": 469,
             "target_slot": 0,
             "type": "MODEL"
           },
@@ -2347,38 +2115,6 @@
             "target_id": 474,
             "target_slot": 16,
             "type": "IMAGE"
-          },
-          {
-            "id": 731,
-            "origin_id": 477,
-            "origin_slot": 0,
-            "target_id": 478,
-            "target_slot": 0,
-            "type": "MODEL"
-          },
-          {
-            "id": 732,
-            "origin_id": 478,
-            "origin_slot": 0,
-            "target_id": 479,
-            "target_slot": 0,
-            "type": "MODEL"
-          },
-          {
-            "id": 733,
-            "origin_id": 479,
-            "origin_slot": 0,
-            "target_id": 480,
-            "target_slot": 0,
-            "type": "MODEL"
-          },
-          {
-            "id": 734,
-            "origin_id": 480,
-            "origin_slot": 0,
-            "target_id": 469,
-            "target_slot": 0,
-            "type": "MODEL"
           }
         ],
         "extra": {}

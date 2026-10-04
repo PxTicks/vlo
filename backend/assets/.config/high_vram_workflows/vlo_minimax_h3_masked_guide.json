@@ -1,8 +1,8 @@
 {
   "id": "b7f3c2d1-4a8e-4f52-9c31-6d0e8a7b45f2",
   "revision": 0,
-  "last_node_id": 109,
-  "last_link_id": 54,
+  "last_node_id": 105,
+  "last_link_id": 50,
   "nodes": [
     {
       "id": 1,
@@ -928,7 +928,7 @@
         {
           "name": "model",
           "type": "MODEL",
-          "link": 54
+          "link": 20
         }
       ],
       "outputs": [
@@ -2303,261 +2303,6 @@
       "widgets_values": [
         "## MiniMax H3 masked guides (experimental)\n\nAn **inpaint-shaped task run entirely through guidance**. There is no latent\nmask and no VAE-encoded source: the sampler starts from the *empty* AV latent\nthat `MiniMax H3 Image to Video` produces, and the only thing tying the result\nto the source video is the stack of masked guide clips.\n\nThat is the point. With latent masking, the unmasked region is copied and the\nguide's contribution is impossible to see. Here every pixel is generated, so\nwhat you are looking at *is* the guidance.\n\n### Mask polarity \u2014 read this before wiring anything\n\nvlo's mask marks the region you want to **change**. A masked guide's mask is\n**guide confidence**: `1` means *trust the guide here*. Those are opposites, so\nthe mask goes through **Invert Mask** on the way in. Get this backwards and you\nwill guide exactly the region you meant to free, which still produces plausible\nvideo.\n\n### Where the mask comes from\n\nNobody uploads it. vlo renders the matte from the selection's **alpha channel**\n(`alpha < 0.05 -> white`), so the region you erase on the timeline is the region\nmarked white. The source video itself arrives *un-holed* \u2014 the default\n`remove_transparency` treatment renders it with timeline masks off \u2014 so the guide\nclips carry the original content everywhere, and the mask alone decides how much\nof it the model is allowed to see.\n\nThat gives `min_aug` a concrete meaning: at `0` the masked region becomes pure\nnoise (maximum freedom), and above `0` it keeps that fraction of the **original\nvideo** \u2014 \"change this, but don't wander far\".\n\n### What the guide node does\n\n`Add Masked Guides from Video` cuts the source into guide clips:\n\n1. frames whose (inverted) mask is empty \u2014 i.e. frames you asked to replace\n   completely \u2014 carry no guidance and are **dropped**;\n2. each contiguous run of surviving frames becomes **one guide clip**;\n3. each run is rounded **down** to a length H3 accepts: 1, 5, 22, 39, ... (17k+5).\n\n### Guide clips are not cheap\n\nThe `plan` output reports the condition-token count. Take it seriously: a guide\nclip covering the whole timeline contributes **about as many condition rows as\nthe target video has target rows**, so an unbroken full-length guide roughly\ndoubles the packed sequence \u2014 and attention is quadratic in it. Those rows are\nre-injected every step, never denoised.\n\nIf a run is slow, the levers are: a shorter selection, a lower resolution, a\ntighter mask (`min_coverage`), or accepting fewer/shorter guide clips.\n\n### The A/B this workflow exists for\n\n`guide_clock` on **Patch Masked Guides** is the experiment. Nothing masked happens\nat all without this patch node in the model chain.\n\n| `guide_clock` | what a zero-confidence token is, and what it claims to be |\n| --- | --- |\n| `stock` | pure noise, labelled as clean as a normal guide \u2014 corruption only, no timestep story. The baseline. |\n| `floored` | pure noise, labelled as clean as the target has become. Core's guard carried over; it lies, and increasingly so as sampling proceeds. |\n| `matched` *(default)* | pure noise, labelled as pure noise. |\n| `target_relative` | level with the target, labelled there. Core's own denoise-mask row formula read backwards. Changes what `s = 0` means: no *marginal* information rather than none. |\n\nIf the freed region comes back noisy, this is the first knob to move \u2014 and\n`min_aug` is the second.\n\n`time_pooling` on the guide node is the second knob worth A/B-ing: `average`\nmatches the spatial pooling, `max` takes the union across the four frames behind\none latent token, which is what a *moving* subject needs.\n\n### Model\n\nUses **fl2va**, not ref2va: masked guides are keyframes, and keyframe\nconditioning is what fl2va is trained for. Reference (`<Picture i>`) tokens are a\ndifferent mechanism and are not used here.\n"
       ]
-    },
-    {
-      "id": 106,
-      "type": "LoraLoaderModelOnly",
-      "pos": [
-        -710,
-        4600
-      ],
-      "size": [
-        270,
-        82
-      ],
-      "flags": {},
-      "order": 47,
-      "mode": 4,
-      "inputs": [
-        {
-          "localized_name": "model",
-          "name": "model",
-          "type": "MODEL",
-          "link": 20
-        },
-        {
-          "localized_name": "lora_name",
-          "name": "lora_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "lora_name"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "strength_model",
-          "name": "strength_model",
-          "type": "FLOAT",
-          "widget": {
-            "name": "strength_model"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "MODEL",
-          "name": "MODEL",
-          "type": "MODEL",
-          "links": [
-            51
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "LoraLoaderModelOnly",
-        "models": [
-          {
-            "name": "minimax_h3_turbo_v4_step600_ema.safetensors",
-            "url": "https://huggingface.co/larryvrh/MiniMax-H3-Turbo-Lora/resolve/main/minimax_h3_turbo_v4_step600_ema.safetensors",
-            "directory": "loras"
-          }
-        ]
-      },
-      "widgets_values": [
-        "minimax_h3_turbo_v4_step600_ema.safetensors",
-        1
-      ],
-      "widgets_values_named": {
-        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
-        "strength_model": 1
-      }
-    },
-    {
-      "id": 107,
-      "type": "LoraLoaderModelOnly",
-      "pos": [
-        -420,
-        4600
-      ],
-      "size": [
-        270,
-        82
-      ],
-      "flags": {},
-      "order": 48,
-      "mode": 4,
-      "inputs": [
-        {
-          "localized_name": "model",
-          "name": "model",
-          "type": "MODEL",
-          "link": 51
-        },
-        {
-          "localized_name": "lora_name",
-          "name": "lora_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "lora_name"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "strength_model",
-          "name": "strength_model",
-          "type": "FLOAT",
-          "widget": {
-            "name": "strength_model"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "MODEL",
-          "name": "MODEL",
-          "type": "MODEL",
-          "links": [
-            52
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "LoraLoaderModelOnly"
-      },
-      "widgets_values": [
-        "minimax_h3_turbo_v4_step600_ema.safetensors",
-        1
-      ],
-      "widgets_values_named": {
-        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
-        "strength_model": 1
-      }
-    },
-    {
-      "id": 108,
-      "type": "LoraLoaderModelOnly",
-      "pos": [
-        -130,
-        4600
-      ],
-      "size": [
-        270,
-        82
-      ],
-      "flags": {},
-      "order": 49,
-      "mode": 4,
-      "inputs": [
-        {
-          "localized_name": "model",
-          "name": "model",
-          "type": "MODEL",
-          "link": 52
-        },
-        {
-          "localized_name": "lora_name",
-          "name": "lora_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "lora_name"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "strength_model",
-          "name": "strength_model",
-          "type": "FLOAT",
-          "widget": {
-            "name": "strength_model"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "MODEL",
-          "name": "MODEL",
-          "type": "MODEL",
-          "links": [
-            53
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "LoraLoaderModelOnly"
-      },
-      "widgets_values": [
-        "minimax_h3_turbo_v4_step600_ema.safetensors",
-        1
-      ],
-      "widgets_values_named": {
-        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
-        "strength_model": 1
-      }
-    },
-    {
-      "id": 109,
-      "type": "LoraLoaderModelOnly",
-      "pos": [
-        160,
-        4600
-      ],
-      "size": [
-        270,
-        82
-      ],
-      "flags": {},
-      "order": 50,
-      "mode": 4,
-      "inputs": [
-        {
-          "localized_name": "model",
-          "name": "model",
-          "type": "MODEL",
-          "link": 53
-        },
-        {
-          "localized_name": "lora_name",
-          "name": "lora_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "lora_name"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "strength_model",
-          "name": "strength_model",
-          "type": "FLOAT",
-          "widget": {
-            "name": "strength_model"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "MODEL",
-          "name": "MODEL",
-          "type": "MODEL",
-          "links": [
-            54
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "LoraLoaderModelOnly"
-      },
-      "widgets_values": [
-        "minimax_h3_turbo_v4_step600_ema.safetensors",
-        1
-      ],
-      "widgets_values_named": {
-        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
-        "strength_model": 1
-      }
     }
   ],
   "links": [
@@ -2717,7 +2462,7 @@
       20,
       44,
       0,
-      106,
+      47,
       0,
       "MODEL"
     ],
@@ -2952,38 +2697,6 @@
       105,
       0,
       "IMAGE"
-    ],
-    [
-      51,
-      106,
-      0,
-      107,
-      0,
-      "MODEL"
-    ],
-    [
-      52,
-      107,
-      0,
-      108,
-      0,
-      "MODEL"
-    ],
-    [
-      53,
-      108,
-      0,
-      109,
-      0,
-      "MODEL"
-    ],
-    [
-      54,
-      109,
-      0,
-      47,
-      0,
-      "MODEL"
     ]
   ],
   "groups": [

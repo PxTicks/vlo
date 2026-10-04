@@ -13,6 +13,7 @@ import {
 import { TimelineClipItem } from "../TimelineClip";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../../hooks/useInteractionStore";
+import { beginClipReversal, endClipReversal } from "../../hooks/useClipReversalStore";
 import { installTimelineHostCommands } from "../../hostCommands";
 import { hostContextKeys } from "../../../../core/shell/contextKeys";
 import { installTimelineContextKeys } from "../../../extensions/commands/installHostContextKeys";
@@ -186,6 +187,28 @@ describe("TimelineClip command-backed context menu items", () => {
       );
     } finally {
       hostContextKeys.set("project.open", true);
+    }
+  });
+
+  it("keeps Reverse disabled when a reversing clip unmounts and remounts", () => {
+    beginClipReversal(baseClip.id);
+    try {
+      const first = render(<TimelineClipItem clip={baseClip} isOverlay={false} />);
+      fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
+      expect(screen.getByRole("menuitem", { name: "Reversing..." })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+
+      first.unmount();
+      render(<TimelineClipItem clip={baseClip} isOverlay={false} />);
+      fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
+      expect(screen.getByRole("menuitem", { name: "Reversing..." })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    } finally {
+      endClipReversal(baseClip.id);
     }
   });
 });

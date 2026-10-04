@@ -27,6 +27,59 @@ function createExtractedAudioFilename(
   return `${baseName}-audio.${extension}`;
 }
 
+export const PROXY_STALL_TIMEOUT_MS = 30_000;
+
+/**
+ * Runs a conversion, giving up once it has gone `stallTimeoutMs` without
+ * progress or when `signal` aborts. A wedged WebCodecs encoder never settles
+ * `execute()`, and proxies run one at a time, so one stall would otherwise
+ * hold every later proxy forever. Measured from the last progress tick rather
+ * than the start, so long sources still finish.
+ *
+ * Mediabunny only reports when the least advanced output track moves, so this
+ * suits single-track conversions; with several, a track that ends early would
+ * read as a stall.
+ */
+async function executeWithStallTimeout(
+  conversion: Conversion,
+  stallTimeoutMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  // An abort during track probing or Conversion.init fired before the
+  // listener below exists, so it is only visible as state.
+  signal?.throwIfAborted();
+
+  let lastProgressAt = Date.now();
+  conversion.onProgress = () => {
+    lastProgressAt = Date.now();
+  };
+
+  let watchdog: ReturnType<typeof setInterval> | undefined;
+  let onAbort: (() => void) | undefined;
+  const interrupted = new Promise<never>((_, reject) => {
+    const stop = (error: unknown) => {
+      // Not awaited: cancelling a wedged encoder can hang too.
+      void conversion.cancel().catch(() => undefined);
+      reject(error);
+    };
+    watchdog = setInterval(() => {
+      if (Date.now() - lastProgressAt < stallTimeoutMs) return;
+      stop(
+        new Error(`Conversion made no progress for ${stallTimeoutMs / 1000}s`),
+      );
+    }, Math.min(1000, stallTimeoutMs));
+    onAbort = () => stop(signal?.reason);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+
+  try {
+    await Promise.race([conversion.execute(), interrupted]);
+  } finally {
+    clearInterval(watchdog);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 export class MediaFileProcessor {
   private file: File;
   private input: Input | null = null;
@@ -349,10 +402,15 @@ export class MediaFileProcessor {
   }
 
   /**
-   * Generates a proxy video blob using mediabunny.
+   * Generates a proxy video blob using mediabunny. Resolves null when the
+   * conversion fails or `signal` aborts it.
    */
-  async generateProxyVideo(): Promise<Blob | null> {
+  async generateProxyVideo(
+    options: { signal?: AbortSignal } = {},
+  ): Promise<Blob | null> {
     if (this.isDisposed) throw new Error("MediaFileProcessor is disposed");
+    const { signal } = options;
+    if (signal?.aborted) return null;
     try {
       const input = this.getInput();
 
@@ -379,8 +437,12 @@ export class MediaFileProcessor {
           keyFrameInterval: 1.0,
           bitrate: 500_000,
         },
+        // Proxies only feed timeline thumbnails. Keeping it to one track also
+        // keeps the stall watchdog honest: mediabunny reports the least
+        // advanced track, which freezes once a shorter audio track ends.
+        audio: { discard: true },
       });
-      await conversion.execute();
+      await executeWithStallTimeout(conversion, PROXY_STALL_TIMEOUT_MS, signal);
 
       // Do NOT dispose input
 
@@ -393,7 +455,9 @@ export class MediaFileProcessor {
         type: "video/mp4",
       });
     } catch (e) {
-      console.error("Failed to generate proxy video", e);
+      if (!signal?.aborted) {
+        console.error("Failed to generate proxy video", e);
+      }
       return null;
     }
   }
@@ -494,10 +558,13 @@ export class MediaProcessingService {
     }
   }
 
-  async generateProxyVideo(file: File): Promise<Blob | null> {
+  async generateProxyVideo(
+    file: File,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<Blob | null> {
     const processor = this.createProcessor(file);
     try {
-      return await processor.generateProxyVideo();
+      return await processor.generateProxyVideo(options);
     } finally {
       processor.dispose();
     }

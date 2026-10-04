@@ -34,7 +34,8 @@ export interface ApplyClipTransformsOptions {
    * When `false`, the transform stack's filter ops are NOT applied to the
    * target's `sprite.filters` — used in effect-masking's offscreen mode, where
    * those filters are baked into the target texture by the masked-effect chain
-   * instead. Layout and the range-mask AlphaFilter still apply. Defaults true.
+   * instead. Layout and the opacity / range-mask AlphaFilter still apply.
+   * Defaults true.
    */
   applyFilterTransforms?: boolean;
   /**
@@ -333,6 +334,23 @@ export function runApplicators(
 // applyClipTransforms — clip-side wrapper
 // ============================================================================
 
+/**
+ * Range-mask components are evaluated at clip source time (post-speed): true
+ * when any active range covers the current source-media time.
+ */
+function isRangeMasked(clip: TimelineClip, sourceTimeTicks: number): boolean {
+  if (clip.type === "mask" || !clip.components?.length) return false;
+  return clip.components.some((component) => {
+    if (component.type !== "range_mask") return false;
+    const { isActive, startSourceTicks, endSourceTicks } = component.parameters;
+    return (
+      isActive &&
+      sourceTimeTicks >= startSourceTicks &&
+      sourceTimeTicks <= endSourceTicks
+    );
+  });
+}
+
 export function applyClipTransforms(
   target: ClipTransformTarget,
   clip: TimelineClip,
@@ -387,30 +405,22 @@ export function applyClipTransforms(
   if (options?.applyFilterTransforms === false) {
     // Offscreen effect masking owns the filter chain; drop the transform
     // filters here so they don't double-apply on top of the baked texture.
-    // Cleared before the range-mask op below, which must still apply.
+    // Cleared before the opacity / range-mask op below, which must still apply.
     state.filters = [];
   }
 
-  // Range-mask components: evaluate at clip source time (post-speed).
-  // If any active range covers the current source-media time, push a single
-  // alpha=0 filter op — the filter applicator will turn it into a PixiJS
-  // AlphaFilter.
-  if (clip.type !== "mask" && clip.components?.length) {
-    for (const component of clip.components) {
-      if (component.type !== "range_mask") continue;
-      const { isActive, startSourceTicks, endSourceTicks } = component.parameters;
-      if (!isActive) continue;
-      if (
-        sourceTimeTicks >= startSourceTicks &&
-        sourceTimeTicks <= endSourceTicks
-      ) {
-        state.filters.push({
-          type: "AlphaFilter",
-          params: { alpha: 0 },
-        });
-        break;
-      }
-    }
+  // Clip opacity and range masks share one AlphaFilter op, pushed after the
+  // effect stack so it fades what the effects produced (and after the clear
+  // above, so it survives the offscreen effect-mask bake). A covering range
+  // mask hides the clip outright; an opaque clip pushes nothing.
+  const alpha = isRangeMasked(clip, sourceTimeTicks)
+    ? 0
+    : (state.opacity ?? 1);
+  if (alpha < 1) {
+    state.filters.push({
+      type: "AlphaFilter",
+      params: { alpha },
+    });
   }
 
   // Fill the resolved visual/source times into the caller's sample identity so

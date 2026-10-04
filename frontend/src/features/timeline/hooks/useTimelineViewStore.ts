@@ -6,6 +6,7 @@ import {
   ticksToPx as ticksToPxAt,
   pxToTicks as pxToTicksAt,
 } from "../../../core/time/pixelGrid";
+import type { VisiblePixelWindow } from "../utils/visibleTimelineClips";
 
 export interface TimelineViewState {
   zoomScale: number;
@@ -25,6 +26,15 @@ export interface TimelineViewState {
   // Scroll Sync for Virtualization
   scrollContainer: HTMLElement | null;
   setScrollContainer: (element: HTMLElement | null) => void;
+
+  /**
+   * The overscanned pixel window the timeline mounts clips for. It moves only
+   * when the viewport nears one of its edges, so per-clip work that follows it
+   * runs in batches rather than on every scroll event. Null while no timeline
+   * is mounted.
+   */
+  visiblePixelWindow: VisiblePixelWindow | null;
+  setVisiblePixelWindow: (window: VisiblePixelWindow | null) => void;
 }
 
 export const useTimelineViewStore = create<TimelineViewState>((set, get) => ({
@@ -45,4 +55,7 @@ export const useTimelineViewStore = create<TimelineViewState>((set, get) => ({
 
   scrollContainer: null,
   setScrollContainer: (element) => set({ scrollContainer: element }),
+
+  visiblePixelWindow: null,
+  setVisiblePixelWindow: (window) => set({ visiblePixelWindow: window }),
 }));

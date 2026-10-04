@@ -83,9 +83,17 @@ export interface TimelineTime extends TimelinePlacementMapper {
   introducesCollision(change: ProposedClipTimingChange): boolean;
 }
 
-function createTimelineTime(snapshot: TimelineTimeSnapshot): TimelineTime {
+function createTimelineTime(
+  snapshot: TimelineTimeSnapshot,
+  previous?: TimelineTime,
+): TimelineTime {
   const { tracks, clips, fps } = snapshot;
-  const lookup = buildTimelineClipPresentationLookup(tracks, clips, fps);
+  const lookup = buildTimelineClipPresentationLookup(
+    tracks,
+    clips,
+    fps,
+    previous?.renderLookup(),
+  );
   const mapper = createTimelinePlacementMapper(snapshot, lookup);
   const clipsById = new Map(clips.map((clip) => [clip.id, clip]));
   // Built on first ask and shared for the life of this snapshot: the UI reads
@@ -196,7 +204,9 @@ let cached: { snapshot: TimelineTimeSnapshot; time: TimelineTime } | undefined;
 export function getTimelineTime(snapshot: TimelineTimeSnapshot): TimelineTime {
   if (!cached || cached.snapshot.tracks !== snapshot.tracks ||
       cached.snapshot.clips !== snapshot.clips || cached.snapshot.fps !== snapshot.fps) {
-    cached = { snapshot: { ...snapshot }, time: createTimelineTime(snapshot) };
+    // Seed from the outgoing snapshot so unchanged clips keep their
+    // presentation entries, and memoized clip UI can skip them.
+    cached = { snapshot: { ...snapshot }, time: createTimelineTime(snapshot, cached?.time) };
   }
   return cached.time;
 }

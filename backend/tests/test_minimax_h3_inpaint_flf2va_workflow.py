@@ -52,10 +52,6 @@ def test_minimax_h3_inpaint_flf2va_lora_loader_ships_bypassed_between_unet_and_a
     assert loader["type"] == "LoraLoaderModelOnly"
     assert loader["mode"] == 4
 
-    # UNETLoader -> LoRA stack -> attention; bypassing passes MODEL through.
+    # UNETLoader -> LoRA -> attention; bypassing passes MODEL straight through.
     assert links[loader["inputs"][0]["link"]][:2] == (44, 0)
-    for source_id, target_id in zip((99, 100, 101, 102), (100, 101, 102, 47)):
-        assert [
-            links[link_id][2]
-            for link_id in nodes[source_id]["outputs"][0]["links"]
-        ] == [target_id]
+    assert [links[link_id][2] for link_id in loader["outputs"][0]["links"]] == [47]

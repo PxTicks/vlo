@@ -15,6 +15,7 @@ vi.mock("../../project/services/FileSystemService", () => ({
     readFile: vi.fn(),
     writeFile: vi.fn(),
     deleteFile: vi.fn(),
+    getHandle: vi.fn(() => null),
   },
 }));
 
@@ -44,6 +45,7 @@ vi.mock("../../timeline", () => ({
 vi.mock("../services/MediaProcessingService", () => ({
   mediaProcessingService: {
     computeDuration: vi.fn(),
+    generateProxyVideo: vi.fn().mockResolvedValue(null),
   },
 }));
 

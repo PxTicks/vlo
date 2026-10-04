@@ -3,12 +3,6 @@
   "name": "Qwen Image 2.1 Edit",
   "sections": [
     {
-      "id": "lora_loaders",
-      "title": "LoRA loaders",
-      "order": 3,
-      "default_open": true
-    },
-    {
       "id": "image_generation",
       "title": "Image Generation",
       "order": 2,
@@ -21,27 +15,7 @@
       "default_open": false
     }
   ],
-  "lora_stacks": [
-    {
-      "id": "model_loras",
-      "nodes": ["459:477", "459:478", "459:479", "459:480"],
-      "section_id": "lora_loaders",
-      "group_title": "LoRA"
-    }
-  ],
   "nodes": {
-    "459:477": {
-      "widgets": {
-        "lora_name": {
-          "label": "Model",
-          "discover_when_bypassed": true,
-          "default_node_bypass": true,
-          "section_id": "lora_loaders",
-          "group_id": "lora_model",
-          "group_title": "Model LoRA"
-        }
-      }
-    },
     "477": {
       "present": {
         "label": "Reference images",

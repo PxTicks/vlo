@@ -81,7 +81,7 @@ test.describe('Playhead actions across a ripple retime', () => {
         // Passing the presentation tick straight to the model used to fail the
         // clip-bounds guard or cut at the wrong content frame; neither adds a
         // clip whose edge lines up with the playhead.
-        await expect(editor.timeline.clips).toHaveCount(clipsBefore + 1);
+        await expect.poll(() => editor.timeline.getClipCount()).toBe(clipsBefore + 1);
 
         const leftBox = await editor.timeline
             .getClipById(RIPPLED_CLIP)

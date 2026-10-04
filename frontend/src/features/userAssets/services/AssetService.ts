@@ -164,39 +164,13 @@ export class AssetService {
   }
 
   /**
-   * Settles once the asset's ingest writes have, reporting whether they
-   * succeeded. Unlike {@link waitForAssetPersistence} it leaves the pending
-   * write in place, so a background follow-up does not take the outcome from
-   * the caller that owns it.
-   */
-  async whenAssetPersisted(assetId: string): Promise<boolean> {
-    const persistencePromise = assetPersistencePromises.get(assetId);
-    if (!persistencePromise) {
-      return true;
-    }
-
-    try {
-      await persistencePromise;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
    * Scans the project root for new assets, ingests them, and persists them to assets.json.
    * Returns a list of the newly added assets.
    *
    * `existingAssets` is treated as read-only; a local working copy is used so the caller's
    * array (typically the asset store's `state.assets`) is never mutated.
-   *
-   * `onAssetCreated` reports each asset as soon as it is ingested, before the
-   * batched index write, so the caller can show it without waiting for the rest.
    */
-  async scanForNewAssets(
-    existingAssets: readonly Asset[],
-    onAssetCreated?: (asset: Asset) => void,
-  ): Promise<Asset[]> {
+  async scanForNewAssets(existingAssets: readonly Asset[]): Promise<Asset[]> {
     console.log("[Scanner] Starting scan...");
 
     let persistedAssets: Asset[] = [];
@@ -299,7 +273,6 @@ export class AssetService {
           newAssetsToPersist.push(ingestResult.asset);
           workingAssets.push(ingestResult.asset);
           knownPaths.add(ingestResult.asset.name);
-          onAssetCreated?.(ingestResult.asset);
         }
       } catch (e) {
         console.warn(
@@ -470,10 +443,10 @@ export class AssetService {
         creationMetadata,
       );
       let storageThumbnail: string | undefined;
+      let storageProxy: string | undefined;
+      let proxyBlob: Blob | null = null;
 
-      // 4. Generate Metadata (CPU Bound - keep awaited). The proxy is left to
-      // ProxyGenerationService: it is a full transcode, and nothing needs it
-      // for the asset to be usable.
+      // 4. Generate Metadata / Proxy (CPU Bound - keep awaited)
       let duration = isImage ? 5 : 0;
       let fps: number | undefined;
       let thumbnailBlob: Blob | null = null;
@@ -497,6 +470,19 @@ export class AssetService {
           const thumbName = `${assetFileName}_thumb.webp`;
           storageThumbnail = `.vloproject/thumbnails/${thumbName}`;
         }
+
+        // Generate proxy
+        console.log(`[Ingest] Generating proxy for ${file.name}...`);
+        console.time(`[Ingest] Proxy Generation ${file.name}`);
+        try {
+          proxyBlob = await processor.generateProxyVideo();
+          if (proxyBlob) {
+            storageProxy = `.vloproject/proxies/${assetFileName}_proxy.mp4`;
+          }
+        } catch (e) {
+          console.warn(`[Ingest] Proxy generation failed for ${file.name}`, e);
+        }
+        console.timeEnd(`[Ingest] Proxy Generation ${file.name}`);
       } else if (isAudio) {
         duration = await processor.computeDuration();
       }
@@ -561,6 +547,11 @@ export class AssetService {
           ? URL.createObjectURL(thumbnailBlob)
           : undefined,
         thumbnailPath: storageThumbnail,
+        proxySrc: proxyBlob // Use the blob directly!
+          ? URL.createObjectURL(proxyBlob)
+          : undefined,
+        proxyPath: storageProxy,
+        proxyFile: proxyBlob || undefined,
         duration: duration,
         fps,
         hasAudio: hasAudio,
@@ -579,6 +570,7 @@ export class AssetService {
         favourite: newAssetInMemory.favourite,
         src: storageSrc,
         thumbnail: storageThumbnail,
+        proxySrc: storageProxy,
         duration: newAssetInMemory.duration,
         fps: newAssetInMemory.fps,
         hasAudio: newAssetInMemory.hasAudio,
@@ -609,6 +601,16 @@ export class AssetService {
             console.timeEnd(`[Ingest-BG] Save Thumbnail ${file.name}`);
           }
 
+          // Save Proxy
+          if (proxyBlob && storageProxy) {
+            console.time(`[Ingest-BG] Save Proxy ${file.name}`);
+            const proxyFile = new File([proxyBlob], `${assetFileName}_proxy.mp4`, {
+              type: "video/mp4",
+            });
+            await fileSystemService.saveAssetFile(proxyFile, storageProxy);
+            console.timeEnd(`[Ingest-BG] Save Proxy ${file.name}`);
+          }
+
           // Save Project JSON
           if (!skipProjectSave) {
             console.time(`[Ingest-BG] Asset Index Save ${file.name}`);
@@ -624,6 +626,7 @@ export class AssetService {
             {
               storageSrc,
               storageThumbnail,
+              storageProxy,
             },
           );
           // Note: Silent failure here means app assumes asset is safe but it's not on disk.

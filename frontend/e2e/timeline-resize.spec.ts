@@ -7,8 +7,8 @@ test.describe('Clip Resize & Snapping', () => {
 
         // Select clip to reveal resize handles
         await timeline.clickClip(0);
-        const clip = await timeline.getClip(0);
-        const rightHandle = await timeline.getClipResizeHandle(0, 'right');
+        const clip = timeline.getClip(0);
+        const rightHandle = timeline.getClipResizeHandle(0, 'right');
         await expect(rightHandle).toBeVisible();
 
         // Measure initial clip width
@@ -38,8 +38,8 @@ test.describe('Clip Resize & Snapping', () => {
 
         // Select clip to reveal resize handles
         await timeline.clickClip(0);
-        const clip = await timeline.getClip(0);
-        const leftHandle = await timeline.getClipResizeHandle(0, 'left');
+        const clip = timeline.getClip(0);
+        const leftHandle = timeline.getClipResizeHandle(0, 'left');
         await expect(leftHandle).toBeVisible();
 
         // Measure initial clip position and width
@@ -71,8 +71,8 @@ test.describe('Clip Resize & Snapping', () => {
 
         // Select clip to reveal resize handles
         await timeline.clickClip(0);
-        const clip = await timeline.getClip(0);
-        const rightHandle = await timeline.getClipResizeHandle(0, 'right');
+        const clip = timeline.getClip(0);
+        const rightHandle = timeline.getClipResizeHandle(0, 'right');
 
         // Drag the right handle very far left to exceed minimum
         const handleBox = await rightHandle.boundingBox();
@@ -99,10 +99,10 @@ test.describe('Clip Resize & Snapping', () => {
 
         // Select clip 0 and resize its right handle toward clip 1's start — triggers snap
         await timeline.clickClip(0);
-        const rightHandle = await timeline.getClipResizeHandle(0, 'right');
+        const rightHandle = timeline.getClipResizeHandle(0, 'right');
         await expect(rightHandle).toBeVisible();
 
-        const clip1Box = await (await timeline.getClip(1)).boundingBox();
+        const clip1Box = await timeline.getClip(1).boundingBox();
         expect(clip1Box).toBeTruthy();
         const snapTargetX = clip1Box!.x;
 
@@ -131,10 +131,10 @@ test.describe('Clip Resize & Snapping', () => {
 
         // Select clip 0 and resize its right handle toward clip 1's start
         await timeline.clickClip(0);
-        const rightHandle = await timeline.getClipResizeHandle(0, 'right');
+        const rightHandle = timeline.getClipResizeHandle(0, 'right');
         await expect(rightHandle).toBeVisible();
 
-        const clip1Box = await (await timeline.getClip(1)).boundingBox();
+        const clip1Box = await timeline.getClip(1).boundingBox();
         expect(clip1Box).toBeTruthy();
         const snapTargetX = clip1Box!.x;
 

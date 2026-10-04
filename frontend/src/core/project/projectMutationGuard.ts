@@ -41,7 +41,6 @@ export class ProjectMutationGuard {
   private pendingAcquire: PendingAcquire | null = null;
   private readonly unfreezeWaiters = new Set<() => void>();
   private readonly editBlockers = new Set<() => string | null>();
-  private readonly freezeListeners = new Set<() => void>();
 
   /**
    * An edit the user is still in the middle of (a drag, an open spline or
@@ -51,16 +50,6 @@ export class ProjectMutationGuard {
   registerEditBlocker(blocker: () => string | null): () => void {
     this.editBlockers.add(blocker);
     return () => { this.editBlockers.delete(blocker); };
-  }
-
-  /**
-   * Calls `listener` each time an export freezes the project. For background
-   * work that is not a mutation, so an export does not wait for it, but that
-   * should stand aside once one starts (a proxy transcode wants the encoder).
-   */
-  onFreeze(listener: () => void): () => void {
-    this.freezeListeners.add(listener);
-    return () => { this.freezeListeners.delete(listener); };
   }
 
   isFrozen(): boolean {
@@ -136,14 +125,6 @@ export class ProjectMutationGuard {
   private installLease(): ProjectExportLease {
     const lease = {};
     this.lease = lease;
-    for (const listener of [...this.freezeListeners]) {
-      // A listener that throws must not fail the export that froze.
-      try {
-        listener();
-      } catch (error) {
-        console.error("Failed to notify work of a project freeze", error);
-      }
-    }
     return {
       release: () => {
         if (this.lease !== lease) return;

@@ -46,15 +46,9 @@ import type { TimelineClipOverlayDefinition } from "./clipOverlayApi";
 import { useTimelineSelectionStore } from "../timelineSelection";
 import { useAssetBrowserSelectionStore } from "../userAssets/useAssetBrowserSelectionStore";
 import { useAssetBrowserRevealStore } from "../userAssets/useAssetBrowserRevealStore";
-import { getTimelineTime, liveClipOffsetMapping } from "./time/index";
+import { getTimelineTime } from "./time/index";
 import { resolveTransitions } from "./model/transitionModel";
 import { TransitionOverlay } from "../transitions/components/TransitionOverlay";
-import {
-  buildVisibleTimelineClipIndex,
-  clipsInVisibleTimelineRange,
-  visiblePixelWindowForViewport,
-  visibleTickRangeForPixelWindow,
-} from "./utils/visibleTimelineClips";
 
 const containerStyles = {
   width: "100%",
@@ -78,17 +72,6 @@ const scrollStyles = {
   },
 };
 
-// Module-level so `useSensor` returns the same descriptor each render. A new
-// options object rebuilds dnd-kit's activators and internal context, which
-// re-renders every mounted draggable clip whenever the container renders.
-const POINTER_SENSOR_OPTIONS = {
-  activationConstraint: {
-    distance: 3,
-  },
-};
-
-const NO_CLIP_OVERLAYS: readonly TimelineClipOverlayDefinition[] = [];
-
 const MIN_TIMELINE_DURATION_TICKS = mediaSecondsToTickExact(15);
 const TIMELINE_END_BUFFER_TICKS = mediaSecondsToTickExact(10);
 
@@ -109,7 +92,7 @@ export interface TimelineContainerProps {
 function TimelineContainerComponent({
   scrollContainerRef,
   insertGapIndex: externalInsertGapIndexProp,
-  clipOverlays = NO_CLIP_OVERLAYS,
+  clipOverlays = [],
 }: TimelineContainerProps) {
   const {
     tracks,
@@ -120,7 +103,6 @@ function TimelineContainerComponent({
     transitions,
     selectedTransitionId,
     selectTransition,
-    selectedClipIds,
   } = useTimelineStore(
     useShallow((state) => ({
       tracks: state.tracks,
@@ -131,7 +113,6 @@ function TimelineContainerComponent({
       transitions: state.transitions,
       selectedTransitionId: state.selectedTransitionId,
       selectTransition: state.selectTransition,
-      selectedClipIds: state.selectedClipIds,
     })),
   );
   const timelineClips = React.useMemo(
@@ -151,13 +132,10 @@ function TimelineContainerComponent({
     () => timelineTime.presentationIndex(),
     [timelineTime],
   );
-  const visibleClipIndex = React.useMemo(
-    () => buildVisibleTimelineClipIndex(timelineClips, clipPresentationById),
-    [timelineClips, clipPresentationById],
-  );
 
   const {
     zoomScale,
+    setZoomScale,
     setMinZoomScale,
     ticksToPx,
     pxToTicks,
@@ -165,18 +143,12 @@ function TimelineContainerComponent({
   } = useTimelineViewStore(
     useShallow((state) => ({
       zoomScale: state.zoomScale,
+      setZoomScale: state.setZoomScale,
       setMinZoomScale: state.setMinZoomScale,
       ticksToPx: state.ticksToPx,
       pxToTicks: state.pxToTicks,
       setScrollContainer: state.setScrollContainer,
     })),
-  );
-  const visiblePixelWindow = useTimelineViewStore(
-    (state) => state.visiblePixelWindow,
-  );
-  const visibleTickRange = React.useMemo(
-    () => visibleTickRangeForPixelWindow(visiblePixelWindow, zoomScale),
-    [visiblePixelWindow, zoomScale],
   );
 
   // --- INTERNAL DND SETUP ---
@@ -202,31 +174,6 @@ function TimelineContainerComponent({
     })),
   );
   const interactionSnapTick = useInteractionStore((state) => state.snapTick);
-  const pinnedClipIds = React.useMemo(
-    () => interactionOperation === "move"
-      ? interactionActiveClip
-        ? [...selectedClipIds, interactionActiveClip.id]
-        : selectedClipIds
-      : interactionActiveClip
-        ? [interactionActiveClip.id]
-        : [],
-    [interactionOperation, interactionActiveClip, selectedClipIds],
-  );
-  const visibleClips = React.useMemo(
-    () => clipsInVisibleTimelineRange(
-      visibleClipIndex,
-      visibleTickRange,
-      pinnedClipIds,
-    ),
-    [visibleClipIndex, visibleTickRange, pinnedClipIds],
-  );
-  const visibleTransitions = React.useMemo(
-    () => resolvedTransitions.filter((resolved) =>
-      resolved.start < visibleTickRange.end &&
-      resolved.start + resolved.duration > visibleTickRange.start,
-    ),
-    [resolvedTransitions, visibleTickRange],
-  );
   const transformDropPreview = useInteractionStore(
     (state) => state.transformDropPreview,
   );
@@ -238,7 +185,13 @@ function TimelineContainerComponent({
       ? externalInsertGapIndexProp
       : externalInsertGapIndex;
 
-  const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 3,
+      },
+    }),
+  );
 
   // Ref to store the exact time and mouse position *before* the zoom update
   const zoomAnchorRef = useRef<{
@@ -275,14 +228,13 @@ function TimelineContainerComponent({
         // 2. Calculate the specific "Time" (ticks) under the mouse cursor right now
         const currentScrollLeft = container.scrollLeft;
         const timelineX = currentScrollLeft + mouseOffsetX - TRACK_HEADER_WIDTH;
-        const view = useTimelineViewStore.getState();
-        const anchorTimeTicks = view.pxToTicks(timelineX);
+        const anchorTimeTicks = pxToTicks(timelineX);
 
         // 3. Store this anchor point
         zoomAnchorRef.current = { mouseOffsetX, anchorTimeTicks };
 
         // 4. Update the zoom scale (the store clamps it to the zoom bounds)
-        view.setZoomScale(zoomScaleAfterWheel(view.zoomScale, e.deltaY));
+        setZoomScale(zoomScaleAfterWheel(zoomScale, e.deltaY));
       }
     };
 
@@ -290,7 +242,7 @@ function TimelineContainerComponent({
     return () => {
       container.removeEventListener("wheel", handleWheel);
     };
-  }, [scrollContainerRef]);
+  }, [scrollContainerRef, zoomScale, setZoomScale, pxToTicks]);
 
   // Layout Effect: Restore the scroll position to align the anchor time
   useLayoutEffect(() => {
@@ -325,58 +277,20 @@ function TimelineContainerComponent({
     [timelineClips, clipPresentationById],
   );
 
-  // One scroll listener shifts the pixel window only when the viewport nears
-  // an edge; zoom converts that stable window to ticks during render. Clip
-  // canvases follow the same published window instead of listening to scroll.
+  // Track the viewport width so the zoom-out floor can fit the whole timeline.
   const [viewportWidth, setViewportWidth] = useState(0);
-  const refreshVisibleWindowRef = useRef<(() => void) | null>(null);
-  useLayoutEffect(() => {
+  useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    let pendingFrame: number | null = null;
-    let observedWidth = container.clientWidth;
-    const update = () => {
-      pendingFrame = null;
-      const width = observedWidth || container.clientWidth;
-      setViewportWidth(width);
-      const view = useTimelineViewStore.getState();
-      const next = visiblePixelWindowForViewport(
-        container.scrollLeft,
-        width,
-        view.visiblePixelWindow,
-      );
-      if (next !== view.visiblePixelWindow) view.setVisiblePixelWindow(next);
-    };
-    refreshVisibleWindowRef.current = update;
-    const scheduleUpdate = () => {
-      if (pendingFrame === null) {
-        pendingFrame = requestAnimationFrame(update);
-      }
-    };
-    update();
-    container.addEventListener("scroll", scheduleUpdate, { passive: true });
+
     const observer = new ResizeObserver((entries) => {
-      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
-      observedWidth = entries[0]?.contentRect.width ?? container.clientWidth;
-      update();
+      for (const entry of entries) {
+        setViewportWidth(entry.contentRect.width);
+      }
     });
     observer.observe(container);
-    return () => {
-      container.removeEventListener("scroll", scheduleUpdate);
-      observer.disconnect();
-      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
-      refreshVisibleWindowRef.current = null;
-      useTimelineViewStore.getState().setVisiblePixelWindow(null);
-    };
+    return () => observer.disconnect();
   }, [scrollContainerRef]);
-
-  const previousZoomScaleRef = useRef(zoomScale);
-  useLayoutEffect(() => {
-    if (previousZoomScaleRef.current === zoomScale) return;
-    previousZoomScaleRef.current = zoomScale;
-    // The zoom anchor may have changed scrollLeft without a scroll event yet.
-    refreshVisibleWindowRef.current?.();
-  }, [zoomScale]);
 
   // Derived from committed clips only, so a drag that transiently extends the
   // timeline does not move the zoom floor mid-gesture.
@@ -642,16 +556,16 @@ function TimelineContainerComponent({
                   }}
                 />
               ) : null}
-              {visibleClips.map((clip) => (
+              {timelineClips.map((clip) => (
                 <TimelineClipItem
                   key={clip.id}
                   clip={clip}
                   presentation={clipPresentationById.get(clip.id)}
-                  timelineTime={liveClipOffsetMapping}
+                  timelineTime={timelineTime}
                   clipOverlays={clipOverlays}
                 />
               ))}
-              {visibleTransitions.map((resolved) => (
+              {resolvedTransitions.map((resolved) => (
                 <TransitionOverlay
                   key={resolved.transition.id}
                   resolved={resolved}

@@ -6,7 +6,7 @@ test.describe('Track Controls', () => {
         const { timeline } = editorWithClips;
 
         const toggle = timeline.getTrackVisibilityToggle(0);
-        const clip = await timeline.getClip(0);
+        const clip = timeline.getClip(0);
 
         // Initially visible
         await expect(toggle).toHaveAttribute('aria-pressed', 'true');

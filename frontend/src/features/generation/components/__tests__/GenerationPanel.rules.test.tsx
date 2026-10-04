@@ -149,6 +149,9 @@ function makeHookState(overrides: Record<string, unknown> = {}) {
     sendableAssets: [],
     handleSendToTimeline: vi.fn(),
     ...overrides,
+    // The panel draws the presented list; tests describe plain widgets.
+    presentedWidgetInputs:
+      overrides.presentedWidgetInputs ?? overrides.widgetInputs ?? [],
   };
 }
 

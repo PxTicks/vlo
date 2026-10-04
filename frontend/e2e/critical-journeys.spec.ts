@@ -104,7 +104,7 @@ test.describe('Critical editor journeys', () => {
         } = editorWithClips;
 
         await timeline.addAdjustmentClip();
-        await timeline.clickClip((await timeline.getClipCount()) - 1);
+        await timeline.clickClip((await timeline.clips.count()) - 1);
         await expect(rightSidebar.getTab('Transform')).toBeVisible();
         await expect(rightSidebar.getTab('Mask')).toHaveCount(0);
         await expect(transformationPanel.adjustmentDepthSection).toBeVisible();

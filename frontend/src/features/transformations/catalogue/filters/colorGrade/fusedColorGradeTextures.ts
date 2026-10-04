@@ -54,28 +54,6 @@ function lutSignature(
     .join("|");
 }
 
-/**
- * Swap a buffer source's pixels, re-allocating its GPU texture when the size
- * changes. PixiJS 8.15's buffer uploader re-specifies storage only when *both*
- * dimensions differ (`width === w || height === h` takes the sub-image path),
- * so a height-only resize — adding or removing a grade row — is a failed
- * `texSubImage2D` that leaves the old-sized texture in place. The shader then
- * reads the wrong rows: curves sampled for a second grade hit zeros and black
- * out the frame. Unloading first makes the next bind create fresh storage.
- */
-function replaceBufferResource(
-  source: BufferImageSource,
-  resource: Float32Array,
-  width: number,
-  height: number,
-): void {
-  if (source.width !== width || source.height !== height) {
-    source.unload();
-  }
-  source.resource = resource;
-  source.resize(width, height);
-}
-
 export class FusedColorGradeTextures {
   public readonly parameterSource: BufferImageSource;
   public readonly curveSource: BufferImageSource;
@@ -167,9 +145,8 @@ export class FusedColorGradeTextures {
       this.parameterPixels = new Float32Array(
         FUSED_GRADE_PARAMETER_TEXTURE_WIDTH * this.gradeCount * 4,
       );
-      replaceBufferResource(
-        this.parameterSource,
-        this.parameterPixels,
+      this.parameterSource.resource = this.parameterPixels;
+      this.parameterSource.resize(
         FUSED_GRADE_PARAMETER_TEXTURE_WIDTH,
         this.gradeCount,
       );
@@ -185,12 +162,8 @@ export class FusedColorGradeTextures {
     if (nextLutSignature !== this.currentLutSignature) {
       this.currentLutSignature = nextLutSignature;
       this.lutPixels = writeCubeLutAtlas(lutPlan);
-      replaceBufferResource(
-        this.lutSource,
-        this.lutPixels,
-        lutPlan.width,
-        lutPlan.height,
-      );
+      this.lutSource.resource = this.lutPixels;
+      this.lutSource.resize(lutPlan.width, lutPlan.height);
       this.lutSource.update();
     }
 
@@ -238,9 +211,8 @@ export class FusedColorGradeTextures {
         row * COLOR_CURVE_LUT_WIDTH * COLOR_CURVE_LUT_HEIGHT * 4,
       );
     });
-    replaceBufferResource(
-      this.curveSource,
-      this.curvePixels,
+    this.curveSource.resource = this.curvePixels;
+    this.curveSource.resize(
       COLOR_CURVE_LUT_WIDTH,
       COLOR_CURVE_LUT_HEIGHT * this.gradeCount,
     );

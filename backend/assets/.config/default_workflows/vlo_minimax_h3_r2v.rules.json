@@ -27,6 +27,14 @@
       "default_open": false
     }
   ],
+  "lora_stacks": [
+    {
+      "id": "model_loras",
+      "nodes": ["148", "150", "151", "152"],
+      "section_id": "lora_loaders",
+      "group_title": "LoRA"
+    }
+  ],
   "nodes": {
     "124": {
       "widgets": {

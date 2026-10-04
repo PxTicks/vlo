@@ -220,3 +220,110 @@ describe("reconcileNodeBypassWidgetTargets while widgets are absent", () => {
     expect([...dropped.targets]).toEqual([]);
   });
 });
+
+describe("reconcileNodeBypassWidgetTargets following ComfyUI mode changes", () => {
+  const key = getNodeBypassWidgetKey("7", "lora_name");
+  const shippedBypassed = () =>
+    bypassableWidget("7", { nodeShipsBypassed: true, defaultNodeBypass: true });
+  const shippedActive = () => bypassableWidget("7");
+
+  function mount(initial: WorkflowWidgetInput) {
+    return reconcileNodeBypassWidgetTargets({
+      widgetInputs: [initial],
+      previousTargets: new Set(),
+      appliedDefaults: new Set(),
+      previousShippedBypass: new Map(),
+    });
+  }
+
+  it("turns a loader on when it is unbypassed in the editor", () => {
+    const first = mount(shippedBypassed());
+    expect([...first.targets]).toEqual([key]);
+
+    const second = reconcileNodeBypassWidgetTargets({
+      widgetInputs: [shippedActive()],
+      previousTargets: first.targets,
+      appliedDefaults: first.appliedDefaults,
+      previousShippedBypass: first.shippedBypass,
+    });
+
+    expect(second.changed).toBe(true);
+    expect([...second.targets]).toEqual([]);
+  });
+
+  it("switches a loader off when it is bypassed in the editor", () => {
+    const first = mount(shippedActive());
+    expect([...first.targets]).toEqual([]);
+
+    const second = reconcileNodeBypassWidgetTargets({
+      widgetInputs: [shippedBypassed()],
+      previousTargets: first.targets,
+      appliedDefaults: first.appliedDefaults,
+      previousShippedBypass: first.shippedBypass,
+    });
+
+    expect([...second.targets]).toEqual([key]);
+    // The flip stands in for the default, which must not be applied later.
+    expect(second.appliedDefaults.has(key)).toBe(true);
+  });
+
+  it("keeps a panel choice while the node's mode is unchanged", () => {
+    const first = mount(shippedBypassed());
+    // The user picks a model in the panel: the target is cleared.
+    const second = reconcileNodeBypassWidgetTargets({
+      widgetInputs: [shippedBypassed()],
+      previousTargets: new Set(),
+      appliedDefaults: first.appliedDefaults,
+      previousShippedBypass: first.shippedBypass,
+    });
+
+    expect(second.changed).toBe(false);
+    expect([...second.targets]).toEqual([]);
+  });
+
+  it("takes the workflow's state for a loader that drops out and returns", () => {
+    const first = mount(shippedBypassed());
+    const chosen = reconcileNodeBypassWidgetTargets({
+      widgetInputs: [shippedBypassed()],
+      previousTargets: new Set(),
+      appliedDefaults: first.appliedDefaults,
+      previousShippedBypass: first.shippedBypass,
+    });
+    // Muted in the editor: the widget disappears with its selection.
+    const muted = reconcileNodeBypassWidgetTargets({
+      widgetInputs: [],
+      previousTargets: chosen.targets,
+      appliedDefaults: chosen.appliedDefaults,
+      previousShippedBypass: chosen.shippedBypass,
+    });
+    // Back to bypassed: it must not come back switched on.
+    const returned = reconcileNodeBypassWidgetTargets({
+      widgetInputs: [shippedBypassed()],
+      previousTargets: muted.targets,
+      appliedDefaults: muted.appliedDefaults,
+      previousShippedBypass: muted.shippedBypass,
+    });
+
+    expect([...returned.targets]).toEqual([key]);
+  });
+
+  it("remembers modes through a same-workflow reload", () => {
+    const first = mount(shippedBypassed());
+    const reloading = reconcileNodeBypassWidgetTargets({
+      widgetInputs: [],
+      previousTargets: new Set(),
+      appliedDefaults: first.appliedDefaults,
+      previousShippedBypass: first.shippedBypass,
+      preserveMissing: true,
+    });
+    const reloaded = reconcileNodeBypassWidgetTargets({
+      widgetInputs: [shippedBypassed()],
+      previousTargets: reloading.targets,
+      appliedDefaults: reloading.appliedDefaults,
+      previousShippedBypass: reloading.shippedBypass,
+    });
+
+    // The model the user picked before the reload survives it.
+    expect([...reloaded.targets]).toEqual([]);
+  });
+});

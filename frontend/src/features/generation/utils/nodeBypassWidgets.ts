@@ -85,6 +85,13 @@ export interface NodeBypassTargetReconciliationOptions {
    */
   readonly appliedDefaults: ReadonlySet<string>;
   /**
+   * Whether each target's node shipped bypassed when last seen. A change means
+   * the node was bypassed or turned on inside ComfyUI, and the panel follows
+   * the workflow instead of a choice made against the node's old mode.
+   * Omitted, modes are not tracked across passes.
+   */
+  readonly previousShippedBypass?: ReadonlyMap<string, boolean>;
+  /**
    * Keep selections whose widget is absent from this pass, for the same
    * reason as widget values: a reload of the same workflow empties the widget
    * list for its duration, and the defaults already counted as applied would
@@ -96,25 +103,32 @@ export interface NodeBypassTargetReconciliationOptions {
 export interface NodeBypassTargetReconciliationResult {
   readonly targets: ReadonlySet<string>;
   readonly appliedDefaults: ReadonlySet<string>;
+  readonly shippedBypass: ReadonlyMap<string, boolean>;
   readonly changed: boolean;
 }
 
 /**
- * Drop selections whose widget no longer offers a bypass choice, then apply
- * any rule default that has not been applied yet for this workflow.
+ * Drop selections whose widget no longer offers a bypass choice, follow nodes
+ * whose mode changed in the workflow, then apply any rule default that has not
+ * been applied yet for this workflow.
  */
 export function reconcileNodeBypassWidgetTargets({
   widgetInputs,
   previousTargets,
   appliedDefaults,
+  previousShippedBypass,
   preserveMissing = false,
 }: NodeBypassTargetReconciliationOptions): NodeBypassTargetReconciliationResult {
   const bypassableTargets = new Set<string>();
   const defaultTargets = new Set<string>();
+  const shippedBypass = new Map<string, boolean>(
+    preserveMissing && previousShippedBypass ? previousShippedBypass : [],
+  );
   for (const widget of widgetInputs) {
     if (!widget.config.nodeBypassOption) continue;
     const key = getNodeBypassWidgetKey(widget.nodeId, widget.param);
     bypassableTargets.add(key);
+    shippedBypass.set(key, widget.config.nodeShipsBypassed === true);
     if (widget.config.defaultNodeBypass) {
       defaultTargets.add(key);
     }
@@ -128,12 +142,36 @@ export function reconcileNodeBypassWidgetTargets({
   }
 
   let nextAppliedDefaults = appliedDefaults;
-  for (const target of defaultTargets) {
-    if (appliedDefaults.has(target)) continue;
+  const markDefaultApplied = (target: string) => {
+    if (nextAppliedDefaults.has(target)) return;
     if (nextAppliedDefaults === appliedDefaults) {
       nextAppliedDefaults = new Set(appliedDefaults);
     }
     (nextAppliedDefaults as Set<string>).add(target);
+  };
+
+  // 1. A node bypassed or turned on in ComfyUI takes the workflow's state, as
+  //    does one returning after it dropped out (muted, then unmuted): its old
+  //    selection was dropped with it. Either way it counts as its default
+  //    applied, so a later pass cannot layer the rule default back over what
+  //    the user just did in the editor.
+  for (const target of previousShippedBypass ? bypassableTargets : []) {
+    const wasShippedBypassed = previousShippedBypass?.get(target);
+    const shipsBypassed = shippedBypass.get(target);
+    const flipped =
+      wasShippedBypassed !== undefined && wasShippedBypassed !== shipsBypassed;
+    const returned =
+      wasShippedBypassed === undefined && appliedDefaults.has(target);
+    if (!flipped && !returned) continue;
+    if (shipsBypassed) targets.add(target);
+    else targets.delete(target);
+    markDefaultApplied(target);
+  }
+
+  // 2. Rule defaults, once per target for the mounted workflow.
+  for (const target of defaultTargets) {
+    if (nextAppliedDefaults.has(target)) continue;
+    markDefaultApplied(target);
     targets.add(target);
   }
 
@@ -144,6 +182,7 @@ export function reconcileNodeBypassWidgetTargets({
   return {
     targets: changed ? targets : previousTargets,
     appliedDefaults: nextAppliedDefaults,
+    shippedBypass,
     changed,
   };
 }

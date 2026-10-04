@@ -19,11 +19,6 @@ import {
 import { mediaProcessingService } from "./services/MediaProcessingService";
 import type { AssetIngestOptions } from "./services/AssetService";
 import { deferredAssetCleanupService } from "./services/DeferredAssetCleanupService";
-import {
-  needsProxy,
-  proxyGenerationService,
-  resolveProxyStoragePath,
-} from "./services/ProxyGenerationService";
 
 export interface DeleteAssetOptions {
   cleanupMode?: "immediate" | "deferred";
@@ -399,132 +394,6 @@ function sanitizeAssetFamilyState(
   };
 }
 
-/**
- * Stores a background proxy for an asset whose import has been persisted.
- *
- * `projectHandle` is the project the job was queued for: once another project
- * is open, nothing is written, because the paths would land in it. A proxy
- * that does make it to disk for a closed project is overwritten when that
- * project next opens and regenerates its missing proxies.
- */
-const commitAssetProxy = deferProjectMutation(async (
-  get: () => AssetStore,
-  set: AssetStoreSet,
-  assetId: string,
-  assetName: string,
-  projectHandle: FileSystemDirectoryHandle | null,
-  proxy: Blob,
-  signal: AbortSignal,
-) => {
-  const isProjectCurrent = () => fileSystemService.getHandle() === projectHandle;
-  if (
-    signal.aborted ||
-    !isProjectCurrent() ||
-    !get().assets.some((asset) => asset.id === assetId)
-  ) {
-    return;
-  }
-
-  // 1. Write the file before anything points at it.
-  const proxyPath = resolveProxyStoragePath(assetName);
-  const proxyFile = new File([proxy], `${assetName}_proxy.mp4`, {
-    type: "video/mp4",
-  });
-  await fileSystemService.saveAssetFile(proxyFile, proxyPath);
-  if (!isProjectCurrent()) {
-    return;
-  }
-
-  // 2. Point the index at it. Only an existing entry is patched: a delete
-  // that landed meanwhile must not be undone.
-  let indexed = false;
-  if (!signal.aborted) {
-    await projectPersistenceService.updateAssetIndex((draft) => {
-      const entry = draft.assets[assetId];
-      if (!entry) return;
-      entry.proxySrc = proxyPath;
-      indexed = true;
-    });
-  }
-  if (!indexed || signal.aborted) {
-    // The asset was deleted while the file was written; its delete could not
-    // see this path, so remove it here.
-    try {
-      await fileSystemService.deleteFile(proxyPath);
-    } catch (error) {
-      console.warn(`[Proxy] Failed to remove orphaned proxy '${proxyPath}'`, error);
-    }
-    return;
-  }
-
-  // 3. Hand it to the filmstrips.
-  set((state) => ({
-    assets: state.assets.map((asset) => {
-      if (asset.id !== assetId) {
-        return asset;
-      }
-      revokeBlobUrl(asset.proxySrc);
-      return {
-        ...asset,
-        proxySrc: URL.createObjectURL(proxyFile),
-        proxyPath,
-        proxyFile,
-      };
-    }),
-  }));
-});
-
-/** Queues a proxy for an asset that should have one and does not yet. */
-function scheduleAssetProxy(
-  get: () => AssetStore,
-  set: AssetStoreSet,
-  asset: Asset,
-): void {
-  if (!needsProxy(asset)) {
-    return;
-  }
-
-  const projectHandle = fileSystemService.getHandle();
-  proxyGenerationService.enqueue({
-    assetId: asset.id,
-    assetName: asset.name,
-    loadSource: async () => {
-      const current = get().assets.find((candidate) => candidate.id === asset.id);
-      if (!current) {
-        throw new Error(`Asset '${asset.id}' is no longer in the project`);
-      }
-      if (current.file) {
-        return current.file;
-      }
-      const sourcePath =
-        current.sourcePath ??
-        (!isHydratedAssetUrl(current.src) ? current.src : undefined);
-      if (!sourcePath) {
-        throw new Error(`Asset '${asset.id}' has no source to transcode`);
-      }
-      return fileSystemService.readFile(sourcePath);
-    },
-    commit: async (proxy, signal) => {
-      // Outside the mutation guard: this can wait on a large source copy, and
-      // an export should not wait with it. The index entry the commit patches
-      // only exists once the import's writes are done.
-      const { assetService } = await import("./services/AssetService");
-      if (!(await assetService.whenAssetPersisted(asset.id))) {
-        return;
-      }
-      await commitAssetProxy(
-        get,
-        set,
-        asset.id,
-        asset.name,
-        projectHandle,
-        proxy,
-        signal,
-      );
-    },
-  });
-}
-
 async function ingestLocalAssetsIntoStore(
   get: () => AssetStore,
   set: AssetStoreSet,
@@ -535,6 +404,7 @@ async function ingestLocalAssetsIntoStore(
   options: AssetIngestOptions = {},
 ): Promise<AddLocalAssetsResult> {
   const returnedAssets: Asset[] = [];
+  const newlyCreatedAssets: Asset[] = [];
   let skippedExistingFiles = 0;
 
   if (files.length === 0) {
@@ -582,14 +452,15 @@ async function ingestLocalAssetsIntoStore(
           continue;
         }
 
-        const createdAsset = ingestResult.asset;
-        assets.push(createdAsset);
-        returnedAssets.push(createdAsset);
-        // Shown one at a time, so a large drop fills in as it goes.
+        assets.push(ingestResult.asset);
+        newlyCreatedAssets.push(ingestResult.asset);
+        returnedAssets.push(ingestResult.asset);
+      }
+
+      if (newlyCreatedAssets.length > 0) {
         set((state) => ({
-          assets: [...state.assets, createdAsset],
+          assets: [...state.assets, ...newlyCreatedAssets],
         }));
-        scheduleAssetProxy(get, set, createdAsset);
       }
 
       return {
@@ -776,12 +647,6 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
         inputCache: new Map(),
       });
       disposeAssetCollectionRuntimeResources(previousAssets, previousInputCache);
-
-      // Recovers proxies an earlier session never finished (or failed), so a
-      // reload mid-transcode does not leave a video without one for good.
-      for (const asset of sanitizedState.assets) {
-        scheduleAssetProxy(get, set, asset);
-      }
     } catch (err) {
       console.error("Failed to load assets from assets.json", err);
       // Re-throw so callers can decide not to follow up with a disk scan against
@@ -810,19 +675,12 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
         const { assets } = get();
         const { assetService } = await import("./services/AssetService");
 
-        const newAssets = await assetService.scanForNewAssets(
-          assets,
-          (createdAsset) => {
-            set((state) => ({
-              assets: [...state.assets, createdAsset],
-            }));
-          },
-        );
+        const newAssets = await assetService.scanForNewAssets(assets);
 
-        // Queued only now: a scan writes assets.json in one batch at the end,
-        // and a proxy can only be recorded against an existing entry.
-        for (const newAsset of newAssets) {
-          scheduleAssetProxy(get, set, newAsset);
+        if (newAssets.length > 0) {
+          set((state) => ({
+            assets: [...state.assets, ...newAssets],
+          }));
         }
       });
     } catch (e) {
@@ -1255,8 +1113,6 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     if (!assetToDelete) {
       return;
     }
-
-    proxyGenerationService.cancel(id);
 
     try {
       const { removeTimelineClipsByAssetId } = await import("../timeline/api");

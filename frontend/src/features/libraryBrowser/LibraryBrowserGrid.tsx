@@ -9,10 +9,6 @@ import {
 } from "react";
 import { Box, Typography } from "@mui/material";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  useGridMarquee,
-  type LibraryBrowserMarqueeHandlers,
-} from "./hooks/useGridMarquee";
 
 const DEFAULT_COLUMNS = 2;
 // Mirrors the previous MUI layout: `<Grid container spacing={2}>` (16px gaps)
@@ -50,8 +46,6 @@ interface LibraryBrowserGridProps<TItem> {
   pinnedItemId?: string | null;
   /** Imperative handle for reveal/scroll-to-item requests. */
   apiRef?: Ref<LibraryBrowserGridApi>;
-  /** Opts into rubber-band selection by dragging from empty grid space. */
-  marquee?: LibraryBrowserMarqueeHandlers;
 }
 
 export function LibraryBrowserGrid<TItem>({
@@ -67,7 +61,6 @@ export function LibraryBrowserGrid<TItem>({
   columns = DEFAULT_COLUMNS,
   pinnedItemId,
   apiRef,
-  marquee,
 }: LibraryBrowserGridProps<TItem>) {
   const fallbackScrollRef = useRef<HTMLDivElement>(null);
   const scrollRef = scrollRegionRef ?? fallbackScrollRef;
@@ -110,29 +103,6 @@ export function LibraryBrowserGrid<TItem>({
     [virtualizer],
   );
 
-  const marqueeOverlayRef = useRef<HTMLDivElement>(null);
-  const { handlePointerDown, consumeSuppressedClick } = useGridMarquee({
-    handlers: marquee,
-    scrollRef,
-    overlayRef: marqueeOverlayRef,
-    itemCount: items.length,
-    getGeometry: () => ({
-      columnCount,
-      contentWidth: scrollRef.current?.clientWidth ?? 0,
-      gapPx: GAP_PX,
-      paddingXPx: CONTAINER_PADDING_PX,
-      rows: virtualizer.measurementsCache,
-    }),
-    getItemIdAt: (index) => getItemId(items[index]),
-  });
-
-  const handleClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (consumeSuppressedClick()) {
-      return;
-    }
-    onBackgroundClick?.(event);
-  };
-
   const pinnedRowIndex = useMemo(() => {
     if (!pinnedItemId) {
       return -1;
@@ -158,8 +128,7 @@ export function LibraryBrowserGrid<TItem>({
       ref={scrollRef}
       data-testid={testId}
       data-scroll-locked={isScrollLocked ? "true" : "false"}
-      onClick={handleClick}
-      onPointerDown={marquee ? handlePointerDown : undefined}
+      onClick={onBackgroundClick}
       sx={{
         flexGrow: 1,
         minHeight: 0,
@@ -233,22 +202,6 @@ export function LibraryBrowserGrid<TItem>({
               </Box>
             );
           })}
-          {marquee ? (
-            <Box
-              ref={marqueeOverlayRef}
-              data-testid="library-browser-marquee"
-              aria-hidden
-              sx={{
-                display: "none",
-                position: "absolute",
-                zIndex: 1,
-                pointerEvents: "none",
-                border: "1px solid #4dabf5",
-                bgcolor: "rgba(77, 171, 245, 0.16)",
-                borderRadius: "2px",
-              }}
-            />
-          ) : null}
         </Box>
       )}
     </Box>

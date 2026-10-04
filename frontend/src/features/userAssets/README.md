@@ -62,13 +62,6 @@ Encapsulates "heavy" operations to keep the store clean.
   4.  **Processing**: Generates thumbnails and video duration.
   5.  **Persistence**: Writes to `project.json` and optionally saves the file to disk.
 
-  The video proxy is not part of ingest. Once the asset is in the store,
-  `ProxyGenerationService` transcodes it in the background, one asset at a
-  time, and the store records it (`.vloproject/proxies/`, `proxySrc` in the
-  index) when it lands. The proxy only feeds timeline filmstrips, which use the
-  source until then. Loading a project re-queues any video still missing one;
-  mask videos never get one.
-
 ### 3. Asset Processing Service (`MediaProcessingService`)
 
 **Access:** Internal use.
@@ -89,6 +82,5 @@ Assets are persisted in two places:
 1.  **Files**: The actual media files are stored in the project root.
 2.  **Metadata**: Stored in `.vloproject/project.json` under the `assets` key.
 3.  **Thumbnails**: Stored in `.vloproject/thumbnails/`.
-4.  **Proxies**: Stored in `.vloproject/proxies/`, written after ingest.
 
 The `AssetService` ensures that the JSON registry stays in sync with the file system during ingestion and deletion.

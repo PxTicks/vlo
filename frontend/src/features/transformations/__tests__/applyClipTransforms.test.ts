@@ -1,10 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { AlphaFilter, Sprite, Texture, type Filter } from "pixi.js";
+import { Sprite, Texture } from "pixi.js";
 import { applyClipTransforms } from "../applyTransformations";
-import type {
-  StandardTimelineClip,
-  TimelineClip,
-} from "../../../types/TimelineTypes";
+import type { TimelineClip } from "../../../types/TimelineTypes";
 import { liveParamStore } from "../../../core/liveParams/liveParamStore";
 import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import { resolveScalar } from "../utils/resolveScalar";
@@ -503,101 +500,5 @@ describe("applyClipTransforms", () => {
     });
     expect(mockSprite.filters?.length ?? 0).toBe(0);
     expect(mockSprite.position.x).toBe(960 + 100);
-  });
-
-  describe("opacity", () => {
-    const opacity = (value: unknown) => ({
-      id: "opacity-1",
-      type: "opacity",
-      isEnabled: true,
-      parameters: { opacity: value },
-    });
-    const hsl = {
-      id: "hsl-1",
-      type: "filter",
-      isEnabled: true,
-      parameters: { hue: 30 },
-      ...({ filterName: "HslAdjustmentFilter" } as object),
-    };
-    const alphaOf = (filter: unknown) => (filter as AlphaFilter).alpha;
-
-    it("fades after the effect stack with one trailing AlphaFilter", () => {
-      mockClip.transformations = [opacity(0.4), hsl];
-
-      applyClipTransforms(mockSprite, mockClip, containerSize);
-
-      const filters = mockSprite.filters as Filter[];
-      expect(filters).toHaveLength(2);
-      expect(filters[1]).toBeInstanceOf(AlphaFilter);
-      expect(alphaOf(filters[1])).toBeCloseTo(0.4);
-    });
-
-    it("pushes no filter for an opaque clip or a disabled transform", () => {
-      mockClip.transformations = [opacity(1)];
-      applyClipTransforms(mockSprite, mockClip, containerSize);
-      expect(mockSprite.filters?.length ?? 0).toBe(0);
-
-      mockClip.transformations = [{ ...opacity(0.2), isEnabled: false }];
-      applyClipTransforms(mockSprite, mockClip, containerSize);
-      expect(mockSprite.filters?.length ?? 0).toBe(0);
-    });
-
-    it("clamps out-of-range values into [0, 1]", () => {
-      mockClip.transformations = [opacity(1.5)];
-      applyClipTransforms(mockSprite, mockClip, containerSize);
-      expect(mockSprite.filters?.length ?? 0).toBe(0);
-
-      mockClip.transformations = [opacity(-0.5)];
-      applyClipTransforms(mockSprite, mockClip, containerSize);
-      expect(alphaOf(mockSprite.filters![0])).toBe(0);
-    });
-
-    it("samples keyframed opacity at the playhead", () => {
-      mockClip.transformations = [
-        opacity({
-          type: "spline",
-          points: [
-            { time: 0, value: 1 },
-            { time: 100, value: 0 },
-          ],
-        }),
-      ];
-      applyClipTransforms(mockSprite, mockClip, containerSize, 0);
-      expect(mockSprite.filters?.length ?? 0).toBe(0);
-
-      applyClipTransforms(mockSprite, mockClip, containerSize, 100);
-      expect(alphaOf(mockSprite.filters![0])).toBeCloseTo(0);
-    });
-
-    it("survives applyFilterTransforms:false, where the effects are baked", () => {
-      mockClip.transformations = [opacity(0.5), hsl];
-
-      applyClipTransforms(mockSprite, mockClip, containerSize, undefined, undefined, {
-        applyFilterTransforms: false,
-      });
-
-      const filters = mockSprite.filters as Filter[];
-      expect(filters).toHaveLength(1);
-      expect(alphaOf(filters[0])).toBeCloseTo(0.5);
-    });
-
-    it("lets a covering range mask hide the clip regardless of opacity", () => {
-      mockClip.transformations = [opacity(0.5)];
-      (mockClip as StandardTimelineClip).components = [
-        {
-          id: "range-1",
-          type: "range_mask",
-          parameters: { startSourceTicks: 0, endSourceTicks: 50, isActive: true },
-        },
-      ];
-
-      applyClipTransforms(mockSprite, mockClip, containerSize, 10);
-      expect(mockSprite.filters).toHaveLength(1);
-      expect(alphaOf(mockSprite.filters![0])).toBe(0);
-
-      applyClipTransforms(mockSprite, mockClip, containerSize, 80);
-      expect(mockSprite.filters).toHaveLength(1);
-      expect(alphaOf(mockSprite.filters![0])).toBeCloseTo(0.5);
-    });
   });
 });

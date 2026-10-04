@@ -8,10 +8,7 @@ import {
 import { MonotoneCubicSpline } from "./MonotoneCubicSpline";
 import { TICKS_PER_SECOND } from "../../../core/time/constants";
 import { getCompiledScalarSource, resolveScalar } from "./resolveScalar";
-import {
-  extensionInterpolationRegistry,
-  extensionScalarSourceRegistry,
-} from "../animation";
+import { extensionInterpolationRegistry } from "../animation";
 
 /**
  * Low-level tick engine for clip-local visual time <-> source-media time.
@@ -19,15 +16,6 @@ import {
  * adjustment-effective time, clip-local visual time, and source-media time are
  * named explicitly at the boundary.
  */
-
-/**
- * Changes whenever a provider that a speed factor can compile through is
- * registered or removed. A time map derived from transformations is only
- * valid under the revision it was built with.
- */
-export function getSpeedMappingRevision(): string {
-  return `${extensionScalarSourceRegistry.getRevision()}:${extensionInterpolationRegistry.getRevision()}`;
-}
 
 // Cache for Spline Objects to avoid re-creation/sorting overhead
 const splineObjectCache = new Map<string, MonotoneCubicSpline>();

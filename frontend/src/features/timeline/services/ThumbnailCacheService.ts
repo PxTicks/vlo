@@ -25,8 +25,6 @@ interface LRUNode {
 export interface ThumbnailAssetMetadata {
   aspectRatio: number;
   firstTimestampSeconds?: number;
-  /** Whether `firstTimestampSeconds` was read from the proxy, not the source. */
-  probedFromProxy?: boolean;
 }
 
 interface AssetCacheEntry {
@@ -196,15 +194,7 @@ class ThumbnailCacheServiceClass {
     if (entry.metadata && isComplete(entry.metadata)) {
       return Promise.resolve(entry.metadata);
     }
-    if (entry.pendingMetadata) {
-      // The probe in flight may be reading a different source (a proxy can
-      // land mid-probe), so its result only serves callers it satisfies.
-      return entry.pendingMetadata.then((metadata) =>
-        !metadata || isComplete(metadata)
-          ? metadata
-          : this.loadMetadata(assetId, isComplete, loader),
-      );
-    }
+    if (entry.pendingMetadata) return entry.pendingMetadata;
 
     const pending = loader()
       .then((metadata) => {

@@ -17,7 +17,7 @@
  * back to "normal".
  */
 
-import type { BLEND_MODES, Filter } from "pixi.js";
+import type { BLEND_MODES } from "pixi.js";
 import type {
   ClipTransformTarget,
   TransformState,
@@ -81,62 +81,20 @@ const blendModeHandler: TransformHandler<ClipTransform> = (
   }
 };
 
-/** Modes PixiJS realizes as GPU blend equations — the only ones a filter's
- *  render state can carry. */
-const STANDARD_BLEND_MODES: ReadonlySet<string> = new Set(
-  BLEND_MODE_OPTIONS.filter((option) => !option.advanced).map(
-    (option) => option.value,
-  ),
-);
-
-/** Filters whose own blend mode this applicator replaced, with the original. */
-const overriddenFilterBlendModes = new WeakMap<Filter, BLEND_MODES>();
-
 /**
  * Applicator: write the resolved blend mode onto the target every frame.
  * Always assigns (defaulting to "normal") so toggling the section off, or
  * switching back to Normal, restores standard compositing rather than leaving
  * a stale mode on the reused sprite.
- *
- * Runs after the filter applicator. A filtered target is drawn into its filter
- * input with its own blend mode — against transparency, where multiply yields
- * black — and the filter output is then composited with the *last filter's*
- * blend mode. So a standard mode moves onto that filter and the target draws
- * normally. Advanced modes are filter-based and stay on the target.
  */
 export const blendModeApplicator = (
   target: ClipTransformTarget,
   state: TransformState,
 ) => {
   const mutable = target as { blendMode?: string };
-  const hasBlendMode = "blendMode" in target || mutable.blendMode !== undefined;
-  const blendMode = state.blendMode ?? DEFAULT_BLEND_MODE;
-  const filters = target.filters ?? [];
-
-  // 1. Restore any pooled filter overridden on an earlier frame; it may no
-  //    longer be last, or the mode may have changed.
-  for (const filter of filters) {
-    const original = overriddenFilterBlendModes.get(filter);
-    if (original === undefined) continue;
-    filter.blendMode = original;
-    overriddenFilterBlendModes.delete(filter);
+  if ("blendMode" in target || mutable.blendMode !== undefined) {
+    mutable.blendMode = state.blendMode ?? DEFAULT_BLEND_MODE;
   }
-
-  // 2. Move a standard non-normal mode onto the last filter.
-  const lastFilter = filters[filters.length - 1];
-  if (
-    lastFilter &&
-    blendMode !== DEFAULT_BLEND_MODE &&
-    STANDARD_BLEND_MODES.has(blendMode)
-  ) {
-    overriddenFilterBlendModes.set(lastFilter, lastFilter.blendMode);
-    lastFilter.blendMode = blendMode as BLEND_MODES;
-    if (hasBlendMode) mutable.blendMode = DEFAULT_BLEND_MODE;
-    return;
-  }
-
-  // 3. Otherwise the target carries the mode itself.
-  if (hasBlendMode) mutable.blendMode = blendMode;
 };
 
 export const blendModeDefinition: TransformationDefinition = {

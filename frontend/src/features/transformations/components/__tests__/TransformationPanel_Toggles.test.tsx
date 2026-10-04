@@ -173,14 +173,13 @@ describe("TransformationPanel toggles", () => {
     const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
-    // Layout, Fit Mode, Opacity and Blend Mode are unified into the single "Display"
+    // Layout, Fit Mode and Blend Mode are unified into the single "Display"
     // section, so its toggle materialises all of them at once.
     expect(typed.map((transform) => transform.type)).toEqual([
       "position",
       "scale",
       "rotation",
       "fitMode",
-      "opacity",
       "blendMode",
     ]);
     expect(typed.every((transform) => transform.isEnabled === false)).toBe(true);
@@ -206,13 +205,12 @@ describe("TransformationPanel toggles", () => {
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
     // The unified Display toggle materialises position/scale/rotation/fitMode/
-    // opacity/blendMode, inserted before the pre-existing dynamic filter.
+    // blendMode, inserted before the pre-existing dynamic filter.
     expect(typed.map((transform) => transform.type)).toEqual([
       "position",
       "scale",
       "rotation",
       "fitMode",
-      "opacity",
       "blendMode",
       "filter",
     ]);
@@ -220,10 +218,10 @@ describe("TransformationPanel toggles", () => {
     // pre-existing dynamic filter remains enabled.
     expect(
       typed
-        .slice(0, 6)
+        .slice(0, 5)
         .every((transform) => transform.isEnabled === false),
     ).toBe(true);
-    expect(typed[6].isEnabled).toBe(true);
+    expect(typed[5].isEnabled).toBe(true);
   });
 
   it("shows add path choices when no position path exists and can arm recording", () => {

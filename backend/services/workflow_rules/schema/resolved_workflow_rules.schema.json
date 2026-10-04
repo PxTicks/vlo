@@ -1887,6 +1887,66 @@
       "title": "WorkflowInputCondition",
       "type": "object"
     },
+    "WorkflowLoraStack": {
+      "additionalProperties": false,
+      "description": "Interchangeable LoRA loaders the panel presents as one growable list.\n\nThe panel shows every loader with a model selected plus one empty slot, and\nsubmission packs the selected models into the first nodes in ``nodes``\norder, so which physical loader carries which LoRA is not the user's\nconcern. The listed nodes are discovered even when they ship bypassed.",
+      "properties": {
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "nodes": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Nodes",
+          "type": "array"
+        },
+        "section_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Id"
+        }
+      },
+      "required": [
+        "id",
+        "nodes"
+      ],
+      "title": "WorkflowLoraStack",
+      "type": "object"
+    },
     "WorkflowMaskProcessingStage": {
       "additionalProperties": false,
       "properties": {
@@ -3795,6 +3855,13 @@
       ],
       "default": null,
       "title": "Input Conditions"
+    },
+    "lora_stacks": {
+      "items": {
+        "$ref": "#/$defs/WorkflowLoraStack"
+      },
+      "title": "Lora Stacks",
+      "type": "array"
     },
     "media_fallbacks": {
       "items": {

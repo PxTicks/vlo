@@ -431,7 +431,10 @@ function TimelineContainerComponent({
       }
     }
 
-    return ticksToPx(paddedTimelineDuration(maxClipEnd));
+    // Track content starts after the header column, so the surface must also
+    // cover the header or it eats the end buffer (and then the last clip's
+    // tail) once the buffer is narrower than the header when zoomed out.
+    return TRACK_HEADER_WIDTH + ticksToPx(paddedTimelineDuration(maxClipEnd));
   };
 
   const timelineWidth = calculateTimelineWidth();

@@ -74,6 +74,49 @@ test.describe('Timeline with Pre-loaded Clips', () => {
         await expect(await timeline.getClipResizeHandle(0, 'right')).toHaveCount(0);
     });
 
+    test('Marquee drag from empty space selects every clip it touches', async ({ editorWithClips }) => {
+        const { timeline, page } = editorWithClips;
+        await expect(timeline.clips).toHaveCount(2);
+        await timeline.deselectAll();
+
+        const boxes = await Promise.all([0, 1].map(async (index) => {
+            const box = await (await timeline.getClip(index)).boundingBox();
+            if (!box) throw new Error(`clip ${index} has no box`);
+            return box;
+        }));
+        const rows = await page.getByTestId('timeline-body').evaluateAll(
+            (bodies) => bodies.map((body) => {
+                const rect = body.getBoundingClientRect();
+                return { top: rect.top, bottom: rect.bottom };
+            }),
+        );
+
+        // The fixture's clips sit end to end on different rows. Press on the
+        // empty space after the first-row clip and sweep back over both.
+        const [top, bottom] = boxes[0].y < boxes[1].y ? boxes : [boxes[1], boxes[0]];
+        const startX = top.x + top.width + 60;
+        const startY = (rows[0].top + rows[0].bottom) / 2;
+        const endX = top.x + 10;
+        expect(startX).toBeLessThan(bottom.x + bottom.width);
+        expect(
+            await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.getAttribute('data-testid'), [startX, startY]),
+        ).toBe('timeline-body');
+        await page.mouse.move(startX, startY);
+        await page.mouse.down();
+        await page.mouse.move(endX, rows[rows.length - 1].bottom - 10, { steps: 8 });
+        await expect(page.getByTestId('timeline-marquee')).toBeVisible();
+        await page.mouse.up();
+
+        await expect(page.getByTestId('timeline-marquee')).toHaveCount(0);
+        // The release must not fall through as a background (deselect) click.
+        expect(await timeline.isClipSelected(0)).toBe(true);
+        expect(await timeline.isClipSelected(1)).toBe(true);
+
+        // It is an ordinary multiselection: delete removes both clips.
+        await timeline.deleteSelected();
+        await expect(timeline.clips).toHaveCount(0);
+    });
+
     test('Delete clip removes it from timeline', async ({ editorWithClips }) => {
         const { timeline } = editorWithClips;
 

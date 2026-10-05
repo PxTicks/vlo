@@ -39,6 +39,7 @@ import { TimelineRuler } from "./components/TimelineRuler";
 import { TimelinePlayhead } from "./components/TimelinePlayhead";
 import { SelectionOverlay } from "./components/SelectionOverlay";
 import { FrameSelectionOverlay } from "./components/FrameSelectionOverlay";
+import { TimelineMarquee } from "./components/TimelineMarquee";
 import { SamAudioExtractDialog } from "../samAudio";
 import { playbackClock } from "../../core/playback/PlaybackClock";
 import { type TimelineClip } from "../../types";
@@ -503,6 +504,7 @@ function TimelineContainerComponent({
           onDragEnd={handleInternalDragEnd}
         >
           <Box
+            data-timeline-marquee-surface
             sx={{
               position: "relative",
               minHeight: "100%",
@@ -516,6 +518,10 @@ function TimelineContainerComponent({
             <TimelinePlayhead />
             <SelectionOverlay />
             <FrameSelectionOverlay />
+            <TimelineMarquee
+              scrollContainerRef={scrollContainerRef}
+              onActivate={handleTimelineInteractionCapture}
+            />
             {/* 
               CRITICAL: Render snap indicator unconditionally using `display: block|none`. 
               Do NOT conditionally unmount this `Box` (e.g. `{snapLineLeft !== null && <Box />}`).

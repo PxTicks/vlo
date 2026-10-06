@@ -1,5 +1,11 @@
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import { localMachineEnabled, machineDirectory, machineHandlePath } from "../../localMachine/storage";
+
+interface MachineRecent { id: string; name: string; path: string; lastOpened: number }
+function machineRecents(): MachineRecent[] {
+  return JSON.parse(localStorage.getItem("vlo-machine-recents") || "[]") as MachineRecent[];
+}
 
 export interface RecentProject {
   id: string;
@@ -36,6 +42,12 @@ export class RecentProjectsService {
     name: string,
     handle: FileSystemDirectoryHandle
   ): Promise<void> {
+    if (localMachineEnabled) {
+      const path = machineHandlePath(handle);
+      if (path === null) throw new Error("Project is outside the shared workspace");
+      localStorage.setItem("vlo-machine-recents", JSON.stringify([{ id, name, path, lastOpened: Date.now() }, ...machineRecents().filter(r => r.id !== id && r.path !== path)].slice(0, 50)));
+      return;
+    }
     const db = await this.dbPromise;
     
     // 1. Get all current recents to check for duplicates
@@ -68,6 +80,7 @@ export class RecentProjectsService {
   }
 
   async getRecents(): Promise<RecentProject[]> {
+    if (localMachineEnabled) return machineRecents().map(({path, ...recent}) => ({...recent, handle: machineDirectory("projects", path)}));
     const db = await this.dbPromise;
     // Get all and sort locally or use cursor. For small lists, getting all is fine.
     const all = await db.getAll(STORE_NAME);
@@ -75,6 +88,10 @@ export class RecentProjectsService {
   }
 
   async removeRecent(id: string): Promise<void> {
+    if (localMachineEnabled) {
+      localStorage.setItem("vlo-machine-recents", JSON.stringify(machineRecents().filter(r => r.id !== id)));
+      return;
+    }
     const db = await this.dbPromise;
     await db.delete(STORE_NAME, id);
   }

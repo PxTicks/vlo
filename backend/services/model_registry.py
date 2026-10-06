@@ -124,6 +124,9 @@ def is_comfyui_local() -> bool:
 
 
 def is_comfyui_model_downloads_enabled() -> bool:
+    from config import LOCAL_MACHINE_MODE
+    if LOCAL_MACHINE_MODE:
+        return False  # Shared installed inventory only; future weights require explicit installation.
     return get_comfyui_install_dir() is not None and is_comfyui_local()
 
 

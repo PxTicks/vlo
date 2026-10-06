@@ -25,6 +25,9 @@ import { MenuHostMount } from "../core/shell/MenuHostMount";
 import { NotificationHostMount } from "../core/shell/NotificationHostMount";
 import { ComfyUiSetupPrompt } from "./layout/ComfyUiSetupPrompt";
 import { AppSettingsMenu } from "./layout/AppSettingsMenu";
+import { localMachineEnabled } from "../features/localMachine/storage";
+import { installMachineCommandTransport } from "../features/localMachine/commands";
+import { MachinePanel } from "../features/localMachine/MachinePanel";
 
 // 1. Lazy load the heavy editor to separate it from the initial bundle
 const Editor = lazy(() =>
@@ -57,6 +60,7 @@ function LoadingScreen() {
 }
 
 export function App() {
+  useEffect(() => localMachineEnabled ? installMachineCommandTransport() : undefined, []);
   const project = useProjectStore((state) => state.project);
   const rootHandle = useProjectStore((state) => state.rootHandle);
 
@@ -68,6 +72,7 @@ export function App() {
 
   return (
     <ThemeProvider theme={darkTheme}>
+      <MachinePanel />
       {/* App-level, not editor-level: the project page needs the same
           box-sizing reset, or its `height: 100%` panes overflow by their own
           padding and grow phantom scrollbars. */}

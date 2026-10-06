@@ -9,13 +9,15 @@ except ImportError:
 
 # This sets the root 'projects' folder relative to this backend directory
 # Adjust .parent.parent if you want it outside the backend folder
-PROJECTS_ROOT = Path(__file__).parent.parent / "projects"
-RUNTIME_ROOT = Path(__file__).parent.parent / "backend" / "runtime"
+LOCAL_MACHINE_MODE = os.environ.get("VLO_LOCAL_MACHINE") == "1"
+PROJECTS_ROOT = Path(os.environ.get("VLO_PROJECTS_ROOT", "E:/Media/VLO/Project" if LOCAL_MACHINE_MODE else str(Path(__file__).parent.parent / "projects"))).resolve()
+RUNTIME_ROOT = Path(os.environ.get("VLO_LOCAL_STATE", os.environ.get("VLO_RUNTIME_ROOT", "E:/Media/VLO/.state" if LOCAL_MACHINE_MODE else str(Path(__file__).parent / "runtime")))).resolve()
+TEMP_ROOT = Path(os.environ.get("VLO_TEMP_ROOT", "E:/Media/VLO/Temp" if LOCAL_MACHINE_MODE else str(PROJECTS_ROOT))).resolve()
 EXTENSIONS_HOME = Path(__file__).parent.parent / "extensions"
 EXTENSIONS_ROOT = Path(
     os.environ.get(
         "VLO_EXTENSIONS_ROOT",
-        str(EXTENSIONS_HOME / "installed"),
+        str(RUNTIME_ROOT / "extension_packages" if LOCAL_MACHINE_MODE else EXTENSIONS_HOME / "installed"),
     )
 ).expanduser().resolve()
 EXTENSION_STATE_DIR = Path(
@@ -26,8 +28,9 @@ EXTENSION_STATE_DIR = Path(
 ).expanduser().resolve()
 
 # Ensure the root projects directory exists
-PROJECTS_ROOT.mkdir(exist_ok=True)
+PROJECTS_ROOT.mkdir(parents=True, exist_ok=True)
 RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
+TEMP_ROOT.mkdir(parents=True, exist_ok=True)
 
 # ComfyUI configuration
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188")
@@ -56,7 +59,7 @@ SAM2_MAX_PROPAGATION_FRAMES = _read_nonnegative_int_env(
 )
 
 SAM2_CACHE_DIR = Path(
-    os.environ.get("SAM2_CACHE_DIR", str(PROJECTS_ROOT / ".sam2_cache"))
+    os.environ.get("SAM2_CACHE_DIR", str(TEMP_ROOT / ".sam2_cache"))
 )
 SAM2_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -66,13 +69,13 @@ SAM_AUDIO_DEFAULT_MODEL = (
     or "sam-audio-large-tv"
 )
 SAM_AUDIO_CACHE_DIR = Path(
-    os.environ.get("SAM_AUDIO_CACHE_DIR", str(PROJECTS_ROOT / ".sam_audio_cache"))
+    os.environ.get("SAM_AUDIO_CACHE_DIR", str(TEMP_ROOT / ".sam_audio_cache"))
 )
 SAM_AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 SAM_AUDIO_MODEL_DIR = Path(
     os.environ.get(
         "SAM_AUDIO_MODEL_DIR",
-        str(Path(__file__).parent / "assets" / "models" / "sam_audio"),
+        "D:/ComfyUI/models/sam_audio" if LOCAL_MACHINE_MODE else str(Path(__file__).parent / "assets" / "models" / "sam_audio"),
     )
 )
 SAM_AUDIO_MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -87,13 +90,13 @@ BEATTHIS_DEFAULT_MODEL = (
     os.environ.get("BEATTHIS_MODEL", "final0").strip() or "final0"
 )
 BEATTHIS_CACHE_DIR = Path(
-    os.environ.get("BEATTHIS_CACHE_DIR", str(PROJECTS_ROOT / ".beat_this_cache"))
+    os.environ.get("BEATTHIS_CACHE_DIR", str(TEMP_ROOT / ".beat_this_cache"))
 )
 BEATTHIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Steer Beat This! / torch.hub auto-downloads into our cache dir.
 os.environ.setdefault("TORCH_HOME", str(BEATTHIS_CACHE_DIR / "torch"))
 
-SAM2_SEARCH_PATHS: list[Path] = [Path(__file__).parent / "assets" / "models" / "sams"]
+SAM2_SEARCH_PATHS: list[Path] = [Path("D:/ComfyUI/models/sams") if LOCAL_MACHINE_MODE else Path(__file__).parent / "assets" / "models" / "sams"]
 EXTRA_MODEL_PATHS_FILE = Path(__file__).parent.parent / "extra_model_paths.yaml"
 
 if EXTRA_MODEL_PATHS_FILE.exists():

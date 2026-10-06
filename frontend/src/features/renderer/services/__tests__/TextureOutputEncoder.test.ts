@@ -293,7 +293,10 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     encoder.dispose();
   });
 
-  it("does not hold rendering before the encoder's first packet", async () => {
+  // Times out at the default 5 s when the full suite runs in parallel on a
+  // busy machine (the suite polls a window that only the first packet
+  // opens); the case itself passes in well under a second in isolation.
+  it("does not hold rendering before the encoder's first packet", { timeout: 30_000 }, async () => {
     const encoder = new TextureOutputEncoder(app, 30, [definition], {
       encodeQueueSize: 1000,
     });

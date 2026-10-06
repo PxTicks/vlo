@@ -361,3 +361,8 @@
 /frontend/src/features/generation/utils/__tests__/mediaInputThumbnail.test.ts extension-surface=host
 
 /frontend/src/features/generation/utils/capturedMedia.ts extension-surface=host
+/frontend/src/features/localMachine/** extension-surface=host
+/backend/services/local_machine.py extension-surface=host
+/backend/services/ruby_owner.py extension-surface=host
+/backend/services/ruby_import_validation.py extension-surface=host
+/backend/routers/local_machine.py extension-surface=host

@@ -3,6 +3,7 @@ export const BRIDGE_VERSION: number;
 export const BRIDGE_CAPABILITIES: readonly string[];
 
 export function fingerprintWorkflow(graphData: unknown): string | null;
+export function matchImportedApiWorkflow(expected: unknown, actual: unknown): boolean;
 
 export interface DroppedSubgraphLink {
   subgraphId: string | null;

@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import { localMachineEnabled, machineDirectory } from "../../localMachine/storage";
 
 interface NewProjectDirectoryPreference {
   id: string;
@@ -28,12 +29,14 @@ export class NewProjectDirectoryService {
   }
 
   async getDirectory(): Promise<FileSystemDirectoryHandle | null> {
+    if (localMachineEnabled) return machineDirectory();
     const db = await this.dbPromise;
     const preference = await db.get(STORE_NAME, PROJECT_DIRECTORY_KEY);
     return preference?.handle ?? null;
   }
 
   async setDirectory(handle: FileSystemDirectoryHandle): Promise<void> {
+    if (localMachineEnabled) return;
     const db = await this.dbPromise;
     await db.put(STORE_NAME, {
       id: PROJECT_DIRECTORY_KEY,

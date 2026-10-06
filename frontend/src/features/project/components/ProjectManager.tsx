@@ -21,6 +21,7 @@ import {
 import { alpha, styled } from "@mui/material/styles";
 
 import vloLogo from "../../../assets/vlo.svg";
+import { localMachineEnabled } from "../../localMachine/storage";
 import { ViewLayoutButton } from "../../../core/shell/ViewLayoutButton";
 import { ViewRegionMount } from "../../../core/shell/ViewRegionMount";
 import { useViewRegion } from "../../../core/shell/useViewRegion";
@@ -96,6 +97,7 @@ export function ProjectManager() {
   // them lazily once instead of via a post-mount effect. A missing folder
   // picker is the more specific (and actionable) problem, so it wins.
   const [browserWarning] = useState<string | null>(() => {
+    if (localMachineEnabled) return null;
     const issue = getFileSystemAccessIssue();
     if (issue) return describeFileSystemAccessIssue(issue);
     return isNonChromiumBrowser()

@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
-from fastapi import APIRouter, File, Request, Response, UploadFile, WebSocket
+from fastapi import APIRouter, File, Request, Response, UploadFile, WebSocket, HTTPException
+from config import LOCAL_MACHINE_MODE
 from fastapi.responses import FileResponse, JSONResponse
 from services.comfyui import comfyui_generate as comfyui_generate_service
 
@@ -80,7 +81,7 @@ from services.comfyui.comfyui_generate import (  # noqa: E402
     DEFAULT_WORKFLOWS_DIR,
     WORKFLOWS_DIR,
 )
-from services.workflow_modes import get_packaged_workflows_dir
+from services.workflow_modes import get_packaged_workflows_dir, machine_workflow_allowed, machine_submission_allowed
 from services.workflow_bundles import (
     asset_content_type,
     build_how_to_document,
@@ -381,7 +382,7 @@ async def sync_object_info():
 # ---------------------------------------------------------------------------
 
 def _is_safe_workflow_filename(filename: str) -> bool:
-    return not (".." in filename or "/" in filename or "\\" in filename)
+    return not (".." in filename or "/" in filename or "\\" in filename) and machine_workflow_allowed(filename)
 
 
 def _workflow_roots() -> list[Path]:
@@ -1016,6 +1017,7 @@ async def list_workflows():
                 _mark_how_to(workflow_item, how_to_roots)
                 workflows.append(workflow_item)
 
+        workflows = [item for item in workflows if machine_workflow_allowed(item["id"])]
         workflows.sort(key=_workflow_list_sort_key)
         return workflows
     except OSError as exc:
@@ -1371,6 +1373,8 @@ async def resolve_workflow_rules(request: Request):
     workflow_id = body.get("workflow_id")
     if not isinstance(workflow_id, str):
         workflow_id = None
+    if workflow_id and not machine_workflow_allowed(workflow_id):
+        return error_response(403, "workflow_disabled", "This workflow is outside the enabled local model registry", retryable=False)
 
     return _resolve_workflow_rules_response(
         workflow_for_enrichment,
@@ -1495,6 +1499,15 @@ async def generate(request: Request):
             "Workflow payload must be valid JSON",
             retryable=False,
         )
+
+    if not machine_submission_allowed(workflow_id, workflow):
+        return error_response(403, "workflow_disabled", "Only registered MiniMax H3 and Qwen Image 2.1 workflows are enabled", retryable=False)
+    if LOCAL_MACHINE_MODE:
+        from services.ruby_import_validation import validate_import
+        try:
+            await validate_import(workflow_id)
+        except HTTPException as error:
+            return error_response(error.status_code, "library_import_stale", str(error.detail), retryable=False)
 
     # --- Optional visual graph data (for embedding in output file metadata) ---
     graph_data: dict | None = None

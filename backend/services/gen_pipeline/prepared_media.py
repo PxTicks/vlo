@@ -28,11 +28,11 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from config import RUNTIME_ROOT
+from config import RUNTIME_ROOT, TEMP_ROOT, LOCAL_MACHINE_MODE
 
 logger = logging.getLogger(__name__)
 
-PREPARED_MEDIA_ROOT = RUNTIME_ROOT / "prepared_media"
+PREPARED_MEDIA_ROOT = (TEMP_ROOT if LOCAL_MACHINE_MODE else RUNTIME_ROOT) / "prepared_media"
 
 # Long enough to cover a queued batch whose ComfyUI runs are slow, short enough
 # that abandoned groups do not accumulate.

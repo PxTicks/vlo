@@ -314,6 +314,176 @@ export function matchInjectedWorkflow(expected, actual) {
   return compareGraphShapes(expected, actual, false);
 }
 
+function isApiWorkflow(value) {
+  return isRecord(value) && !Array.isArray(value.nodes) && Object.keys(value).length > 0 &&
+    Object.values(value).every(node => isRecord(node) && typeof node.class_type === "string" && isRecord(node.inputs));
+}
+
+function sortedJson(value) {
+  if (Array.isArray(value)) return value.map(sortedJson);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map(key => [key, sortedJson(value[key])]));
+}
+
+// VHS replaces format widgets by adding the new set before removing the old
+// set. Current ComfyUI normalizes those transient name collisions to "#1".
+// Repair only names declared by this native node's selected format schema;
+// leave the strict executable prompt comparison responsible for the ACK.
+let replacedFormatWidgetId = 0;
+
+function nativeVhsFormats(node, windowObject) {
+  return (node.constructor?.nodeData ?? windowObject.LiteGraph?.registered_node_types?.[node.type]?.nodeData)
+    ?.input?.required?.format?.[1]?.formats;
+}
+
+function retireVhsFormatName(node, name) {
+  const existing = node.widgets?.find(widget => widget.name === name);
+  if (!existing) return;
+  // Use the native setter: it moves the old WidgetValueStore identity away
+  // from the canonical name before VHS constructs the replacement. Renaming
+  // after replacement cannot work because the stale canonical state exists.
+  const retiredName = `__vlo_replaced_format_${++replacedFormatWidgetId}_${name}`;
+  existing.name = retiredName;
+  if (existing.name !== retiredName) {
+    throw new BridgeRuntimeError("api-format-widget-retire-failed", `Native node ${node.id} could not retire its replaced format widget ${name}`);
+  }
+}
+
+function prepareVhsApiImport(app, expected, windowObject) {
+  if (!isApiWorkflow(expected) || !app.widgets) return () => {};
+  const previousDescriptor = Object.getOwnPropertyDescriptor(app, "widgets");
+  const nativeFactories = app.widgets;
+  const temporaryFactories = { ...nativeFactories };
+  for (const type of ["COMBO", "INT", "FLOAT", "BOOLEAN", "STRING"]) {
+    const original = nativeFactories[type];
+    if (typeof original !== "function") continue;
+    const wrapped = function (node, name, ...args) {
+      const definition = expected[String(node.id)];
+      if (node.type === "VHS_VideoCombine" && definition?.class_type === node.type) {
+        const definitions = nativeVhsFormats(node, windowObject)?.[definition.inputs.format];
+        if (Array.isArray(definitions) && definitions.some(entry => entry[0] === name)) retireVhsFormatName(node, name);
+      }
+      return original.call(this, node, name, ...args);
+    };
+    temporaryFactories[type] = wrapped;
+  }
+  // Current ComfyUI's compatibility getter returns a fresh factory object
+  // each time. Shadow that getter only during this import; mutating the
+  // returned copy would never affect VHS's subsequent factory lookups.
+  Object.defineProperty(app, "widgets", { configurable:true, value:temporaryFactories });
+  return () => {
+    if (previousDescriptor) Object.defineProperty(app, "widgets", previousDescriptor);
+    else delete app.widgets;
+  };
+}
+
+function normalizeVhsFormatWidgets(node, formatDefinitions) {
+  for (const [name] of formatDefinitions) {
+    const candidates = (node.widgets ?? []).filter(widget =>
+      widget.name === name || widget.name?.startsWith(`${name}#`));
+    if (candidates.length !== 1 || candidates[0].name !== name) {
+      throw new BridgeRuntimeError("api-format-widget-ambiguous", `Imported node ${node.id} format widget ${name} is ambiguous`);
+    }
+  }
+}
+
+function preserveImportedVhsFormats(expected, rootGraph, windowObject) {
+  if (!isApiWorkflow(expected) || typeof rootGraph?.getNodeById !== "function") return;
+  for (const [id, definition] of Object.entries(expected)) {
+    if (definition.class_type !== "VHS_VideoCombine") continue;
+    const node = rootGraph.getNodeById(id) ?? rootGraph.getNodeById(Number(id));
+    if (node?.type !== definition.class_type) continue;
+    const formats = nativeVhsFormats(node, windowObject);
+    const formatWidget = node.widgets?.find(widget => widget.name === "format");
+    const definitions = formats?.[definition.inputs.format];
+    if (!formatWidget || !Array.isArray(definitions)) continue;
+    normalizeVhsFormatWidgets(node, definitions);
+    for (const [name, type, options] of definitions) {
+      if (!Object.hasOwn(definition.inputs, name)) continue;
+      const value = definition.inputs[name];
+      if (Array.isArray(value)) continue; // Native links remain owned by the importer.
+      const valid = Array.isArray(type) ? type.includes(value)
+        : type === "BOOLEAN" ? typeof value === "boolean"
+        : type === "STRING" ? typeof value === "string"
+        : typeof value === "number" && Number.isFinite(value) && (type !== "INT" || Number.isInteger(value))
+          && !(typeof options?.min === "number" && value < options.min)
+          && !(typeof options?.max === "number" && value > options.max);
+      if (!valid) throw new BridgeRuntimeError("api-format-value-invalid", `Imported node ${id} input ${name} does not satisfy its native format schema`);
+      const widget = node.widgets.find(candidate => candidate.name === name);
+      if (!widget) throw new BridgeRuntimeError("api-format-widget-lost", `Imported node ${id} native format widget ${name} disappeared (widgets: ${node.widgets.map(candidate => candidate.name).join(",")})`);
+      widget.value = value;
+      widget.callback?.call(widget, value);
+    }
+    if (typeof formatWidget.callback === "function") {
+      const original = formatWidget.callback;
+      formatWidget.callback = function (...args) {
+        const next = formats[formatWidget.value];
+        if (Array.isArray(next)) for (const [name] of next) retireVhsFormatName(node, name);
+        const result = original.apply(this, args);
+        const current = formats[formatWidget.value];
+        if (Array.isArray(current)) normalizeVhsFormatWidgets(node, current);
+        return result;
+      };
+    }
+  }
+}
+
+// ComfyUI's API importer invokes the FLOAT widget callback, which rounds to
+// the editor's display precision (e.g. 0.693548 becomes 0.69). An imported
+// owner workflow must retain its executable values. Change only the affected
+// imported widget; keep its existing range and require strict prompt readback.
+function preserveImportedApiFloats(expected, rootGraph) {
+  if (!isApiWorkflow(expected) || typeof rootGraph?.getNodeById !== "function") return;
+  for (const [id, definition] of Object.entries(expected)) {
+    const node = rootGraph.getNodeById(id) ?? rootGraph.getNodeById(Number(id));
+    if (!node || node.type !== definition.class_type) continue;
+    for (const [name, value] of Object.entries(definition.inputs)) {
+      if (typeof value !== "number" || !Number.isFinite(value) || Number.isInteger(value)) continue;
+      const widget = node.widgets?.find(candidate => candidate.name === name);
+      if (!widget || Object.is(widget.value, value) || !widget.options?.round) continue;
+      const { min, max } = widget.options;
+      if ((typeof min === "number" && value < min) || (typeof max === "number" && value > max)) {
+        throw new BridgeRuntimeError("api-float-out-of-range", `Imported node ${id} input ${name} exceeds its native widget range`);
+      }
+      widget.options = {...widget.options, round:0, precision:Math.max(widget.options.precision ?? 0, 16)};
+      widget.value = value;
+      widget.callback?.call(widget, value);
+      if (!Object.is(widget.value, value)) {
+        throw new BridgeRuntimeError("api-float-not-preserved", `Imported node ${id} input ${name} could not retain its original numeric value`);
+      }
+    }
+  }
+}
+
+/** Native ComfyUI imports API prompts into visual graphs. Compare executable
+ * values after that conversion, because their visual fingerprint must differ. */
+export function matchImportedApiWorkflow(expected, actual) {
+  if (!isApiWorkflow(expected) || !isApiWorkflow(actual)) return false;
+  const executionOnly = graph => Object.fromEntries(Object.entries(graph).map(([id, node]) => [id, {class_type:node.class_type, inputs:node.inputs}]));
+  return JSON.stringify(sortedJson(executionOnly(expected))) === JSON.stringify(sortedJson(executionOnly(actual)));
+}
+
+function summarizeApiMismatch(expected, actual) {
+  if (!isApiWorkflow(actual)) return "ComfyUI returned no executable API graph";
+  const missing = Object.keys(expected).filter(id => !actual[id]);
+  const extra = Object.keys(actual).filter(id => !expected[id]);
+  const notes = [];
+  if (missing.length) notes.push(`missing node IDs ${missing.join(",")}`);
+  if (extra.length) notes.push(`extra node IDs ${extra.join(",")}`);
+  for (const [id, node] of Object.entries(expected)) {
+    if (!actual[id]) continue;
+    if (node.class_type !== actual[id].class_type) notes.push(`node ${id} class ${node.class_type} became ${actual[id].class_type}`);
+    const keys = new Set([...Object.keys(node.inputs), ...Object.keys(actual[id].inputs)]);
+    for (const key of keys) {
+      if (JSON.stringify(sortedJson(node.inputs[key])) !== JSON.stringify(sortedJson(actual[id].inputs[key]))) {
+        const describe = value => Array.isArray(value) ? `link/array(${value.join(",")})` : typeof value === "number" ? `number(${value})` : value === undefined ? "missing" : typeof value;
+        notes.push(`node ${id} input ${key}: ${describe(node.inputs[key])} became ${describe(actual[id].inputs[key])}`);
+      }
+    }
+  }
+  return notes.slice(0,12).join("; ") || "API graph comparison did not match";
+}
+
 function toUnique(values) {
   return [...new Set(values)];
 }
@@ -756,6 +926,7 @@ export function startVloBridge({ app, api, windowObject = window }) {
   let promptResolutionCounter = 0;
   let graphChangedTimer = null;
   let announcePending = false;
+  let workflowInjectionPending = false;
   let stopped = false;
   const workflowIds = new WeakMap();
   const workflowRevisions = new WeakMap();
@@ -946,9 +1117,20 @@ export function startVloBridge({ app, api, windowObject = window }) {
     const expectedStem = filenameStem(filename);
     const deadline = Date.now() + WORKFLOW_ACTIVE_TIMEOUT_MS;
     let lastObservation = null;
+    let apiMismatch = null;
     while (Date.now() < deadline) {
       const active = getActiveWorkflow();
-      const droppedLinks = matchInjectedWorkflow(graphData, active?.activeState);
+      let droppedLinks = matchInjectedWorkflow(graphData, active?.activeState);
+      if (isApiWorkflow(graphData) && active) {
+        try {
+          const resolved = await app.graphToPrompt(getRootGraph());
+          droppedLinks = matchImportedApiWorkflow(graphData, resolved?.output) ? [] : null;
+          apiMismatch = droppedLinks === null ? summarizeApiMismatch(graphData,resolved?.output) : null;
+        } catch {
+          droppedLinks = null;
+          apiMismatch = "ComfyUI could not serialize the imported API graph";
+        }
+      }
       const fingerprintMatches = droppedLinks !== null;
       const activeStem = filenameStem(resolveTabFilename(active));
       const stemMatches =
@@ -964,7 +1146,7 @@ export function startVloBridge({ app, api, windowObject = window }) {
     }
     throw new BridgeRuntimeError(
       "workflow-not-active",
-      "The injected workflow did not become the active ComfyUI workflow",
+      `The injected workflow did not become the active ComfyUI workflow${apiMismatch ? `: ${apiMismatch}` : ""}`,
       { expectedStem, ...lastObservation },
     );
   }
@@ -986,6 +1168,18 @@ export function startVloBridge({ app, api, windowObject = window }) {
   }
 
   async function injectWorkflow(payload) {
+    if (workflowInjectionPending) {
+      throw new BridgeRuntimeError("workflow-import-busy", "The native workflow is still being imported; retry after its acknowledgement");
+    }
+    workflowInjectionPending = true;
+    try {
+      return await performWorkflowInjection(payload);
+    } finally {
+      workflowInjectionPending = false;
+    }
+  }
+
+  async function performWorkflowInjection(payload) {
     if (!isRecord(payload?.graphData)) {
       throw new BridgeRuntimeError("invalid-payload", "inject-workflow requires graphData");
     }
@@ -1001,7 +1195,14 @@ export function startVloBridge({ app, api, windowObject = window }) {
     });
     const file = new windowObject.File([blob], filename, { type: "application/json" });
     const previousActive = getActiveWorkflow();
-    await app.handleFile(file, undefined, { deferWarnings: true });
+    const restoreWidgetFactories = prepareVhsApiImport(app, payload.graphData, windowObject);
+    try {
+      await app.handleFile(file, undefined, { deferWarnings: true });
+    } finally {
+      restoreWidgetFactories();
+    }
+    preserveImportedVhsFormats(payload.graphData, getRootGraph(), windowObject);
+    preserveImportedApiFloats(payload.graphData, getRootGraph());
     const { active, droppedLinks } = await waitForInjectedWorkflow(
       payload.graphData,
       filename,

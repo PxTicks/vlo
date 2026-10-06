@@ -28,6 +28,7 @@ from routers.downloads import router as downloads_router
 from routers.generation_delivery import router as generation_delivery_router
 from routers.runtime_capabilities import router as runtime_capabilities_router
 from routers.app_lifecycle import router as app_lifecycle_router
+from routers.local_machine import router as local_machine_router, local_machine_guard
 from routers.app_settings import (
     build_public_settings_payload,
     router as app_settings_router,
@@ -144,6 +145,8 @@ async def application_lifespan(application: FastAPI):
 
 
 app = FastAPI(lifespan=application_lifespan)
+app.middleware("http")(local_machine_guard)
+app.include_router(local_machine_router)
 
 app.include_router(comfyui_router)
 app.include_router(comfyui_compat_router)
@@ -159,7 +162,7 @@ app.include_router(app_lifecycle_router)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-PROJECTS_DIR = BASE_DIR / "projects"
+PROJECTS_DIR = PROJECTS_ROOT
 FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
 FRONTEND_INDEX_FILE = FRONTEND_DIST_DIR / "index.html"
 

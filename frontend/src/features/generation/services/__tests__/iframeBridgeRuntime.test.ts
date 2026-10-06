@@ -638,6 +638,155 @@ describe("hosted iframe bridge runtime", () => {
     expect(closeWorkflow).not.toHaveBeenCalledWith(harness.persistedTemplate);
   });
 
+  it("preserves an imported API float through native widget rounding before confirming execution", async () => {
+    const harness = createHarness();
+    const widget = {name:"max_shift",value:0.69,options:{round:0.01,precision:2,min:0,max:100},callback:vi.fn(function(this: {value:number;options:{round:number}},value:number) {
+      this.value = this.options.round ? Math.round(value/this.options.round)*this.options.round : value;
+    })};
+    const nativeNode = {id:4,type:"ModelSamplingFlux",widgets:[widget]};
+    harness.app.rootGraph = {...harness.app.rootGraph,getNodeById:(id: unknown)=>String(id)==="4"?nativeNode:null} as never;
+    const expected = {"4":{class_type:"ModelSamplingFlux",inputs:{max_shift:0.693548}}};
+    harness.app.graphToPrompt = vi.fn(async()=>({output:{"4":{class_type:"ModelSamplingFlux",inputs:{max_shift:widget.value}}},workflow:{extra:{}}})) as never;
+    harness.activeWorkflow.pendingWarnings = {missingNodeTypes:[]} as never;
+    startVloBridge({app:harness.app,api:harness.api,windowObject:harness.windowObject});
+    hello(harness);
+    request(harness,"inject-api-float","inject-workflow",{graphData:expected,filename:"workflow.json"});
+    await vi.waitFor(()=>expect(harness.posted.find(message=>message.requestId==="inject-api-float")).toMatchObject({ok:true}), {timeout:2500});
+    expect(widget.value).toBe(0.693548);
+    expect(widget.options.round).toBe(0);
+    expect(widget.options.min).toBe(0);
+    expect(widget.options.max).toBe(100);
+  });
+
+  it("preserves VHS owner format settings and native input slots", async () => {
+    const harness = createHarness();
+    const formatDefs = [["pix_fmt",["yuv420p","yuv420p10le"]],["crf","INT",{min:0,max:100}],["save_metadata","BOOLEAN"],["trim_to_audio","BOOLEAN"]];
+    const node = {
+      id:992,type:"VHS_VideoCombine",
+      constructor:{nodeData:{input:{required:{format:[[],{formats:{"video/h264-mp4":formatDefs}}]}}}},
+      widgets:[{name:"format",value:"video/h264-mp4"}, {name:"pix_fmt",value:"yuv420p"},{name:"crf",value:19},{name:"save_metadata",value:true},{name:"trim_to_audio",value:false}],
+      inputs:formatDefs.map(([name])=>({name,link:null,widget:{name}})),
+      removeInput:vi.fn(),
+    };
+    // Mirrors VHS: new widgets are added while the prior set is still
+    // present, so native identity normalization gives the new set aliases.
+    Object.assign(node.widgets[0], {callback:()=> {
+      const replacements = [{name:"pix_fmt",value:"yuv420p"},{name:"crf",value:19},{name:"save_metadata",value:true},{name:"trim_to_audio",value:false}];
+      for (const widget of replacements) {
+        if (node.widgets.some(existing=>existing.name===widget.name)) widget.name += "#1";
+      }
+      node.widgets.splice(1,4,...replacements);
+      for (const widget of replacements) if(!node.inputs.some(input=>input.name===widget.name)) node.inputs.push({name:widget.name,link:null,widget:{name:widget.name}});
+    }});
+    harness.app.rootGraph = {...harness.app.rootGraph,getNodeById:()=>node} as never;
+    const expected = {"992":{class_type:"VHS_VideoCombine",inputs:{format:"video/h264-mp4",pix_fmt:"yuv420p",crf:19,save_metadata:false,trim_to_audio:true}}};
+    harness.app.graphToPrompt = vi.fn(async()=>({output:{"992":{class_type:node.type,inputs:Object.fromEntries(node.widgets.map(widget=>[widget.name,widget.value]))}},workflow:{extra:{}}})) as never;
+    startVloBridge({app:harness.app,api:harness.api,windowObject:harness.windowObject});
+    hello(harness);
+    request(harness,"inject-api-vhs","inject-workflow",{graphData:expected,filename:"workflow.json"});
+    await vi.waitFor(()=>expect(harness.posted.find(message=>message.requestId==="inject-api-vhs")).toMatchObject({ok:true}),{timeout:2500});
+    expect(node.widgets.map(widget=>widget.name)).toEqual(["format","pix_fmt","crf","save_metadata","trim_to_audio"]);
+    expect(node.inputs.map(input=>input.name)).toEqual(["pix_fmt","crf","save_metadata","trim_to_audio"]);
+    expect(node.removeInput).not.toHaveBeenCalled();
+    expect(node.widgets.find(widget=>widget.name==="save_metadata")?.value).toBe(false);
+    expect(node.widgets.find(widget=>widget.name==="trim_to_audio")?.value).toBe(true);
+    (node.widgets[0] as unknown as {callback:()=>void}).callback();
+    expect(node.widgets.map(widget=>widget.name)).toEqual(["format","pix_fmt","crf","save_metadata","trim_to_audio"]);
+    expect(node.inputs.map(input=>input.name)).toEqual(["pix_fmt","crf","save_metadata","trim_to_audio"]);
+    // An explicit later native format edit keeps its defaults, rather than
+    // silently reapplies the imported owner settings.
+    expect(node.widgets.find(widget=>widget.name==="save_metadata")?.value).toBe(true);
+  });
+
+  it("repeatedly imports VHS API graphs through native factories without stale widget-store identities", async () => {
+    const harness = createHarness();
+    const definitions = [["pix_fmt",["yuv420p","yuv420p10le"]],["crf","INT",{min:0,max:100}],["save_metadata","BOOLEAN"],["trim_to_audio","BOOLEAN"]];
+    const expected = {"992":{class_type:"VHS_VideoCombine",inputs:{format:"video/h264-mp4",pix_fmt:"yuv420p",crf:19,save_metadata:false,trim_to_audio:true}}};
+    let states = new Map<string, NativeWidget>();
+    class NativeWidget {
+      currentName:string; value:unknown;
+      constructor(name:string,value:unknown){this.currentName=name;this.value=value;states.set(name,this);}
+      get name(){return this.currentName;}
+      set name(value:string){
+        // Exact BaseWidget / WidgetValueStore behavior: a stale canonical
+        // identity blocks renaming #1 back, even after the old widget left.
+        if(value!==this.currentName&&states.has(value)) return;
+        states.delete(this.currentName);this.currentName=value;states.set(value,this);
+      }
+    }
+    type TestNode = {id:number;type:string;constructor:unknown;widgets:Array<{name:string;value:unknown;callback?:()=>void}>;inputs:Array<{name:string;link:null;widget:{name:string}}>;removeInput:(index:number)=>void};
+    let node:TestNode;
+    const factories:Record<string,(target:TestNode,name:string,config:unknown[])=>void> = {};
+    for(const type of ["COMBO","INT","BOOLEAN"]){ factories[type] = (target,name)=> {
+      const alias = target.widgets.some(widget=>widget.name===name)?`${name}#1`:name;
+      target.widgets.push(new NativeWidget(alias,type==="COMBO"?"yuv420p":type==="INT"?19:false));
+    }; }
+    // Real Comfy compatibility getter returns a new object on every read.
+    Object.defineProperty(harness.app,"widgets",{configurable:true,get:()=>({...factories})});
+    const originalFactories = {...factories};
+    harness.app.handleFile.mockImplementation(async()=>{
+      states=new Map();
+      node={id:992,type:"VHS_VideoCombine",constructor:{nodeData:{input:{required:{format:[[],{formats:{"video/h264-mp4":definitions}}]}}}},widgets:[{name:"format",value:"video/h264-mp4"}],inputs:[],removeInput(index){this.inputs.splice(index,1);}};
+      let count=0;
+      node.widgets[0].callback=()=>{
+        const next = definitions.map(([name,type,...config])=>{
+          (harness.app as typeof harness.app & {widgets:typeof factories}).widgets[Array.isArray(type)?"COMBO":String(type)](node,String(name),[type,...config]);
+          return node.widgets.pop()!;
+        });
+        node.widgets.splice(1,count,...next);count=next.length;
+        for(const widget of next) if(!node.inputs.some(input=>input.name===widget.name)) node.inputs.push({name:widget.name,link:null,widget:{name:widget.name}});
+      };
+      // Exact loadApiJson behavior: process input callbacks twice.
+      for(let pass=0;pass<2;pass++){
+        node.widgets[0].callback();
+        for(const [name,value] of Object.entries(expected["992"].inputs)){const widget=node.widgets.find(candidate=>candidate.name===name);if(widget)widget.value=value;}
+      }
+    });
+    harness.app.rootGraph={...harness.app.rootGraph,getNodeById:()=>node} as never;
+    harness.app.graphToPrompt=vi.fn(async()=>({output:{"992":{class_type:node.type,inputs:Object.fromEntries(node.widgets.map(widget=>[widget.name,widget.value]))}},workflow:{extra:{}}})) as never;
+    startVloBridge({app:harness.app,api:harness.api,windowObject:harness.windowObject});hello(harness);
+    harness.app.handleFile.mockImplementationOnce(async()=>{throw new Error("Native importer refused the file");});
+    request(harness,"inject-vhs-refused","inject-workflow",{graphData:expected,filename:"workflow.json"});
+    await vi.waitFor(()=>expect(harness.posted.find(message=>message.requestId==="inject-vhs-refused")).toMatchObject({ok:false}));
+    expect(Object.getOwnPropertyDescriptor(harness.app,"widgets")?.get).toBeDefined();
+    for(const id of ["inject-vhs-first","inject-vhs-repeat"]){
+      request(harness,id,"inject-workflow",{graphData:expected,filename:"workflow.json"});
+      if(id==="inject-vhs-first") {
+        request(harness,"inject-vhs-overlap","inject-workflow",{graphData:expected,filename:"workflow.json"});
+        await vi.waitFor(()=>expect(harness.posted.find(message=>message.requestId==="inject-vhs-overlap")).toMatchObject({ok:false,error:{code:"workflow-import-busy"}}));
+      }
+      await vi.waitFor(()=>expect(harness.posted.find(message=>message.requestId===id)).toMatchObject({ok:true}),{timeout:2500});
+      expect(factories).toEqual(originalFactories);
+      expect(Object.getOwnPropertyDescriptor(harness.app,"widgets")?.get).toBeDefined();
+      expect(node!.widgets.map(widget=>widget.name)).toEqual(["format","pix_fmt","crf","save_metadata","trim_to_audio"]);
+    }
+  });
+
+  it("fails closed rather than removing a connected VHS alias input", async () => {
+    const harness = createHarness();
+    const node = {id:992,type:"VHS_VideoCombine",constructor:{nodeData:{input:{required:{format:[[],{formats:{"video/h264-mp4":[["crf","INT",{min:0,max:100}]]}}]}}}},widgets:[{name:"format",value:"video/h264-mp4"},{name:"crf#1",value:19}],inputs:[{name:"crf",link:123},{name:"crf#1",link:null}],removeInput:vi.fn()};
+    harness.app.rootGraph = {...harness.app.rootGraph,getNodeById:()=>node} as never;
+    startVloBridge({app:harness.app,api:harness.api,windowObject:harness.windowObject});
+    hello(harness);
+    request(harness,"inject-api-vhs-linked","inject-workflow",{graphData:{"992":{class_type:node.type,inputs:{format:"video/h264-mp4",crf:19}}},filename:"workflow.json"});
+    await vi.waitFor(()=>expect(harness.posted.find(message=>message.requestId==="inject-api-vhs-linked")).toMatchObject({ok:false,error:{code:"api-format-widget-ambiguous"}}));
+    expect(node.removeInput).not.toHaveBeenCalled();
+    expect(node.widgets[1].name).toBe("crf#1");
+    expect(harness.app.graphToPrompt).not.toHaveBeenCalled();
+  });
+
+  it("rejects an imported float outside the native widget range", async () => {
+    const harness = createHarness();
+    const widget = {name:"max_shift",value:0.69,options:{round:0.01,min:0,max:1}};
+    harness.app.rootGraph = {...harness.app.rootGraph,getNodeById:()=>({id:4,type:"ModelSamplingFlux",widgets:[widget]})} as never;
+    startVloBridge({app:harness.app,api:harness.api,windowObject:harness.windowObject});
+    hello(harness);
+    request(harness,"inject-api-range","inject-workflow",{graphData:{"4":{class_type:"ModelSamplingFlux",inputs:{max_shift:1.693548}}},filename:"workflow.json"});
+    await vi.waitFor(()=>expect(harness.posted.find(message=>message.requestId==="inject-api-range")).toMatchObject({ok:false,error:{code:"api-float-out-of-range"}}));
+    expect(widget.value).toBe(0.69);
+    expect(widget.options.round).toBe(0.01);
+  });
+
   it("accepts a de-duplicated tab name for the injected workflow", async () => {
     const harness = createHarness();
     harness.activeWorkflow.filename = "workflow (2)";

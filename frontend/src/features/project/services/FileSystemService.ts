@@ -4,6 +4,7 @@
  */
 
 import { projectMutationGuard } from "../../../core/project/projectMutationGuard";
+import { localMachineEnabled, machineDirectory, machineExportHandle, machineHandlePath } from "../../localMachine/storage";
 import {
   describeFileSystemAccessIssue,
   getFileSystemAccessIssue,
@@ -46,6 +47,12 @@ export class FileSystemService {
   async pickDirectory(
     options: Omit<DirectoryPickerOptions, "mode"> = {},
   ): Promise<FileSystemDirectoryHandle> {
+    if (localMachineEnabled) {
+      if (options.id === "vlo-workspace") return machineDirectory();
+      const name = window.prompt("Project folder within the shared VLO workspace:");
+      if (!name) throw new DOMException("Cancelled", "AbortError");
+      return machineDirectory().getDirectoryHandle(name);
+    }
     // Without this, callers surface "showDirectoryPicker is not a function",
     // which says nothing about how to fix it.
     const issue = getFileSystemAccessIssue();
@@ -74,6 +81,10 @@ export class FileSystemService {
     defaultName: string = "export.mp4",
     format: "mp4" | "webm" = "mp4",
   ): Promise<FileSystemFileHandle> {
+    if (localMachineEnabled) {
+      if (!this.projectHandle) throw new Error("Open a shared-root project before exporting");
+      return machineExportHandle(this.projectHandle, defaultName);
+    }
     const isWebm = format === "webm";
     return await window.showSaveFilePicker({
       suggestedName: defaultName,
@@ -114,6 +125,7 @@ export class FileSystemService {
    * Sets the project handle explicitly (e.g., from IndexedDB on reload).
    */
   setHandle(handle: FileSystemDirectoryHandle) {
+    if (localMachineEnabled && machineHandlePath(handle) === null) throw new Error("Local-machine mode only opens shared Ruby workspace projects");
     // Switching directories mid-export would swap the files under the render.
     projectMutationGuard.assertEditable();
     this.projectHandle = handle;

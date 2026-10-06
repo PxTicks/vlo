@@ -9,6 +9,10 @@ import { App } from "./App";
 import { installE2EDiagnostics } from "./installE2EDiagnostics";
 import { installHostOptionCatalogues } from "./installHostOptionCatalogues";
 import "./index.css";
+import { initializeLocalMachine } from "../features/localMachine/storage";
+
+// Determine storage authority before project controls or restoration can write.
+await initializeLocalMachine();
 
 // Polyfill for explicit resource management
 // @ts-expect-error - mixed support

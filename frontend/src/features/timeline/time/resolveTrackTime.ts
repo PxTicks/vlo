@@ -10,6 +10,7 @@ import {
   computeAdjustmentTimeApplications,
   type AdjustmentTimeApplication,
 } from "../../renderer/utils/deriveAdjustmentGroups";
+import { getSpeedMappingRevision } from "../../transformations/utils/timeCalculation";
 
 /**
  * @internal — engine for clipPresentation; not for direct consumption.
@@ -38,7 +39,26 @@ export interface TrackTimeResolver {
    * which a given stored-track tick appears in the warped axis.
    */
   resolvePresentationTick(trackId: string, effectiveTrackTick: number): number;
+
+  /**
+   * The same warp bound to one track. It holds only that track's stacks, so a
+   * presentation entry that keeps it does not retain the whole snapshot.
+   */
+  forTrack(trackId: string): TrackTimeWarp;
 }
+
+export interface TrackTimeWarp {
+  /**
+   * The stacks' values and the speed-provider revision, captured when the warp
+   * is built. The warp maps over its own copy of those values, so equal
+   * signatures map every tick identically for the life of both warps.
+   */
+  readonly signature: string;
+  resolveEffectiveTrackTick(presentationTick: number): number;
+  resolvePresentationTick(effectiveTrackTick: number): number;
+}
+
+const EMPTY_STACK: readonly AdjustmentTimeApplication[] = [];
 
 export interface BuildTrackTimeResolverOptions {
   retimingModes?: readonly AdjustmentRetimingMode[];
@@ -89,20 +109,65 @@ export function buildTrackTimeResolver(
       retimingModes,
     });
 
+  const warps = new Map<string, TrackTimeWarp>();
+  const forTrack = (trackId: string): TrackTimeWarp => {
+    let warp = warps.get(trackId);
+    if (!warp) {
+      let timeStack = timeApplicationsByTrack.get(trackId) ?? EMPTY_STACK;
+      let presentationStack =
+        presentationApplicationsByTrack.get(trackId) ?? EMPTY_STACK;
+      let signature = "";
+      if (timeStack.length > 0 || presentationStack.length > 0) {
+        // Copy, so a later in-place edit to a clip's transformations can't
+        // change what this warp maps while its signature stays the same.
+        [timeStack, presentationStack] = structuredClone([
+          timeStack,
+          presentationStack,
+        ]);
+        signature = `${getSpeedMappingRevision()}|${JSON.stringify(
+          [timeStack, presentationStack],
+          exactNumbers,
+        )}`;
+      }
+      warp = {
+        signature,
+        resolveEffectiveTrackTick: (presentationTick) =>
+          timeStack.length === 0
+            ? presentationTick
+            : resolveStackTick(timeStack, presentationTick),
+        resolvePresentationTick: (effectiveTrackTick) =>
+          presentationStack.length === 0
+            ? effectiveTrackTick
+            : resolveStackPresentationTick(presentationStack, effectiveTrackTick),
+      };
+      warps.set(trackId, warp);
+    }
+    return warp;
+  };
+
   return {
     resolveEffectiveTrackTick(trackId, presentationTick) {
-      const stack = timeApplicationsByTrack.get(trackId) ?? [];
-      if (stack.length === 0) {
-        return presentationTick;
-      }
-      return resolveStackTick(stack, presentationTick);
+      return forTrack(trackId).resolveEffectiveTrackTick(presentationTick);
     },
     resolvePresentationTick(trackId, effectiveTrackTick) {
-      const stack = presentationApplicationsByTrack.get(trackId) ?? [];
-      if (stack.length === 0) {
-        return effectiveTrackTick;
-      }
-      return resolveStackPresentationTick(stack, effectiveTrackTick);
+      return forTrack(trackId).resolvePresentationTick(effectiveTrackTick);
     },
+    forTrack,
   };
+}
+
+// JSON writes NaN and the infinities as null and -0 as 0; keep them distinct.
+function exactNumbers(_key: string, value: unknown): unknown {
+  return typeof value === "number" &&
+    (!Number.isFinite(value) || Object.is(value, -0))
+    ? { number: Object.is(value, -0) ? "-0" : String(value) }
+    : value;
+}
+
+/** Whether two warps map every tick identically. */
+export function trackTimeWarpsEqual(
+  left: TrackTimeWarp,
+  right: TrackTimeWarp,
+): boolean {
+  return left === right || left.signature === right.signature;
 }

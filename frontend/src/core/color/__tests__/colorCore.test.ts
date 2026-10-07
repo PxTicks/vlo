@@ -14,6 +14,7 @@ import {
   applyReferenceColorGradePixel,
   applyShadowToe,
   circularHueWeight,
+  colorQualifierWeight,
   linearChannelToSrgb,
   rgbToHsv,
   softTrapezoidWeight,
@@ -141,6 +142,15 @@ describe("qualifier weights", () => {
       expect.closeTo(0.1, 8),
       expect.closeTo(0.8, 8),
     ]);
+  });
+
+  it("keeps out-of-domain saturation and luma inside full-width bars", () => {
+    const fullBars = { ...DEFAULT_COLOR_QUALIFIER, qualifierEnabled: true };
+    // Saturation just past 1 (GPU division rounding, or an overshooting
+    // upstream grade) and super-white luma must not escape a full bar.
+    expect(colorQualifierWeight([-1e-6, 0.7, 1], fullBars)).toBe(1);
+    expect(colorQualifierWeight([1.2, 1.2, 1.2], fullBars)).toBe(1);
+    expect(colorQualifierWeight([0, 0.7, 1], fullBars)).toBe(1);
   });
 
   it("returns the qualifier weight in matte preview", () => {

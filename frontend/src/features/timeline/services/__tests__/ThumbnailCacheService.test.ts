@@ -54,6 +54,47 @@ describe("ThumbnailCacheService.loadMetadata", () => {
     expect(loader).toHaveBeenCalledTimes(1);
   });
 
+  it("re-probes when the in-flight probe read a different source", async () => {
+    // A background proxy can land while a source probe is still running;
+    // the proxy caller must not adopt the source's first timestamp.
+    thumbnailCacheService.acquire("asset-1");
+    let resolveSourceProbe!: (metadata: ThumbnailAssetMetadata) => void;
+    const sourceProbe = vi.fn(
+      () =>
+        new Promise<ThumbnailAssetMetadata>((resolve) => {
+          resolveSourceProbe = resolve;
+        }),
+    );
+    const proxyMetadata: ThumbnailAssetMetadata = {
+      ...METADATA,
+      firstTimestampSeconds: 0,
+      probedFromProxy: true,
+    };
+    const proxyProbe = vi.fn(async () => proxyMetadata);
+
+    const fromSource = thumbnailCacheService.loadMetadata(
+      "asset-1",
+      (metadata) => !metadata.probedFromProxy,
+      sourceProbe,
+    );
+    const fromProxy = thumbnailCacheService.loadMetadata(
+      "asset-1",
+      (metadata) => Boolean(metadata.probedFromProxy),
+      proxyProbe,
+    );
+    const sourceMetadata = {
+      ...METADATA,
+      firstTimestampSeconds: 0.5,
+      probedFromProxy: false,
+    };
+    resolveSourceProbe(sourceMetadata);
+
+    await expect(fromSource).resolves.toEqual(sourceMetadata);
+    await expect(fromProxy).resolves.toEqual(proxyMetadata);
+    expect(proxyProbe).toHaveBeenCalledTimes(1);
+    expect(thumbnailCacheService.getMetadata("asset-1")).toEqual(proxyMetadata);
+  });
+
   it("probes when cached metadata is incomplete for the caller", async () => {
     // Image-style entries carry only an aspect ratio; a video caller still
     // needs its first timestamp probed.

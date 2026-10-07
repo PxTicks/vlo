@@ -42,11 +42,29 @@ export class TimelineComponent {
     }
 
     async getClipCount(): Promise<number> {
-        return this.clips.count();
+        return this.page.evaluate(() => {
+            const store = (window as unknown as {
+                __TIMELINE_STORE__?: {
+                    getState(): { clips: { type: string }[] };
+                };
+            }).__TIMELINE_STORE__;
+            if (!store) throw new Error('Timeline store is unavailable');
+            return store.getState().clips.filter((clip) => clip.type !== 'mask').length;
+        });
     }
 
-    getClip(index: number): Locator {
-        return this.clips.nth(index);
+    async getClip(index: number): Promise<Locator> {
+        const id = await this.page.evaluate((modelIndex) => {
+            const store = (window as unknown as {
+                __TIMELINE_STORE__?: {
+                    getState(): { clips: { id: string; type: string }[] };
+                };
+            }).__TIMELINE_STORE__;
+            if (!store) throw new Error('Timeline store is unavailable');
+            return store.getState().clips.filter((clip) => clip.type !== 'mask')[modelIndex]?.id;
+        }, index);
+        if (!id) throw new Error(`Timeline clip ${index} does not exist`);
+        return this.getClipById(id);
     }
 
     /**
@@ -59,7 +77,7 @@ export class TimelineComponent {
     }
 
     async clickClip(index: number) {
-        await this.clips.nth(index).click();
+        await (await this.getClip(index)).click();
     }
 
     async clickClipById(clipId: string) {
@@ -201,12 +219,12 @@ export class TimelineComponent {
      * Check whether a clip is selected via the semantic clip state attribute.
      */
     async isClipSelected(index: number): Promise<boolean> {
-        const clip = this.getClip(index);
+        const clip = await this.getClip(index);
         return (await clip.getAttribute('data-selected')) === 'true';
     }
 
-    getClipResizeHandle(index: number, side: 'left' | 'right'): Locator {
-        return this.getClip(index).getByTestId(`timeline-clip-resize-handle-${side}`);
+    async getClipResizeHandle(index: number, side: 'left' | 'right'): Promise<Locator> {
+        return (await this.getClip(index)).getByTestId(`timeline-clip-resize-handle-${side}`);
     }
 
     /**

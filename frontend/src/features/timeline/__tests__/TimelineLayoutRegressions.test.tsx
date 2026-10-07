@@ -14,6 +14,9 @@ vi.mock("../components/ThumbnailCanvas", () => ({
 // Fix: Mock useTimelineViewStore as a function behaving like a zustand hook
 // AND having the static methods like getState attached to it.
 vi.mock("../hooks/useTimelineViewStore", () => {
+  // A fixed window wide enough to mount every clip in this spec.
+  const visiblePixelWindow = { start: 0, end: 1e9, contentWidth: 1000 };
+  const setVisiblePixelWindow = vi.fn();
   const store = (selector: (state: unknown) => unknown) =>
     selector({
       zoomScale: 1,
@@ -21,8 +24,13 @@ vi.mock("../hooks/useTimelineViewStore", () => {
       setScrollContainer: vi.fn(),
       setZoomScale: vi.fn(),
       setMinZoomScale: vi.fn(),
+      visiblePixelWindow,
     });
-  store.getState = () => ({ zoomScale: 1 });
+  store.getState = () => ({
+    zoomScale: 1,
+    visiblePixelWindow,
+    setVisiblePixelWindow,
+  });
   store.subscribe = vi.fn(() => vi.fn());
   return { useTimelineViewStore: store };
 });

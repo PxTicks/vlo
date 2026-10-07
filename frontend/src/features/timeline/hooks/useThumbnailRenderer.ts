@@ -64,10 +64,9 @@ export function useThumbnailRenderer({
     clipStart,
     fullCanvasWidth,
     leftWingPx,
-    scrollContainer,
     isNearViewport,
     updateCanvasGeometry,
-    updateViewportState,
+    subscribeToVisibleWindow,
   } = useClipCanvasWindow({
     canvasRef,
     clip,
@@ -240,7 +239,6 @@ export function useThumbnailRenderer({
     const { signal } = abortController;
 
     const generateThumbnails = async () => {
-      updateViewportState();
       // Off-screen clips do no work at all — no source hydration, metadata
       // probe, or image load — so mounting or committing a long timeline
       // costs only what is near the viewport.
@@ -280,14 +278,21 @@ export function useThumbnailRenderer({
           if (!hydratedVideoAsset) return;
 
           let metadata = thumbnailCacheService.getMetadata(clip.assetId!);
+          // The proxy arrives in the background after import and is encoded
+          // from its own first frame, so a first timestamp probed from the
+          // source must not clamp requests made against the proxy.
+          const usesProxy = Boolean(hydratedVideoAsset.proxyFile);
+          const isMetadataCurrent = (candidate: ThumbnailAssetMetadata) =>
+            hasVideoThumbnailMetadata(candidate) &&
+            Boolean(candidate.probedFromProxy) === usesProxy;
 
-          if (!metadata || !hasVideoThumbnailMetadata(metadata)) {
+          if (!metadata || !isMetadataCurrent(metadata)) {
             const cachedAspectRatio = metadata?.aspectRatio;
             // Shared per asset: sibling clips await the same probe rather
             // than each opening the source.
             metadata = await thumbnailCacheService.loadMetadata(
               clip.assetId!,
-              hasVideoThumbnailMetadata,
+              isMetadataCurrent,
               async () => {
                 const source = hydratedVideoAsset.proxyFile
                   ? new BlobSource(hydratedVideoAsset.proxyFile)
@@ -299,6 +304,7 @@ export function useThumbnailRenderer({
                   aspectRatio:
                     cachedAspectRatio || vt.displayWidth / vt.displayHeight,
                   firstTimestampSeconds: await vt.getFirstTimestamp(),
+                  probedFromProxy: usesProxy,
                 };
               },
             );
@@ -425,11 +431,10 @@ export function useThumbnailRenderer({
 
     let debounceTimer: ReturnType<typeof setTimeout>;
 
-    const onScroll = () => {
+    const onVisibleWindowChange = () => {
       if (isDragging) return;
-      updateViewportState();
-      // Every clip listens, so off-screen clips must bail before scheduling
-      // anything; their canvases are not visible to repaint.
+      // A pinned clip (e.g. the active drag) can sit outside the window; its
+      // canvas is not visible to repaint.
       if (!isNearViewport()) return;
 
       // Fast Path: Draw existing cache immediately
@@ -452,13 +457,11 @@ export function useThumbnailRenderer({
       }
     };
 
-    if (scrollContainer)
-      scrollContainer.addEventListener("scroll", onScroll, { passive: true });
+    const unsubscribe = subscribeToVisibleWindow(onVisibleWindowChange);
 
     return () => {
       abortController.abort();
-      if (scrollContainer)
-        scrollContainer.removeEventListener("scroll", onScroll);
+      unsubscribe();
       clearTimeout(debounceTimer);
       pendingDrawRef.current = false;
     };
@@ -473,10 +476,9 @@ export function useThumbnailRenderer({
     clipOffset,
     clipSourceDuration,
     clipStart,
-    scrollContainer,
+    subscribeToVisibleWindow,
     isNearViewport,
     updateCanvasGeometry,
-    updateViewportState,
     enabled,
     isDragging,
     asset,

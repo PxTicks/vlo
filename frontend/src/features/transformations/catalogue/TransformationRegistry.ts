@@ -24,6 +24,7 @@ import type { GenericFilterTransform } from "../types";
 import { layoutDefinition, layoutApplicator } from "./layout/layoutDefinition";
 import { fitModeDefinition } from "./layout/fitMode";
 import { blendModeDefinition, blendModeApplicator } from "./blendMode";
+import { opacityDefinition } from "./opacity";
 import { speedDefinition } from "./time/speed";
 import { volumeDefinition } from "./audio/volume";
 import { panDefinition } from "./audio/pan";
@@ -76,6 +77,11 @@ const BUILTIN_TRANSFORMATION_DEFINITIONS: TransformationDefinition[] = [
   // FitMode — split out of layout so it can be hidden for adjustment
   // clips. Still default for visual clips (matches prior UX).
   { ...fitModeDefinition, isDefault: true },
+
+  // Opacity — always-visible default for visual clips. Not adjustment-
+  // compatible: fading an adjustment container would fade everything it
+  // reaches, and effect strength there is the effects' own mix.
+  { ...opacityDefinition, isDefault: true },
 
   // Blend Mode — always-visible default for visual clips. Composites the clip
   // against the accumulated render beneath it. Advanced modes need the
@@ -372,10 +378,12 @@ export function isTransformCompatible(
 export const TransformationSystem = {
   // Ordered list of applicators to run each frame.
   // If a new transformation requires a global state pass (e.g. physics), add its applicator here.
+  // Blend mode runs after filters: on a filtered target it rides the last
+  // filter (see blendModeApplicator).
   applicators: [
     layoutApplicator,
-    blendModeApplicator,
     filterApplicator,
+    blendModeApplicator,
   ] as StateApplicator[],
 
   getDefaults: (): Partial<TransformState> => ({

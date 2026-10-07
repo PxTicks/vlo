@@ -93,7 +93,10 @@ import {
   selectMaskClipsForParent,
   selectResolvedMaskBooleanExpressionForParent,
 } from "./selectors/timelineSelectors";
-import { createTimelineMutationPipeline } from "./store/timelineMutationPipeline";
+import {
+  createTimelineMutationPipeline,
+  type TimelineHistoryDiagnostics,
+} from "./store/timelineMutationPipeline";
 import {
   applyExtensionTimelineCommands,
   ExtensionTimelineCommandError,
@@ -333,6 +336,8 @@ interface TimelineState extends TimelineModelState {
   flushPendingPersistence: () => Promise<void>;
 
   getClipsAtTime: (timeTicks: number) => TimelineClip[];
+  /** Undo-history sizes for the performance lane; serializes every patch. */
+  getHistoryDiagnostics: () => TimelineHistoryDiagnostics;
 }
 
 export const useTimelineStore = create<TimelineState>((set, get) => {
@@ -1104,6 +1109,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     flushPendingPersistence: mutationPipeline.flushPendingPersistence,
 
     getClipsAtTime: (timeTicks) => getTimelineClipsAtTime(get().clips, timeTicks),
+    getHistoryDiagnostics: mutationPipeline.getHistoryDiagnostics,
   };
 });
 

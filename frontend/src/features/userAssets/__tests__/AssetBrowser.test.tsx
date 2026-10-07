@@ -807,6 +807,48 @@ describe("AssetBrowser Component", () => {
     expect(secondCard).toHaveAttribute("data-drag-disabled", "true");
   });
 
+  it("marquee-selects assets by dragging from empty space and keeps the selection after release", async () => {
+    mockStore({ assets: mockAssets, families: mockFamilies });
+    useTimelineStore.setState({
+      clips: [
+        createTimelineClip("clip-1", "1"),
+        createTimelineClip("clip-2", "solo-video"),
+      ],
+      selectedClipIds: [],
+    });
+
+    render(<AssetBrowser />);
+
+    const scrollRegion = screen.getByTestId("asset-browser-scroll-region");
+    // jsdom has no layout; the test setup measures rows at 2000px each.
+    Object.defineProperty(scrollRegion, "clientWidth", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(scrollRegion, "scrollHeight", {
+      configurable: true,
+      value: 10000,
+    });
+
+    fireEvent.pointerDown(scrollRegion, { pointerId: 1, clientX: 2, clientY: 2 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 398, clientY: 9000 });
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 398, clientY: 9000 });
+    fireEvent.click(scrollRegion);
+
+    const cards = screen.getAllByTestId("asset-card");
+    expect(cards.length).toBeGreaterThan(1);
+    for (const card of cards) {
+      expect(card).toHaveAttribute("data-selected", "true");
+    }
+
+    await waitFor(() => {
+      expect(useTimelineStore.getState().selectedClipIds).toEqual([
+        "clip-1",
+        "clip-2",
+      ]);
+    });
+  });
+
   it("deletes the selected asset with the existing confirmation flow", async () => {
     mockStore({ assets: mockAssets, families: mockFamilies });
     useTimelineStore.setState({
@@ -836,6 +878,69 @@ describe("AssetBrowser Component", () => {
     expect(confirmSpy).toHaveBeenCalledWith(
       "Are you sure you want to delete this asset? This will remove it from disk permanently.\n\nThis asset is used by clips on the Timeline.\nClips on the Timeline are derived from the asset and will be deleted.",
     );
+  });
+
+  function selectVacationAndSoloCards() {
+    const firstCard = screen
+      .getByText("vacation.mp4")
+      .closest('[data-testid="asset-card"]');
+    const secondCard = screen
+      .getByText("solo.mp4")
+      .closest('[data-testid="asset-card"]');
+
+    fireEvent.click(firstCard as HTMLElement);
+    fireEvent.click(secondCard as HTMLElement, { ctrlKey: true });
+
+    return { firstCard, secondCard };
+  }
+
+  it("deletes a multi-selection behind a single confirmation that flags timeline usage", async () => {
+    mockStore({ assets: mockAssets, families: mockFamilies });
+    useTimelineStore.setState({
+      clips: [createTimelineClip("clip-1", "1")],
+      selectedClipIds: [],
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<AssetBrowser />);
+
+    selectVacationAndSoloCards();
+    useEditorFocusStore.getState().setRegion("assetBrowser");
+    fireEvent.keyDown(window, { key: "Delete" });
+
+    await waitFor(() => {
+      expect(mockDeleteAsset).toHaveBeenCalledTimes(2);
+    });
+
+    expect(mockDeleteAsset).toHaveBeenCalledWith("1");
+    expect(mockDeleteAsset).toHaveBeenCalledWith("solo-video");
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Are you sure you want to delete these 2 assets? They will be removed from disk permanently. This cannot be undone.\n\n1 of these assets is used by clips on the Timeline.\nClips on the Timeline derived from these assets will be deleted.",
+    );
+  });
+
+  it("omits the timeline note and keeps the selection when a multi-delete is cancelled", async () => {
+    mockStore({ assets: mockAssets, families: mockFamilies });
+    useTimelineStore.setState({ clips: [], selectedClipIds: [] });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(<AssetBrowser />);
+
+    const { firstCard, secondCard } = selectVacationAndSoloCards();
+    useEditorFocusStore.getState().setRegion("assetBrowser");
+    fireEvent.keyDown(window, { key: "Delete" });
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+    });
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Are you sure you want to delete these 2 assets? They will be removed from disk permanently. This cannot be undone.",
+    );
+    expect(mockDeleteAsset).not.toHaveBeenCalled();
+    expect(firstCard).toHaveAttribute("data-selected", "true");
+    expect(secondCard).toHaveAttribute("data-selected", "true");
   });
 
   it("reveals a requested asset by switching tabs, clearing favourite-only mode, and opening the family scope when needed", async () => {

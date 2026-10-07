@@ -96,6 +96,23 @@ describe("ComfyUiSetupPrompt", () => {
     });
   });
 
+  it("stays open when the backdrop is clicked", async () => {
+    render(<ComfyUiSetupPrompt />);
+
+    await screen.findByRole("heading", { name: "Connect vlo to ComfyUI" });
+    // MUI detects backdrop clicks on the dialog container, not the backdrop.
+    const container = document.querySelector(".MuiDialog-container");
+    expect(container).not.toBeNull();
+    fireEvent.mouseDown(container as Element);
+    fireEvent.click(container as Element);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(
+      screen.getByRole("heading", { name: "Connect vlo to ComfyUI" }),
+    ).toBeInTheDocument();
+    expect(api.updateRuntimeSettings).not.toHaveBeenCalled();
+  });
+
   it("closes locally when persisting the opt-out fails", async () => {
     const warningSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     api.updateRuntimeSettings.mockRejectedValueOnce(new Error("offline"));

@@ -9,6 +9,7 @@ import {
 import {
   MediaProcessingService,
   MediaFileProcessor,
+  PROXY_STALL_TIMEOUT_MS,
   resolvePrimaryAudioOutputSpec,
 } from "../MediaProcessingService";
 import { BufferTarget, CanvasSink, Conversion, Input, Output } from "mediabunny";
@@ -584,6 +585,122 @@ describe("MediaFileProcessor", () => {
       new MediaFileProcessor(file).generateProxyVideo(),
     ).resolves.toBeNull();
     error.mockRestore();
+  });
+
+  describe("proxy conversion stall watchdog", () => {
+    function mockVideoInput() {
+      vi.mocked(Input).mockImplementationOnce(function () {
+        return {
+          getMimeType: vi.fn(),
+          computeDuration: vi.fn(),
+          getPrimaryVideoTrack: vi.fn().mockResolvedValue({ id: "video-1" }),
+          getPrimaryAudioTrack: vi.fn(),
+          dispose: vi.fn(),
+        };
+      });
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("cancels a conversion that stops progressing and ingests without a proxy", async () => {
+      mockVideoInput();
+      const cancel = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(Conversion.init).mockResolvedValueOnce({
+        // A wedged encoder: execute never settles.
+        execute: vi.fn(() => new Promise<void>(() => undefined)),
+        cancel,
+      } as never);
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const proxy = new MediaFileProcessor(file).generateProxyVideo();
+      await vi.advanceTimersByTimeAsync(PROXY_STALL_TIMEOUT_MS + 1000);
+
+      await expect(proxy).resolves.toBeNull();
+      expect(cancel).toHaveBeenCalledTimes(1);
+      error.mockRestore();
+    });
+
+    it("converts video only, so progress cannot freeze on a shorter audio track", async () => {
+      mockVideoInput();
+      vi.mocked(Conversion.init).mockResolvedValueOnce({
+        execute: vi.fn().mockResolvedValue(undefined),
+        cancel: vi.fn(),
+      } as never);
+
+      await expect(
+        new MediaFileProcessor(file).generateProxyVideo(),
+      ).resolves.toEqual(expect.any(Blob));
+      expect(Conversion.init).toHaveBeenCalledWith(
+        expect.objectContaining({ audio: { discard: true } }),
+      );
+    });
+
+    it("does not start a conversion that was cancelled during setup", async () => {
+      mockVideoInput();
+      const controller = new AbortController();
+      const execute = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(Conversion.init).mockImplementationOnce(async () => {
+        // Cancelled while the conversion was still being initialised.
+        controller.abort();
+        return { execute, cancel: vi.fn() } as never;
+      });
+
+      await expect(
+        new MediaFileProcessor(file).generateProxyVideo({
+          signal: controller.signal,
+        }),
+      ).resolves.toBeNull();
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("cancels a running conversion when its signal aborts", async () => {
+      mockVideoInput();
+      const controller = new AbortController();
+      const cancel = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(Conversion.init).mockResolvedValueOnce({
+        execute: vi.fn(() => new Promise<void>(() => undefined)),
+        cancel,
+      } as never);
+
+      const proxy = new MediaFileProcessor(file).generateProxyVideo({
+        signal: controller.signal,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      controller.abort();
+
+      await expect(proxy).resolves.toBeNull();
+      expect(cancel).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets a slow conversion finish while it keeps reporting progress", async () => {
+      mockVideoInput();
+      const conversion = {
+        onProgress: undefined as ((progress: number, time: number) => unknown) | undefined,
+        cancel: vi.fn().mockResolvedValue(undefined),
+        execute: vi.fn(async () => {
+          // Three timeouts' worth of wall time, with a tick well inside each.
+          for (let step = 1; step <= 6; step += 1) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, PROXY_STALL_TIMEOUT_MS / 2),
+            );
+            conversion.onProgress?.(step / 6, step);
+          }
+        }),
+      };
+      vi.mocked(Conversion.init).mockResolvedValueOnce(conversion as never);
+
+      const proxy = new MediaFileProcessor(file).generateProxyVideo();
+      await vi.advanceTimersByTimeAsync(PROXY_STALL_TIMEOUT_MS * 3 + 1000);
+
+      await expect(proxy).resolves.toEqual(expect.any(Blob));
+      expect(conversion.cancel).not.toHaveBeenCalled();
+    });
   });
 });
 

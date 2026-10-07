@@ -100,6 +100,30 @@ describe("project mutation guard", () => {
     second.release();
   });
 
+  it("tells freeze listeners when an export takes the project, until they unsubscribe", async () => {
+    const guard = new ProjectMutationGuard();
+    const calls: string[] = [];
+    const unsubscribe = guard.onFreeze(() => calls.push("listener"));
+    guard.onFreeze(() => {
+      throw new Error("listener failed");
+    });
+    const error = console.error;
+    console.error = () => undefined;
+
+    try {
+      const first = await guard.acquire();
+      expect(calls).toEqual(["listener"]);
+      expect(guard.isFrozen()).toBe(true);
+      first.release();
+
+      unsubscribe();
+      (await guard.acquire()).release();
+      expect(calls).toEqual(["listener"]);
+    } finally {
+      console.error = error;
+    }
+  });
+
   it("resumes deferred work once, when the export ends", async () => {
     const guard = new ProjectMutationGuard();
     const resumed: string[] = [];

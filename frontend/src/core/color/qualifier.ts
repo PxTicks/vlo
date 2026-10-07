@@ -44,6 +44,10 @@ export function colorQualifierWeight(
 ): number {
   if (!parameters.qualifierEnabled) return 1;
   const hsv = rgbToHsv(color);
+  // Saturation and luma are measured into the bars' [0, 1] domain. Without
+  // the clamp a fully saturated pixel whose GPU division rounds to 1 + ulp, or
+  // an overshooting upstream grade, falls outside even a full-width bar.
+  const clampUnit = (value: number): number => Math.min(1, Math.max(0, value));
   const hue = circularHueWeight(
     hsv[0],
     parameters.hueCenter,
@@ -52,14 +56,14 @@ export function colorQualifierWeight(
     parameters.hueSoftHi,
   );
   const saturation = softTrapezoidWeight(
-    hsv[1],
+    clampUnit(hsv[1]),
     parameters.satLo,
     parameters.satHi,
     parameters.satSoftLo,
     parameters.satSoftHi,
   );
   const luma = softTrapezoidWeight(
-    color[0] * 0.2126 + color[1] * 0.7152 + color[2] * 0.0722,
+    clampUnit(color[0] * 0.2126 + color[1] * 0.7152 + color[2] * 0.0722),
     parameters.lumaLo,
     parameters.lumaHi,
     parameters.lumaSoftLo,

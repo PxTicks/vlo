@@ -39,12 +39,13 @@ import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { useSamAudioExtractDialogStore } from "../../samAudio";
 import { reverseTimelineClip } from "../utils/reverseClip";
+import { useClipReversalStore, useIsClipReversing } from "../hooks/useClipReversalStore";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
 import {
   timelineTickDuration,
+  type ClipOffsetMapping,
   type TimelineClipPresentation,
-  type TimelineTime,
 } from "../time/index";
 import { extensionEntityProviderRegistry } from "../../extensions/entities/publicApi";
 import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
@@ -122,8 +123,13 @@ interface TimelineClipProps {
   clip: BaseClip | TimelineClipType;
   isOverlay?: boolean;
   clipOverlays?: readonly TimelineClipOverlayDefinition[];
+  /**
+   * Keep both stable across commits so `memo` can skip this clip: reuse the
+   * presentation entry when its placement is unchanged, and pass an accessor
+   * that resolves against the latest snapshot (`liveClipOffsetMapping`).
+   */
   presentation?: TimelineClipPresentation;
-  timelineTime?: Pick<TimelineTime, "toClipOffset" | "toPresentationOffset">;
+  timelineTime?: ClipOffsetMapping;
 }
 
 function TimelineClipComponent({
@@ -133,6 +139,8 @@ function TimelineClipComponent({
   presentation,
   timelineTime,
 }: TimelineClipProps) {
+  // Keyed on the presentation entry too: the accessor is stable, so a new
+  // entry is the signal that the mapping changed and thumbnails must redraw.
   const mapPresentationOffsetToClipOffset = useMemo(
     () =>
       timelineTime
@@ -142,7 +150,7 @@ function TimelineClipComponent({
               timelineTickDuration(offset),
             )
         : undefined,
-    [clip.id, timelineTime],
+    [clip.id, timelineTime, presentation],
   );
   const entityProviderRevision = useSyncExternalStore(
     (listener) => extensionEntityProviderRegistry.subscribe(listener),
@@ -154,7 +162,7 @@ function TimelineClipComponent({
     x: number;
     y: number;
   } | null>(null);
-  const [isReversingClip, setIsReversingClip] = useState(false);
+  const isReversingClip = useIsClipReversing(clip.id);
 
   const startTime =
     presentation?.start ??
@@ -281,10 +289,13 @@ function TimelineClipComponent({
 
   // 1. Get Track Index
   const trackId = "trackId" in clip ? (clip as TimelineClipType).trackId : "";
-  const tracks = useTimelineStore((state) => state.tracks);
-  const trackIndex = tracks.findIndex((t) => t.id === trackId);
-  const track = tracks[trackIndex];
-  const isTrackVisible = track?.isVisible ?? true;
+  // Primitive selectors: a change to another track must not re-render this clip.
+  const trackIndex = useTimelineStore((state) =>
+    state.tracks.findIndex((t) => t.id === trackId),
+  );
+  const isTrackVisible = useTimelineStore(
+    (state) => state.tracks[trackIndex]?.isVisible ?? true,
+  );
   const clipAsset = useAsset(
     isAssetBackedClip(timelineClip) ? timelineClip.assetId : undefined,
   );
@@ -293,7 +304,7 @@ function TimelineClipComponent({
   const isAudioOnlyClip = timelineClip?.type === "audio";
   const canExtractAudio =
     timelineClip !== null &&
-    track !== undefined &&
+    trackIndex !== -1 &&
     (isAudioOnlyClip ||
       (timelineClip.type === "video" && clipAsset?.hasAudio !== false));
   const canReverseClip =
@@ -512,20 +523,21 @@ function TimelineClipComponent({
   };
 
   const handleReverseClip = async () => {
-    if (!timelineClip || !canReverseClip) {
+    if (
+      !timelineClip ||
+      !canReverseClip ||
+      useClipReversalStore.getState().reversingClipIds.has(timelineClip.id)
+    ) {
       closeContextMenu();
       return;
     }
     closeContextMenu();
-    setIsReversingClip(true);
     try {
       await reverseTimelineClip(timelineClip.id);
     } catch (error) {
       window.alert(
         error instanceof Error ? error.message : "Failed to reverse the clip.",
       );
-    } finally {
-      setIsReversingClip(false);
     }
   };
 

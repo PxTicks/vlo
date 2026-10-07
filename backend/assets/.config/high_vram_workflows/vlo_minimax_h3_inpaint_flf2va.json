@@ -1,8 +1,8 @@
 {
   "id": "5307784b-d1d0-403e-9f5b-6d184c299f1a",
   "revision": 0,
-  "last_node_id": 99,
-  "last_link_id": 167,
+  "last_node_id": 102,
+  "last_link_id": 170,
   "nodes": [
     {
       "id": 3,
@@ -98,17 +98,28 @@
         60
       ],
       "flags": {},
-      "order": 48,
+      "order": 51,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "image",
           "name": "image",
           "type": "IMAGE",
           "link": 124
+        },
+        {
+          "localized_name": "channel",
+          "name": "channel",
+          "type": "COMBO",
+          "widget": {
+            "name": "channel"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": [
@@ -144,15 +155,26 @@
       "flags": {
         "collapsed": true
       },
-      "order": 30,
+      "order": 28,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "input",
           "name": "input",
           "type": "IMAGE,MASK",
           "link": 110
         },
         {
+          "localized_name": "resize_type",
+          "name": "resize_type",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "resize_type"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
           "name": "resize_type.width",
           "type": "INT",
           "widget": {
@@ -161,16 +183,36 @@
           "link": 6
         },
         {
+          "localized_name": "height",
           "name": "resize_type.height",
           "type": "INT",
           "widget": {
             "name": "resize_type.height"
           },
           "link": 7
+        },
+        {
+          "localized_name": "crop",
+          "name": "resize_type.crop",
+          "type": "COMBO",
+          "widget": {
+            "name": "resize_type.crop"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "scale_method",
+          "name": "scale_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "scale_method"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "resized",
           "name": "resized",
           "type": "IMAGE",
           "links": [
@@ -211,17 +253,28 @@
         60
       ],
       "flags": {},
-      "order": 47,
+      "order": 50,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "image",
           "name": "image",
           "type": "IMAGE",
           "link": 121
+        },
+        {
+          "localized_name": "channel",
+          "name": "channel",
+          "type": "COMBO",
+          "widget": {
+            "name": "channel"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": [
@@ -254,10 +307,11 @@
         90
       ],
       "flags": {},
-      "order": 52,
+      "order": 56,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "mask",
           "name": "mask",
           "type": "MASK",
           "link": 9
@@ -265,12 +319,14 @@
       ],
       "outputs": [
         {
+          "localized_name": "mask",
           "name": "mask",
           "type": "MASK",
           "links": null
         },
         {
           "label": "width",
+          "localized_name": "width",
           "name": "width",
           "type": "INT",
           "links": [
@@ -279,6 +335,7 @@
         },
         {
           "label": "height",
+          "localized_name": "height",
           "name": "height",
           "type": "INT",
           "links": [
@@ -287,6 +344,7 @@
         },
         {
           "label": "count",
+          "localized_name": "count",
           "name": "count",
           "type": "INT",
           "links": [
@@ -315,10 +373,11 @@
       "flags": {
         "collapsed": true
       },
-      "order": 51,
+      "order": 55,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "mask",
           "name": "mask",
           "type": "MASK",
           "link": 13
@@ -326,6 +385,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "mask",
           "name": "mask",
           "type": "MASK",
           "links": [
@@ -334,6 +394,7 @@
         },
         {
           "label": "width",
+          "localized_name": "width",
           "name": "width",
           "type": "INT",
           "links": [
@@ -342,6 +403,7 @@
         },
         {
           "label": "height",
+          "localized_name": "height",
           "name": "height",
           "type": "INT",
           "links": [
@@ -350,6 +412,7 @@
         },
         {
           "label": "count",
+          "localized_name": "count",
           "name": "count",
           "type": "INT",
           "links": [
@@ -376,10 +439,20 @@
         110
       ],
       "flags": {},
-      "order": 54,
+      "order": 58,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "value",
+          "name": "value",
+          "type": "FLOAT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
           "name": "width",
           "type": "INT",
           "widget": {
@@ -388,6 +461,7 @@
           "link": 14
         },
         {
+          "localized_name": "height",
           "name": "height",
           "type": "INT",
           "widget": {
@@ -398,6 +472,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": [
@@ -437,10 +512,20 @@
         110
       ],
       "flags": {},
-      "order": 55,
+      "order": 59,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "value",
+          "name": "value",
+          "type": "FLOAT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
           "name": "width",
           "type": "INT",
           "widget": {
@@ -449,6 +534,7 @@
           "link": 16
         },
         {
+          "localized_name": "height",
           "name": "height",
           "type": "INT",
           "widget": {
@@ -459,6 +545,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": [
@@ -500,15 +587,17 @@
       "flags": {
         "collapsed": true
       },
-      "order": 57,
+      "order": 61,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "mask",
           "name": "mask",
           "type": "MASK",
           "link": 24
         },
         {
+          "localized_name": "multiply_by",
           "name": "multiply_by",
           "type": "INT",
           "widget": {
@@ -519,6 +608,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": [
@@ -526,6 +616,7 @@
           ]
         },
         {
+          "localized_name": "count",
           "name": "count",
           "type": "INT",
           "links": null
@@ -560,9 +651,38 @@
       "flags": {},
       "order": 2,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "file",
+          "name": "file",
+          "type": "COMBO",
+          "widget": {
+            "name": "file"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "disable_in_memory",
+          "name": "disable_in_memory",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "disable_in_memory"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "VIDEO",
           "name": "VIDEO",
           "type": "VIDEO",
           "links": [
@@ -606,9 +726,39 @@
       "flags": {},
       "order": 3,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "clip_name",
+          "name": "clip_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "clip_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "type",
+          "name": "type",
+          "type": "COMBO",
+          "widget": {
+            "name": "type"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "device",
+          "name": "device",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "CLIP",
           "name": "CLIP",
           "type": "CLIP",
           "links": [
@@ -651,9 +801,20 @@
       "flags": {},
       "order": 4,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "sampler_name",
+          "name": "sampler_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "sampler_name"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "SAMPLER",
           "name": "SAMPLER",
           "type": "SAMPLER",
           "links": [
@@ -683,17 +844,46 @@
         130
       ],
       "flags": {},
-      "order": 34,
+      "order": 52,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "model",
           "name": "model",
           "type": "MODEL",
           "link": 35
+        },
+        {
+          "localized_name": "scheduler",
+          "name": "scheduler",
+          "type": "COMBO",
+          "widget": {
+            "name": "scheduler"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "steps",
+          "name": "steps",
+          "type": "INT",
+          "widget": {
+            "name": "steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "denoise",
+          "name": "denoise",
+          "type": "FLOAT",
+          "widget": {
+            "name": "denoise"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "SIGMAS",
           "name": "SIGMAS",
           "type": "SIGMAS",
           "links": [
@@ -727,15 +917,17 @@
         60
       ],
       "flags": {},
-      "order": 49,
+      "order": 53,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "model",
           "name": "model",
           "type": "MODEL",
           "link": 36
         },
         {
+          "localized_name": "conditioning",
           "name": "conditioning",
           "type": "CONDITIONING",
           "link": 138
@@ -743,6 +935,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "GUIDER",
           "name": "GUIDER",
           "type": "GUIDER",
           "links": [
@@ -766,30 +959,35 @@
         140
       ],
       "flags": {},
-      "order": 68,
+      "order": 71,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "noise",
           "name": "noise",
           "type": "NOISE",
           "link": 38
         },
         {
+          "localized_name": "guider",
           "name": "guider",
           "type": "GUIDER",
           "link": 39
         },
         {
+          "localized_name": "sampler",
           "name": "sampler",
           "type": "SAMPLER",
           "link": 40
         },
         {
+          "localized_name": "sigmas",
           "name": "sigmas",
           "type": "SIGMAS",
           "link": 41
         },
         {
+          "localized_name": "latent_image",
           "name": "latent_image",
           "type": "LATENT",
           "link": 165
@@ -797,6 +995,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "output",
           "name": "output",
           "type": "LATENT",
           "links": [
@@ -805,6 +1004,7 @@
           ]
         },
         {
+          "localized_name": "denoised_output",
           "name": "denoised_output",
           "type": "LATENT",
           "links": null
@@ -828,9 +1028,20 @@
       "flags": {},
       "order": 5,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "noise_seed",
+          "name": "noise_seed",
+          "type": "INT",
+          "widget": {
+            "name": "noise_seed"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "NOISE",
           "name": "NOISE",
           "type": "NOISE",
           "links": [
@@ -858,21 +1069,273 @@
         4923.042315955707
       ],
       "size": [
-        298.05078125,
-        322
+        330.669921875,
+        658
       ],
       "flags": {},
-      "order": 31,
+      "order": 47,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "model",
           "name": "model",
           "type": "MODEL",
           "link": 52
+        },
+        {
+          "localized_name": "enabled",
+          "name": "enabled",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "enabled"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "blend_weight",
+          "name": "blend_weight",
+          "type": "FLOAT",
+          "widget": {
+            "name": "blend_weight"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "degree",
+          "name": "degree",
+          "type": "INT",
+          "widget": {
+            "name": "degree"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "ridge_lambda",
+          "name": "ridge_lambda",
+          "type": "FLOAT",
+          "widget": {
+            "name": "ridge_lambda"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "window_size",
+          "name": "window_size",
+          "type": "FLOAT",
+          "widget": {
+            "name": "window_size"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "flex_window",
+          "name": "flex_window",
+          "type": "FLOAT",
+          "widget": {
+            "name": "flex_window"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "warmup_steps",
+          "name": "warmup_steps",
+          "type": "INT",
+          "widget": {
+            "name": "warmup_steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "tail_actual_steps",
+          "name": "tail_actual_steps",
+          "type": "INT",
+          "widget": {
+            "name": "tail_actual_steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "max_history",
+          "name": "max_history",
+          "type": "INT",
+          "widget": {
+            "name": "max_history"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "debug",
+          "name": "debug",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "debug"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "history_storage",
+          "name": "history_storage",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "history_storage"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "bootstrap_first_forecast",
+          "name": "bootstrap_first_forecast",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "bootstrap_first_forecast"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "anchor_residual_feedback",
+          "name": "anchor_residual_feedback",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "anchor_residual_feedback"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "selective_rollback_correction",
+          "name": "selective_rollback_correction",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "selective_rollback_correction"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "offline_smoothing_replay",
+          "name": "offline_smoothing_replay",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "offline_smoothing_replay"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "audio_blend_weight",
+          "name": "audio_blend_weight",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "audio_blend_weight"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "offline_archive_storage",
+          "name": "offline_archive_storage",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "offline_archive_storage"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "model_aware_mode",
+          "name": "model_aware_mode",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "model_aware_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "model_aware_risk_threshold",
+          "name": "model_aware_risk_threshold",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "model_aware_risk_threshold"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "model_aware_trust_shrinkage",
+          "name": "model_aware_trust_shrinkage",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "model_aware_trust_shrinkage"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "model_aware_replay_generic_correction",
+          "name": "model_aware_replay_generic_correction",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "model_aware_replay_generic_correction"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "generic_correction_mode",
+          "name": "generic_correction_mode",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "generic_correction_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "generic_correction_limiter",
+          "name": "generic_correction_limiter",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "generic_correction_limiter"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "generic_correction_limit",
+          "name": "generic_correction_limit",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "generic_correction_limit"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "generic_correction_attenuation",
+          "name": "generic_correction_attenuation",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "generic_correction_attenuation"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "sa_pece_forecast_policy",
+          "name": "sa_pece_forecast_policy",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "sa_pece_forecast_policy"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "model",
           "name": "model",
           "type": "MODEL",
           "links": [
@@ -896,7 +1359,21 @@
         8,
         false,
         "system_ram",
-        true
+        true,
+        false,
+        false,
+        true,
+        0,
+        "system_ram",
+        "off",
+        0.65,
+        false,
+        false,
+        "coordinate_rls",
+        "hard_clip",
+        0.4,
+        "no_attenuation",
+        "balanced"
       ],
       "widgets_values_named": {
         "enabled": true,
@@ -910,7 +1387,21 @@
         "max_history": 8,
         "debug": false,
         "history_storage": "system_ram",
-        "bootstrap_first_forecast": true
+        "bootstrap_first_forecast": true,
+        "anchor_residual_feedback": false,
+        "selective_rollback_correction": false,
+        "offline_smoothing_replay": true,
+        "audio_blend_weight": 0,
+        "offline_archive_storage": "system_ram",
+        "model_aware_mode": "off",
+        "model_aware_risk_threshold": 0.65,
+        "model_aware_trust_shrinkage": false,
+        "model_aware_replay_generic_correction": false,
+        "generic_correction_mode": "coordinate_rls",
+        "generic_correction_limiter": "hard_clip",
+        "generic_correction_limit": 0.4,
+        "generic_correction_attenuation": "no_attenuation",
+        "sa_pece_forecast_policy": "balanced"
       }
     },
     {
@@ -1007,22 +1498,43 @@
         110
       ],
       "flags": {},
-      "order": 64,
+      "order": 68,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "destination",
           "name": "destination",
           "type": "LATENT",
           "link": 105
         },
         {
+          "localized_name": "source",
           "name": "source",
           "type": "LATENT",
           "link": 126
+        },
+        {
+          "localized_name": "clear_mask",
+          "name": "clear_mask",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "clear_mask"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "force_binary_mask",
+          "name": "force_binary_mask",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "force_binary_mask"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
           "links": [
@@ -1059,15 +1571,17 @@
       "flags": {
         "collapsed": false
       },
-      "order": 70,
+      "order": 73,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
           "link": 45
         },
         {
+          "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
           "link": 144
@@ -1075,6 +1589,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
@@ -1100,15 +1615,17 @@
       "flags": {
         "collapsed": false
       },
-      "order": 69,
+      "order": 72,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
           "link": 43
         },
         {
+          "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
           "link": 149
@@ -1116,6 +1633,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "AUDIO",
           "name": "AUDIO",
           "type": "AUDIO",
           "links": [
@@ -1130,17 +1648,16 @@
     {
       "id": 96,
       "type": "vloSaveVideo",
-      "title": "Output Save",
       "pos": [
         2153.9732747544476,
         4991.702952966518
       ],
       "size": [
         270,
-        334
+        342
       ],
       "flags": {},
-      "order": 72,
+      "order": 74,
       "mode": 0,
       "inputs": [
         {
@@ -1249,22 +1766,22 @@
         {
           "localized_name": "bit_depth",
           "name": "bit_depth",
+          "shape": 7,
           "type": "COMBO",
           "widget": {
             "name": "bit_depth"
           },
-          "link": null,
-          "shape": 7
+          "link": null
         },
         {
           "localized_name": "color_space",
           "name": "color_space",
+          "shape": 7,
           "type": "COMBO",
           "widget": {
             "name": "color_space"
           },
-          "link": null,
-          "shape": 7
+          "link": null
         }
       ],
       "outputs": [
@@ -1275,6 +1792,7 @@
           "links": []
         }
       ],
+      "title": "Output Save",
       "properties": {
         "Node name for S&R": "vloSaveVideo",
         "cnr_id": "comfyui-vlo",
@@ -1282,7 +1800,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        24.0,
+        24,
         "vlo_minimax_inpaint_flf2va",
         false,
         1280,
@@ -1291,12 +1809,12 @@
         "disabled",
         "auto",
         "auto",
-        19.0,
+        19,
         "auto",
         "sRGB"
       ],
       "widgets_values_named": {
-        "fps": 24.0,
+        "fps": 24,
         "filename_prefix": "vlo_minimax_inpaint_flf2va",
         "save_output": false,
         "width": 1280,
@@ -1305,7 +1823,7 @@
         "crop": "disabled",
         "format": "auto",
         "codec": "auto",
-        "crf": 19.0,
+        "crf": 19,
         "bit_depth": "auto",
         "color_space": "sRGB"
       }
@@ -1322,22 +1840,34 @@
         80
       ],
       "flags": {},
-      "order": 58,
+      "order": 62,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "on_false",
           "name": "on_false",
           "type": "*",
           "link": 28
         },
         {
+          "localized_name": "on_true",
           "name": "on_true",
           "type": "*",
           "link": 29
+        },
+        {
+          "localized_name": "switch",
+          "name": "switch",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "switch"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "*",
           "name": "*",
           "type": "*",
           "links": [
@@ -1373,15 +1903,17 @@
       "flags": {
         "collapsed": true
       },
-      "order": 56,
+      "order": 60,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "mask",
           "name": "mask",
           "type": "MASK",
           "link": 21
         },
         {
+          "localized_name": "multiply_by",
           "name": "multiply_by",
           "type": "INT",
           "widget": {
@@ -1392,6 +1924,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": [
@@ -1399,6 +1932,7 @@
           ]
         },
         {
+          "localized_name": "count",
           "name": "count",
           "type": "INT",
           "links": null
@@ -1431,15 +1965,17 @@
         46
       ],
       "flags": {},
-      "order": 53,
+      "order": 57,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "video_latent",
           "name": "video_latent",
           "type": "LATENT",
           "link": 68
         },
         {
+          "localized_name": "audio_latent",
           "name": "audio_latent",
           "type": "LATENT",
           "link": 69
@@ -1447,6 +1983,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "latent",
           "name": "latent",
           "type": "LATENT",
           "links": [
@@ -1471,27 +2008,49 @@
         122
       ],
       "flags": {},
-      "order": 60,
+      "order": 64,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "latent",
           "name": "latent",
           "type": "LATENT",
           "link": 94
         },
         {
+          "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
           "link": 146
         },
         {
+          "localized_name": "masks",
           "name": "masks",
           "type": "MASK",
           "link": 95
+        },
+        {
+          "localized_name": "pooling_method",
+          "name": "pooling_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "pooling_method"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "resize_mode",
+          "name": "resize_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "resize_mode"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "latent_mask",
           "name": "latent_mask",
           "type": "MASK",
           "links": [
@@ -1517,26 +2076,37 @@
       "id": 47,
       "type": "ModelAttentionBackend",
       "pos": [
-        181.2395887354408,
-        5021.042315955707
+        196.0446238586886,
+        5519.475667089083
       ],
       "size": [
         270,
         58
       ],
       "flags": {},
-      "order": 26,
+      "order": 40,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "model",
           "name": "model",
           "type": "MODEL",
-          "link": 167
+          "link": 170
+        },
+        {
+          "localized_name": "backend",
+          "name": "attention",
+          "type": "COMBO",
+          "widget": {
+            "name": "attention"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
-          "name": "MODEL",
+          "localized_name": "model",
+          "name": "model",
           "type": "MODEL",
           "links": [
             52
@@ -1565,15 +2135,17 @@
         46
       ],
       "flags": {},
-      "order": 61,
+      "order": 65,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
           "link": 97
         },
         {
+          "localized_name": "mask",
           "name": "mask",
           "type": "MASK",
           "link": 96
@@ -1581,6 +2153,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
           "links": [
@@ -1604,22 +2177,34 @@
         80
       ],
       "flags": {},
-      "order": 59,
+      "order": 63,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "on_false",
           "name": "on_false",
           "type": "*",
           "link": 26
         },
         {
+          "localized_name": "on_true",
           "name": "on_true",
           "type": "*",
           "link": 27
+        },
+        {
+          "localized_name": "switch",
+          "name": "switch",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "switch"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "*",
           "name": "*",
           "type": "*",
           "links": [
@@ -1653,22 +2238,36 @@
         80
       ],
       "flags": {},
-      "order": 65,
+      "order": 69,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "on_false",
           "name": "on_false",
+          "shape": 7,
           "type": "LATENT",
           "link": 106
         },
         {
+          "localized_name": "on_true",
           "name": "on_true",
+          "shape": 7,
           "type": "LATENT",
           "link": 30
+        },
+        {
+          "localized_name": "switch",
+          "name": "switch",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "switch"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "output",
           "name": "output",
           "type": "LATENT",
           "links": [
@@ -1701,22 +2300,34 @@
         110
       ],
       "flags": {},
-      "order": 41,
+      "order": 43,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "images",
           "name": "images",
           "shape": 7,
           "type": "IMAGE",
           "link": 119
         },
         {
+          "localized_name": "masks",
           "name": "masks",
           "shape": 7,
           "type": "MASK",
           "link": null
         },
         {
+          "localized_name": "start_index",
+          "name": "start_index",
+          "type": "INT",
+          "widget": {
+            "name": "start_index"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "num_frames",
           "name": "num_frames",
           "type": "INT",
           "widget": {
@@ -1727,6 +2338,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
@@ -1734,6 +2346,7 @@
           ]
         },
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": null
@@ -1766,22 +2379,34 @@
         110
       ],
       "flags": {},
-      "order": 42,
+      "order": 44,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "images",
           "name": "images",
           "shape": 7,
           "type": "IMAGE",
           "link": 122
         },
         {
+          "localized_name": "masks",
           "name": "masks",
           "shape": 7,
           "type": "MASK",
           "link": null
         },
         {
+          "localized_name": "start_index",
+          "name": "start_index",
+          "type": "INT",
+          "widget": {
+            "name": "start_index"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "num_frames",
           "name": "num_frames",
           "type": "INT",
           "widget": {
@@ -1792,6 +2417,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
@@ -1799,6 +2425,7 @@
           ]
         },
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": null
@@ -1831,17 +2458,28 @@
         60
       ],
       "flags": {},
-      "order": 63,
+      "order": 67,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
           "link": 125
+        },
+        {
+          "localized_name": "multiplier",
+          "name": "multiplier",
+          "type": "FLOAT",
+          "widget": {
+            "name": "multiplier"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
           "links": [
@@ -1874,9 +2512,29 @@
       "flags": {},
       "order": 8,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "unet_name",
+          "name": "unet_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "unet_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "weight_dtype",
+          "name": "weight_dtype",
+          "type": "COMBO",
+          "widget": {
+            "name": "weight_dtype"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "MODEL",
           "name": "MODEL",
           "type": "MODEL",
           "links": [
@@ -1917,9 +2575,38 @@
       "flags": {},
       "order": 9,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "file",
+          "name": "file",
+          "type": "COMBO",
+          "widget": {
+            "name": "file"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "disable_in_memory",
+          "name": "disable_in_memory",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "disable_in_memory"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "VIDEO",
           "name": "VIDEO",
           "type": "VIDEO",
           "links": [
@@ -1960,15 +2647,26 @@
         82
       ],
       "flags": {},
-      "order": 46,
+      "order": 49,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "audio",
           "name": "audio",
           "type": "AUDIO",
           "link": 116
         },
         {
+          "localized_name": "start_index",
+          "name": "start_index",
+          "type": "FLOAT",
+          "widget": {
+            "name": "start_index"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "duration",
           "name": "duration",
           "type": "FLOAT",
           "widget": {
@@ -1979,6 +2677,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "AUDIO",
           "name": "AUDIO",
           "type": "AUDIO",
           "links": [
@@ -2011,22 +2710,34 @@
         110
       ],
       "flags": {},
-      "order": 39,
+      "order": 41,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "images",
           "name": "images",
           "shape": 7,
           "type": "IMAGE",
           "link": 112
         },
         {
+          "localized_name": "masks",
           "name": "masks",
           "shape": 7,
           "type": "MASK",
           "link": null
         },
         {
+          "localized_name": "start_index",
+          "name": "start_index",
+          "type": "INT",
+          "widget": {
+            "name": "start_index"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "num_frames",
           "name": "num_frames",
           "type": "INT",
           "widget": {
@@ -2037,6 +2748,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
@@ -2044,6 +2756,7 @@
           ]
         },
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": null
@@ -2076,17 +2789,64 @@
         154
       ],
       "flags": {},
-      "order": 32,
+      "order": 30,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "input",
           "name": "input",
           "type": "IMAGE,MASK",
           "link": 77
+        },
+        {
+          "localized_name": "resize_type",
+          "name": "resize_type",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "resize_type"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
+          "name": "resize_type.width",
+          "type": "INT",
+          "widget": {
+            "name": "resize_type.width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "height",
+          "name": "resize_type.height",
+          "type": "INT",
+          "widget": {
+            "name": "resize_type.height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "crop",
+          "name": "resize_type.crop",
+          "type": "COMBO",
+          "widget": {
+            "name": "resize_type.crop"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "scale_method",
+          "name": "scale_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "scale_method"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "resized",
           "name": "resized",
           "type": "IMAGE",
           "links": [
@@ -2124,10 +2884,11 @@
         86
       ],
       "flags": {},
-      "order": 35,
+      "order": 33,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "image",
           "name": "image",
           "type": "IMAGE",
           "link": 76
@@ -2135,6 +2896,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "image",
           "name": "image",
           "type": "IMAGE",
           "links": [
@@ -2143,6 +2905,7 @@
         },
         {
           "label": "width",
+          "localized_name": "width",
           "name": "width",
           "type": "INT",
           "links": [
@@ -2153,6 +2916,7 @@
         },
         {
           "label": "height",
+          "localized_name": "height",
           "name": "height",
           "type": "INT",
           "links": [
@@ -2163,6 +2927,7 @@
         },
         {
           "label": "count",
+          "localized_name": "count",
           "name": "count",
           "type": "INT",
           "links": [
@@ -2186,29 +2951,41 @@
         130
       ],
       "flags": {},
-      "order": 38,
+      "order": 39,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "a",
           "name": "values.a",
           "type": "FLOAT,INT,BOOLEAN",
           "link": 111
         },
         {
-          "label": "b",
+          "localized_name": "b",
           "name": "values.b",
           "shape": 7,
           "type": "FLOAT,INT,BOOLEAN",
+          "link": null
+        },
+        {
+          "localized_name": "expression",
+          "name": "expression",
+          "type": "STRING",
+          "widget": {
+            "name": "expression"
+          },
           "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "FLOAT",
           "name": "FLOAT",
           "type": "FLOAT",
           "links": null
         },
         {
+          "localized_name": "INT",
           "name": "INT",
           "type": "INT",
           "links": [
@@ -2221,6 +2998,7 @@
           ]
         },
         {
+          "localized_name": "BOOL",
           "name": "BOOL",
           "type": "BOOLEAN",
           "links": null
@@ -2249,7 +3027,7 @@
         60
       ],
       "flags": {},
-      "order": 33,
+      "order": 31,
       "mode": 0,
       "inputs": [
         {
@@ -2292,7 +3070,7 @@
         60
       ],
       "flags": {},
-      "order": 36,
+      "order": 35,
       "mode": 0,
       "inputs": [
         {
@@ -2335,7 +3113,7 @@
         60
       ],
       "flags": {},
-      "order": 43,
+      "order": 45,
       "mode": 0,
       "inputs": [
         {
@@ -2378,24 +3156,35 @@
         128
       ],
       "flags": {},
-      "order": 40,
+      "order": 42,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "a",
           "name": "values.a",
           "type": "FLOAT,INT,BOOLEAN",
           "link": 115
         },
         {
-          "label": "b",
+          "localized_name": "b",
           "name": "values.b",
           "shape": 7,
           "type": "FLOAT,INT,BOOLEAN",
+          "link": null
+        },
+        {
+          "localized_name": "expression",
+          "name": "expression",
+          "type": "STRING",
+          "widget": {
+            "name": "expression"
+          },
           "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "FLOAT",
           "name": "FLOAT",
           "type": "FLOAT",
           "links": [
@@ -2403,11 +3192,13 @@
           ]
         },
         {
+          "localized_name": "INT",
           "name": "INT",
           "type": "INT",
           "links": null
         },
         {
+          "localized_name": "BOOL",
           "name": "BOOL",
           "type": "BOOLEAN",
           "links": null
@@ -2436,11 +3227,22 @@
         70
       ],
       "flags": {},
-      "order": 12,
+      "order": 10,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "vae_name",
+          "name": "vae_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "vae_name"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "VAE",
           "name": "VAE",
           "type": "VAE",
           "links": [
@@ -2477,15 +3279,17 @@
         46
       ],
       "flags": {},
-      "order": 45,
+      "order": 48,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "pixels",
           "name": "pixels",
           "type": "IMAGE",
           "link": 114
         },
         {
+          "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
           "link": 145
@@ -2493,6 +3297,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
           "links": [
@@ -2516,15 +3321,17 @@
         46
       ],
       "flags": {},
-      "order": 50,
+      "order": 54,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "audio",
           "name": "audio",
           "type": "AUDIO",
           "link": 118
         },
         {
+          "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
           "link": 150
@@ -2532,6 +3339,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
           "links": [
@@ -2555,28 +3363,86 @@
         218
       ],
       "flags": {},
-      "order": 62,
+      "order": 66,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "audio_latent",
           "name": "audio_latent",
           "type": "LATENT",
           "link": 98
         },
         {
+          "localized_name": "masks",
           "name": "masks",
           "type": "MASK",
           "link": 99
         },
         {
+          "localized_name": "audio_vae",
           "name": "audio_vae",
           "shape": 7,
           "type": "VAE",
           "link": 151
+        },
+        {
+          "localized_name": "mask_fps",
+          "name": "mask_fps",
+          "type": "FLOAT",
+          "widget": {
+            "name": "mask_fps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "threshold",
+          "name": "threshold",
+          "type": "FLOAT",
+          "widget": {
+            "name": "threshold"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "resize_mode",
+          "name": "resize_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "resize_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "existing_mask_mode",
+          "name": "existing_mask_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "existing_mask_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "layout_override",
+          "name": "layout_override",
+          "type": "COMBO",
+          "widget": {
+            "name": "layout_override"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "audio_latent_rate",
+          "name": "audio_latent_rate",
+          "type": "FLOAT",
+          "widget": {
+            "name": "audio_latent_rate"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "audio_latent",
           "name": "audio_latent",
           "type": "LATENT",
           "links": [
@@ -2620,7 +3486,7 @@
         60
       ],
       "flags": {},
-      "order": 37,
+      "order": 36,
       "mode": 0,
       "inputs": [
         {
@@ -2663,11 +3529,22 @@
         70
       ],
       "flags": {},
-      "order": 13,
+      "order": 11,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "vae_name",
+          "name": "vae_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "vae_name"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "VAE",
           "name": "VAE",
           "type": "VAE",
           "links": [
@@ -2706,7 +3583,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 29,
+      "order": 27,
       "mode": 0,
       "inputs": [
         {
@@ -2751,7 +3628,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 14,
+      "order": 12,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -2791,7 +3668,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 15,
+      "order": 13,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -2831,7 +3708,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 16,
+      "order": 14,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -2871,7 +3748,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 28,
+      "order": 26,
       "mode": 0,
       "inputs": [
         {
@@ -2916,7 +3793,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 19,
+      "order": 15,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -2956,7 +3833,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 20,
+      "order": 16,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -2996,7 +3873,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 21,
+      "order": 17,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -3034,7 +3911,7 @@
         60
       ],
       "flags": {},
-      "order": 22,
+      "order": 18,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -3074,7 +3951,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 23,
+      "order": 19,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -3112,10 +3989,11 @@
         106
       ],
       "flags": {},
-      "order": 24,
+      "order": 23,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "video",
           "name": "video",
           "type": "VIDEO",
           "link": 153
@@ -3123,6 +4001,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
           "links": [
@@ -3131,21 +4010,25 @@
           ]
         },
         {
+          "localized_name": "audio",
           "name": "audio",
           "type": "AUDIO",
           "links": null
         },
         {
+          "localized_name": "fps",
           "name": "fps",
           "type": "FLOAT",
           "links": null
         },
         {
+          "localized_name": "bit_depth",
           "name": "bit_depth",
-          "type": "INT",
+          "type": "COMBO",
           "links": null
         },
         {
+          "localized_name": "color_space",
           "name": "color_space",
           "type": "COMBO",
           "links": null
@@ -3170,10 +4053,11 @@
         106
       ],
       "flags": {},
-      "order": 27,
+      "order": 25,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "video",
           "name": "video",
           "type": "VIDEO",
           "link": 154
@@ -3181,6 +4065,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
           "links": [
@@ -3188,6 +4073,7 @@
           ]
         },
         {
+          "localized_name": "audio",
           "name": "audio",
           "type": "AUDIO",
           "links": [
@@ -3195,6 +4081,7 @@
           ]
         },
         {
+          "localized_name": "fps",
           "name": "fps",
           "type": "FLOAT",
           "links": [
@@ -3202,11 +4089,13 @@
           ]
         },
         {
+          "localized_name": "bit_depth",
           "name": "bit_depth",
-          "type": "INT",
+          "type": "COMBO",
           "links": null
         },
         {
+          "localized_name": "color_space",
           "name": "color_space",
           "type": "COMBO",
           "links": null
@@ -3225,14 +4114,43 @@
       ],
       "size": [
         300,
-        340
+        386
       ],
       "flags": {},
-      "order": 10,
+      "order": 20,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "disable_in_memory",
+          "name": "disable_in_memory",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "disable_in_memory"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
@@ -3240,6 +4158,7 @@
           ]
         },
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": null
@@ -3275,14 +4194,43 @@
       ],
       "size": [
         300,
-        340
+        386
       ],
       "flags": {},
-      "order": 11,
+      "order": 21,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "disable_in_memory",
+          "name": "disable_in_memory",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "disable_in_memory"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
@@ -3290,6 +4238,7 @@
           ]
         },
         {
+          "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
           "links": null
@@ -3328,15 +4277,26 @@
         154
       ],
       "flags": {},
-      "order": 42,
+      "order": 37,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "input",
           "name": "input",
           "type": "IMAGE,MASK",
           "link": 155
         },
         {
+          "localized_name": "resize_type",
+          "name": "resize_type",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "resize_type"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
           "name": "resize_type.width",
           "type": "INT",
           "widget": {
@@ -3345,16 +4305,36 @@
           "link": 159
         },
         {
+          "localized_name": "height",
           "name": "resize_type.height",
           "type": "INT",
           "widget": {
             "name": "resize_type.height"
           },
           "link": 160
+        },
+        {
+          "localized_name": "crop",
+          "name": "resize_type.crop",
+          "type": "COMBO",
+          "widget": {
+            "name": "resize_type.crop"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "scale_method",
+          "name": "scale_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "scale_method"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "resized",
           "name": "resized",
           "type": "IMAGE",
           "links": [
@@ -3392,15 +4372,26 @@
         154
       ],
       "flags": {},
-      "order": 43,
+      "order": 38,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "input",
           "name": "input",
           "type": "IMAGE,MASK",
           "link": 157
         },
         {
+          "localized_name": "resize_type",
+          "name": "resize_type",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "resize_type"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
           "name": "resize_type.width",
           "type": "INT",
           "widget": {
@@ -3409,16 +4400,36 @@
           "link": 161
         },
         {
+          "localized_name": "height",
           "name": "resize_type.height",
           "type": "INT",
           "widget": {
             "name": "resize_type.height"
           },
           "link": 162
+        },
+        {
+          "localized_name": "crop",
+          "name": "resize_type.crop",
+          "type": "COMBO",
+          "widget": {
+            "name": "resize_type.crop"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "scale_method",
+          "name": "scale_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "scale_method"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "resized",
           "name": "resized",
           "type": "IMAGE",
           "links": [
@@ -3456,30 +4467,43 @@
         550
       ],
       "flags": {},
-      "order": 44,
+      "order": 46,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "clip",
           "name": "clip",
           "type": "CLIP",
           "link": 133
         },
         {
+          "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
           "link": 147
         },
         {
+          "localized_name": "first_frame",
           "name": "first_frame",
           "shape": 7,
           "type": "IMAGE",
           "link": 156
         },
         {
+          "localized_name": "last_frame",
           "name": "last_frame",
           "shape": 7,
           "type": "IMAGE",
           "link": 158
+        },
+        {
+          "localized_name": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": null
         },
         {
           "localized_name": "width",
@@ -3500,6 +4524,7 @@
           "link": 136
         },
         {
+          "localized_name": "length",
           "name": "length",
           "type": "INT",
           "widget": {
@@ -3510,6 +4535,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "positive",
           "name": "positive",
           "type": "CONDITIONING",
           "links": [
@@ -3517,6 +4543,7 @@
           ]
         },
         {
+          "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
           "links": null
@@ -3552,7 +4579,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 66,
+      "order": 22,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -3590,29 +4617,114 @@
         298
       ],
       "flags": {},
-      "order": 67,
+      "order": 70,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "audio_latent",
           "name": "audio_latent",
           "type": "LATENT",
           "link": 164
         },
         {
+          "localized_name": "original_audio_latent",
           "name": "original_audio_latent",
           "shape": 7,
           "type": "LATENT",
           "link": null
         },
         {
+          "localized_name": "audio_vae",
           "name": "audio_vae",
           "shape": 7,
           "type": "VAE",
           "link": 166
+        },
+        {
+          "localized_name": "mode",
+          "name": "mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "lead_ramp",
+          "name": "lead_ramp",
+          "type": "FLOAT",
+          "widget": {
+            "name": "lead_ramp"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "tail_ramp",
+          "name": "tail_ramp",
+          "type": "FLOAT",
+          "widget": {
+            "name": "tail_ramp"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "lead_hold",
+          "name": "lead_hold",
+          "type": "FLOAT",
+          "widget": {
+            "name": "lead_hold"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "tail_hold",
+          "name": "tail_hold",
+          "type": "FLOAT",
+          "widget": {
+            "name": "tail_hold"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "curve",
+          "name": "curve",
+          "type": "COMBO",
+          "widget": {
+            "name": "curve"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "floor",
+          "name": "floor",
+          "type": "FLOAT",
+          "widget": {
+            "name": "floor"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "layout_override",
+          "name": "layout_override",
+          "type": "COMBO",
+          "widget": {
+            "name": "layout_override"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "audio_latent_rate",
+          "name": "audio_latent_rate",
+          "type": "FLOAT",
+          "widget": {
+            "name": "audio_latent_rate"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "audio_latent",
           "name": "audio_latent",
           "type": "LATENT",
           "links": [
@@ -3653,15 +4765,15 @@
       "id": 99,
       "type": "LoraLoaderModelOnly",
       "pos": [
-        181.2395887354408,
-        4893.042315955707
+        190.65333013153838,
+        4906.860256869154
       ],
       "size": [
         270,
         82
       ],
       "flags": {},
-      "order": 25,
+      "order": 24,
       "mode": 4,
       "inputs": [
         {
@@ -3717,25 +4829,195 @@
         "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
         "strength_model": 1
       }
+    },
+    {
+      "id": 100,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        194.42436043391865,
+        5042.078767413655
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 29,
+      "mode": 4,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 167
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            168
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 101,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        194.2475334798228,
+        5179.271240472222
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 32,
+      "mode": 4,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 168
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            169
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 102,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        194.07048062019766,
+        5329.294808730519
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 34,
+      "mode": 4,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 169
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            170
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+        "strength_model": 1
+      }
     }
   ],
   "links": [
-    [
-      6,
-      4,
-      0,
-      8,
-      1,
-      "INT"
-    ],
-    [
-      7,
-      3,
-      0,
-      8,
-      2,
-      "INT"
-    ],
     [
       9,
       7,
@@ -3751,38 +5033,6 @@
       20,
       0,
       "MASK"
-    ],
-    [
-      14,
-      20,
-      1,
-      21,
-      0,
-      "INT"
-    ],
-    [
-      15,
-      20,
-      2,
-      21,
-      1,
-      "INT"
-    ],
-    [
-      16,
-      10,
-      1,
-      22,
-      0,
-      "INT"
-    ],
-    [
-      17,
-      10,
-      2,
-      22,
-      1,
-      "INT"
     ],
     [
       21,
@@ -3961,14 +5211,6 @@
       "IMAGE"
     ],
     [
-      77,
-      54,
-      0,
-      60,
-      0,
-      "IMAGE"
-    ],
-    [
       90,
       40,
       0,
@@ -4073,36 +5315,12 @@
       "LATENT"
     ],
     [
-      110,
-      5,
-      0,
-      8,
-      0,
-      "IMAGE"
-    ],
-    [
-      111,
-      59,
-      3,
-      73,
-      0,
-      "INT"
-    ],
-    [
       112,
       59,
       0,
       74,
       0,
       "IMAGE"
-    ],
-    [
-      113,
-      73,
-      1,
-      74,
-      2,
-      "INT"
     ],
     [
       114,
@@ -4113,28 +5331,12 @@
       "IMAGE"
     ],
     [
-      115,
-      73,
-      1,
-      75,
-      0,
-      "INT"
-    ],
-    [
       116,
       54,
       1,
       76,
       0,
       "AUDIO"
-    ],
-    [
-      117,
-      75,
-      0,
-      76,
-      1,
-      "FLOAT"
     ],
     [
       118,
@@ -4153,14 +5355,6 @@
       "IMAGE"
     ],
     [
-      120,
-      73,
-      1,
-      77,
-      2,
-      "INT"
-    ],
-    [
       121,
       77,
       0,
@@ -4175,14 +5369,6 @@
       78,
       0,
       "IMAGE"
-    ],
-    [
-      123,
-      73,
-      1,
-      78,
-      2,
-      "INT"
     ],
     [
       124,
@@ -4223,30 +5409,6 @@
       33,
       0,
       "CLIP"
-    ],
-    [
-      135,
-      17,
-      0,
-      33,
-      4,
-      "INT"
-    ],
-    [
-      136,
-      18,
-      0,
-      33,
-      5,
-      "INT"
-    ],
-    [
-      137,
-      73,
-      1,
-      33,
-      6,
-      "INT"
     ],
     [
       138,
@@ -4345,27 +5507,11 @@
       "VIDEO"
     ],
     [
-      155,
-      48,
-      0,
-      61,
-      0,
-      "IMAGE"
-    ],
-    [
       156,
       61,
       0,
       33,
       2,
-      "IMAGE"
-    ],
-    [
-      157,
-      49,
-      0,
-      62,
-      0,
       "IMAGE"
     ],
     [
@@ -4375,38 +5521,6 @@
       33,
       3,
       "IMAGE"
-    ],
-    [
-      159,
-      59,
-      1,
-      61,
-      1,
-      "INT"
-    ],
-    [
-      160,
-      59,
-      2,
-      61,
-      2,
-      "INT"
-    ],
-    [
-      161,
-      59,
-      1,
-      62,
-      1,
-      "INT"
-    ],
-    [
-      162,
-      59,
-      2,
-      62,
-      2,
-      "INT"
     ],
     [
       163,
@@ -4444,9 +5558,217 @@
       167,
       99,
       0,
+      100,
+      0,
+      "MODEL"
+    ],
+    [
+      168,
+      100,
+      0,
+      101,
+      0,
+      "MODEL"
+    ],
+    [
+      169,
+      101,
+      0,
+      102,
+      0,
+      "MODEL"
+    ],
+    [
+      170,
+      102,
+      0,
       47,
       0,
       "MODEL"
+    ],
+    [
+      110,
+      5,
+      0,
+      8,
+      0,
+      "IMAGE"
+    ],
+    [
+      6,
+      4,
+      0,
+      8,
+      2,
+      "INT"
+    ],
+    [
+      7,
+      3,
+      0,
+      8,
+      3,
+      "INT"
+    ],
+    [
+      77,
+      54,
+      0,
+      60,
+      0,
+      "IMAGE"
+    ],
+    [
+      111,
+      59,
+      3,
+      73,
+      0,
+      "INT"
+    ],
+    [
+      115,
+      73,
+      1,
+      75,
+      0,
+      "INT"
+    ],
+    [
+      155,
+      48,
+      0,
+      61,
+      0,
+      "IMAGE"
+    ],
+    [
+      159,
+      59,
+      1,
+      61,
+      2,
+      "INT"
+    ],
+    [
+      160,
+      59,
+      2,
+      61,
+      3,
+      "INT"
+    ],
+    [
+      157,
+      49,
+      0,
+      62,
+      0,
+      "IMAGE"
+    ],
+    [
+      161,
+      59,
+      1,
+      62,
+      2,
+      "INT"
+    ],
+    [
+      162,
+      59,
+      2,
+      62,
+      3,
+      "INT"
+    ],
+    [
+      14,
+      20,
+      1,
+      21,
+      1,
+      "INT"
+    ],
+    [
+      15,
+      20,
+      2,
+      21,
+      2,
+      "INT"
+    ],
+    [
+      16,
+      10,
+      1,
+      22,
+      1,
+      "INT"
+    ],
+    [
+      17,
+      10,
+      2,
+      22,
+      2,
+      "INT"
+    ],
+    [
+      120,
+      73,
+      1,
+      77,
+      3,
+      "INT"
+    ],
+    [
+      123,
+      73,
+      1,
+      78,
+      3,
+      "INT"
+    ],
+    [
+      117,
+      75,
+      0,
+      76,
+      2,
+      "FLOAT"
+    ],
+    [
+      113,
+      73,
+      1,
+      74,
+      3,
+      "INT"
+    ],
+    [
+      135,
+      17,
+      0,
+      33,
+      5,
+      "INT"
+    ],
+    [
+      136,
+      18,
+      0,
+      33,
+      6,
+      "INT"
+    ],
+    [
+      137,
+      73,
+      1,
+      33,
+      7,
+      "INT"
     ]
   ],
   "groups": [
@@ -4540,8 +5862,8 @@
       "bounding": [
         142.94265187470367,
         4841.618318866893,
-        738.7459876010377,
-        664.8486478431014
+        791.056762302628,
+        836.5860070711196
       ],
       "color": "#355",
       "flags": {}
@@ -4550,10 +5872,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.22635167424039268,
+      "scale": 0.6754500041309281,
       "offset": [
-        2249.2229339068454,
-        -2681.115065955363
+        555.8203187580715,
+        -4647.457049253538
       ]
     },
     "frontendVersion": "1.49.6",

@@ -35,19 +35,6 @@ describe("detached render document contract", () => {
     expect(detachedRenderDocumentSchema.safeParse(patchedDocument(["clips", 0, "transformations", 1, "parameters", "x"], number)).success).toBe(false);
   });
 
-  it("qualifies clip opacity, keyframed or not, within [0, 1]", () => {
-    const withOpacity = (opacity: unknown): unknown => {
-      const copy = structuredClone(document) as { clips: { transformations: unknown[] }[] };
-      copy.clips[0].transformations.push({ id: "opacity-1", type: "opacity", isEnabled: true, parameters: { opacity } });
-      return copy;
-    };
-    const spline = (value: number) => ({ type: "spline", points: [{ time: 0, value: 1 }, { time: 48_000, value }] });
-    expect(detachedRenderDocumentSchema.safeParse(withOpacity(0.4)).success).toBe(true);
-    expect(detachedRenderDocumentSchema.safeParse(withOpacity(spline(0))).success).toBe(true);
-    expect(detachedRenderDocumentSchema.safeParse(withOpacity(1.5)).success).toBe(false);
-    expect(detachedRenderDocumentSchema.safeParse(withOpacity(spline(-0.1))).success).toBe(false);
-  });
-
   it.each([
     ["a content digest", ["assets", 0, "digest"], `sha256:${"a".repeat(64)}`],
     ["a build digest", ["renderer", "buildDigest"], `sha256:${"1".repeat(64)}`],

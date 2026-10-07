@@ -1,7 +1,35 @@
 {
   "version": 3,
   "name": "Flux Klein 9B",
+  "sections": [
+    {
+      "id": "lora_loaders",
+      "title": "LoRA loaders",
+      "order": 3,
+      "default_open": true
+    }
+  ],
+  "lora_stacks": [
+    {
+      "id": "model_loras",
+      "nodes": ["167", "168", "169", "170"],
+      "section_id": "lora_loaders",
+      "group_title": "LoRA"
+    }
+  ],
   "nodes": {
+    "167": {
+      "widgets": {
+        "lora_name": {
+          "label": "Model",
+          "discover_when_bypassed": true,
+          "default_node_bypass": true,
+          "section_id": "lora_loaders",
+          "group_id": "lora_model",
+          "group_title": "Model LoRA"
+        }
+      }
+    },
     "76": {
       "present": {
         "label": "Reference 1",

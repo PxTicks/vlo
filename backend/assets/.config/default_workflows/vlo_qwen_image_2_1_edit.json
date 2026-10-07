@@ -1,8 +1,8 @@
 {
   "id": "3f0d5a3e-7c1b-4f65-9f2e-5b8f5f0c2a21",
   "revision": 0,
-  "last_node_id": 481,
-  "last_link_id": 744,
+  "last_node_id": 485,
+  "last_link_id": 747,
   "nodes": [
     {
       "id": 459,
@@ -16,15 +16,40 @@
         740
       ],
       "flags": {},
-      "order": 5,
+      "order": 6,
       "mode": 0,
       "inputs": [
         {
+          "name": "resolution",
+          "type": "INT",
+          "widget": {
+            "name": "resolution"
+          },
+          "link": null
+        },
+        {
           "label": "positive_prompt",
+          "localized_name": "prompt",
           "name": "prompt",
           "type": "STRING",
           "widget": {
             "name": "prompt"
+          },
+          "link": null
+        },
+        {
+          "name": "negative_prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "negative_prompt"
+          },
+          "link": null
+        },
+        {
+          "name": "cfg",
+          "type": "FLOAT",
+          "widget": {
+            "name": "cfg"
           },
           "link": null
         },
@@ -47,6 +72,7 @@
           "link": null
         },
         {
+          "localized_name": "width",
           "name": "width",
           "type": "INT",
           "widget": {
@@ -55,6 +81,7 @@
           "link": 731
         },
         {
+          "localized_name": "height",
           "name": "height",
           "type": "INT",
           "widget": {
@@ -77,6 +104,38 @@
           "type": "COMBO",
           "widget": {
             "name": "scheduler_1"
+          },
+          "link": null
+        },
+        {
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "name": "unet_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "unet_name"
+          },
+          "link": null
+        },
+        {
+          "name": "clip_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "clip_name"
+          },
+          "link": null
+        },
+        {
+          "name": "vae_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "vae_name"
           },
           "link": null
         },
@@ -171,6 +230,7 @@
       ],
       "outputs": [
         {
+          "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
@@ -234,17 +294,24 @@
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
           "link": 672
         }
       ],
-      "outputs": [],
+      "outputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
       "properties": {
         "Node name for S&R": "PreviewImage",
         "cnr_id": "comfy-core"
-      },
-      "widgets_values": []
+      }
     },
     {
       "id": 463,
@@ -258,7 +325,7 @@
         620
       ],
       "flags": {},
-      "order": 1,
+      "order": 0,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -285,17 +352,17 @@
         620
       ],
       "flags": {},
-      "order": 4,
+      "order": 1,
       "mode": 0,
       "inputs": [],
       "outputs": [],
       "title": "Note: Model links",
       "properties": {},
       "widgets_values": [
-        "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Input Assets\n\n- [portrait_model_denim.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/portrait_model_denim.png)\n- [clothing_light_blue_denim_shirt.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/clothing_light_blue_denim_shirt.png)\n\n\n## Model Links\n\n- [Hugging Face:Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1)\n- [ModelScope:Comfy-Org/Qwen-Image-2.1](https://modelscope.cn/models/Comfy-Org/Qwen-Image-2.1)\n\n**diffusion_models**\n\n- [qwen_image_2.1_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_bf16.safetensors)\n- [qwen_image_2.1_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors)\n\n**text_encoders**\n\n- [qwen3vl_8b_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_bf16.safetensors)\n- [qwen3vl_8b_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors) \n\n**vae**\n\n- [qwen_image_2.1_vae_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors)\n\n\n## Model Storage Location\n\n```\n\ud83d\udcc2 ComfyUI/\n\u251c\u2500\u2500 \ud83d\udcc2 models/\n\u2502   \u251c\u2500\u2500 \ud83d\udcc2 diffusion_models/\n\u2502   \u2502   \u251c\u2500\u2500 qwen_image_2.1_bf16.safetensors\n\u2502   \u2502   \u2514\u2500\u2500 qwen_image_2.1_int8_convrot.safetensors\n\u2502   \u251c\u2500\u2500 \ud83d\udcc2 text_encoders/\n\u2502   \u2502   \u251c\u2500\u2500 qwen3vl_8b_bf16.safetensors\n\u2502   \u2502   \u2514\u2500\u2500 qwen3vl_8b_int8_convrot.safetensors\n\u2502   \u2514\u2500\u2500 \ud83d\udcc2 vae/\n\u2502       \u2514\u2500\u2500 qwen_image_2.1_vae_bf16.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
+        "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Input Assets\n\n- [portrait_model_denim.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/portrait_model_denim.png)\n- [clothing_light_blue_denim_shirt.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/clothing_light_blue_denim_shirt.png)\n\n\n## Model Links\n\n- [Hugging Face:Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1)\n- [ModelScope:Comfy-Org/Qwen-Image-2.1](https://modelscope.cn/models/Comfy-Org/Qwen-Image-2.1)\n\n**diffusion_models**\n\n- [qwen_image_2.1_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_bf16.safetensors)\n- [qwen_image_2.1_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors)\n\n**text_encoders**\n\n- [qwen3vl_8b_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_bf16.safetensors)\n- [qwen3vl_8b_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors) \n\n**vae**\n\n- [qwen_image_2.1_vae_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors)\n\n\n## Model Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 diffusion_models/\n│   │   ├── qwen_image_2.1_bf16.safetensors\n│   │   └── qwen_image_2.1_int8_convrot.safetensors\n│   ├── 📂 text_encoders/\n│   │   ├── qwen3vl_8b_bf16.safetensors\n│   │   └── qwen3vl_8b_int8_convrot.safetensors\n│   └── 📂 vae/\n│       └── qwen_image_2.1_vae_bf16.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
       ],
       "widgets_values_named": {
-        "text": "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Input Assets\n\n- [portrait_model_denim.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/portrait_model_denim.png)\n- [clothing_light_blue_denim_shirt.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/clothing_light_blue_denim_shirt.png)\n\n\n## Model Links\n\n- [Hugging Face:Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1)\n- [ModelScope:Comfy-Org/Qwen-Image-2.1](https://modelscope.cn/models/Comfy-Org/Qwen-Image-2.1)\n\n**diffusion_models**\n\n- [qwen_image_2.1_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_bf16.safetensors)\n- [qwen_image_2.1_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors)\n\n**text_encoders**\n\n- [qwen3vl_8b_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_bf16.safetensors)\n- [qwen3vl_8b_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors) \n\n**vae**\n\n- [qwen_image_2.1_vae_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors)\n\n\n## Model Storage Location\n\n```\n\ud83d\udcc2 ComfyUI/\n\u251c\u2500\u2500 \ud83d\udcc2 models/\n\u2502   \u251c\u2500\u2500 \ud83d\udcc2 diffusion_models/\n\u2502   \u2502   \u251c\u2500\u2500 qwen_image_2.1_bf16.safetensors\n\u2502   \u2502   \u2514\u2500\u2500 qwen_image_2.1_int8_convrot.safetensors\n\u2502   \u251c\u2500\u2500 \ud83d\udcc2 text_encoders/\n\u2502   \u2502   \u251c\u2500\u2500 qwen3vl_8b_bf16.safetensors\n\u2502   \u2502   \u2514\u2500\u2500 qwen3vl_8b_int8_convrot.safetensors\n\u2502   \u2514\u2500\u2500 \ud83d\udcc2 vae/\n\u2502       \u2514\u2500\u2500 qwen_image_2.1_vae_bf16.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
+        "text": "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Input Assets\n\n- [portrait_model_denim.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/portrait_model_denim.png)\n- [clothing_light_blue_denim_shirt.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/clothing_light_blue_denim_shirt.png)\n\n\n## Model Links\n\n- [Hugging Face:Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1)\n- [ModelScope:Comfy-Org/Qwen-Image-2.1](https://modelscope.cn/models/Comfy-Org/Qwen-Image-2.1)\n\n**diffusion_models**\n\n- [qwen_image_2.1_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_bf16.safetensors)\n- [qwen_image_2.1_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors)\n\n**text_encoders**\n\n- [qwen3vl_8b_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_bf16.safetensors)\n- [qwen3vl_8b_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors) \n\n**vae**\n\n- [qwen_image_2.1_vae_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors)\n\n\n## Model Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 diffusion_models/\n│   │   ├── qwen_image_2.1_bf16.safetensors\n│   │   └── qwen_image_2.1_int8_convrot.safetensors\n│   ├── 📂 text_encoders/\n│   │   ├── qwen3vl_8b_bf16.safetensors\n│   │   └── qwen3vl_8b_int8_convrot.safetensors\n│   └── 📂 vae/\n│       └── qwen_image_2.1_vae_bf16.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -304,19 +371,19 @@
       "id": 477,
       "type": "vloMemoryLoadImageBatch",
       "pos": [
-        -260,
-        2420
+        125.07396210321059,
+        2897.203785787624
       ],
       "size": [
         320,
         300
       ],
       "flags": {},
-      "order": 1,
+      "order": 2,
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "images",
+          "localized_name": "Images",
           "name": "images",
           "type": "COMBO",
           "widget": {
@@ -361,7 +428,11 @@
       "widgets_values": [
         [],
         false
-      ]
+      ],
+      "widgets_values_named": {
+        "images": [],
+        "disable_in_memory": false
+      }
     },
     {
       "id": 478,
@@ -375,14 +446,14 @@
         420
       ],
       "flags": {},
-      "order": 2,
+      "order": 5,
       "mode": 0,
       "inputs": [
         {
           "localized_name": "values",
           "name": "values",
           "shape": 7,
-          "type": "IMAGE",
+          "type": "*",
           "link": 734
         }
       ],
@@ -509,8 +580,7 @@
         "Node name for S&R": "vloListFanOut",
         "cnr_id": "comfyui-vlo",
         "ver": "0.2.0"
-      },
-      "widgets_values": []
+      }
     },
     {
       "id": 479,
@@ -524,11 +594,22 @@
         110
       ],
       "flags": {},
-      "order": 0,
+      "order": 3,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "INT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "INT",
           "name": "INT",
           "type": "INT",
           "links": [
@@ -544,7 +625,11 @@
       "widgets_values": [
         1024,
         "fixed"
-      ]
+      ],
+      "widgets_values_named": {
+        "value": 1024,
+        "fixed": "fixed"
+      }
     },
     {
       "id": 480,
@@ -558,11 +643,22 @@
         110
       ],
       "flags": {},
-      "order": 0,
+      "order": 4,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "INT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "INT",
           "name": "INT",
           "type": "INT",
           "links": [
@@ -578,7 +674,11 @@
       "widgets_values": [
         1024,
         "fixed"
-      ]
+      ],
+      "widgets_values_named": {
+        "value": 1024,
+        "fixed": "fixed"
+      }
     }
   ],
   "links": [
@@ -591,22 +691,6 @@
       "IMAGE"
     ],
     [
-      731,
-      479,
-      0,
-      459,
-      3,
-      "INT"
-    ],
-    [
-      732,
-      480,
-      0,
-      459,
-      4,
-      "INT"
-    ],
-    [
       734,
       477,
       0,
@@ -615,11 +699,27 @@
       "IMAGE"
     ],
     [
+      731,
+      479,
+      0,
+      459,
+      6,
+      "INT"
+    ],
+    [
+      732,
+      480,
+      0,
+      459,
+      7,
+      "INT"
+    ],
+    [
       735,
       478,
       0,
       459,
-      7,
+      14,
       "IMAGE"
     ],
     [
@@ -627,7 +727,7 @@
       478,
       1,
       459,
-      8,
+      15,
       "IMAGE"
     ],
     [
@@ -635,7 +735,7 @@
       478,
       2,
       459,
-      9,
+      16,
       "IMAGE"
     ],
     [
@@ -643,7 +743,7 @@
       478,
       3,
       459,
-      10,
+      17,
       "IMAGE"
     ],
     [
@@ -651,7 +751,7 @@
       478,
       4,
       459,
-      11,
+      18,
       "IMAGE"
     ],
     [
@@ -659,7 +759,7 @@
       478,
       5,
       459,
-      12,
+      19,
       "IMAGE"
     ],
     [
@@ -667,7 +767,7 @@
       478,
       6,
       459,
-      13,
+      20,
       "IMAGE"
     ],
     [
@@ -675,7 +775,7 @@
       478,
       7,
       459,
-      14,
+      21,
       "IMAGE"
     ],
     [
@@ -683,7 +783,7 @@
       478,
       8,
       459,
-      15,
+      22,
       "IMAGE"
     ],
     [
@@ -691,7 +791,7 @@
       478,
       9,
       459,
-      16,
+      23,
       "IMAGE"
     ]
   ],
@@ -702,9 +802,9 @@
         "id": "bc1c967a-7f6a-4be9-a372-dad16e4f28e3",
         "version": 1,
         "state": {
-          "lastGroupId": 37,
-          "lastNodeId": 476,
-          "lastLinkId": 730,
+          "lastGroupId": 38,
+          "lastNodeId": 485,
+          "lastLinkId": 747,
           "lastRerouteId": 9
         },
         "revision": 0,
@@ -1102,6 +1202,15 @@
                   "name": "unet_name"
                 },
                 "link": 663
+              },
+              {
+                "localized_name": "weight_dtype",
+                "name": "weight_dtype",
+                "type": "COMBO",
+                "widget": {
+                  "name": "weight_dtype"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -1156,6 +1265,25 @@
                   "name": "clip_name"
                 },
                 "link": 664
+              },
+              {
+                "localized_name": "type",
+                "name": "type",
+                "type": "COMBO",
+                "widget": {
+                  "name": "type"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "device",
+                "name": "device",
+                "shape": 7,
+                "type": "COMBO",
+                "widget": {
+                  "name": "device"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -1274,6 +1402,15 @@
                   "name": "height"
                 },
                 "link": 661
+              },
+              {
+                "localized_name": "batch_size",
+                "name": "batch_size",
+                "type": "INT",
+                "widget": {
+                  "name": "batch_size"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -1425,6 +1562,15 @@
                   "name": "scheduler"
                 },
                 "link": 668
+              },
+              {
+                "localized_name": "denoise",
+                "name": "denoise",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "denoise"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -1537,7 +1683,7 @@
                 "localized_name": "model",
                 "name": "model",
                 "type": "MODEL",
-                "link": 688
+                "link": 747
               },
               {
                 "localized_name": "device",
@@ -1643,32 +1789,11 @@
                 "link": 725
               },
               {
-                "localized_name": "image_11",
-                "name": "images.image_11",
-                "shape": 7,
-                "type": "IMAGE",
-                "link": null
-              },
-              {
                 "localized_name": "image_12",
                 "name": "images.image_12",
                 "shape": 7,
                 "type": "IMAGE",
                 "link": null
-              },
-              {
-                "localized_name": "image_2",
-                "name": "images.image_2",
-                "shape": 7,
-                "type": "IMAGE",
-                "link": 711
-              },
-              {
-                "localized_name": "image_3",
-                "name": "images.image_3",
-                "shape": 7,
-                "type": "IMAGE",
-                "link": 712
               },
               {
                 "localized_name": "image_4",
@@ -1718,6 +1843,27 @@
                 "shape": 7,
                 "type": "IMAGE",
                 "link": 719
+              },
+              {
+                "localized_name": "image_11",
+                "name": "images.image_11",
+                "shape": 7,
+                "type": "IMAGE",
+                "link": null
+              },
+              {
+                "localized_name": "image_2",
+                "name": "images.image_2",
+                "shape": 7,
+                "type": "IMAGE",
+                "link": 711
+              },
+              {
+                "localized_name": "image_3",
+                "name": "images.image_3",
+                "shape": 7,
+                "type": "IMAGE",
+                "link": 712
               }
             ],
             "outputs": [
@@ -1758,6 +1904,254 @@
               "prompt": "",
               "negative_prompt": "",
               "resolution": 1024
+            }
+          },
+          {
+            "id": 482,
+            "type": "LoraLoaderModelOnly",
+            "pos": [
+              -185.98214629030704,
+              178.6791674579972
+            ],
+            "size": [
+              270,
+              82
+            ],
+            "flags": {},
+            "order": 9,
+            "mode": 4,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 688
+              },
+              {
+                "localized_name": "lora_name",
+                "name": "lora_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "lora_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "strength_model",
+                "name": "strength_model",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "strength_model"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  745
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "LoraLoaderModelOnly"
+            },
+            "widgets_values": [
+              "None",
+              1
+            ],
+            "widgets_values_named": {
+              "lora_name": "None",
+              "strength_model": 1
+            }
+          },
+          {
+            "id": 483,
+            "type": "LoraLoaderModelOnly",
+            "pos": [
+              104.01785370969296,
+              178.6791674579972
+            ],
+            "size": [
+              270,
+              82
+            ],
+            "flags": {},
+            "order": 10,
+            "mode": 4,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 745
+              },
+              {
+                "localized_name": "lora_name",
+                "name": "lora_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "lora_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "strength_model",
+                "name": "strength_model",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "strength_model"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  746
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "LoraLoaderModelOnly"
+            },
+            "widgets_values": [
+              "None",
+              1
+            ],
+            "widgets_values_named": {
+              "lora_name": "None",
+              "strength_model": 1
+            }
+          },
+          {
+            "id": 484,
+            "type": "LoraLoaderModelOnly",
+            "pos": [
+              394.01785370969304,
+              178.6791674579972
+            ],
+            "size": [
+              270,
+              82
+            ],
+            "flags": {},
+            "order": 11,
+            "mode": 4,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 746
+              },
+              {
+                "localized_name": "lora_name",
+                "name": "lora_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "lora_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "strength_model",
+                "name": "strength_model",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "strength_model"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  733
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "LoraLoaderModelOnly"
+            },
+            "widgets_values": [
+              "None",
+              1
+            ],
+            "widgets_values_named": {
+              "lora_name": "None",
+              "strength_model": 1
+            }
+          },
+          {
+            "id": 485,
+            "type": "LoraLoaderModelOnly",
+            "pos": [
+              684.0178537096931,
+              178.6791674579972
+            ],
+            "size": [
+              270,
+              82
+            ],
+            "flags": {},
+            "order": 12,
+            "mode": 4,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 733
+              },
+              {
+                "localized_name": "lora_name",
+                "name": "lora_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "lora_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "strength_model",
+                "name": "strength_model",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "strength_model"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  747
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "LoraLoaderModelOnly"
+            },
+            "widgets_values": [
+              "None",
+              1
+            ],
+            "widgets_values_named": {
+              "lora_name": "None",
+              "strength_model": 1
             }
           }
         ],
@@ -1809,6 +2203,18 @@
             ],
             "color": "#3f789e",
             "flags": {}
+          },
+          {
+            "id": 38,
+            "title": "Loras",
+            "bounding": [
+              -195.98214629030704,
+              108.67916745799721,
+              1160.0000000000002,
+              162
+            ],
+            "color": "#3f789e",
+            "flags": {}
           }
         ],
         "links": [
@@ -1856,7 +2262,7 @@
             "id": 688,
             "origin_id": 451,
             "origin_slot": 0,
-            "target_id": 469,
+            "target_id": 482,
             "target_slot": 0,
             "type": "MODEL"
           },
@@ -1997,6 +2403,38 @@
             "type": "COMBO"
           },
           {
+            "id": 745,
+            "origin_id": 482,
+            "origin_slot": 0,
+            "target_id": 483,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 746,
+            "origin_id": 483,
+            "origin_slot": 0,
+            "target_id": 484,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 733,
+            "origin_id": 484,
+            "origin_slot": 0,
+            "target_id": 485,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 747,
+            "origin_id": 485,
+            "origin_slot": 0,
+            "target_id": 469,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
             "id": 721,
             "origin_id": 453,
             "origin_slot": 0,
@@ -2045,27 +2483,11 @@
             "type": "INT"
           },
           {
-            "id": 711,
-            "origin_id": -10,
-            "origin_slot": 15,
-            "target_id": 474,
-            "target_slot": 8,
-            "type": "IMAGE"
-          },
-          {
-            "id": 712,
-            "origin_id": -10,
-            "origin_slot": 16,
-            "target_id": 474,
-            "target_slot": 9,
-            "type": "IMAGE"
-          },
-          {
             "id": 713,
             "origin_id": -10,
             "origin_slot": 17,
             "target_id": 474,
-            "target_slot": 10,
+            "target_slot": 7,
             "type": "IMAGE"
           },
           {
@@ -2073,7 +2495,7 @@
             "origin_id": -10,
             "origin_slot": 18,
             "target_id": 474,
-            "target_slot": 11,
+            "target_slot": 8,
             "type": "IMAGE"
           },
           {
@@ -2081,7 +2503,7 @@
             "origin_id": -10,
             "origin_slot": 19,
             "target_id": 474,
-            "target_slot": 12,
+            "target_slot": 9,
             "type": "IMAGE"
           },
           {
@@ -2089,7 +2511,7 @@
             "origin_id": -10,
             "origin_slot": 20,
             "target_id": 474,
-            "target_slot": 13,
+            "target_slot": 10,
             "type": "IMAGE"
           },
           {
@@ -2097,7 +2519,7 @@
             "origin_id": -10,
             "origin_slot": 21,
             "target_id": 474,
-            "target_slot": 14,
+            "target_slot": 11,
             "type": "IMAGE"
           },
           {
@@ -2105,13 +2527,29 @@
             "origin_id": -10,
             "origin_slot": 22,
             "target_id": 474,
-            "target_slot": 15,
+            "target_slot": 12,
             "type": "IMAGE"
           },
           {
             "id": 719,
             "origin_id": -10,
             "origin_slot": 23,
+            "target_id": 474,
+            "target_slot": 13,
+            "type": "IMAGE"
+          },
+          {
+            "id": 711,
+            "origin_id": -10,
+            "origin_slot": 15,
+            "target_id": 474,
+            "target_slot": 15,
+            "type": "IMAGE"
+          },
+          {
+            "id": 712,
+            "origin_id": -10,
+            "origin_slot": 16,
             "target_id": 474,
             "target_slot": 16,
             "type": "IMAGE"
@@ -2124,10 +2562,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.7981019610464585,
+      "scale": 0.5936451228330782,
       "offset": [
-        423.8944416885606,
-        -2107.8604858176273
+        -148.47931340281684,
+        -1977.5216390669566
       ]
     },
     "frontendVersion": "1.53.6",

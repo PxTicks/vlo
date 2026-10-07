@@ -67,8 +67,6 @@ const rotation = z.strictObject({ ...transformBase, type: z.literal("rotation"),
   parameters: z.strictObject({ angle: animatable() }) });
 const fitMode = z.strictObject({ ...transformBase, type: z.literal("fitMode"),
   parameters: z.strictObject({ fitMode: z.enum(["contain", "cover"]) }) });
-const opacity = z.strictObject({ ...transformBase, type: z.literal("opacity"),
-  parameters: z.strictObject({ opacity: animatable(z.number().min(0).max(1)) }) });
 const BLEND_MODES = ["normal", "add", "multiply", "screen"] as const;
 const blendMode = z.strictObject({ ...transformBase, type: z.literal("blendMode"),
   parameters: z.strictObject({ blendMode: z.enum(BLEND_MODES) }) });
@@ -115,7 +113,7 @@ const colorAdjustment = filter("AdjustmentFilter", z.strictObject({
   gamma: animatable(), contrast: animatable(), saturation: animatable(), brightness: animatable() }).partial());
 
 const FILTERS = [blur, alpha, colorGrade, hslAdjustment, colorAdjustment] as const;
-const TRANSFORMS = [position, scale, rotation, fitMode, opacity, blendMode, volume] as const;
+const TRANSFORMS = [position, scale, rotation, fitMode, blendMode, volume] as const;
 
 /** Filters an adjustment clip can apply to what it reaches. */
 export const adjustmentTransformSchema = z.union(FILTERS);

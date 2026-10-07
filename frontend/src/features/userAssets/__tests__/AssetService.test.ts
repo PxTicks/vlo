@@ -289,9 +289,10 @@ describe("AssetService", () => {
     expect(asset?.name).toBe("fresh_file.png");
     expect(mockProcessor.dispose).toHaveBeenCalled();
   });
-  it("ingests a video without waiting for a proxy", async () => {
+  it("should populate proxyFile when proxy is generated for video", async () => {
     // Arrange
     const videoFile = new File(["video"], "test.mp4", { type: "video/mp4" });
+    const proxyBlob = new Blob(["proxy"], { type: "video/mp4" });
 
     (fileSystemService.listDirectory as Mock).mockResolvedValue(["test.mp4"]);
     (fileSystemService.readFile as Mock).mockImplementation(
@@ -313,19 +314,18 @@ describe("AssetService", () => {
       thumbnail: new Blob(["thumb"]),
       fps: 30,
     });
+    mockProcessor.generateProxyVideo.mockResolvedValue(proxyBlob);
 
     // Act
     const newAssets = await assetService.scanForNewAssets([]);
 
-    // Assert: the proxy is ProxyGenerationService's job, after ingest.
+    // Assert
     const asset = newAssets[0];
     expect(asset).toBeDefined();
     expect(asset.type).toBe("video");
     expect(asset.fps).toBe(30);
-    expect(asset.thumbnail).toBeDefined();
-    expect(asset.proxySrc).toBeUndefined();
-    expect(asset.proxyFile).toBeUndefined();
-    expect(mockProcessor.generateProxyVideo).not.toHaveBeenCalled();
+    expect(asset.proxySrc).toBeDefined();
+    expect(asset.proxyFile).toBe(proxyBlob); // Crucial check
     expect(mockProcessor.dispose).toHaveBeenCalled();
   });
 
@@ -607,7 +607,7 @@ describe("AssetService", () => {
     });
   });
 
-  it("uses the collision-resolved asset name for the video thumbnail path", async () => {
+  it("uses the collision-resolved asset name for video thumbnail and proxy paths", async () => {
     const file = new File(["video"], "duplicate-video.mp4", {
       type: "video/mp4",
     });
@@ -620,6 +620,7 @@ describe("AssetService", () => {
       thumbnail: new Blob(["thumb"]),
       fps: 24,
     });
+    mockProcessor.generateProxyVideo.mockResolvedValue(new Blob(["proxy"]));
     mockProcessor.hasAudioTrack.mockResolvedValue(true);
 
     const newAsset = await assetService.ingestAsset(
@@ -649,7 +650,7 @@ describe("AssetService", () => {
       type: "video",
       thumbnailPath:
         ".vloproject/thumbnails/duplicate-video_2.mp4_thumb.webp",
+      proxyPath: ".vloproject/proxies/duplicate-video_2.mp4_proxy.mp4",
     });
-    expect(newAsset?.proxyPath).toBeUndefined();
   });
 });

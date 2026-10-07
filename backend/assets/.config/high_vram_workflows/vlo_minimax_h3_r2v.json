@@ -1,8 +1,8 @@
 {
   "id": "84cce8eb-9d5f-4fcb-b797-6cbb3c5d8595",
   "revision": 0,
-  "last_node_id": 149,
-  "last_link_id": 295,
+  "last_node_id": 152,
+  "last_link_id": 298,
   "nodes": [
     {
       "id": 116,
@@ -221,7 +221,7 @@
         130
       ],
       "flags": {},
-      "order": 16,
+      "order": 19,
       "mode": 0,
       "inputs": [
         {
@@ -294,7 +294,7 @@
         140
       ],
       "flags": {},
-      "order": 17,
+      "order": 20,
       "mode": 0,
       "inputs": [
         {
@@ -361,7 +361,7 @@
         60
       ],
       "flags": {},
-      "order": 15,
+      "order": 18,
       "mode": 0,
       "inputs": [
         {
@@ -684,7 +684,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 18,
+      "order": 21,
       "mode": 0,
       "inputs": [
         {
@@ -728,7 +728,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 19,
+      "order": 22,
       "mode": 0,
       "inputs": [
         {
@@ -761,17 +761,16 @@
     {
       "id": 149,
       "type": "vloSaveVideo",
-      "title": "Output Save",
       "pos": [
         822.950355797513,
         4968.541866257099
       ],
       "size": [
         270,
-        334
+        342
       ],
       "flags": {},
-      "order": 21,
+      "order": 23,
       "mode": 0,
       "inputs": [
         {
@@ -880,22 +879,22 @@
         {
           "localized_name": "bit_depth",
           "name": "bit_depth",
+          "shape": 7,
           "type": "COMBO",
           "widget": {
             "name": "bit_depth"
           },
-          "link": null,
-          "shape": 7
+          "link": null
         },
         {
           "localized_name": "color_space",
           "name": "color_space",
+          "shape": 7,
           "type": "COMBO",
           "widget": {
             "name": "color_space"
           },
-          "link": null,
-          "shape": 7
+          "link": null
         }
       ],
       "outputs": [
@@ -906,6 +905,7 @@
           "links": []
         }
       ],
+      "title": "Output Save",
       "properties": {
         "Node name for S&R": "vloSaveVideo",
         "cnr_id": "comfyui-vlo",
@@ -913,7 +913,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        24.0,
+        24,
         "MiniMax",
         false,
         1280,
@@ -922,12 +922,12 @@
         "disabled",
         "auto",
         "auto",
-        19.0,
+        19,
         "auto",
         "sRGB"
       ],
       "widgets_values_named": {
-        "fps": 24.0,
+        "fps": 24,
         "filename_prefix": "MiniMax",
         "save_output": false,
         "width": 1280,
@@ -936,7 +936,7 @@
         "crop": "disabled",
         "format": "auto",
         "codec": "auto",
-        "crf": 19.0,
+        "crf": 19,
         "bit_depth": "auto",
         "color_space": "sRGB"
       }
@@ -945,15 +945,15 @@
       "id": 146,
       "type": "SpectrumApplyMiniMaxH3",
       "pos": [
-        -388.98416020729036,
-        4456.316647542422
+        -468.49342535502956,
+        4063.337700188831
       ],
       "size": [
-        298.05078125,
-        322
+        330.669921875,
+        658
       ],
       "flags": {},
-      "order": 14,
+      "order": 17,
       "mode": 0,
       "inputs": [
         {
@@ -1071,6 +1071,146 @@
             "name": "bootstrap_first_forecast"
           },
           "link": null
+        },
+        {
+          "localized_name": "anchor_residual_feedback",
+          "name": "anchor_residual_feedback",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "anchor_residual_feedback"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "selective_rollback_correction",
+          "name": "selective_rollback_correction",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "selective_rollback_correction"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "offline_smoothing_replay",
+          "name": "offline_smoothing_replay",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "offline_smoothing_replay"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "audio_blend_weight",
+          "name": "audio_blend_weight",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "audio_blend_weight"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "offline_archive_storage",
+          "name": "offline_archive_storage",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "offline_archive_storage"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "model_aware_mode",
+          "name": "model_aware_mode",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "model_aware_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "model_aware_risk_threshold",
+          "name": "model_aware_risk_threshold",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "model_aware_risk_threshold"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "model_aware_trust_shrinkage",
+          "name": "model_aware_trust_shrinkage",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "model_aware_trust_shrinkage"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "model_aware_replay_generic_correction",
+          "name": "model_aware_replay_generic_correction",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "model_aware_replay_generic_correction"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "generic_correction_mode",
+          "name": "generic_correction_mode",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "generic_correction_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "generic_correction_limiter",
+          "name": "generic_correction_limiter",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "generic_correction_limiter"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "generic_correction_limit",
+          "name": "generic_correction_limit",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "generic_correction_limit"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "generic_correction_attenuation",
+          "name": "generic_correction_attenuation",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "generic_correction_attenuation"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "sa_pece_forecast_policy",
+          "name": "sa_pece_forecast_policy",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "sa_pece_forecast_policy"
+          },
+          "link": null
         }
       ],
       "outputs": [
@@ -1099,7 +1239,21 @@
         8,
         false,
         "system_ram",
-        true
+        true,
+        false,
+        false,
+        true,
+        0,
+        "system_ram",
+        "off",
+        0.65,
+        false,
+        false,
+        "coordinate_rls",
+        "hard_clip",
+        0.4,
+        "no_attenuation",
+        "balanced"
       ],
       "widgets_values_named": {
         "enabled": true,
@@ -1113,7 +1267,21 @@
         "max_history": 8,
         "debug": false,
         "history_storage": "system_ram",
-        "bootstrap_first_forecast": true
+        "bootstrap_first_forecast": true,
+        "anchor_residual_feedback": false,
+        "selective_rollback_correction": false,
+        "offline_smoothing_replay": true,
+        "audio_blend_weight": 0,
+        "offline_archive_storage": "system_ram",
+        "model_aware_mode": "off",
+        "model_aware_risk_threshold": 0.65,
+        "model_aware_trust_shrinkage": false,
+        "model_aware_replay_generic_correction": false,
+        "generic_correction_mode": "coordinate_rls",
+        "generic_correction_limiter": "hard_clip",
+        "generic_correction_limit": 0.4,
+        "generic_correction_attenuation": "no_attenuation",
+        "sa_pece_forecast_policy": "balanced"
       }
     },
     {
@@ -1132,7 +1300,7 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "images",
+          "localized_name": "Images",
           "name": "images",
           "type": "COMBO",
           "widget": {
@@ -1200,7 +1368,7 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "files",
+          "localized_name": "Videos",
           "name": "files",
           "type": "COMBO",
           "widget": {
@@ -1281,7 +1449,7 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "audios",
+          "localized_name": "Audio clips",
           "name": "audios",
           "type": "COMBO",
           "widget": {
@@ -1330,25 +1498,25 @@
       "id": 145,
       "type": "ModelAttentionBackend",
       "pos": [
-        -740.6823222480862,
-        4599.17146281801
+        -784.6661479861909,
+        4070.8574436568597
       ],
       "size": [
         270,
         58
       ],
       "flags": {},
-      "order": 13,
+      "order": 16,
       "mode": 0,
       "inputs": [
         {
           "localized_name": "model",
           "name": "model",
           "type": "MODEL",
-          "link": 293
+          "link": 298
         },
         {
-          "localized_name": "attention",
+          "localized_name": "backend",
           "name": "attention",
           "type": "COMBO",
           "widget": {
@@ -1359,8 +1527,8 @@
       ],
       "outputs": [
         {
-          "localized_name": "MODEL",
-          "name": "MODEL",
+          "localized_name": "model",
+          "name": "model",
           "type": "MODEL",
           "links": [
             289
@@ -1444,8 +1612,8 @@
       "id": 148,
       "type": "LoraLoaderModelOnly",
       "pos": [
-        -741.4461377722419,
-        4467.965014401889
+        -777.444181254367,
+        4491.648666488084
       ],
       "size": [
         270,
@@ -1499,6 +1667,192 @@
             "directory": "loras"
           }
         ]
+      },
+      "widgets_values": [
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 150,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -771.6476965314547,
+        4647.283873227895
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 4,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 293
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            296
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 151,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -774.3096755763238,
+        4342.780145579254
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 4,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 296
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            297
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 152,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -770.2047751919297,
+        4193.404153240822
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 4,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 297
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            298
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
       },
       "widgets_values": [
         "minimax_h3_turbo_v4_step600_ema.safetensors",
@@ -1683,7 +2037,7 @@
       293,
       148,
       0,
-      145,
+      150,
       0,
       "MODEL"
     ],
@@ -1702,6 +2056,30 @@
       149,
       0,
       "IMAGE"
+    ],
+    [
+      296,
+      150,
+      0,
+      151,
+      0,
+      "MODEL"
+    ],
+    [
+      297,
+      151,
+      0,
+      152,
+      0,
+      "MODEL"
+    ],
+    [
+      298,
+      152,
+      0,
+      145,
+      0,
+      "MODEL"
     ]
   ],
   "groups": [
@@ -1769,10 +2147,10 @@
       "id": 6,
       "title": "Speedups + lora",
       "bounding": [
-        -767.0052116447403,
-        4371.090848219072,
-        701.3247938285011,
-        425.6265230971085
+        -819.4474237113108,
+        3895.2191572834536,
+        726.700107692527,
+        897.6072835286741
       ],
       "color": "#3f789e",
       "flags": {}
@@ -1781,10 +2159,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.7046324528402651,
+      "scale": 0.3940837955181666,
       "offset": [
-        1723.8135544051834,
-        -4132.499769224736
+        2338.907038931721,
+        -3815.165862396994
       ]
     },
     "frontendVersion": "1.47.12",

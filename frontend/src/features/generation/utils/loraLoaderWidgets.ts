@@ -17,12 +17,12 @@ export const LORA_MODEL_STRENGTH_WIDGET = "strength_model";
 export const LORA_CLIP_STRENGTH_WIDGET = "strength_clip";
 
 /** Strength params in the slot order the loader classes declare them. */
-const LORA_STRENGTH_WIDGETS: readonly string[] = [
+export const LORA_STRENGTH_WIDGETS: readonly string[] = [
   LORA_MODEL_STRENGTH_WIDGET,
   LORA_CLIP_STRENGTH_WIDGET,
 ];
 
-function isLoraLoaderClass(classType: string): boolean {
+export function isLoraLoaderClass(classType: string): boolean {
   return classType.toLowerCase().startsWith("loraloader");
 }
 

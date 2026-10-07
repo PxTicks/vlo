@@ -1,7 +1,6 @@
 export { getTimelineTime } from "./timelineTime";
 export type { TimelineTime, TimelineTimeSnapshot, TimelineTimeQueryOptions, PresentationRange, TimelineClipPresentation } from "./timelineTime";
-export { getLiveTimelineTime, setLiveTimelineTimeSource, liveClipOffsetMapping } from "./liveTimelineTime";
-export type { ClipOffsetMapping } from "./liveTimelineTime";
+export { getLiveTimelineTime, setLiveTimelineTimeSource } from "./liveTimelineTime";
 export * from "./authoring";
 export * from "../utils/timelineTimeDomains";
 export { timelinePresentationRange } from "./timelinePlacementMapper";

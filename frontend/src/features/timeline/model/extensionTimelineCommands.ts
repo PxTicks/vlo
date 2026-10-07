@@ -192,7 +192,6 @@ const DEFAULT_TRANSFORM_ORDER = [
   "scale",
   "rotation",
   "fitMode",
-  "opacity",
   "blendMode",
   "speed",
   "volume",

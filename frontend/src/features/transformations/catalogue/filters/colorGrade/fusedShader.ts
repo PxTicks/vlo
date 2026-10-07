@@ -100,15 +100,12 @@ function buildGradeBody(variantKey: number, index: number): string {
       `    grade${index}Hsv.x, grade${index}p10.w, grade${index}p11.x,`,
       `    grade${index}p11.y, grade${index}p11.z`,
       "  );",
-      // Clamped into the bars' [0, 1] domain (mirrors colorQualifierWeight):
-      // GPU division can put a fully saturated pixel at 1 + ulp, which would
-      // otherwise fall outside even a full-width saturation bar.
       `  grade${index}Matte *= vloSoftTrapezoid(`,
-      `    clamp(grade${index}Hsv.y, 0.0, 1.0), grade${index}p11.w, grade${index}p12.x,`,
+      `    grade${index}Hsv.y, grade${index}p11.w, grade${index}p12.x,`,
       `    grade${index}p12.y, grade${index}p12.z`,
       "  );",
       `  grade${index}Matte *= vloSoftTrapezoid(`,
-      `    clamp(dot(grade${index}Input, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0),`,
+      `    dot(grade${index}Input, vec3(0.2126, 0.7152, 0.0722)),`,
       `    grade${index}p12.w, grade${index}p13.x,`,
       `    grade${index}p13.y, grade${index}p13.z`,
       "  );",

@@ -1,8 +1,8 @@
 {
   "id": "08988737-a544-4ab1-99fb-22d67b7c36e3",
   "revision": 0,
-  "last_node_id": 54,
-  "last_link_id": 79,
+  "last_node_id": 57,
+  "last_link_id": 82,
   "nodes": [
     {
       "id": 29,
@@ -20,18 +20,25 @@
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
           "link": 44
         }
       ],
-      "outputs": [],
+      "outputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
       "properties": {
         "Node name for S&R": "PreviewImage",
         "cnr_id": "comfy-core",
         "ver": "0.25.0"
-      },
-      "widgets_values": []
+      }
     },
     {
       "id": 30,
@@ -48,6 +55,14 @@
       "order": 4,
       "mode": 0,
       "inputs": [
+        {
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        },
         {
           "label": "prompt_enhance",
           "name": "value_1",
@@ -83,6 +98,22 @@
           "link": 74
         },
         {
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
           "label": "lora_strength",
           "name": "strength_model",
           "type": "FLOAT",
@@ -90,10 +121,44 @@
             "name": "strength_model"
           },
           "link": null
+        },
+        {
+          "name": "unet_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "unet_name"
+          },
+          "link": null
+        },
+        {
+          "name": "clip_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "clip_name"
+          },
+          "link": null
+        },
+        {
+          "name": "vae_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "vae_name"
+          },
+          "link": null
+        },
+        {
+          "label": "negative_prompt",
+          "name": "value_2",
+          "type": "STRING",
+          "widget": {
+            "name": "value_2"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
@@ -102,56 +167,6 @@
         }
       ],
       "properties": {
-        "proxyWidgets": [
-          [
-            "19",
-            "value"
-          ],
-          [
-            "54",
-            "value"
-          ],
-          [
-            "24",
-            "value"
-          ],
-          [
-            "16",
-            "max_length"
-          ],
-          [
-            "5",
-            "width"
-          ],
-          [
-            "5",
-            "height"
-          ],
-          [
-            "3",
-            "seed"
-          ],
-          [
-            "15",
-            "lora_name"
-          ],
-          [
-            "15",
-            "strength_model"
-          ],
-          [
-            "10",
-            "unet_name"
-          ],
-          [
-            "11",
-            "clip_name"
-          ],
-          [
-            "12",
-            "vae_name"
-          ]
-        ],
         "cnr_id": "comfy-core",
         "ver": "0.25.0",
         "previewExposures": [
@@ -162,7 +177,34 @@
           }
         ]
       },
-      "widgets_values": []
+      "widgets_values": [
+        "Ultra low angle action shot, male soccer player jumping mid-air high kick, clear vivid blue sky background, forced perspective blurry foreground cleat (white & electric yellow), sharp focused upper body, maroon jersey + white shorts, fully outstretched leg striking a standard soccer ball, harsh direct sunlight, heavy dark shadows, stadium poles & treetops at frame bottom, high contrast sports photography, visible coarse film grain, dynamic movement",
+        true,
+        512,
+        1024,
+        1024,
+        6332,
+        "krea2_darkbrush.safetensors",
+        0.8,
+        "krea2_turbo_int8_convrot.safetensors",
+        "qwen3vl_4b_fp8_scaled.safetensors",
+        "qwen_image_vae.safetensors",
+        ""
+      ],
+      "widgets_values_named": {
+        "value": "Ultra low angle action shot, male soccer player jumping mid-air high kick, clear vivid blue sky background, forced perspective blurry foreground cleat (white & electric yellow), sharp focused upper body, maroon jersey + white shorts, fully outstretched leg striking a standard soccer ball, harsh direct sunlight, heavy dark shadows, stadium poles & treetops at frame bottom, high contrast sports photography, visible coarse film grain, dynamic movement",
+        "value_1": true,
+        "max_length": 512,
+        "width": 1024,
+        "height": 1024,
+        "seed": 6332,
+        "lora_name": "krea2_darkbrush.safetensors",
+        "strength_model": 0.8,
+        "unet_name": "krea2_turbo_int8_convrot.safetensors",
+        "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+        "vae_name": "qwen_image_vae.safetensors",
+        "value_2": ""
+      }
     },
     {
       "id": 48,
@@ -176,7 +218,7 @@
         990
       ],
       "flags": {},
-      "order": 1,
+      "order": 0,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -185,6 +227,9 @@
       "widgets_values": [
         "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Model Links (for Local Users)\n\n**diffusion_models**\n\n- [krea2_turbo_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_int8_convrot.safetensors)\n\n**text_encoders**\n\n- [qwen3vl_4b_fp8_scaled.safetensors](https://huggingface.co/Comfy-Org/Krea-2/resolve/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors)\n\n**vae**\n\n- [qwen_image_vae.safetensors](https://huggingface.co/Comfy-Org/Krea-2/resolve/main/vae/qwen_image_vae.safetensors)\n\n**loras** (optional)\n\n- [Comfy-Org/Krea-2/loras](https://huggingface.co/Comfy-Org/Krea-2/tree/main/loras)\n\n\n## Model Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 diffusion_models/\n│   │   └── krea2_turbo_int8_convrot.safetensors\n│   ├── 📂 text_encoders/\n│   │   └── qwen3vl_4b_fp8_scaled.safetensors\n│   ├── 📂 vae/\n│   │   └── qwen_image_vae.safetensors\n│   └── 📂 loras/  (optional)\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
       ],
+      "widgets_values_named": {
+        "text": "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Model Links (for Local Users)\n\n**diffusion_models**\n\n- [krea2_turbo_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_int8_convrot.safetensors)\n\n**text_encoders**\n\n- [qwen3vl_4b_fp8_scaled.safetensors](https://huggingface.co/Comfy-Org/Krea-2/resolve/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors)\n\n**vae**\n\n- [qwen_image_vae.safetensors](https://huggingface.co/Comfy-Org/Krea-2/resolve/main/vae/qwen_image_vae.safetensors)\n\n**loras** (optional)\n\n- [Comfy-Org/Krea-2/loras](https://huggingface.co/Comfy-Org/Krea-2/tree/main/loras)\n\n\n## Model Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 diffusion_models/\n│   │   └── krea2_turbo_int8_convrot.safetensors\n│   ├── 📂 text_encoders/\n│   │   └── qwen3vl_4b_fp8_scaled.safetensors\n│   ├── 📂 vae/\n│   │   └── qwen_image_vae.safetensors\n│   └── 📂 loras/  (optional)\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
+      },
       "color": "#222",
       "bgcolor": "#000"
     },
@@ -200,7 +245,7 @@
         990
       ],
       "flags": {},
-      "order": 2,
+      "order": 1,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -209,6 +254,9 @@
       "widgets_values": [
         "Guide: [krea-2](https://docs.comfy.org/tutorials/image/krea/krea-2)\n\nThis workflow generates images with **Krea-2 Turbo**, a fast distilled text-to-image model (8 steps, CFG 1).\n\n## vlo adaptation\n\n- **Size**: the Width / Height primitives are driven by vlo's aspect ratio and resolution controls (short side, strided to 16). Values set here are overwritten at generation time.\n- **Prompts**: vlo fills the positive and negative prompt primitives inside the subgraph.\n- **Prompt enhancement**: the built-in TextGenerate module expands the positive prompt before generation. Toggle it with `prompt_enhance`. The enhanced text is internal and not shown in vlo.\n- **Negative prompt**: only takes effect with CFG above 1. When it is empty the negative conditioning is zeroed, matching the stock template; when it has text, vlo bypasses the zero-out node.\n- **LoRA**: the LoRA loader ships bypassed. Pick a LoRA in vlo's LoRA section to enable it.\n- **Output**: images are previewed and delivered to vlo rather than saved to ComfyUI's output folder.\n\nKrea's style LoRAs are at [Comfy-Org/Krea-2/loras](https://huggingface.co/Comfy-Org/Krea-2/tree/main/loras); put LoRAs in `ComfyUI/models/loras/`. Style LoRAs expect their trigger word in the prompt.\n"
       ],
+      "widgets_values_named": {
+        "text": "Guide: [krea-2](https://docs.comfy.org/tutorials/image/krea/krea-2)\n\nThis workflow generates images with **Krea-2 Turbo**, a fast distilled text-to-image model (8 steps, CFG 1).\n\n## vlo adaptation\n\n- **Size**: the Width / Height primitives are driven by vlo's aspect ratio and resolution controls (short side, strided to 16). Values set here are overwritten at generation time.\n- **Prompts**: vlo fills the positive and negative prompt primitives inside the subgraph.\n- **Prompt enhancement**: the built-in TextGenerate module expands the positive prompt before generation. Toggle it with `prompt_enhance`. The enhanced text is internal and not shown in vlo.\n- **Negative prompt**: only takes effect with CFG above 1. When it is empty the negative conditioning is zeroed, matching the stock template; when it has text, vlo bypasses the zero-out node.\n- **LoRA**: the LoRA loader ships bypassed. Pick a LoRA in vlo's LoRA section to enable it.\n- **Output**: images are previewed and delivered to vlo rather than saved to ComfyUI's output folder.\n\nKrea's style LoRAs are at [Comfy-Org/Krea-2/loras](https://huggingface.co/Comfy-Org/Krea-2/tree/main/loras); put LoRAs in `ComfyUI/models/loras/`. Style LoRAs expect their trigger word in the prompt.\n"
+      },
       "color": "#222",
       "bgcolor": "#000"
     },
@@ -224,11 +272,22 @@
         110
       ],
       "flags": {},
-      "order": 3,
+      "order": 2,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "INT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "INT",
           "name": "INT",
           "type": "INT",
           "links": [
@@ -245,7 +304,11 @@
       "widgets_values": [
         1024,
         "fixed"
-      ]
+      ],
+      "widgets_values_named": {
+        "value": 1024,
+        "fixed": "fixed"
+      }
     },
     {
       "id": 53,
@@ -261,9 +324,20 @@
       "flags": {},
       "order": 3,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "INT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
+          "localized_name": "INT",
           "name": "INT",
           "type": "INT",
           "links": [
@@ -280,7 +354,11 @@
       "widgets_values": [
         1024,
         "fixed"
-      ]
+      ],
+      "widgets_values_named": {
+        "value": 1024,
+        "fixed": "fixed"
+      }
     }
   ],
   "links": [
@@ -297,7 +375,7 @@
       52,
       0,
       30,
-      2,
+      3,
       "INT"
     ],
     [
@@ -305,7 +383,7 @@
       53,
       0,
       30,
-      3,
+      4,
       "INT"
     ]
   ],
@@ -316,9 +394,9 @@
         "id": "b0e5ca93-2731-42b9-8e0a-d28ea851ff81",
         "version": 1,
         "state": {
-          "lastGroupId": 10,
-          "lastNodeId": 54,
-          "lastLinkId": 79,
+          "lastGroupId": 11,
+          "lastNodeId": 57,
+          "lastLinkId": 82,
           "lastRerouteId": 0
         },
         "revision": 0,
@@ -329,8 +407,8 @@
           "bounding": [
             -1720,
             410,
-            146.466796875,
-            308
+            143.044921875,
+            288
           ]
         },
         "outputNode": {
@@ -351,8 +429,8 @@
               45
             ],
             "pos": [
-              -1597.533203125,
-              454
+              -1600.955078125,
+              434
             ]
           },
           {
@@ -364,8 +442,8 @@
             ],
             "label": "prompt_enhance",
             "pos": [
-              -1597.533203125,
-              474
+              -1600.955078125,
+              454
             ]
           },
           {
@@ -377,8 +455,8 @@
             ],
             "label": "LLM_max_token",
             "pos": [
-              -1597.533203125,
-              494
+              -1600.955078125,
+              474
             ]
           },
           {
@@ -389,8 +467,8 @@
               50
             ],
             "pos": [
-              -1597.533203125,
-              514
+              -1600.955078125,
+              494
             ]
           },
           {
@@ -401,8 +479,8 @@
               51
             ],
             "pos": [
-              -1597.533203125,
-              534
+              -1600.955078125,
+              514
             ]
           },
           {
@@ -413,8 +491,8 @@
               56
             ],
             "pos": [
-              -1597.533203125,
-              554
+              -1600.955078125,
+              534
             ]
           },
           {
@@ -425,8 +503,8 @@
               58
             ],
             "pos": [
-              -1597.533203125,
-              574
+              -1600.955078125,
+              554
             ]
           },
           {
@@ -438,8 +516,8 @@
             ],
             "label": "lora_strength",
             "pos": [
-              -1597.533203125,
-              594
+              -1600.955078125,
+              574
             ]
           },
           {
@@ -450,8 +528,8 @@
               61
             ],
             "pos": [
-              -1597.533203125,
-              614
+              -1600.955078125,
+              594
             ]
           },
           {
@@ -462,8 +540,8 @@
               62
             ],
             "pos": [
-              -1597.533203125,
-              634
+              -1600.955078125,
+              614
             ]
           },
           {
@@ -474,8 +552,8 @@
               63
             ],
             "pos": [
-              -1597.533203125,
-              654
+              -1600.955078125,
+              634
             ]
           },
           {
@@ -487,8 +565,8 @@
             ],
             "label": "negative_prompt",
             "pos": [
-              -1597.533203125,
-              674
+              -1600.955078125,
+              654
             ]
           }
         ],
@@ -551,6 +629,7 @@
                 ]
               }
             ],
+            "title": "CLIP Text Encode (Positive)",
             "properties": {
               "Node name for S&R": "CLIPTextEncode",
               "cnr_id": "comfy-core",
@@ -559,9 +638,11 @@
             "widgets_values": [
               "A high-resolution, surreal digital illustration showing a human hand holding a martini glass. The image is overlaid with whimsical, expressive ink-style doodles, including a cartoon figure inside the glass, a drawn citrus wedge on the rim, and various abstract sketches and faces surrounding the glass against a clean, white background. The style seamlessly blends a realistic, lit photograph with loose, hand-drawn marker artistry, creating a playful and artistic juxtaposition."
             ],
+            "widgets_values_named": {
+              "text": "A high-resolution, surreal digital illustration showing a human hand holding a martini glass. The image is overlaid with whimsical, expressive ink-style doodles, including a cartoon figure inside the glass, a drawn citrus wedge on the rim, and various abstract sketches and faces surrounding the glass against a clean, white background. The style seamlessly blends a realistic, lit photograph with loose, hand-drawn marker artistry, creating a playful and artistic juxtaposition."
+            },
             "color": "#232",
-            "bgcolor": "#353",
-            "title": "CLIP Text Encode (Positive)"
+            "bgcolor": "#353"
           },
           {
             "id": 5,
@@ -595,6 +676,15 @@
                   "name": "height"
                 },
                 "link": 51
+              },
+              {
+                "localized_name": "batch_size",
+                "name": "batch_size",
+                "type": "INT",
+                "widget": {
+                  "name": "batch_size"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -617,7 +707,12 @@
               1024,
               1024,
               1
-            ]
+            ],
+            "widgets_values_named": {
+              "width": 1024,
+              "height": 1024,
+              "batch_size": 1
+            }
           },
           {
             "id": 3,
@@ -638,7 +733,7 @@
                 "localized_name": "model",
                 "name": "model",
                 "type": "MODEL",
-                "link": 75
+                "link": 82
               },
               {
                 "localized_name": "positive",
@@ -666,6 +761,51 @@
                   "name": "seed"
                 },
                 "link": 56
+              },
+              {
+                "localized_name": "steps",
+                "name": "steps",
+                "type": "INT",
+                "widget": {
+                  "name": "steps"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "cfg",
+                "name": "cfg",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "cfg"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "sampler_name",
+                "name": "sampler_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "sampler_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "scheduler",
+                "name": "scheduler",
+                "type": "COMBO",
+                "widget": {
+                  "name": "scheduler"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "denoise",
+                "name": "denoise",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "denoise"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -692,7 +832,16 @@
               "euler",
               "simple",
               1
-            ]
+            ],
+            "widgets_values_named": {
+              "seed": 6332,
+              "control_after_generate": "randomize",
+              "steps": 8,
+              "cfg": 1,
+              "sampler_name": "euler",
+              "scheduler": "simple",
+              "denoise": 1
+            }
           },
           {
             "id": 8,
@@ -739,8 +888,7 @@
               "Node name for S&R": "VAEDecode",
               "cnr_id": "comfy-core",
               "ver": "0.25.0"
-            },
-            "widgets_values": []
+            }
           },
           {
             "id": 10,
@@ -765,6 +913,15 @@
                   "name": "unet_name"
                 },
                 "link": 61
+              },
+              {
+                "localized_name": "weight_dtype",
+                "name": "weight_dtype",
+                "type": "COMBO",
+                "widget": {
+                  "name": "weight_dtype"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -792,7 +949,11 @@
             "widgets_values": [
               "krea2_turbo_int8_convrot.safetensors",
               "default"
-            ]
+            ],
+            "widgets_values_named": {
+              "unet_name": "krea2_turbo_int8_convrot.safetensors",
+              "weight_dtype": "default"
+            }
           },
           {
             "id": 11,
@@ -817,6 +978,25 @@
                   "name": "clip_name"
                 },
                 "link": 62
+              },
+              {
+                "localized_name": "type",
+                "name": "type",
+                "type": "COMBO",
+                "widget": {
+                  "name": "type"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "device",
+                "name": "device",
+                "shape": 7,
+                "type": "COMBO",
+                "widget": {
+                  "name": "device"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -847,7 +1027,12 @@
               "qwen3vl_4b_fp8_scaled.safetensors",
               "krea2",
               "default"
-            ]
+            ],
+            "widgets_values_named": {
+              "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+              "type": "krea2",
+              "device": "default"
+            }
           },
           {
             "id": 12,
@@ -898,7 +1083,10 @@
             },
             "widgets_values": [
               "qwen_image_vae.safetensors"
-            ]
+            ],
+            "widgets_values_named": {
+              "vae_name": "qwen_image_vae.safetensors"
+            }
           },
           {
             "id": 13,
@@ -934,20 +1122,19 @@
                 ]
               }
             ],
+            "title": "Zero Out (empty negative)",
             "properties": {
               "Node name for S&R": "ConditioningZeroOut",
               "cnr_id": "comfy-core",
               "ver": "0.25.0"
-            },
-            "widgets_values": [],
-            "title": "Zero Out (empty negative)"
+            }
           },
           {
             "id": 15,
             "type": "LoraLoaderModelOnly",
             "pos": [
-              -410,
-              -50
+              -394.84029884345944,
+              -65.15970115654056
             ],
             "size": [
               450,
@@ -1000,7 +1187,11 @@
             "widgets_values": [
               "krea2_darkbrush.safetensors",
               0.8
-            ]
+            ],
+            "widgets_values_named": {
+              "lora_name": "krea2_darkbrush.safetensors",
+              "strength_model": 0.8
+            }
           },
           {
             "id": 16,
@@ -1011,7 +1202,7 @@
             ],
             "size": [
               400,
-              412
+              456
             ],
             "flags": {},
             "order": 10,
@@ -1045,6 +1236,13 @@
                 "link": null
               },
               {
+                "localized_name": "system_prompt",
+                "name": "system_prompt",
+                "shape": 7,
+                "type": "STRING",
+                "link": null
+              },
+              {
                 "localized_name": "prompt",
                 "name": "prompt",
                 "type": "STRING",
@@ -1061,6 +1259,109 @@
                   "name": "max_length"
                 },
                 "link": 49
+              },
+              {
+                "localized_name": "Sampling Mode",
+                "name": "sampling_mode",
+                "type": "COMFY_DYNAMICCOMBO_V3",
+                "widget": {
+                  "name": "sampling_mode"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "temperature",
+                "name": "sampling_mode.temperature",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "sampling_mode.temperature"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "top_k",
+                "name": "sampling_mode.top_k",
+                "type": "INT",
+                "widget": {
+                  "name": "sampling_mode.top_k"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "top_p",
+                "name": "sampling_mode.top_p",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "sampling_mode.top_p"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "min_p",
+                "name": "sampling_mode.min_p",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "sampling_mode.min_p"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "repetition_penalty",
+                "name": "sampling_mode.repetition_penalty",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "sampling_mode.repetition_penalty"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "seed",
+                "name": "sampling_mode.seed",
+                "type": "INT",
+                "widget": {
+                  "name": "sampling_mode.seed"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "presence_penalty",
+                "name": "sampling_mode.presence_penalty",
+                "shape": 7,
+                "type": "FLOAT",
+                "widget": {
+                  "name": "sampling_mode.presence_penalty"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "thinking",
+                "name": "thinking",
+                "shape": 7,
+                "type": "BOOLEAN",
+                "widget": {
+                  "name": "thinking"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "use_default_template",
+                "name": "use_default_template",
+                "shape": 7,
+                "type": "BOOLEAN",
+                "widget": {
+                  "name": "use_default_template"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "mtp",
+                "name": "mtp",
+                "shape": 7,
+                "type": "COMBO",
+                "widget": {
+                  "name": "mtp"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -1071,6 +1372,12 @@
                 "links": [
                   33
                 ]
+              },
+              {
+                "localized_name": "thinking",
+                "name": "thinking",
+                "type": "STRING",
+                "links": null
               }
             ],
             "properties": {
@@ -1090,8 +1397,24 @@
               0,
               0,
               false,
-              true
-            ]
+              true,
+              "auto"
+            ],
+            "widgets_values_named": {
+              "prompt": "",
+              "max_length": 512,
+              "sampling_mode": "on",
+              "sampling_mode.temperature": 0.7,
+              "sampling_mode.top_k": 64,
+              "sampling_mode.top_p": 0.95,
+              "sampling_mode.min_p": 0.05,
+              "sampling_mode.repetition_penalty": 1.05,
+              "sampling_mode.seed": 0,
+              "sampling_mode.presence_penalty": 0,
+              "thinking": false,
+              "use_default_template": true,
+              "mtp": "auto"
+            }
           },
           {
             "id": 17,
@@ -1127,6 +1450,15 @@
                   "name": "string_b"
                 },
                 "link": 22
+              },
+              {
+                "localized_name": "delimiter",
+                "name": "delimiter",
+                "type": "STRING",
+                "widget": {
+                  "name": "delimiter"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -1148,7 +1480,12 @@
               "",
               "",
               ""
-            ]
+            ],
+            "widgets_values_named": {
+              "string_a": "",
+              "string_b": "",
+              "delimiter": ""
+            }
           },
           {
             "id": 18,
@@ -1164,7 +1501,17 @@
             "flags": {},
             "order": 0,
             "mode": 0,
-            "inputs": [],
+            "inputs": [
+              {
+                "localized_name": "value",
+                "name": "value",
+                "type": "STRING",
+                "widget": {
+                  "name": "value"
+                },
+                "link": null
+              }
+            ],
             "outputs": [
               {
                 "localized_name": "STRING",
@@ -1183,7 +1530,10 @@
             },
             "widgets_values": [
               "You are an expert prompt engineer for text-to-image models. Your task is to expand the user's prompt into a highly effective image-generation prompt.\n\nThink step by step about the request before writing the answer:\n- What is the subject and mood?\n- What visual styles, mediums, and lighting options would fit? Consider two or three alternatives and pick the one that best serves the caption.\n- What composition, framing, and grounded details will help the text-to-image model?\n\nThen output a single expanded prompt paragraph.\n\nFollow these rules strictly:\n1. **Faithfulness First:** Preserve all original subjects, actions, colors, and spatial relationships. Do not add new objects, props, characters, or animals unless the user clearly implies them.\n2. **Practical T2I Structure:** Write a prompt that a text-to-image model can parse cleanly. Group subjects with their own attributes and actions. Use grounded phrasing for poses, interactions, and spatial layout.\n3. **Style Planning Stays Internal:** Use your internal reasoning to choose style, medium, framing, and lighting. Do not emit planning tags or wrappers in the visible answer body.\n4. **Text Rendering:** If the user requests visible text, quotes, labels, or typography, specify the exact text clearly and wrap requested words in quotes.\n5. **Avoid Over-Specification:** Do not invent highly specific clothing, colors, materials, or scene details unless the input supports them.\n6. **Structure:** Write one cohesive paragraph after the thinking block. No bullets, JSON, or markdown.\n7. **Respect Existing Detail:** If the user's prompt is already detailed, lightly polish and finalize rather than heavily expanding — preserve their phrasing and direction.\n8. **Respect the Human Form:** Treat depictions of people with dignity. Assume clothing covers genitals and intimate anatomy.\n9. **Preserve User Medium:** When the user explicitly requests a medium (e.g. \"photo of\", \"photograph of\", \"illustration of\", \"painting of\", \"sketch of\", \"3D render of\"), honor it. Do not pivot to a different medium to avoid difficulty — match the user's stated intent.\n\nUser's Input:\n\n"
-            ]
+            ],
+            "widgets_values_named": {
+              "value": "You are an expert prompt engineer for text-to-image models. Your task is to expand the user's prompt into a highly effective image-generation prompt.\n\nThink step by step about the request before writing the answer:\n- What is the subject and mood?\n- What visual styles, mediums, and lighting options would fit? Consider two or three alternatives and pick the one that best serves the caption.\n- What composition, framing, and grounded details will help the text-to-image model?\n\nThen output a single expanded prompt paragraph.\n\nFollow these rules strictly:\n1. **Faithfulness First:** Preserve all original subjects, actions, colors, and spatial relationships. Do not add new objects, props, characters, or animals unless the user clearly implies them.\n2. **Practical T2I Structure:** Write a prompt that a text-to-image model can parse cleanly. Group subjects with their own attributes and actions. Use grounded phrasing for poses, interactions, and spatial layout.\n3. **Style Planning Stays Internal:** Use your internal reasoning to choose style, medium, framing, and lighting. Do not emit planning tags or wrappers in the visible answer body.\n4. **Text Rendering:** If the user requests visible text, quotes, labels, or typography, specify the exact text clearly and wrap requested words in quotes.\n5. **Avoid Over-Specification:** Do not invent highly specific clothing, colors, materials, or scene details unless the input supports them.\n6. **Structure:** Write one cohesive paragraph after the thinking block. No bullets, JSON, or markdown.\n7. **Respect Existing Detail:** If the user's prompt is already detailed, lightly polish and finalize rather than heavily expanding — preserve their phrasing and direction.\n8. **Respect the Human Form:** Treat depictions of people with dignity. Assume clothing covers genitals and intimate anatomy.\n9. **Preserve User Medium:** When the user explicitly requests a medium (e.g. \"photo of\", \"photograph of\", \"illustration of\", \"painting of\", \"sketch of\", \"3D render of\"), honor it. Do not pivot to a different medium to avoid difficulty — match the user's stated intent.\n\nUser's Input:\n\n"
+            }
           },
           {
             "id": 19,
@@ -1230,6 +1580,9 @@
             "widgets_values": [
               "Ultra low angle action shot, male soccer player jumping mid-air high kick, clear vivid blue sky background, forced perspective blurry foreground cleat (white & electric yellow), sharp focused upper body, maroon jersey + white shorts, fully outstretched leg striking a standard soccer ball, harsh direct sunlight, heavy dark shadows, stadium poles & treetops at frame bottom, high contrast sports photography, visible coarse film grain, dynamic movement"
             ],
+            "widgets_values_named": {
+              "value": "Ultra low angle action shot, male soccer player jumping mid-air high kick, clear vivid blue sky background, forced perspective blurry foreground cleat (white & electric yellow), sharp focused upper body, maroon jersey + white shorts, fully outstretched leg striking a standard soccer ball, harsh direct sunlight, heavy dark shadows, stadium poles & treetops at frame bottom, high contrast sports photography, visible coarse film grain, dynamic movement"
+            },
             "color": "#322",
             "bgcolor": "#533"
           },
@@ -1272,11 +1625,8 @@
               "cnr_id": "comfy-core",
               "ver": "0.25.0"
             },
-            "widgets_values": [
-              null,
-              null,
-              null
-            ]
+            "widgets_values": [],
+            "widgets_values_named": {}
           },
           {
             "id": 21,
@@ -1296,12 +1646,14 @@
               {
                 "localized_name": "on_false",
                 "name": "on_false",
+                "shape": 7,
                 "type": "STRING",
                 "link": 34
               },
               {
                 "localized_name": "on_true",
                 "name": "on_true",
+                "shape": 7,
                 "type": "STRING",
                 "link": 33
               },
@@ -1332,7 +1684,10 @@
             },
             "widgets_values": [
               false
-            ]
+            ],
+            "widgets_values_named": {
+              "switch": false
+            }
           },
           {
             "id": 24,
@@ -1346,7 +1701,7 @@
               110
             ],
             "flags": {},
-            "order": 17,
+            "order": 15,
             "mode": 0,
             "inputs": [
               {
@@ -1377,7 +1732,10 @@
             },
             "widgets_values": [
               true
-            ]
+            ],
+            "widgets_values_named": {
+              "value": true
+            }
           },
           {
             "id": 28,
@@ -1391,7 +1749,7 @@
               190
             ],
             "flags": {},
-            "order": 4,
+            "order": 16,
             "mode": 0,
             "inputs": [
               {
@@ -1421,6 +1779,7 @@
                 ]
               }
             ],
+            "title": "CLIP Text Encode (Negative)",
             "properties": {
               "Node name for S&R": "CLIPTextEncode",
               "cnr_id": "comfy-core",
@@ -1429,9 +1788,11 @@
             "widgets_values": [
               ""
             ],
+            "widgets_values_named": {
+              "text": ""
+            },
             "color": "#322",
-            "bgcolor": "#533",
-            "title": "CLIP Text Encode (Negative)"
+            "bgcolor": "#533"
           },
           {
             "id": 54,
@@ -1445,7 +1806,7 @@
               360
             ],
             "flags": {},
-            "order": 13,
+            "order": 17,
             "mode": 0,
             "inputs": [
               {
@@ -1477,8 +1838,203 @@
             "widgets_values": [
               ""
             ],
+            "widgets_values_named": {
+              "value": ""
+            },
             "color": "#322",
             "bgcolor": "#533"
+          },
+          {
+            "id": 55,
+            "type": "LoraLoaderModelOnly",
+            "pos": [
+              -335.5684498588349,
+              -491.054114894941
+            ],
+            "size": [
+              270,
+              82
+            ],
+            "flags": {},
+            "order": 18,
+            "mode": 4,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 75
+              },
+              {
+                "localized_name": "lora_name",
+                "name": "lora_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "lora_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "strength_model",
+                "name": "strength_model",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "strength_model"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  80
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "LoraLoaderModelOnly",
+              "cnr_id": "comfy-core",
+              "ver": "0.25.0"
+            },
+            "widgets_values": [
+              "krea2_darkbrush.safetensors",
+              0.8
+            ],
+            "widgets_values_named": {
+              "lora_name": "krea2_darkbrush.safetensors",
+              "strength_model": 0.8
+            }
+          },
+          {
+            "id": 56,
+            "type": "LoraLoaderModelOnly",
+            "pos": [
+              -29.38219324365919,
+              -492.07266183954874
+            ],
+            "size": [
+              270,
+              82
+            ],
+            "flags": {},
+            "order": 19,
+            "mode": 4,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 80
+              },
+              {
+                "localized_name": "lora_name",
+                "name": "lora_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "lora_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "strength_model",
+                "name": "strength_model",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "strength_model"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  81
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "LoraLoaderModelOnly",
+              "cnr_id": "comfy-core",
+              "ver": "0.25.0"
+            },
+            "widgets_values": [
+              "krea2_darkbrush.safetensors",
+              0.8
+            ],
+            "widgets_values_named": {
+              "lora_name": "krea2_darkbrush.safetensors",
+              "strength_model": 0.8
+            }
+          },
+          {
+            "id": 57,
+            "type": "LoraLoaderModelOnly",
+            "pos": [
+              262.67101020108464,
+              -491.0780240487412
+            ],
+            "size": [
+              270,
+              82
+            ],
+            "flags": {},
+            "order": 20,
+            "mode": 4,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 81
+              },
+              {
+                "localized_name": "lora_name",
+                "name": "lora_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "lora_name"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "strength_model",
+                "name": "strength_model",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "strength_model"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  82
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "LoraLoaderModelOnly",
+              "cnr_id": "comfy-core",
+              "ver": "0.25.0"
+            },
+            "widgets_values": [
+              "krea2_darkbrush.safetensors",
+              0.8
+            ],
+            "widgets_values_named": {
+              "lora_name": "krea2_darkbrush.safetensors",
+              "strength_model": 0.8
+            }
           }
         ],
         "groups": [
@@ -1565,6 +2121,18 @@
             ],
             "color": "#3f789e",
             "flags": {}
+          },
+          {
+            "id": 11,
+            "title": "Additional lora",
+            "bounding": [
+              -431.9124453517706,
+              -621.6617494994152,
+              995.6313975353025,
+              247.0518040916271
+            ],
+            "color": "#3f789e",
+            "flags": {}
           }
         ],
         "links": [
@@ -1631,22 +2199,6 @@
             "target_id": 15,
             "target_slot": 0,
             "type": "MODEL"
-          },
-          {
-            "id": 18,
-            "origin_id": 11,
-            "origin_slot": 0,
-            "target_id": 16,
-            "target_slot": 0,
-            "type": "CLIP"
-          },
-          {
-            "id": 19,
-            "origin_id": 17,
-            "origin_slot": 0,
-            "target_id": 16,
-            "target_slot": 4,
-            "type": "STRING"
           },
           {
             "id": 21,
@@ -1721,14 +2273,6 @@
             "type": "BOOLEAN"
           },
           {
-            "id": 49,
-            "origin_id": -10,
-            "origin_slot": 2,
-            "target_id": 16,
-            "target_slot": 5,
-            "type": "INT"
-          },
-          {
             "id": 50,
             "origin_id": -10,
             "origin_slot": 3,
@@ -1796,7 +2340,7 @@
             "id": 75,
             "origin_id": 15,
             "origin_slot": 0,
-            "target_id": 3,
+            "target_id": 55,
             "target_slot": 0,
             "type": "MODEL"
           },
@@ -1831,6 +2375,54 @@
             "target_id": 28,
             "target_slot": 1,
             "type": "STRING"
+          },
+          {
+            "id": 80,
+            "origin_id": 55,
+            "origin_slot": 0,
+            "target_id": 56,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 81,
+            "origin_id": 56,
+            "origin_slot": 0,
+            "target_id": 57,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 82,
+            "origin_id": 57,
+            "origin_slot": 0,
+            "target_id": 3,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 18,
+            "origin_id": 11,
+            "origin_slot": 0,
+            "target_id": 16,
+            "target_slot": 0,
+            "type": "CLIP"
+          },
+          {
+            "id": 19,
+            "origin_id": 17,
+            "origin_slot": 0,
+            "target_id": 16,
+            "target_slot": 5,
+            "type": "STRING"
+          },
+          {
+            "id": 49,
+            "origin_id": -10,
+            "origin_slot": 2,
+            "target_id": 16,
+            "target_slot": 6,
+            "type": "INT"
           }
         ],
         "extra": {}
@@ -1839,13 +2431,6 @@
   },
   "config": {},
   "extra": {
-    "ds": {
-      "scale": 0.5169973789471435,
-      "offset": [
-        2510.5771428003804,
-        479.0510943465683
-      ]
-    },
     "frontendVersion": "1.45.20",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,

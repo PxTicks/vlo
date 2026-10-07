@@ -4,6 +4,7 @@ import {
   resolveWidgetInputsFromRules,
   type WorkflowInputCondition,
   type WorkflowInputValidationRule,
+  type WorkflowLoraStack,
   type WorkflowRules,
 } from "../services/workflowRules";
 import type { WorkflowInputMetadataMap } from "../pipeline/types";
@@ -351,10 +352,29 @@ const PRUNED_RULE_SECTIONS = [
   "slots",
   "pipeline",
   "media_fallbacks",
+  "lora_stacks",
 ] as const satisfies readonly (keyof WorkflowRules)[];
 
 export const PRUNED_WORKFLOW_RULE_SECTIONS: readonly string[] =
   PRUNED_RULE_SECTIONS;
+
+/**
+ * Keep the stack members the workflow still has; a stack left with none has
+ * nothing to present or pack into. Subgraph members are checked by their
+ * instance id, like every other scoped rule reference.
+ */
+function pruneLoraStacks(
+  stacks: readonly WorkflowLoraStack[] | undefined,
+  workflowNodeIds: ReadonlySet<string>,
+): WorkflowLoraStack[] {
+  return (stacks ?? []).flatMap((stack) => {
+    const nodes = stack.nodes.filter((nodeId) => {
+      const rootId = parseReferencedNodeId(nodeId);
+      return rootId !== null && workflowNodeIds.has(rootId);
+    });
+    return nodes.length > 0 ? [{ ...stack, nodes }] : [];
+  });
+}
 
 function carryUnprunedSections(
   rules: WorkflowRules,
@@ -460,6 +480,7 @@ export function pruneWorkflowRulesForWorkflows(
       (stage): stage is NonNullable<WorkflowRules["pipeline"]>[number] =>
         stage !== null,
     );
+  const loraStacks = pruneLoraStacks(rules.lora_stacks, workflowNodeIds);
 
   const referencedFrontendControlIds = new Set<string>();
   collectReferencedFrontendControlIds(
@@ -513,6 +534,7 @@ export function pruneWorkflowRulesForWorkflows(
       slots: rules.slots ?? {},
       pipeline,
       ...(mediaFallbacks.length > 0 ? { media_fallbacks: mediaFallbacks } : {}),
+      ...(loraStacks.length > 0 ? { lora_stacks: loraStacks } : {}),
     }),
   );
 }
@@ -528,6 +550,7 @@ export function hasNodeLinkedWorkflowRules(
     (rules?.rewrites?.length ?? 0) > 0 ||
     (rules?.effect_switches?.length ?? 0) > 0 ||
     (rules?.media_fallbacks?.length ?? 0) > 0 ||
+    (rules?.lora_stacks?.length ?? 0) > 0 ||
     (rules?.pipeline ?? []).some((stage) => stage.kind !== "output_assembly")
   );
 }
@@ -545,6 +568,7 @@ export function areWorkflowRulesEffectivelyEmpty(
     (rules?.effect_switches?.length ?? 0) === 0 &&
     (rules?.media_fallbacks?.length ?? 0) === 0 &&
     Object.keys(rules?.slots ?? {}).length === 0 &&
+    (rules?.lora_stacks?.length ?? 0) === 0 &&
     (rules?.pipeline?.length ?? 0) === 0
   );
 }
@@ -558,6 +582,9 @@ export interface LostRuleFragments {
   postprocessTargetCount: number;
   rewriteCount: number;
   mediaFallbackCount: number;
+  loraStackIds: string[];
+  /** `<stackId>:<nodeId>` for members a surviving stack no longer lists. */
+  loraStackMembers: string[];
   hasLoss: boolean;
 }
 
@@ -639,6 +666,29 @@ export function findLostRuleFragments(
       (nextRules?.media_fallbacks?.length ?? 0),
   );
 
+  // A lost stack falls back to independent loaders: the panel would show
+  // every bypassed member at once and stop packing, so it counts as loss.
+  // So does a lost member: pruning against a partial read keeps the stack
+  // but drops the loader, which then stops being a slot the panel offers.
+  const nextLoraStacks = new Map(
+    (nextRules?.lora_stacks ?? []).map((stack) => [
+      stack.id,
+      new Set(stack.nodes),
+    ]),
+  );
+  const loraStackIds: string[] = [];
+  const loraStackMembers: string[] = [];
+  for (const stack of previousRules?.lora_stacks ?? []) {
+    const nextMembers = nextLoraStacks.get(stack.id);
+    if (!nextMembers) {
+      loraStackIds.push(stack.id);
+      continue;
+    }
+    for (const nodeId of stack.nodes) {
+      if (!nextMembers.has(nodeId)) loraStackMembers.push(`${stack.id}:${nodeId}`);
+    }
+  }
+
   return {
     pipelineStageIds,
     nodeIds,
@@ -648,6 +698,8 @@ export function findLostRuleFragments(
     postprocessTargetCount,
     rewriteCount,
     mediaFallbackCount,
+    loraStackIds,
+    loraStackMembers,
     hasLoss:
       pipelineStageIds.length > 0 ||
       nodeIds.length > 0 ||
@@ -656,7 +708,9 @@ export function findLostRuleFragments(
       effectSwitchCaseCount > 0 ||
       postprocessTargetCount > 0 ||
       rewriteCount > 0 ||
-      mediaFallbackCount > 0,
+      mediaFallbackCount > 0 ||
+      loraStackIds.length > 0 ||
+      loraStackMembers.length > 0,
   };
 }
 

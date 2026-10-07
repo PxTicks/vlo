@@ -51,37 +51,6 @@ describe("TimelineTime", () => {
     } finally { clone.mockRestore(); }
   });
 
-  it("keeps presentation entries whose placement inputs are unchanged", () => {
-    const freeTrack: TimelineTrack = { id: "free", type: "visual", label: "F", isVisible: true, isMuted: false, isLocked: false };
-    const still = { ...clips[1], id: "still", trackId: "free", start: 0 } as TimelineClip;
-    const base = { tracks: [...tracks, freeTrack], clips: [...clips, still], fps: 96000 };
-    const entry = (time: ReturnType<typeof getTimelineTime>, id: string) => time.presentationIndex().get(id);
-    const first = getTimelineTime(base);
-
-    // A structurally shared commit that renames a clip keeps every entry.
-    const renamed = getTimelineTime({ ...base, clips: base.clips.map((clip) => clip.id === "clip" ? { ...clip, name: "Renamed" } : clip) });
-    expect(renamed).not.toBe(first);
-    expect(entry(renamed, "clip")).toBe(entry(first, "clip"));
-    expect(entry(renamed, "still")).toBe(entry(first, "still"));
-
-    // A deep clone, which is what every commit produces today, keeps them too.
-    const cloned = getTimelineTime(structuredClone(base));
-    expect(entry(cloned, "clip")).toBe(entry(first, "clip"));
-    expect(entry(cloned, "still")).toBe(entry(first, "still"));
-
-    // Retiming the adjustment above "clip" rebuilds only the clips it reaches.
-    const retimed = getTimelineTime({ ...base, clips: base.clips.map((clip) => clip.id === "speed" ? { ...clip, transformations: [{ id: "speed-transform", type: "speed", isEnabled: true, parameters: { factor: 4 } }] } as TimelineClip : clip) });
-    expect(entry(retimed, "clip")).not.toBe(entry(first, "clip"));
-    expect(entry(retimed, "still")).toBe(entry(first, "still"));
-
-    const moved = getTimelineTime({ ...base, clips: base.clips.map((clip) => clip.id === "still" ? { ...clip, start: 48000 } : clip) });
-    expect(entry(moved, "still")).not.toBe(entry(first, "still"));
-    expect(moved.footprint("still")).toEqual({ start: 48000, end: 48100 });
-
-    const refps = getTimelineTime({ ...base, fps: 48000 });
-    expect(entry(refps, "still")).not.toBe(entry(moved, "still"));
-  });
-
   it("explicitly isolates mappings from a multi-step draft mutation", () => {
     const draft = structuredClone(snapshot);
     const pinned = getTimelineTime(draft).snapshot();

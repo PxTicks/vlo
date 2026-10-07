@@ -333,6 +333,7 @@ describe("workflowState rule pruning", () => {
         },
       ],
       media_fallbacks: [{ kind: "dummy", node_id: "1", input_type: "image" }],
+      lora_stacks: [{ id: "loras", nodes: ["1"] }],
     } as unknown as WorkflowRules;
 
     // Keep the fixture honest as the schema grows.
@@ -384,6 +385,31 @@ describe("workflowState rule pruning", () => {
     expect(result.rewrites).toHaveLength(1);
     expect(result.pipeline).toHaveLength(1);
   });
+
+  it("keeps only the LoRA stack members the workflow still has", () => {
+    const rules = {
+      version: 3,
+      lora_stacks: [
+        { id: "model", nodes: ["150", "missing", "12:5"], group_title: "LoRA" },
+        { id: "gone", nodes: ["missing"] },
+      ],
+    } as unknown as WorkflowRules;
+
+    const result = pruneWorkflowRulesForWorkflows(
+      [workflow({ "150": "LoraLoaderModelOnly", "12": "Subgraph" })],
+      rules,
+    );
+
+    // Scoped members are kept by their subgraph instance, like other refs.
+    expect(result.lora_stacks).toEqual([
+      { id: "model", nodes: ["150", "12:5"], group_title: "LoRA" },
+    ]);
+    expect(hasNodeLinkedWorkflowRules(result)).toBe(true);
+    expect(
+      pruneWorkflowRulesForWorkflows([workflow({ "1": "Node" })], rules)
+        .lora_stacks,
+    ).toBeUndefined();
+  });
 });
 
 describe("workflowState compatibility helpers", () => {
@@ -395,6 +421,7 @@ describe("workflowState compatibility helpers", () => {
     ["rewrites", { rewrites: [{}] }],
     ["effect switches", { effect_switches: [{ id: "s" }] }],
     ["fallbacks", { media_fallbacks: [{}] }],
+    ["LoRA stacks", { lora_stacks: [{ id: "s", nodes: ["1"] }] }],
     ["pipeline", { pipeline: [{ id: "p", kind: "mask_processing" }] }],
   ])("detects node-linked %s rules", (_name, partial) => {
     expect(
@@ -415,6 +442,7 @@ describe("workflowState compatibility helpers", () => {
   it.each([
     ["frontend controls", { frontend_controls: { control: {} } }],
     ["slots", { slots: { output: {} } }],
+    ["LoRA stacks", { lora_stacks: [{ id: "s", nodes: ["1"] }] }],
     ["pipeline", { pipeline: [{ id: "output", kind: "output_assembly" }] }],
   ])("detects non-empty %s", (_name, partial) => {
     expect(
@@ -450,6 +478,37 @@ describe("workflowState compatibility helpers", () => {
     expect(loss.mediaFallbackCount).toBe(4);
     expect(loss.hasLoss).toBe(true);
     expect(findLostRuleFragments(null, null).hasLoss).toBe(false);
+  });
+
+  it("counts a lost LoRA stack as rule loss", () => {
+    const stacked = {
+      version: 3,
+      lora_stacks: [{ id: "model", nodes: ["150", "151"] }],
+    } as unknown as WorkflowRules;
+
+    const loss = findLostRuleFragments(stacked, { version: 3 } as WorkflowRules);
+
+    expect(loss.loraStackIds).toEqual(["model"]);
+    expect(loss.hasLoss).toBe(true);
+    expect(findLostRuleFragments(stacked, stacked).hasLoss).toBe(false);
+  });
+
+  it("counts a stack shortened by a partial read as rule loss", () => {
+    const stacked = {
+      version: 3,
+      lora_stacks: [{ id: "model", nodes: ["150", "151", "152"] }],
+    } as unknown as WorkflowRules;
+    // What pruning against a read that omitted loader 151 leaves behind.
+    const shortened = pruneWorkflowRulesForWorkflows(
+      [workflow({ "150": "LoraLoaderModelOnly", "152": "LoraLoaderModelOnly" })],
+      stacked,
+    );
+
+    const loss = findLostRuleFragments(stacked, shortened);
+
+    expect(loss.loraStackIds).toEqual([]);
+    expect(loss.loraStackMembers).toEqual(["model:151"]);
+    expect(loss.hasLoss).toBe(true);
   });
 
   it("prunes output resize targets that reference a removed node", () => {

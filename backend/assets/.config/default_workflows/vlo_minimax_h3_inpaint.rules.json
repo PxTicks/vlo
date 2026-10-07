@@ -7,6 +7,14 @@
     { "id": "advanced_settings", "title": "Advanced Settings", "order": 5, "default_open": false }
   ],
 
+  "lora_stacks": [
+    {
+      "id": "model_loras",
+      "nodes": ["99", "100", "101", "102"],
+      "section_id": "lora_loaders",
+      "group_title": "LoRA"
+    }
+  ],
   "nodes": {
     "53": {
       "present": {

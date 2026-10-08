@@ -315,18 +315,20 @@ echo [INFO]  Python %PY_VER% found via %PYTHON_SOURCE%
 
 echo [INFO]  Installing npm dependencies...
 cd /d "%SCRIPT_DIR%"
-call "%NPM_CMD%" install
+:: npm ci installs exactly what the committed lockfiles pin, verifies their
+:: hashes, and fails instead of re-resolving when a lockfile is out of date.
+call "%NPM_CMD%" ci
 if %errorlevel% neq 0 (
-    call :fail "npm install failed"
+    call :fail "npm ci failed"
     goto :eof
 )
 :: Run from inside frontend rather than with --prefix: npm 10 on Windows (the
-:: vlo-managed Node's npm) otherwise records the repository root as a
+:: vlo-managed Node's npm) has recorded the repository root as a
 :: "vlo": "file:.." dependency in frontend/package.json and its lockfile.
 cd /d "%SCRIPT_DIR%frontend"
-call "%NPM_CMD%" install
+call "%NPM_CMD%" ci
 if %errorlevel% neq 0 (
-    call :fail "npm install in frontend failed"
+    call :fail "npm ci in frontend failed"
     goto :eof
 )
 cd /d "%SCRIPT_DIR%"

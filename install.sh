@@ -550,10 +550,12 @@ info "Python ${PY_VERSION} found via ${PYTHON_SOURCE}"
 
 info "Installing npm dependencies..."
 cd "$SCRIPT_DIR"
-"$NPM_CMD" install
-# Run from inside frontend rather than with --prefix, as install.bat must:
-# npm 10 on Windows records the repository root as a frontend dependency.
-(cd "$SCRIPT_DIR/frontend" && "$NPM_CMD" install)
+# npm ci installs exactly what the committed lockfiles pin, verifies their
+# hashes, and fails instead of re-resolving when a lockfile is out of date.
+# npm install would update a stale lockfile instead of failing.
+"$NPM_CMD" ci
+# Run from inside frontend rather than with --prefix, as install.bat does.
+(cd "$SCRIPT_DIR/frontend" && "$NPM_CMD" ci)
 
 # -- 3. Build frontend ------------------------------------------------
 

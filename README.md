@@ -178,9 +178,9 @@ Linux / macOS:
 git clone https://github.com/PxTicks/vlo
 cd vlo
 
-# Frontend
-npm install
-npm install --prefix frontend
+# Frontend (installs exactly the versions pinned in the lockfiles)
+npm ci
+npm ci --prefix frontend
 
 # Backend venv (recommended)
 python -m venv backend/.venv
@@ -197,9 +197,9 @@ Windows (PowerShell):
 git clone https://github.com/PxTicks/vlo
 Set-Location vlo
 
-# Frontend
-npm install
-npm install --prefix frontend
+# Frontend (installs exactly the versions pinned in the lockfiles)
+npm ci
+npm ci --prefix frontend
 
 # Backend venv (recommended)
 python -m venv backend/.venv

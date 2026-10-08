@@ -303,6 +303,9 @@ def isolated_install_marker(monkeypatch: pytest.MonkeyPatch, tmp_path_factory):
 
     marker = tmp_path_factory.mktemp("install-marker") / "install-profiles.json"
     monkeypatch.setattr(profiles, "PROFILE_MARKER_PATH", marker)
+    # One path for both, so a VLO_DATA_DIR in a developer's .env cannot bring
+    # the checkout's own installer record back in.
+    monkeypatch.setattr(profiles, "INSTALLER_MARKER_PATH", marker)
     profiles.invalidate_install_marker_cache()
     yield marker
     profiles.invalidate_install_marker_cache()

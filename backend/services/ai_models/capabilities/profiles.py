@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import shutil
 import sys
 import threading
@@ -33,6 +35,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from config import DATA_ROOT, RUNTIME_ROOT
 
 from .contract import (
     Check,
@@ -51,7 +55,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 BACKEND_ROOT = PROJECT_ROOT / "backend"
 
 #: Written by ``install.sh`` / ``install.bat`` after the optional steps run.
-PROFILE_MARKER_PATH = BACKEND_ROOT / "runtime" / "install-profiles.json"
+#: The installers know nothing of ``VLO_DATA_DIR``, so this is in the checkout.
+INSTALLER_MARKER_PATH = BACKEND_ROOT / "runtime" / "install-profiles.json"
+#: Where the app records installs it runs itself. Mutable state follows
+#: ``VLO_DATA_DIR``, so an application folder that is not writable still works.
+#: Without ``VLO_DATA_DIR`` this is the installer's file.
+PROFILE_MARKER_PATH = RUNTIME_ROOT / "install-profiles.json"
 
 #: Where to send someone who has no ``uv`` at all.
 UV_INSTALL_DOCS = "https://docs.astral.sh/uv/getting-started/installation/"
@@ -242,7 +251,7 @@ class InstallMarker:
 _EMPTY_MARKER = InstallMarker(recorded_at=None, profiles={})
 
 _MARKER_LOCK = threading.Lock()
-_MARKER_CACHE: tuple[tuple[int, int] | None, InstallMarker] | None = None
+_MARKER_CACHE: tuple[tuple[str, int, int] | None, InstallMarker] | None = None
 
 
 def _parse_timestamp(raw: object) -> datetime | None:
@@ -314,8 +323,29 @@ def _parse_marker(payload: object) -> InstallMarker:
     )
 
 
+def current_marker_path() -> Path:
+    """The marker to read: whichever of the two was written last.
+
+    Each file is a whole-install snapshot, and an in-app install merges onto
+    the one it read, so the newer file holds what a single shared marker
+    would: a rerun of the installer replaces earlier in-app records, exactly
+    as its whole-run write does when there is only one file.
+    """
+
+    if DATA_ROOT is None or PROFILE_MARKER_PATH == INSTALLER_MARKER_PATH:
+        return PROFILE_MARKER_PATH
+    written: list[tuple[int, Path]] = []
+    for path in (PROFILE_MARKER_PATH, INSTALLER_MARKER_PATH):
+        try:
+            written.append((path.stat().st_mtime_ns, path))
+        except OSError:
+            continue
+    # max keeps the first of equal times, so the app's own record wins a tie.
+    return max(written, key=lambda entry: entry[0])[1] if written else PROFILE_MARKER_PATH
+
+
 def read_install_marker() -> InstallMarker:
-    """The installer's marker, cached on the file's identity and mtime.
+    """The current marker, cached on the file's path, mtime and size.
 
     Missing, unreadable, or malformed markers all read as "no record" — the
     marker adds evidence when present and must never be able to remove any.
@@ -323,9 +353,10 @@ def read_install_marker() -> InstallMarker:
 
     global _MARKER_CACHE
 
+    marker_path = current_marker_path()
     try:
-        stat = PROFILE_MARKER_PATH.stat()
-        stamp: tuple[int, int] | None = (stat.st_mtime_ns, stat.st_size)
+        stat = marker_path.stat()
+        stamp: tuple[str, int, int] | None = (str(marker_path), stat.st_mtime_ns, stat.st_size)
     except OSError:
         stamp = None
 
@@ -339,7 +370,7 @@ def read_install_marker() -> InstallMarker:
     else:
         try:
             marker = _parse_marker(
-                json.loads(PROFILE_MARKER_PATH.read_text(encoding="utf-8"))
+                json.loads(marker_path.read_text(encoding="utf-8"))
             )
         except (OSError, ValueError):
             marker = _EMPTY_MARKER
@@ -408,8 +439,58 @@ def _safe_resolve(path: Path) -> Path | None:
         return None
 
 
-def _quote(command: str) -> str:
-    return f'"{command}"' if " " in command else command
+def command_shell() -> str:
+    """The shell the pasteable commands are written for.
+
+    POSIX ``sh`` on Linux and macOS; Command Prompt on Windows. PowerShell is
+    not supported yet: it needs ``&`` to run a quoted program, and Windows
+    PowerShell 5.1 has no ``&&``.
+    """
+
+    return "cmd" if os.name == "nt" else "sh"
+
+
+#: Arguments Command Prompt passes through unquoted.
+_CMD_SAFE = re.compile(r"[\w.:\\/-]+")
+
+
+def _shell_quote(argument: str) -> str:
+    """One argument, quoted so :func:`command_shell` passes it on unchanged.
+
+    Every argument goes through here, not only paths with spaces: an
+    apostrophe, ``$`` or backtick in a folder name, or the ``>`` in a version
+    specifier, would otherwise be read by the shell rather than passed on.
+    """
+
+    if command_shell() == "sh":
+        return shlex.quote(argument)
+    # Double quotes protect spaces and & | < > ^ ( ), and a Windows path cannot
+    # contain a double quote. ``%`` still expands inside them and has no
+    # interactive escape, so a folder named like %VARIABLE% is unsupported.
+    return argument if _CMD_SAFE.fullmatch(argument) else f'"{argument}"'
+
+
+def _from_app_folder(command: str) -> str:
+    """A command whose application paths resolve wherever it is pasted.
+
+    By default the documented form is run from the checkout. With
+    ``VLO_DATA_DIR`` set, user state lives elsewhere and nothing ties the
+    user's shell to the application folder, so the command moves there first. Naming
+    the files in full instead would break: uv splits an ``--overrides`` value
+    at whitespace, so an absolute path under a folder with a space cannot work.
+    The in-app installer runs from the same folder for the same reason.
+    """
+
+    if DATA_ROOT is None:
+        return command
+    # Command Prompt's cd changes the drive only with /d.
+    cd = "cd /d" if command_shell() == "cmd" else "cd"
+    return f"{cd} {_shell_quote(str(PROJECT_ROOT))} && {command}"
+
+
+def _inside_app(path: str) -> bool:
+    resolved = _safe_resolve(Path(path))
+    return resolved is not None and resolved.is_relative_to(PROJECT_ROOT.resolve())
 
 
 def backend_python() -> str:
@@ -491,8 +572,11 @@ def uv_executable() -> str | None:
     whose name really does begin with a quote.
     """
 
-    if _find_on_path("uv"):
-        return "uv"
+    found = _find_on_path("uv")
+    if found:
+        # A uv inside the application folder (a launcher can put one on the
+        # backend's PATH) is not on the user's shell PATH.
+        return found if _inside_app(found) else "uv"
 
     recorded = read_install_marker().uv_path
     if recorded and Path(recorded).is_file() and os.access(recorded, os.X_OK):
@@ -509,7 +593,7 @@ def uv_command() -> str | None:
     """:func:`uv_executable`, quoted for a command line the user can paste."""
 
     executable = uv_executable()
-    return None if executable is None else _quote(executable)
+    return None if executable is None else _shell_quote(executable)
 
 
 def install_command(profile: CapabilityProfile, *, uv: str | None) -> str | None:
@@ -518,11 +602,11 @@ def install_command(profile: CapabilityProfile, *, uv: str | None) -> str | None
     if profile.requirements is None:
         return None
     overrides = (
-        f"--overrides {profile.overrides} " if profile.overrides else ""
+        f"--overrides {_shell_quote(profile.overrides)} " if profile.overrides else ""
     )
-    return (
-        f"{uv or 'uv'} pip install --python {backend_python()} "
-        f"{overrides}-r {profile.requirements}"
+    return _from_app_folder(
+        f"{uv or 'uv'} pip install --python {_shell_quote(backend_python())} "
+        f"{overrides}-r {_shell_quote(profile.requirements)}"
     )
 
 
@@ -549,6 +633,7 @@ def install_remediation(profile_id: str) -> Remediation | None:
             summary=(
                 f"Install uv, then install {profile.label} into the backend "
                 f"virtual environment from {profile.requirements}"
+                + ("" if DATA_ROOT is None else f" in {PROJECT_ROOT}")
             ),
             url=UV_INSTALL_DOCS,
             requires_restart=True,
@@ -584,7 +669,10 @@ def package_remediation(summary: str, target: str) -> Remediation:
             requires_restart=True,
         )
 
-    command = f"{uv} pip install --python {backend_python()} {target}"
+    command = _from_app_folder(
+        f"{uv} pip install --python {_shell_quote(backend_python())} "
+        f"{_shell_quote(target)}"
+    )
     return Remediation(
         kind=RemediationKind.COMMAND,
         summary=summary,
@@ -643,7 +731,7 @@ def describe_profiles() -> dict[str, Any]:
     marker = read_install_marker()
     uv = uv_command()
     return {
-        "markerPath": _project_relative(PROFILE_MARKER_PATH),
+        "markerPath": _project_relative(current_marker_path()),
         "markerPresent": marker.recorded_at is not None or bool(marker.profiles),
         "recordedAt": (
             iso_timestamp(marker.recorded_at)
@@ -742,7 +830,7 @@ def record_profile_install(
 
     target = path or PROFILE_MARKER_PATH
     try:
-        existing = json.loads(target.read_text(encoding="utf-8"))
+        existing = json.loads((path or current_marker_path()).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         existing = None
     payload: dict[str, Any] = existing if isinstance(existing, dict) else {}

@@ -98,7 +98,7 @@ WORKFLOW_MENU_CONFIG_PATH = (
     Path(__file__).parent.parent / "assets" / ".config" / "workflow_menu.json"
 )
 CUSTOM_WORKFLOW_MENU_PATH = (
-    Path(__file__).parent.parent / "assets" / "workflows" / "workflow_menu.json"
+    WORKFLOWS_DIR / "workflow_menu.json"
 )
 WORKFLOW_MENU_ID = "generation.workflows"
 WORKFLOW_MEDIA_FALLBACK_SPECS: dict[str, dict[str, Any]] = {

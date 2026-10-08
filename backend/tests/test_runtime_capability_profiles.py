@@ -83,7 +83,7 @@ def test_install_remediation_is_the_documented_command_when_uv_is_on_path(
     assert remediation is not None
     assert remediation.kind is RemediationKind.COMMAND
     assert remediation.command == (
-        f"uv pip install --python {backend_python()} "
+        f"uv pip install --python {profiles._shell_quote(backend_python())} "
         "--overrides backend/overrides-sam-audio.txt "
         "-r backend/requirements-sam-audio.txt"
     )
@@ -113,7 +113,7 @@ def test_install_remediation_quotes_the_recorded_uv_when_it_is_not_on_path(
     assert remediation is not None
     assert remediation.kind is RemediationKind.COMMAND
     assert remediation.command is not None
-    assert remediation.command.startswith(f'"{recorded}" pip install')
+    assert remediation.command.startswith(f"{profiles._shell_quote(str(recorded))} pip install")
     assert remediation.command.endswith("-r backend/requirements-sam2.txt")
 
 
@@ -178,7 +178,7 @@ def test_the_command_targets_a_conda_environment_it_is_running_in(
 
     assert remediation is not None
     assert remediation.command == (
-        f"uv pip install --python {executable} "
+        f"uv pip install --python {profiles._shell_quote(str(executable))} "
         "--overrides backend/overrides-sam-audio.txt "
         "-r backend/requirements-sam-audio.txt"
     )
@@ -200,6 +200,118 @@ def test_the_command_targets_a_system_interpreter_it_is_running_in(
     # or madmom would install somewhere the backend cannot see it.
     ad_hoc = package_remediation("Install madmom", "madmom")
     assert str(executable) in (ad_hoc.command or "")
+
+
+def test_a_portable_command_runs_from_the_app_folder_with_the_bundled_uv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # The portable launcher puts its own uv on the backend's PATH, keeps the
+    # interpreter in the data folder (on macOS, under "Application Support")
+    # and leaves the app wherever the download was extracted. None of those is
+    # on the user's shell PATH or working directory, and each may have spaces.
+    app = tmp_path / "Vlo app"
+    _prefix, executable = _fake_interpreter(tmp_path / "Application Support", "venv")
+    bundled_uv = app / "tools" / "uv"
+    monkeypatch.setattr(profiles, "PROJECT_ROOT", app)
+    monkeypatch.setattr(profiles, "DATA_ROOT", tmp_path / "Application Support")
+    monkeypatch.setattr(sys, "executable", str(executable))
+    monkeypatch.setattr(profiles, "_find_on_path", lambda name: str(app / "tools" / name))
+    # The Command Prompt form has its own test below.
+    monkeypatch.setattr(profiles, "command_shell", lambda: "sh")
+
+    # The install runner gets the path unquoted: argv is not a shell.
+    assert profiles.uv_executable() == str(bundled_uv)
+    # The app paths stay relative behind a cd: uv splits an --overrides value
+    # at whitespace, so an absolute path under "Vlo app" could never work.
+    assert install_remediation(SAM_AUDIO_PROFILE_ID).command == (
+        f"cd '{app}' && '{bundled_uv}' pip install --python '{executable}' "
+        "--overrides backend/overrides-sam-audio.txt "
+        "-r backend/requirements-sam-audio.txt"
+    )
+    # A single package needs no app files, but the interpreter path may still
+    # be relative to the app, so this command moves there too.
+    assert package_remediation("Install madmom", "madmom").command == (
+        f"cd '{app}' && '{bundled_uv}' pip install --python '{executable}' madmom"
+    )
+
+
+def _portable_layout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str
+) -> tuple[Path, Path, Path]:
+    """A portable app folder and data folder, both under ``name``."""
+
+    app = tmp_path / name / "app"
+    data = tmp_path / name / "data"
+    _prefix, executable = _fake_interpreter(data, "venv")
+    bundled_uv = app / "tools" / ("uv.exe" if os.name == "nt" else "uv")
+    bundled_uv.parent.mkdir(parents=True)
+    monkeypatch.setattr(profiles, "PROJECT_ROOT", app)
+    monkeypatch.setattr(profiles, "DATA_ROOT", data)
+    monkeypatch.setattr(sys, "executable", str(executable))
+    monkeypatch.setattr(profiles, "_find_on_path", lambda name: str(bundled_uv))
+    return app, executable, bundled_uv
+
+
+@pytest.mark.skipif(os.name == "nt", reason="runs the commands in POSIX sh")
+def test_pasted_commands_survive_shell_metacharacters_in_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Each of these characters changes how sh reads an unquoted or
+    # double-quoted word; the folder name is legal on Linux and macOS.
+    app, executable, bundled_uv = _portable_layout(
+        monkeypatch, tmp_path, """O'Brien $HOME `true` & "co" """
+    )
+    log = tmp_path / "uv-argv"
+    bundled_uv.write_text(f'#!/bin/sh\npwd -P > "{log}.cwd"\nprintf "%s\\n" "$@" > "{log}"\n')
+    bundled_uv.chmod(0o755)
+
+    def run(command: str | None) -> list[str]:
+        assert command is not None
+        subprocess.run(["sh", "-c", command], cwd=tmp_path, check=True, timeout=10)
+        return log.read_text().splitlines()
+
+    assert run(install_remediation(SAM_AUDIO_PROFILE_ID).command) == [
+        "pip", "install", "--python", str(executable),
+        "--overrides", "backend/overrides-sam-audio.txt",
+        "-r", "backend/requirements-sam-audio.txt",
+    ]
+    # The relative files resolve because the command moved into the app.
+    assert Path(f"{log}.cwd").read_text().strip() == str(app.resolve())
+    # A version specifier is one argument, not a redirect to a file "=1.0".
+    target = run(package_remediation("Install the tracker", "acme-tracker>=1.0").command)
+    assert target[-1] == "acme-tracker>=1.0"
+    assert not (tmp_path / "=1.0").exists()
+
+
+def test_windows_commands_are_written_for_command_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Command Prompt's cd changes the drive only with /d, and it reads quotes,
+    # not apostrophes. PowerShell is not a supported target yet.
+    monkeypatch.setattr(profiles, "command_shell", lambda: "cmd")
+    app, executable, bundled_uv = _portable_layout(monkeypatch, tmp_path, "Vlo & co")
+
+    assert install_remediation(SAM_AUDIO_PROFILE_ID).command == (
+        f'cd /d "{app}" && "{bundled_uv}" pip install --python "{executable}" '
+        "--overrides backend/overrides-sam-audio.txt "
+        "-r backend/requirements-sam-audio.txt"
+    )
+    assert package_remediation("Install the tracker", "acme-tracker>=1.0").command == (
+        f'cd /d "{app}" && "{bundled_uv}" pip install --python "{executable}" "acme-tracker>=1.0"'
+    )
+
+
+def test_a_uv_outside_the_application_keeps_the_short_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(profiles, "PROJECT_ROOT", tmp_path / "Vlo app")
+    monkeypatch.setattr(profiles, "_find_on_path", lambda name: f"/usr/bin/{name}")
+
+    assert profiles.uv_executable() == "uv"
 
 
 def test_an_interpreter_inside_the_repository_stays_pasteable(
@@ -853,6 +965,43 @@ def test_the_marker_install_sh_writes_is_one_this_module_can_read(
     assert marker.record(SAM_AUDIO_PROFILE_ID).status == "installed"
     assert marker.record(BASE_PROFILE_ID).status == "installed"
     assert capability_was_requested("sam2") is True
+
+
+def test_with_a_data_dir_in_app_installs_record_outside_the_app_folder(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # The installers write into the checkout; with VLO_DATA_DIR the app writes
+    # into the data folder, so an app folder it cannot write to still works.
+    installer_marker = tmp_path / "app" / "backend" / "runtime" / "install-profiles.json"
+    app_marker = tmp_path / "data" / "runtime" / "install-profiles.json"
+    write_install_marker(
+        {SAM2_PROFILE_ID: "failed", SAM_AUDIO_PROFILE_ID: "installed"},
+        installer="install.sh",
+        path=installer_marker,
+    )
+    monkeypatch.setattr(profiles, "DATA_ROOT", tmp_path / "data")
+    monkeypatch.setattr(profiles, "INSTALLER_MARKER_PATH", installer_marker)
+    monkeypatch.setattr(profiles, "PROFILE_MARKER_PATH", app_marker)
+    installer_marker.parent.chmod(0o555)
+    try:
+        written = profiles.record_profile_install(SAM2_PROFILE_ID, status="installed")
+    finally:
+        installer_marker.parent.chmod(0o755)
+
+    assert written == app_marker
+    marker = read_install_marker()
+    # The in-app record merges onto the installer's, keeping its other outcomes.
+    assert marker.record(SAM2_PROFILE_ID).status == "installed"
+    assert marker.record(SAM_AUDIO_PROFILE_ID).status == "installed"
+
+    # Rerunning the installer replaces earlier in-app records, as it would if
+    # both wrote one file.
+    write_install_marker({SAM2_PROFILE_ID: "failed"}, installer="install.sh", path=installer_marker)
+    later = app_marker.stat().st_mtime_ns + 1_000_000_000
+    os.utime(installer_marker, ns=(later, later))
+    assert profiles.current_marker_path() == installer_marker
+    assert read_install_marker().record(SAM2_PROFILE_ID).status == "failed"
 
 
 def test_install_sh_records_declined_profiles_as_not_requested(

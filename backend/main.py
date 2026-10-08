@@ -159,7 +159,7 @@ app.include_router(app_lifecycle_router)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-PROJECTS_DIR = BASE_DIR / "projects"
+PROJECTS_DIR = PROJECTS_ROOT
 FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
 FRONTEND_INDEX_FILE = FRONTEND_DIST_DIR / "index.html"
 

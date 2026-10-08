@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from config import USER_ASSETS_ROOT
 from services.runtime_settings import get_workflow_mode
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
-WORKFLOWS_DIR = _BACKEND_ROOT / "assets" / "workflows"
+WORKFLOWS_DIR = USER_ASSETS_ROOT / "workflows"
 DEFAULT_WORKFLOWS_DIR = _BACKEND_ROOT / "assets" / ".config" / "default_workflows"
 HIGH_VRAM_WORKFLOWS_DIR = _BACKEND_ROOT / "assets" / ".config" / "high_vram_workflows"
 

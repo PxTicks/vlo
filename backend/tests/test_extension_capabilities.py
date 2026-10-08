@@ -25,7 +25,7 @@ from services.ai_models.capabilities import (
     get_provider,
     list_capability_ids,
 )
-from services.ai_models.capabilities.profiles import backend_python
+from services.ai_models.capabilities.profiles import _shell_quote, backend_python
 from services.extensions.capabilities import (
     ExtensionCapabilityError,
     ExtensionCapabilityRegistrar,
@@ -258,7 +258,9 @@ def test_a_missing_package_blocks_rather_than_disappearing(
     )
     assert package.remediation is not None
     assert package.remediation.command == (
-        f"uv pip install --python {backend_python()} acme-tracker>=1.0"
+        # Quoted: unquoted, the shell would read ">=1.0" as a redirect.
+        f"uv pip install --python {_shell_quote(backend_python())} "
+        f"{_shell_quote('acme-tracker>=1.0')}"
     )
 
 

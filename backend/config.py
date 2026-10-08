@@ -7,11 +7,15 @@ try:
 except ImportError:
     pass
 
-# This sets the root 'projects' folder relative to this backend directory
-# Adjust .parent.parent if you want it outside the backend folder
-PROJECTS_ROOT = Path(__file__).parent.parent / "projects"
-RUNTIME_ROOT = Path(__file__).parent.parent / "backend" / "runtime"
-EXTENSIONS_HOME = Path(__file__).parent.parent / "extensions"
+# Packaged installs keep mutable state outside the application. Source installs
+# retain their existing paths unless they explicitly opt into VLO_DATA_DIR.
+APP_ROOT = Path(__file__).resolve().parent.parent
+_data_dir = os.environ.get("VLO_DATA_DIR", "").strip()
+DATA_ROOT = Path(_data_dir).expanduser().resolve() if _data_dir else None
+PROJECTS_ROOT = (DATA_ROOT or APP_ROOT) / "projects"
+RUNTIME_ROOT = DATA_ROOT / "runtime" if DATA_ROOT else APP_ROOT / "backend" / "runtime"
+USER_ASSETS_ROOT = DATA_ROOT / "assets" if DATA_ROOT else APP_ROOT / "backend" / "assets"
+EXTENSIONS_HOME = (DATA_ROOT or APP_ROOT) / "extensions"
 EXTENSIONS_ROOT = Path(
     os.environ.get(
         "VLO_EXTENSIONS_ROOT",
@@ -26,7 +30,7 @@ EXTENSION_STATE_DIR = Path(
 ).expanduser().resolve()
 
 # Ensure the root projects directory exists
-PROJECTS_ROOT.mkdir(exist_ok=True)
+PROJECTS_ROOT.mkdir(parents=True, exist_ok=True)
 RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
 
 # ComfyUI configuration
@@ -72,7 +76,7 @@ SAM_AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 SAM_AUDIO_MODEL_DIR = Path(
     os.environ.get(
         "SAM_AUDIO_MODEL_DIR",
-        str(Path(__file__).parent / "assets" / "models" / "sam_audio"),
+        str(USER_ASSETS_ROOT / "models" / "sam_audio"),
     )
 )
 SAM_AUDIO_MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -93,8 +97,10 @@ BEATTHIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Steer Beat This! / torch.hub auto-downloads into our cache dir.
 os.environ.setdefault("TORCH_HOME", str(BEATTHIS_CACHE_DIR / "torch"))
 
-SAM2_SEARCH_PATHS: list[Path] = [Path(__file__).parent / "assets" / "models" / "sams"]
-EXTRA_MODEL_PATHS_FILE = Path(__file__).parent.parent / "extra_model_paths.yaml"
+SAM2_SEARCH_PATHS: list[Path] = [USER_ASSETS_ROOT / "models" / "sams"]
+# User configuration, so it moves with the data folder: a portable update
+# replaces the application folder wholesale.
+EXTRA_MODEL_PATHS_FILE = (DATA_ROOT or APP_ROOT) / "extra_model_paths.yaml"
 
 if EXTRA_MODEL_PATHS_FILE.exists():
     try:

@@ -8,9 +8,9 @@ nodes.  Discovery logic lives in ``node_discovery``; param-level parsing
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
+from config import USER_ASSETS_ROOT
 from services.workflow_rules.node_discovery import (
     NodePolicy,
     WIDGETS_MODE_ALL,
@@ -138,9 +138,7 @@ def _build_fallback_widget_entries(
     return result
 
 
-OBJECT_INFO_PATH = (
-    Path(__file__).parent.parent.parent / "assets" / ".config" / "object_info.json"
-)
+OBJECT_INFO_PATH = USER_ASSETS_ROOT / ".config" / "object_info.json"
 
 _object_info_cache: dict[str, Any] | None = None
 

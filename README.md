@@ -58,20 +58,10 @@ Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, 
 - Color grading
 - Transitions (dissolve, slide in etc.)
 
-## Changelog (v0.3.0)
+## Releases
 
-- New Live ComfyUI bridge, allows asset sharing and live media capture
-- Sam-audio for ai-driven stem separation
-- New workflows, including Minimax workflows.
-- Composite clips and subtimelines
-- Extension SDK
-- Unified backend and ComfyUI queuing.
-- Adjustment Clips
-- Color grading
-- New frame-graph renderer: live preview and export use the same render plan
-- Managed installs for ComfyUI, SAM2, Sam-Audio etc.
-- Transitions
-
+See the [latest release](https://github.com/PxTicks/vlo/releases/latest) for
+release notes, and [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## What's next?
 v0.4.0 will have a new graph-data model for efficient resource management and parameter sharing (e.g. of masks between clips), as well as graph-based shader execution to enhance the transformations and color grading features (think Davinci Resolve's node-based color page). To make proper use of these, a per-clip workspace mode will be introduced.

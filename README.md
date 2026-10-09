@@ -31,6 +31,8 @@ https://github.com/PxTicks/vlo/releases/download/v0.3.0/color_grade.png)
 ### Demo
 A short trailer for vlo made within the app itself: https://www.youtube.com/watch?v=G7HgMuUyfS0
 
+An example video + tutorial: https://www.youtube.com/watch?v=pNBmo5eYRYc
+
 ## IMPORTANT
 
 Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, but other Chromium browsers (e.g. Opera) may also function. The are two fundamental reasons for this limitation.

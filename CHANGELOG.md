@@ -2,7 +2,7 @@
 
 Notable changes to VLO are documented here.
 
-## 0.3.1 (Unreleased)
+## 0.3.1
 
 ### Added
 

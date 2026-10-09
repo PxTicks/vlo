@@ -1,6 +1,6 @@
 [project]
 name = "vlo-backend"
-version = "0.3.0"
+version = "0.3.1"
 description = "vlo video editor backend"
 requires-python = ">=3.10"
 dependencies = [

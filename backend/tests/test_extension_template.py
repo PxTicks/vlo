@@ -767,7 +767,7 @@ def test_trusted_host_fixture_builds_and_cleans_backend_hook_through_approval(
         if route.path
         == "/app/extensions/example.trusted-host-access/api/host-version"
     )
-    assert version_route.endpoint()["vloVersion"] == "0.3.0"
+    assert version_route.endpoint()["vloVersion"] == "0.3.1"
 
     assert asyncio.run(runtime.stop()) == ()
     assert tuple(extension_logger.filters) == original_filters

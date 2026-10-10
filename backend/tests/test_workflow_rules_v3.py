@@ -156,6 +156,36 @@ def test_vace_inpaint_client_target_aspect_ratio_accepts_frontend_submission():
     )
 
 
+@pytest.mark.parametrize("dilation", [0, 0.75, 1, 3, 3.5])
+def test_mask_crop_padding_accepts_custom_values_beyond_sidecar_slider_bounds(dilation):
+    rules_model, _ = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "vlo_VACE_inpaint.json",
+    )
+    resolved, warnings = resolve_pipeline_control_values_with_warnings(
+        dump_resolved_rules(rules_model),
+        workflow={},
+        pipeline_inputs={"mask_processing": {"crop_dilation": dilation}},
+    )
+    assert resolved["mask_processing"]["crop_dilation"] == dilation
+    assert warnings == []
+
+
+@pytest.mark.parametrize("dilation", [-1, float("inf"), float("nan"), True, ""])
+def test_mask_crop_padding_rejects_invalid_custom_values(dilation):
+    rules_model, _ = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "vlo_VACE_inpaint.json",
+    )
+    resolved, warnings = resolve_pipeline_control_values_with_warnings(
+        dump_resolved_rules(rules_model),
+        workflow={},
+        pipeline_inputs={"mask_processing": {"crop_dilation": dilation}},
+    )
+    assert resolved["mask_processing"]["crop_dilation"] == 0.1
+    assert any(warning["code"] == "invalid_pipeline_control_submission" for warning in warnings)
+
+
 def test_pipeline_controls_can_bind_to_input_metadata():
     resolved, warnings = resolve_pipeline_control_values_with_warnings(
         {

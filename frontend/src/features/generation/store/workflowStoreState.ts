@@ -206,9 +206,12 @@ function applyReplayPanelSettings(
     exactAspectRatio: replayState.exactAspectRatio ?? false,
     aspectRatioSelection: getReplayAspectRatioSelection(replayState),
     maskCropMode: replayMaskCropMode ?? get().maskCropMode,
+    // Custom padding has no upper bound, so a replay restores it verbatim.
     maskCropDilation:
-      typeof replayMaskCropDilation === "number"
-        ? Math.max(0, Math.min(0.5, replayMaskCropDilation))
+      typeof replayMaskCropDilation === "number" &&
+      Number.isFinite(replayMaskCropDilation) &&
+      replayMaskCropDilation >= 0
+        ? replayMaskCropDilation
         : get().maskCropDilation,
     pendingReplayPanelState: extractReplayPanelState({ replayState }),
   });
@@ -564,8 +567,10 @@ export function buildWorkflowStoreState(
     maskCropMode: "crop",
     setMaskCropMode: (maskCropMode) => set({ maskCropMode }),
     maskCropDilation: 0.1,
-    setMaskCropDilation: (dilation: number) =>
-      set({ maskCropDilation: Math.max(0, Math.min(0.5, dilation)) }),
+    setMaskCropDilation: (dilation: number) => {
+      if (!Number.isFinite(dilation) || dilation < 0) return;
+      set({ maskCropDilation: dilation });
+    },
     mediaInputs: {},
     pendingWorkflowCarryover: null,
     pendingReplayPanelState: null,

@@ -19,6 +19,8 @@ import type {
   WorkflowWidgetInput,
 } from "../../types";
 import { useGenerationSessionMount } from "../useGenerationSessionMount";
+import { createDefaultWorkflowRules } from "../../services/workflowRules";
+import { resolvePipelineWidgetInputs } from "../../services/workflowRules/pipelineWidgets";
 
 /**
  * The N2 pairing gate: the panel's own controls and the extension text-input
@@ -274,6 +276,68 @@ describe("useGenerationSessionMount", () => {
  * otherwise reach an extension as `undefined`.
  */
 describe("native and extension entry points agree", () => {
+  it.each([3, -1, Number.POSITIVE_INFINITY])(
+    "applies the same mask crop padding validation to %s",
+    (value) => {
+      const pipelineWidgets = resolvePipelineWidgetInputs(
+        createDefaultWorkflowRules({
+          pipeline: [{
+            id: "custom_mask",
+            kind: "mask_processing",
+            controls: [{
+              key: "crop_dilation",
+              value_type: "float",
+              min: 0,
+              max: 0.5,
+            }],
+          }],
+        }),
+        {
+          showTargetResolution: false,
+          currentResolution: 720,
+          showAspectRatioSelector: false,
+          aspectRatioSelection: "auto",
+          projectAspectRatio: "16:9",
+          showMaskControls: true,
+          maskCropMode: "crop",
+          maskCropDilation: 0.1,
+        },
+      );
+      const native = mountPanelSession({ widgetInputs: pipelineWidgets });
+      let nativeOutcome: GenerationTransactionResult | null = null;
+      act(() => {
+        nativeOutcome = native.result.current.commitWidgetValue(
+          "__pipeline__:custom_mask", "crop_dilation", value,
+        );
+      });
+      native.unmount();
+
+      const extension = mountPanelSession({ widgetInputs: pipelineWidgets });
+      const api = createExtensionGenerationApi(createScope());
+      let extensionOutcome: ReturnType<typeof api.transaction> | null = null;
+      act(() => {
+        extensionOutcome = api.transaction("Custom padding", (transaction) => {
+          transaction.setWidget(
+            { nodeId: "__pipeline__:custom_mask", widget: "crop_dilation" }, value,
+          );
+        });
+      });
+      expect(extension.applyWidgetValue.mock.calls)
+        .toEqual(native.applyWidgetValue.mock.calls);
+      if (value === 3) {
+        expect(nativeOutcome).toMatchObject({ ok: true, changed: true });
+        expect(extensionOutcome).toMatchObject({ ok: true, changed: true });
+        expect(extension.applyWidgetValue).toHaveBeenCalledWith(
+          "__pipeline__:custom_mask", "crop_dilation", 3,
+        );
+      } else {
+        expect(nativeOutcome).toMatchObject({ ok: false });
+        expect(extensionOutcome).toMatchObject({ ok: false });
+        expect(extension.applyWidgetValue).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("produces the same host commit and outcome for the same write", () => {
     const native = mountPanelSession();
     let nativeOutcome: GenerationTransactionResult | null = null;

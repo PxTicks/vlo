@@ -11,9 +11,6 @@ import {
   PanelSection,
   RangeSliderControl,
   SliderControl,
-  SliderFrame,
-  SliderReadoutText,
-  SliderTrack,
   type AssetBatchSlotItem,
 } from "../../panelUI";
 import {
@@ -33,6 +30,9 @@ import {
 } from "../utils/workflowInputs";
 import { getNodeBypassWidgetKey } from "../utils/nodeBypassWidgets";
 import { pairRangeWidgets } from "../utils/rangeWidgetPairs";
+import { isPipelineWidgetNodeId } from "../services/workflowRules/pipelineWidgets";
+import { MaskCropPaddingControl } from "./MaskCropPaddingControl";
+import { SliderWithCustomOverride } from "./SliderWithCustomOverride";
 import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
 import { generationTextInputClaims } from "../services/GenerationTextInputClaims";
 import { useGenerationTextInputClaim } from "../hooks/useGenerationTextInputClaim";
@@ -257,13 +257,16 @@ function isResolutionLadderWidget(widget: WorkflowWidgetInput): boolean {
   return (widget.config.resolutionLadder?.length ?? 0) > 0;
 }
 
+function parseCustomResolution(rawValue: string): number | null {
+  const resolution = Number(rawValue.trim());
+  if (!Number.isFinite(resolution) || resolution <= 0) return null;
+  return Math.round(resolution);
+}
+
 /**
  * The stepped resolution control: a slider restricted to the workflow's
  * interpolated rungs, plus a custom field for a short edge off the ladder.
- *
- * The rungs are guidance, not a whitelist — the custom field commits whatever
- * the user types (the store bounds it), and the readout marks it as custom so
- * an off-ladder value never looks like a snapped one.
+ * The store bounds whatever the custom field commits.
  */
 function ResolutionLadderRow({
   widget,
@@ -285,79 +288,32 @@ function ResolutionLadderRow({
     typeof parsed === "number" && Number.isFinite(parsed) && parsed > 0
       ? Math.round(parsed)
       : (rungs[rungs.length - 1] ?? 720);
-  const isCustom = !rungs.includes(resolution);
   const marks = useMemo(
     () => rungs.map((rung) => ({ value: rung, label: String(rung) })),
     [rungs],
   );
-  // An off-ladder value still needs a slider position, so the track stretches
-  // to cover it instead of silently clamping the thumb to an unrelated rung.
-  const min = Math.min(rungs[0] ?? resolution, resolution);
-  const max = Math.max(rungs[rungs.length - 1] ?? resolution, resolution);
 
   return (
     <Box sx={{ mb: 1.5 }}>
-      <SliderFrame
+      <SliderWithCustomOverride
         label={widget.config.label}
-        readout={
-          <SliderReadoutText>
-            {resolution}p{isCustom ? " (custom)" : ""}
-          </SliderReadoutText>
+        value={resolution}
+        min={rungs[0] ?? resolution}
+        max={rungs[rungs.length - 1] ?? resolution}
+        // Restricted values: the thumb can only land on a rung.
+        step={null}
+        marks={marks}
+        isCustom={!rungs.includes(resolution)}
+        readout={`${resolution}p`}
+        customValue={String(resolution)}
+        customAriaLabel="Custom resolution"
+        customInputProps={{ min: 1, step: 1 }}
+        parseCustom={parseCustomResolution}
+        onChange={(nextValue) =>
+          onWidgetChange(widget.nodeId, widget.param, nextValue)
         }
-      >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-            <SliderTrack
-              aria-label={widget.config.label}
-              size="small"
-              disabled={disabled}
-              value={resolution}
-              min={min}
-              max={max}
-              // Restricted values: the thumb can only land on a rung.
-              step={null}
-              marks={marks}
-              valueLabelDisplay="off"
-              onChange={(_, nextValue) => {
-                if (typeof nextValue !== "number") return;
-                onWidgetChange(widget.nodeId, widget.param, nextValue);
-              }}
-              sx={{
-                color: isCustom ? "text.disabled" : "primary.light",
-                "& .MuiSlider-markLabel": {
-                  fontSize: "0.6rem",
-                  color: "text.disabled",
-                },
-              }}
-            />
-          </Box>
-          <Box sx={{ flexShrink: 0, width: 92 }}>
-            <BufferedNumberInput
-              label="Custom"
-              disabled={disabled}
-              value={String(resolution)}
-              inputProps={{ min: 1, step: 1, "aria-label": "Custom resolution" }}
-              onCommit={(nextValue) => {
-                const nextResolution = Number(nextValue.trim());
-                if (!Number.isFinite(nextResolution) || nextResolution <= 0) {
-                  return;
-                }
-                onWidgetChange(
-                  widget.nodeId,
-                  widget.param,
-                  Math.round(nextResolution),
-                );
-              }}
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  bgcolor: "#1a1a1a",
-                  fontSize: "0.8rem",
-                },
-              }}
-            />
-          </Box>
-        </Box>
-      </SliderFrame>
+        disabled={disabled}
+      />
       <WidgetDescription widget={widget} />
     </Box>
   );
@@ -979,6 +935,22 @@ function WidgetRow({
         onWidgetChange={onWidgetChange}
         disabled={nodeBypassed}
       />
+    );
+  }
+
+  if (isPipelineWidgetNodeId(widget.nodeId) && widget.param === "crop_dilation") {
+    return (
+      <Box sx={{ mb: 1.5 }}>
+        <MaskCropPaddingControl
+          label={widget.config.label}
+          value={sliderValue}
+          disabled={nodeBypassed}
+          onChange={(nextValue) =>
+            onWidgetChange(widget.nodeId, widget.param, nextValue)
+          }
+        />
+        <WidgetDescription widget={widget} />
+      </Box>
     );
   }
 

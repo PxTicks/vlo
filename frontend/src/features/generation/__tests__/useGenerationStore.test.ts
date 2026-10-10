@@ -168,6 +168,7 @@ describe("useGenerationStore workflow rules", () => {
       postprocessingJobIds: [],
       targetResolution: 1080,
       maskCropMode: "crop",
+      maskCropDilation: 0.1,
       isWorkflowLoading: false,
       workflowLoadState: "ready",
       isWorkflowReady: true,
@@ -176,6 +177,59 @@ describe("useGenerationStore workflow rules", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("preserves custom crop padding and refuses invalid values", () => {
+    const { setMaskCropDilation } = useGenerationStore.getState();
+    setMaskCropDilation(3);
+    expect(useGenerationStore.getState().maskCropDilation).toBe(3);
+    for (const value of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      setMaskCropDilation(value);
+      expect(useGenerationStore.getState().maskCropDilation).toBe(3);
+    }
+    setMaskCropDilation(0);
+    expect(useGenerationStore.getState().maskCropDilation).toBe(0);
+  });
+
+  it("restores custom crop padding above the slider range on replay", async () => {
+    const asset = {
+      id: "generated-asset",
+      hash: "hash",
+      name: "generated.mp4",
+      type: "video" as const,
+      src: "generated.mp4",
+      createdAt: Date.now(),
+      creationMetadata: {
+        source: "generated" as const,
+        workflowName: "Original Workflow",
+        inputs: [],
+        comfyuiPrompt: {
+          "145": {
+            class_type: "LoadVideo",
+            inputs: { file: "source.mp4" },
+          },
+        },
+        replayState: { version: 2 as const, maskCropDilation: 3 },
+      },
+    };
+
+    useGenerationStore.setState({ tempWorkflow: null, availableWorkflows: [] });
+    vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([
+      { id: "match.json", name: "Matched Workflow" },
+    ]);
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      nodes: [{ id: 145, type: "LoadVideo", widgets_values: ["other.mp4"] }],
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "match.json",
+      has_sidecar: true,
+      rules: makeWorkflowRules(),
+      warnings: [],
+    });
+
+    await useGenerationStore.getState().loadWorkflowFromAssetMetadata(asset);
+
+    expect(useGenerationStore.getState().maskCropDilation).toBe(3);
   });
 
   it("inherits source workflow rules for temp workflow", async () => {

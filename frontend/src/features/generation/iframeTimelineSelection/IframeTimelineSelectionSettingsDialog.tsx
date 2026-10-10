@@ -10,12 +10,12 @@ import {
   InputLabel,
   MenuItem,
   Select,
-  Slider,
   Switch,
   TextField,
   Typography,
 } from "@mui/material";
 import { PROJECT_ASPECT_RATIOS } from "../../project";
+import { MaskCropPaddingControl } from "../components/MaskCropPaddingControl";
 import type { DerivedMaskSourceVideoTreatment } from "../pipeline/types";
 import type { IframeTimelineSelectionSettings } from "./types";
 
@@ -207,23 +207,12 @@ export function IframeTimelineSelectionSettingsDialog({
               <MenuItem value="crop">Crop to transparency</MenuItem>
             </Select>
           </FormControl>
-          <Box sx={{ px: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              Crop padding: {Math.round(settings.maskCrop.dilation * 100)}%
-            </Typography>
-            <Slider
-              value={settings.maskCrop.dilation}
-              min={0}
-              max={0.5}
-              step={0.01}
-              disabled={settings.maskCrop.mode === "full"}
-              onChange={(_, value) =>
-                updateMaskCrop({ dilation: value as number })
-              }
-              valueLabelDisplay="auto"
-              valueLabelFormat={(value) => `${Math.round(value * 100)}%`}
-            />
-          </Box>
+          <MaskCropPaddingControl
+            label="Crop padding"
+            value={settings.maskCrop.dilation}
+            disabled={settings.maskCrop.mode === "full"}
+            onChange={(dilation) => updateMaskCrop({ dilation })}
+          />
         </Box>
       </DialogContent>
       <DialogActions>

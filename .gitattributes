@@ -190,6 +190,9 @@
 /frontend/src/features/generation/draft/useGenerationInputsDraft.ts extension-surface=adapter
 /frontend/src/features/generation/components/GenerationInputsDraftFields.tsx extension-surface=adapter
 /frontend/src/features/generation/components/generationInputFields.tsx extension-surface=adapter
+/frontend/src/features/generation/components/MaskCropPaddingControl.tsx extension-surface=adapter
+/frontend/src/features/generation/components/SliderWithCustomOverride.tsx extension-surface=adapter
+/frontend/src/features/generation/services/workflowRules/pipelineWidgets.ts extension-surface=adapter
 /frontend/src/features/generation/components/generationInputFieldValues.ts extension-surface=adapter
 # The feature's front door: what the extension generation adapter may import at
 # all, the same role `panelUI/index.ts` plays for `runtime.panelUi`.

@@ -338,6 +338,15 @@ def resolve_pipeline_control_values_with_warnings(
         for control in get_stage_controls(stage):
             key = control.get("key")
             if isinstance(key, str) and key:
+                if stage.get("kind") == "mask_processing" and key == "crop_dilation":
+                    # Padding bounds used by older sidecars describe the slider,
+                    # not the custom override. Keep the numeric domain shared
+                    # with the panel and its session transactions.
+                    # TODO: move the slider range out of min/max in the rules
+                    # schema and drop this override (frontend twin in
+                    # pipelineWidgets.ts).
+                    control = {**control, "value_type": "float", "min": 0}
+                    control.pop("max", None)
                 control_lookup[(stage_id, key)] = control
 
     resolving: set[tuple[str, str]] = set()

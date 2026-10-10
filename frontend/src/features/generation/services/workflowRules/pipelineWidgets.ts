@@ -227,6 +227,15 @@ export function resolvePipelineWidgetInputs(
           cropDilationControl,
           options.maskCropDilation,
           {
+            // The 0–100% slider is guidance; session transactions must also
+            // accept the custom field's larger, nonnegative values.
+            // TODO: declare the slider range separately from the control's
+            // min/max in the rules schema (as `resolution_ladder` does for
+            // resolution), drop `max` from the sidecars, and remove this
+            // override and its backend twin in workflow_rules/pipeline.py.
+            valueType: "float",
+            min: 0,
+            max: undefined,
             hidden: options.maskCropMode === "full",
           },
         ),

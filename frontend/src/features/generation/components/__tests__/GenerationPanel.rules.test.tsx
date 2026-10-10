@@ -843,6 +843,47 @@ describe("GenerationPanel workflow rule hints", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("accepts custom mask crop padding through the generation panel", () => {
+    useGenerationStore.setState({
+      activeWorkflowRules: createDefaultWorkflowRules({
+        pipeline: [{
+          id: "custom_mask_stage",
+          kind: "mask_processing",
+          controls: [{
+            key: "crop_dilation",
+            label: "Mask crop padding",
+            value_type: "float",
+            control: "slider",
+            slider_display: "percent",
+            min: 0,
+            max: 0.5,
+            step: 0.01,
+          }],
+        }],
+      }),
+      rulesWorkflowSourceId: "wf.json",
+      derivedMaskMappings: [{
+        sourceNodeId: "1",
+        maskNodeId: "2",
+        maskParam: "file",
+        maskType: "binary",
+      }],
+      maskCropMode: "crop",
+      maskCropDilation: 0.1,
+    });
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState(),
+    );
+    render(<GenerationPanel />);
+    expect(screen.getByRole("slider", { name: "Mask crop padding" }))
+      .toHaveAttribute("aria-valuemax", "1");
+    const custom = screen.getByLabelText("Custom crop padding");
+    fireEvent.change(custom, { target: { value: "300" } });
+    fireEvent.blur(custom);
+    expect(useGenerationStore.getState().maskCropDilation).toBe(3);
+    expect(screen.getByText("300% (custom)")).toBeInTheDocument();
+  });
+
   it("shows mask processing mode and hides dilation slider in full mode", () => {
     useGenerationStore.setState({
       activeWorkflowRules: createDefaultWorkflowRules({
@@ -889,6 +930,7 @@ describe("GenerationPanel workflow rule hints", () => {
     render(<GenerationPanel />);
     expect(screen.getByText("Mask crop mode")).toBeInTheDocument();
     expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Custom crop padding")).not.toBeInTheDocument();
   });
 
   it("shows generation resolution only for workflows with aspect ratio processing", () => {

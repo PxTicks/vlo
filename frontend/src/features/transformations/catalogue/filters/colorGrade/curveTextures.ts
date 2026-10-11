@@ -70,7 +70,10 @@ export class CurveTextureBaker {
       alphaMode: "no-premultiply-alpha",
       scaleMode: "nearest",
       autoGenerateMipmaps: false,
-      autoGarbageCollect: true,
+      // Pixi's GC leaves an evicted source stale-bound; see
+      // FusedColorGradeTextures (appears fixed in PixiJS 8.19.0). `destroy()`
+      // frees this one.
+      autoGarbageCollect: false,
       label: "color-grade-curves",
     });
     this.texture = new Texture({ source: this.source });

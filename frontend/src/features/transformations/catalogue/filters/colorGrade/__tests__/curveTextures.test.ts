@@ -22,7 +22,8 @@ describe("CurveTextureBaker", () => {
   it("starts with identity value curves and flat modifier curves", () => {
     const baker = createBaker();
     expect(baker.hasActiveCurves).toBe(false);
-    expect(baker.texture.source.autoGarbageCollect).toBe(true);
+    // Pixi's GC leaves an evicted source stale-bound (frozen curves).
+    expect(baker.texture.source.autoGarbageCollect).toBe(false);
     expect(baker.texture.source.alphaMode).toBe("no-premultiply-alpha");
     const sample = 512;
     const x = sample / (CURVE_TEXTURE_WIDTH - 1);

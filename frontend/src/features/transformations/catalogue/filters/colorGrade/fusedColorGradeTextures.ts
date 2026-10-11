@@ -62,6 +62,7 @@ function lutSignature(
  * `texSubImage2D` that leaves the old-sized texture in place. The shader then
  * reads the wrong rows: curves sampled for a second grade hit zeros and black
  * out the frame. Unloading first makes the next bind create fresh storage.
+ * PixiJS 8.19.0 appears to fix this (it requires both dimensions to match).
  */
 function replaceBufferResource(
   source: BufferImageSource,
@@ -76,6 +77,16 @@ function replaceBufferResource(
   source.resize(width, height);
 }
 
+/**
+ * These sources opt out of Pixi's texture GC; `destroy()` frees them. PixiJS
+ * 8.15's GC evicts an idle source by nulling its managed-hash entry *before*
+ * `unload()`, so the texture system's unload handler never runs: the texture
+ * unit keeps its stale "bound" record and the old GL texture stays attached.
+ * The curve sampler sits idle whenever curves are flat and their editor is
+ * hidden; after a minute of that, the next bind is skipped as already bound
+ * and every later curve bake uploads to a texture the shader never samples.
+ * PixiJS 8.19.0 appears to fix this (it unloads before nulling the entry).
+ */
 export class FusedColorGradeTextures {
   public readonly parameterSource: BufferImageSource;
   public readonly curveSource: BufferImageSource;
@@ -109,7 +120,7 @@ export class FusedColorGradeTextures {
       alphaMode: "no-premultiply-alpha",
       scaleMode: "nearest",
       autoGenerateMipmaps: false,
-      autoGarbageCollect: true,
+      autoGarbageCollect: false,
       label: "fused-color-grade-parameters",
     });
     this.curveSource = new BufferImageSource({
@@ -120,7 +131,7 @@ export class FusedColorGradeTextures {
       alphaMode: "no-premultiply-alpha",
       scaleMode: "nearest",
       autoGenerateMipmaps: false,
-      autoGarbageCollect: true,
+      autoGarbageCollect: false,
       label: "fused-color-grade-curves",
     });
     this.lutSource = new BufferImageSource({
@@ -131,7 +142,7 @@ export class FusedColorGradeTextures {
       alphaMode: "no-premultiply-alpha",
       scaleMode: "nearest",
       autoGenerateMipmaps: false,
-      autoGarbageCollect: true,
+      autoGarbageCollect: false,
       label: "fused-color-grade-luts",
     });
     // A finished `.cube` load re-derives the atlas and parameter rows for the

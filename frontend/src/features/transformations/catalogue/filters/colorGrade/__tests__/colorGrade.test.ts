@@ -256,6 +256,17 @@ describe("Color Grade transformation", () => {
     vi.useRealTimers();
   });
 
+  it("keeps grade textures out of Pixi's texture GC", () => {
+    // PixiJS 8.15's GC evicts without running the texture system's unload
+    // handler, leaving the unit stale-bound: an idle curve texture then
+    // ignores every later bake and curve edits stop rendering.
+    const textures = new FusedColorGradeTextures();
+    expect(textures.parameterSource.autoGarbageCollect).toBe(false);
+    expect(textures.curveSource.autoGarbageCollect).toBe(false);
+    expect(textures.lutSource.autoGarbageCollect).toBe(false);
+    textures.destroy();
+  });
+
   it("re-allocates grade textures when the grade count changes", () => {
     // PixiJS 8.15 uploads a height-only resize as a failed texSubImage2D, so
     // a second grade would read stale rows (curves visible → black frame).

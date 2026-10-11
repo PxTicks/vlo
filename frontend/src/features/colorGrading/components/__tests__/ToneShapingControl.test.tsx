@@ -58,8 +58,8 @@ describe("ToneShapingControl", () => {
     });
     fireEvent.keyDown(highlight, { key: "ArrowDown" });
     expect(onCommitMany).toHaveBeenCalledWith({
-      kneeThreshold: 0.99,
-      kneeSoftness: 0.015,
+      kneeThreshold: expect.closeTo(1.465, 10),
+      kneeSoftness: expect.closeTo(0.015, 10),
     });
   });
 });

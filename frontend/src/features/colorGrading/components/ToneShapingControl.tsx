@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { Box, Button, Collapse, Typography } from "@mui/material";
 import { ExpandMore } from "@mui/icons-material";
 import {
@@ -14,11 +8,7 @@ import {
 import { liveParamStore } from "../../../core/liveParams/liveParamStore";
 import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import { TONE_SHAPING_PARAMETER_CONTROLS } from "../constants";
-import {
-  toneMacroUpdate,
-  type ToneMacro,
-  type ToneGraphParameters,
-} from "../utils/toneShaping";
+import type { ToneGraphParameters, ToneParameters } from "../utils/toneShaping";
 import { ToneResponseGraph } from "./ToneResponseGraph";
 
 function finiteValue(value: unknown, fallback: number): number {
@@ -52,6 +42,7 @@ export function ToneShapingControl({
   const {
     preview: previewParameters,
     commit: commitParameters,
+    cancel: cancelParameters,
   } = useLiveParameterPreviewSession({ transformId, onCommitMany });
 
   useEffect(() => {
@@ -76,8 +67,7 @@ export function ToneShapingControl({
   }, [transformId]);
 
   const preview = useCallback(
-    (macro: ToneMacro, strength: number) => {
-      const update = toneMacroUpdate(macro, strength);
+    (update: Partial<ToneParameters>) => {
       setParameters((current) => ({ ...current, ...update }));
       previewParameters(update);
     },
@@ -85,12 +75,19 @@ export function ToneShapingControl({
   );
 
   const commit = useCallback(
-    (macro: ToneMacro, strength: number) => {
-      const update = toneMacroUpdate(macro, strength);
+    (update: Partial<ToneParameters>) => {
       setParameters((current) => ({ ...current, ...update }));
       commitParameters(update);
     },
     [commitParameters],
+  );
+
+  const cancel = useCallback(
+    (start: ToneParameters) => {
+      setParameters((current) => ({ ...current, ...start }));
+      cancelParameters();
+    },
+    [cancelParameters],
   );
 
   return (
@@ -100,6 +97,7 @@ export function ToneShapingControl({
         disabled={disabled}
         onPreview={preview}
         onCommit={commit}
+        onCancel={cancel}
       />
       {renderParameterControl ? (
         <Box sx={{ mt: 0.5 }}>
@@ -124,13 +122,18 @@ export function ToneShapingControl({
           <Collapse in={showAdvanced} unmountOnExit>
             {showAdvanced ? (
               <Box id={advancedId} sx={{ display: "grid", gap: 0.75, pt: 1 }}>
-                <Typography variant="caption" sx={{ color: "text.disabled", px: 1 }}>
+                <Typography
+                  variant="caption"
+                  sx={{ color: "text.disabled", px: 1 }}
+                >
                   These are the exact values driven by the handles above.
                   Threshold and amount are inactive when their transition is
                   zero; use these controls for precise values and keyframes.
                 </Typography>
                 {TONE_SHAPING_PARAMETER_CONTROLS.map((control) => (
-                  <Box key={control.name}>{renderParameterControl(control)}</Box>
+                  <Box key={control.name}>
+                    {renderParameterControl(control)}
+                  </Box>
                 ))}
               </Box>
             ) : null}

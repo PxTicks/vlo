@@ -135,6 +135,7 @@ function SelectionSetting({
 }
 
 const RESOLUTION_LABELS: Readonly<Record<number, string>> = {
+  360: "360p",
   480: "480p",
   720: "720p",
   1080: "1080p",

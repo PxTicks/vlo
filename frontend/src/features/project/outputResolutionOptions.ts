@@ -7,10 +7,10 @@
  */
 export type ProjectOutputResolution = number;
 
-export type PresetProjectOutputResolution = 480 | 720 | 1080 | 2160;
+export type PresetProjectOutputResolution = 360 | 480 | 720 | 1080 | 2160;
 
 export const PROJECT_OUTPUT_RESOLUTIONS = [
-  480, 720, 1080, 2160,
+  360, 480, 720, 1080, 2160,
 ] as const satisfies readonly PresetProjectOutputResolution[];
 
 export const DEFAULT_PROJECT_OUTPUT_RESOLUTION: ProjectOutputResolution = 1080;

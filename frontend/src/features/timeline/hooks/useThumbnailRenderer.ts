@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { CLIP_HEIGHT } from "../constants";
 import { mediaSecondsToTickExact } from "../../renderer/utils/mediaTime";
 import { pxToTicks, ticksPerPixel } from "../../../core/time/pixelGrid";
+import type { Asset } from "../../../types/Asset";
 import type {
   AssetBackedBaseClip,
   AssetBackedTimelineClip,
@@ -32,6 +33,16 @@ function hasVideoThumbnailMetadata(metadata: ThumbnailAssetMetadata): boolean {
     Boolean(metadata.aspectRatio) &&
     metadata.firstTimestampSeconds !== undefined
   );
+}
+
+/**
+ * Prefers in-memory files: a `UrlSource` retries failed fetches forever, so a
+ * probe of a dead blob URL never settles and holds back every clip sharing it.
+ */
+function createThumbnailVideoSource(asset: Asset): BlobSource | UrlSource {
+  if (asset.proxyFile) return new BlobSource(asset.proxyFile);
+  if (asset.file) return new BlobSource(asset.file);
+  return new UrlSource(asset.src);
 }
 
 interface UseThumbnailRendererProps {
@@ -294,9 +305,7 @@ export function useThumbnailRenderer({
               clip.assetId!,
               isMetadataCurrent,
               async () => {
-                const source = hydratedVideoAsset.proxyFile
-                  ? new BlobSource(hydratedVideoAsset.proxyFile)
-                  : new UrlSource(hydratedVideoAsset.src);
+                const source = createThumbnailVideoSource(hydratedVideoAsset);
                 using input = new Input({ source, formats: ALL_FORMATS });
                 const vt = await input.getPrimaryVideoTrack();
                 if (!vt) return null;
@@ -376,9 +385,7 @@ export function useThumbnailRenderer({
             ),
           );
 
-          const source = hydratedVideoAsset.proxyFile
-            ? new BlobSource(hydratedVideoAsset.proxyFile)
-            : new UrlSource(hydratedVideoAsset.src);
+          const source = createThumbnailVideoSource(hydratedVideoAsset);
           using input = new Input({ source, formats: ALL_FORMATS });
           const vt = await input.getPrimaryVideoTrack();
           if (!vt) return;

@@ -26,9 +26,17 @@ vi.hoisted(() => {
 
 // --- Mocks ---
 
+const { openedSources } = vi.hoisted(() => ({
+  openedSources: [] as unknown[],
+}));
+
 vi.mock("mediabunny", () => {
   return {
     Input: class {
+      constructor(options: { source: unknown }) {
+        openedSources.push(options.source);
+      }
+
       getPrimaryVideoTrack() {
         return Promise.resolve({
           displayWidth: 1920,
@@ -38,8 +46,18 @@ vi.mock("mediabunny", () => {
       }
       [Symbol.dispose]() {}
     },
-    UrlSource: class {},
-    BlobSource: class {},
+    UrlSource: class {
+      url: string;
+      constructor(url: string) {
+        this.url = url;
+      }
+    },
+    BlobSource: class {
+      blob: Blob;
+      constructor(blob: Blob) {
+        this.blob = blob;
+      }
+    },
     VideoSampleSink: class {
       async *samplesAtTimestamps(timestamps: number[]) {
         for (const ts of timestamps) {
@@ -87,6 +105,7 @@ describe("ThumbnailCanvas Virtualization", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     thumbnailCacheService.clearAll();
+    openedSources.length = 0;
 
     // 1. Mock Canvas Context
     mockContext = {
@@ -405,6 +424,43 @@ describe("ThumbnailCanvas Virtualization", () => {
       firstTimestampSeconds: 0,
       probedFromProxy: true,
     });
+  });
+
+  it("reads a loaded source file rather than its blob URL before the proxy lands", async () => {
+    const file = new File(["source"], "video.mp4");
+    vi.mocked(useAsset).mockReturnValue({
+      id: "asset-1",
+      type: "video",
+      src: "blob:test.mp4",
+      file,
+    } as never);
+    const clip = {
+      id: "clip-source-file",
+      assetId: "asset-1",
+      start: 0,
+      offset: 0,
+      timelineDuration: 10 * TICKS_PER_SECOND,
+      transformedOffset: 0,
+      transformedDuration: 10 * TICKS_PER_SECOND,
+      type: "video",
+    };
+
+    render(
+      <ThumbnailCanvas
+        clip={
+          clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip
+        }
+      />,
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    // Both the metadata probe and the sample read open the source.
+    expect(openedSources.length).toBeGreaterThanOrEqual(2);
+    for (const source of openedSources) {
+      expect(source).toEqual(expect.objectContaining({ blob: file }));
+    }
   });
 
   it("pre-renders image thumbnails beyond the initial clip duration for live extension", async () => {

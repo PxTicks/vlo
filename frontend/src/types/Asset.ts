@@ -42,6 +42,13 @@ export type GeneratedCreationInput =
       timelineSelection?: TimelineSelection;
       /** Set only on the abridged index copy: the stripped selection's start tick. */
       timelineSelectionStart?: number;
+      /**
+       * The slot received a single frame captured from the selection, not the
+       * rendered range. Kept beside the selection rather than read from its
+       * `isPoint`, because the abridged index copy strips the selection body
+       * and "Send to Timeline" must still prefer a range input over a frame.
+       */
+      isFrame?: true;
       miniEditorEdit?: GeneratedMiniEditorEdit;
       /** Per-item audio inclusion for a batch reference video. */
       includeEmbeddedAudio?: boolean;

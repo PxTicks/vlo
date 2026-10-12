@@ -617,6 +617,7 @@ export function buildGeneratedCreationInputs(
           ...repeatableIdentity,
           ...itemOptions,
           kind: "timelineSelection",
+          isFrame: true,
           timelineSelection: cloneTimelineSelectionForMetadata(
             value.timelineSelection,
           ),

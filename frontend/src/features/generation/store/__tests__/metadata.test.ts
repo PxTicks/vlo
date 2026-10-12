@@ -481,6 +481,7 @@ describe("generation metadata replay helpers", () => {
       {
         nodeId: "145",
         kind: "timelineSelection",
+        isFrame: true,
         timelineSelection,
       },
     ]);
@@ -584,6 +585,10 @@ describe("generation metadata replay helpers", () => {
       kind: "timelineSelection",
       timelineSelection: audioSelection,
     });
+    // Only the captured frame is flagged; the audio range must stay eligible
+    // to place the output on "Send to Timeline".
+    expect(metadata.inputs[0]).toMatchObject({ isFrame: true });
+    expect(metadata.inputs[1]).not.toHaveProperty("isFrame");
 
     if (
       metadata.inputs[0]?.kind !== "timelineSelection" ||

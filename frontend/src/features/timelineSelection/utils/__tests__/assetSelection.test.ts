@@ -112,6 +112,79 @@ describe("getTimelineSelectionStartFromAsset", () => {
     expect(getTimelineSelectionStartFromAsset(abridged)).toBe(96);
   });
 
+  // A video inpaint fed first/last-frame guides lists the frame slots ahead of
+  // the video slot; the output spans the video, so the range must place it.
+  function createFrameAndRangeAsset(): Asset {
+    return {
+      ...createGeneratedAsset([]),
+      creationMetadata: {
+        source: "generated",
+        workflowName: "Test workflow",
+        inputs: [
+          {
+            nodeId: "last-frame-node",
+            kind: "timelineSelection",
+            isFrame: true,
+            timelineSelection: makeTimelineSelection({ start: 196, clips: [] }),
+          },
+          {
+            nodeId: "video-node",
+            kind: "timelineSelection",
+            timelineSelection: makeTimelineSelection({ start: 100, end: 200, clips: [] }),
+          },
+        ],
+      },
+    };
+  }
+
+  it("prefers a range input over an earlier frame input", () => {
+    const asset = createFrameAndRangeAsset();
+
+    expect(getTimelineSelectionStartFromAsset(asset)).toBe(100);
+    expect(getTimelineSelectionFromAsset(asset)?.anchor).toBe(100);
+  });
+
+  it("prefers the range on the abridged index copy", () => {
+    expect(
+      getTimelineSelectionStartFromAsset({
+        ...createGeneratedAsset([]),
+        creationMetadata: {
+          source: "generated",
+          workflowName: "Test workflow",
+          inputs: [
+            { nodeId: "last-frame-node", kind: "timelineSelection", isFrame: true, timelineSelectionStart: 196 },
+            { nodeId: "video-node", kind: "timelineSelection", timelineSelectionStart: 100 },
+          ],
+        },
+      }),
+    ).toBe(100);
+  });
+
+  it("recognises frames recorded before the flag from the hydrated point selection", () => {
+    const asset = createFrameAndRangeAsset();
+    if (asset.creationMetadata?.source !== "generated") throw new Error("Expected generated metadata");
+    const [frame] = asset.creationMetadata.inputs;
+    if (frame?.kind !== "timelineSelection") throw new Error("Expected a selection input");
+    delete frame.isFrame;
+
+    expect(getTimelineSelectionStartFromAsset(asset)).toBe(100);
+  });
+
+  it("falls back to a frame input when the workflow took no range", () => {
+    expect(
+      getTimelineSelectionStartFromAsset({
+        ...createGeneratedAsset([]),
+        creationMetadata: {
+          source: "generated",
+          workflowName: "Test workflow",
+          inputs: [
+            { nodeId: "first-frame-node", kind: "timelineSelection", isFrame: true, timelineSelectionStart: 48 },
+          ],
+        },
+      }),
+    ).toBe(48);
+  });
+
   it("reads the start from an abridged extracted asset", () => {
     expect(
       getTimelineSelectionStartFromAsset({

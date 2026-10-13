@@ -731,8 +731,19 @@ export function useTransformInteractionController(
         onLiveSpriteTransform?.();
         current.lastRotationParam = rotationDrag.newParamAngle;
 
-        if (hasDragMovement(DRAG_MOVE_EPSILON, rotationDrag.deltaAngle)) {
-          current.didMove = true;
+        // Pixels, like the other drags: an angle threshold would drop small
+        // turns, which need more pointer travel the farther out the handle is.
+        if (viewport) {
+          const localPos = toViewportLocal(viewport, e.global);
+          if (
+            hasDragMovement(
+              DRAG_MOVE_EPSILON,
+              localPos.x - current.startLocal.x,
+              localPos.y - current.startLocal.y,
+            )
+          ) {
+            current.didMove = true;
+          }
         }
 
         if (current.transformIds.rotation) {

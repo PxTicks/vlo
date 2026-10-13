@@ -1629,7 +1629,7 @@ describe("useTransformInteractionController", () => {
       .getState()
       .clips.find((candidate) => candidate.id === clip.id)
       ?.transformations.find((transform) => transform.type === "skew");
-    expect(skew?.parameters.x as number).toBeCloseTo(Math.atan(-5 / 1080));
+    expect(skew?.parameters.x as number).toBeCloseTo(Math.atan(-5 / 1080), 6);
   });
 
   it("scales instead of skewing when the skew transform is disabled", () => {
@@ -1803,6 +1803,45 @@ describe("useTransformInteractionController", () => {
       expect.any(Function),
     );
     notify.mockRestore();
+  });
+
+  it("saves a small rotation dragged far from the centre", () => {
+    const clip = createEdgeScaleClip("clip_rotate_small", []);
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    mockSprite.getGlobalPosition = vi.fn(() => ({ x: 0, y: 0 })) as never;
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    // 5 px of travel 1100 px out is a turn under 0.01 rad.
+    act(() => {
+      result.current.onHandlePointerDown(
+        {
+          stopPropagation: vi.fn(),
+          global: { x: 1100, y: 0 },
+          altKey: false,
+        } as unknown as FederatedPointerEvent,
+        "rot-se",
+      );
+      getStageHandler("pointermove")?.({
+        global: { x: 1100, y: 5 },
+      } as unknown as FederatedPointerEvent);
+      getStageHandler("pointerup")?.({
+        global: { x: 1100, y: 5 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const rotation = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)
+      ?.transformations.find((transform) => transform.type === "rotation");
+    expect(rotation?.parameters.angle as number).toBeCloseTo(Math.atan2(5, 1100), 6);
   });
 
   it("ignores invalid pointer starts and clips with inactive persisted paths", () => {

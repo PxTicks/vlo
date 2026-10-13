@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TimelineClip, ClipTransform } from "../../../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../../timeline";
 import { commitLayoutControlToTransforms } from "../layoutControlCommit";
+import { mediaTransformSchema } from "../../../renderContract";
 
 function createClip(transformations: ClipTransform[] = []): TimelineClip {
   return {
@@ -203,4 +204,26 @@ describe("commitLayoutControlToTransforms", () => {
       expect(result?.nextTransforms[1].keyframeTimes ?? []).toEqual([]);
     });
   });
+
+  it.each([
+    ["position", "x", 25],
+    ["skew", "x", 20],
+  ] as const)(
+    "creates a %s transform without spacer parameters, accepted for export",
+    (groupId, controlName, value) => {
+      const result = commitLayoutControlToTransforms({
+        clip: createClip([]),
+        transforms: [],
+        groupId,
+        controlName,
+        value,
+        playheadTicks: 0,
+        pointEpsilonTicks: 1,
+      });
+
+      const created = result!.nextTransforms[0];
+      expect(created.parameters).not.toHaveProperty("_");
+      expect(mediaTransformSchema.safeParse(created).success).toBe(true);
+    },
+  );
 });

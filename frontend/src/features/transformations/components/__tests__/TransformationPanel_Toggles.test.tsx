@@ -200,7 +200,7 @@ describe("TransformationPanel toggles", () => {
   });
 
   it.each([
-    ["Layout", ["position", "scale", "rotation", "fitMode"]],
+    ["Layout", ["position", "scale", "rotation", "skew", "fitMode"]],
     ["Blend", ["opacity", "blendMode"]],
   ])(
     "materializes and disables missing %s section transforms",
@@ -240,12 +240,13 @@ describe("TransformationPanel toggles", () => {
     const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
-    // The Layout toggle materialises position/scale/rotation/fitMode,
+    // The Layout toggle materialises position/scale/rotation/skew/fitMode,
     // inserted before the pre-existing dynamic filter.
     expect(typed.map((transform) => transform.type)).toEqual([
       "position",
       "scale",
       "rotation",
+      "skew",
       "fitMode",
       "filter",
     ]);
@@ -253,10 +254,10 @@ describe("TransformationPanel toggles", () => {
     // pre-existing dynamic filter remains enabled.
     expect(
       typed
-        .slice(0, 4)
+        .slice(0, 5)
         .every((transform) => transform.isEnabled === false),
     ).toBe(true);
-    expect(typed[4].isEnabled).toBe(true);
+    expect(typed[5].isEnabled).toBe(true);
   });
 
   it("shows add path choices when no position path exists and can arm recording", () => {

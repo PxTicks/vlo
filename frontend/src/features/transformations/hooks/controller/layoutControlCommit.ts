@@ -7,7 +7,7 @@ import {
   prepareLayoutKeyframeCommit,
 } from "../../utils/layoutKeyframeGroup";
 
-export type LayoutCommitGroup = "position" | "scale" | "rotation";
+export type LayoutCommitGroup = "position" | "scale" | "rotation" | "skew";
 export type LayoutCommitControl = "x" | "y" | "angle";
 
 export interface CommitLayoutControlInput {

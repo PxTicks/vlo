@@ -1,12 +1,12 @@
 /**
  * layoutKeyframeGroup.ts
  *
- * Position, scale and rotation are stored as three transforms, each with its own
+ * Position, scale, rotation and skew are stored as separate transforms, each with its own
  * `keyframeTimes`, but they are edited as one layout keyframe track: a key at a
- * time exists in all three or in none. Storage is unchanged, so saved projects
+ * time exists in all of them or in none. Storage is unchanged, so saved projects
  * load and render exactly as before; every editing path (panel commits, keyframe
  * toggles, canvas drags, timeline diamonds) routes through these helpers so the
- * three tracks stay aligned from the first edit at a time onwards.
+ * tracks stay aligned from the first edit at a time onwards.
  *
  * A transform with `keyframeTimes` but scalar parameters is "keyed and holding a
  * constant" — the same representation the commit pipeline already uses — so an
@@ -24,7 +24,12 @@ import {
 import { createAddTransform } from "../hooks/controller/transformFactory";
 import { insertTransformRespectingDefaultOrder } from "../hooks/controller/transformOrdering";
 
-export const LAYOUT_KEYFRAME_GROUP_TYPES = ["position", "scale", "rotation"] as const;
+export const LAYOUT_KEYFRAME_GROUP_TYPES = [
+  "position",
+  "scale",
+  "rotation",
+  "skew",
+] as const;
 
 const LAYOUT_TYPE_SET: ReadonlySet<string> = new Set(LAYOUT_KEYFRAME_GROUP_TYPES);
 

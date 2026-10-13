@@ -25,6 +25,7 @@ const FIRST_LAYOUT_CONTROL: Record<string, string> = {
   position: "x",
   scale: "x",
   rotation: "angle",
+  skew: "x",
 };
 
 interface UseLayoutKeyframeTrackInput {

@@ -18,6 +18,7 @@ import type {
   PositionPathParameter,
   RotationTransform,
   ScaleTransform,
+  SkewTransform,
 } from "../../../transformations";
 import { computeCommitMutation, createAddTransform, insertTransformRespectingDefaultOrder, resolveScalar } from "../../../transformations";
 import { clampedClipSourceTime, clampedClipVisualTime } from "../../../timeline/time";
@@ -36,6 +37,7 @@ import {
   unbindStagePointerListeners,
 } from "./pointerStage";
 import {
+  computeEdgeSkew,
   computeFixedHandleOffset,
   computeHandleScale,
   getAngleFromPoint,
@@ -62,6 +64,7 @@ import {
   getPositionTransform,
 } from "../../../transformations/utils/positionPathState";
 import { TrustedSpatialPathOverlayRenderer } from "../../../transformations/animation";
+import { resolvePixiSkewedScale } from "../../../transformations/catalogue/layout/layoutDefinition";
 
 const POINT_EPSILON_TICKS = 1;
 const DRAG_MOVE_EPSILON = 0.01;
@@ -74,6 +77,7 @@ type InteractionMode =
   | "translate"
   | "scale"
   | "rotate"
+  | "skew"
   | "recordPath"
   | "editPath";
 
@@ -86,7 +90,11 @@ interface InteractionState {
   startSprite: { x: number; y: number };
   startVisualScale: { x: number; y: number };
   startVisualRotation: number;
+  /** Pixi skew at drag start; equals the summed layout skew parameters. */
+  startVisualSkew: { x: number; y: number };
   startParams: { x: number; y: number; angle: number };
+  /** Skew parameters (radians) at drag start. */
+  startSkewParams: { x: number; y: number };
   /** Position parameters at drag start, for scale drags that move position. */
   startPositionParams: { x: number; y: number };
   /** Scale drags keep the side opposite the handle fixed by moving position.
@@ -94,9 +102,15 @@ interface InteractionState {
   keepOppositeSideFixed: boolean;
   baseScale: { x: number; y: number };
   initialAngle: number;
-  transformIds: { position: string | null; scale: string | null; rotation: string | null };
+  transformIds: {
+    position: string | null;
+    scale: string | null;
+    rotation: string | null;
+    skew: string | null;
+  };
   lastPositionParams: { x: number; y: number } | null;
   lastScaleParams: { x: number; y: number } | null;
+  lastSkewParams: { x: number; y: number } | null;
   lastRotationParam: number | null;
   path: PositionPathDragState;
   didMove: boolean;
@@ -114,14 +128,17 @@ function createInitialInteractionState(): InteractionState {
     startSprite: { x: 0, y: 0 },
     startVisualScale: { x: 1, y: 1 },
     startVisualRotation: 0,
+    startVisualSkew: { x: 0, y: 0 },
     startParams: { x: 0, y: 0, angle: 0 },
+    startSkewParams: { x: 0, y: 0 },
     startPositionParams: { x: 0, y: 0 },
     keepOppositeSideFixed: false,
     baseScale: { x: 1, y: 1 },
     initialAngle: 0,
-    transformIds: { position: null, scale: null, rotation: null },
+    transformIds: { position: null, scale: null, rotation: null, skew: null },
     lastPositionParams: null,
     lastScaleParams: null,
+    lastSkewParams: null,
     lastRotationParam: null,
     path: createInitialPositionPathDragState(),
     didMove: false,
@@ -190,6 +207,7 @@ export function useTransformInteractionController(
       current.handle = null;
       current.lastPositionParams = null;
       current.lastScaleParams = null;
+      current.lastSkewParams = null;
       current.lastRotationParam = null;
       current.path = createInitialPositionPathDragState();
       current.didMove = false;
@@ -368,6 +386,7 @@ export function useTransformInteractionController(
         startScale: current.startVisualScale,
         pointerDelta: { x: dx, y: dy },
         rotation: current.startVisualRotation,
+        skew: current.startVisualSkew,
         baseSize: {
           width: sprite.texture.width || 1,
           height: sprite.texture.height || 1,
@@ -400,6 +419,7 @@ export function useTransformInteractionController(
               height: sprite.texture.height || 1,
             },
             rotation: current.startVisualRotation,
+            skew: current.startVisualSkew,
             startScale: current.startVisualScale,
             nextScale: newVisualScale,
           })
@@ -422,6 +442,59 @@ export function useTransformInteractionController(
       };
     };
 
+    const computeSkewDrag = (global: { x: number; y: number }) => {
+      if (!viewport || !sprite) return null;
+      const current = interactionRef.current;
+      const localPos = toViewportLocal(viewport, global);
+      const startSkew = current.startVisualSkew;
+      // Layout scale is the Pixi scale without the skew lengthening, and it
+      // stays fixed while skewing.
+      const layoutScale = {
+        x: current.startVisualScale.x * Math.cos(startSkew.y),
+        y: current.startVisualScale.y * Math.cos(startSkew.x),
+      };
+      const pointerDelta = {
+        x: localPos.x - current.startLocal.x,
+        y: localPos.y - current.startLocal.y,
+      };
+      const skewDrag = computeEdgeSkew({
+        handle: current.handle ?? "",
+        pointerDelta,
+        rotation: current.startVisualRotation,
+        startSkew,
+        layoutScale,
+        baseSize: {
+          width: sprite.texture.width || 1,
+          height: sprite.texture.height || 1,
+        },
+      });
+      const visualScale = resolvePixiSkewedScale(
+        layoutScale.x,
+        layoutScale.y,
+        skewDrag.skew.x,
+        skewDrag.skew.y,
+      );
+
+      return {
+        pointerDelta,
+        skew: skewDrag.skew,
+        visualScale,
+        newSkewParams: {
+          x: current.startSkewParams.x + skewDrag.skew.x - startSkew.x,
+          y: current.startSkewParams.y + skewDrag.skew.y - startSkew.y,
+        },
+        positionOffset: current.keepOppositeSideFixed
+          ? skewDrag.positionOffset
+          : null,
+        newPositionParams: current.keepOppositeSideFixed
+          ? {
+              x: current.startPositionParams.x + skewDrag.positionOffset.x,
+              y: current.startPositionParams.y + skewDrag.positionOffset.y,
+            }
+          : null,
+      };
+    };
+
     const computeRotationDrag = (global: { x: number; y: number }) => {
       if (!sprite) return null;
 
@@ -434,6 +507,42 @@ export function useTransformInteractionController(
         newVisualRotation: interactionRef.current.startVisualRotation + deltaAngle,
         newParamAngle: interactionRef.current.startParams.angle + deltaAngle,
       };
+    };
+
+    /**
+     * Commit the position that keeps the opposite edge fixed during a scale or
+     * skew drag. It goes first and leaves the history step open, so the
+     * scale/skew commit that follows closes one undo step covering both.
+     */
+    const commitOppositeEdgePosition = (
+      clip: TimelineClip,
+      transforms: ClipTransform[],
+      positionParams: { x: number; y: number },
+    ): ClipTransform[] => {
+      const current = interactionRef.current;
+      const positionCommit = commitTransformControls({
+        clip,
+        transforms,
+        groupId: "position",
+        values: positionParams,
+        transformId: current.transformIds.position ?? undefined,
+        playheadTicks: playbackClock.time,
+        keyframeSourceTimeTicks: resolveSourceKeyframeTime(clip),
+        pointEpsilonTicks: POINT_EPSILON_TICKS,
+        actions: {
+          addClipTransform: addTimelineClipTransform,
+          updateClipTransform: updateTimelineClipTransform,
+          setClipTransforms: (clipId, nextTransforms) =>
+            setTimelineClipTransforms(clipId, nextTransforms, {
+              historyCoalesce: current.historyCoalesceKey
+                ? { key: current.historyCoalesceKey, end: false }
+                : undefined,
+            }),
+        },
+      });
+      if (!positionCommit) return transforms;
+      current.transformIds.position = positionCommit.transformId;
+      return positionCommit.nextTransforms;
     };
 
     const unbindStageListeners = () =>
@@ -559,6 +668,52 @@ export function useTransformInteractionController(
         if (current.transformIds.scale) {
           liveParamStore.notify(current.transformIds.scale, "x", scaleDrag.newParamX);
           liveParamStore.notify(current.transformIds.scale, "y", scaleDrag.newParamY);
+        }
+        if (current.transformIds.position && newPositionParams) {
+          liveParamStore.notify(current.transformIds.position, "x", newPositionParams.x);
+          liveParamStore.notify(current.transformIds.position, "y", newPositionParams.y);
+        }
+        return;
+      }
+
+      if (current.mode === "skew") {
+        const skewDrag = computeSkewDrag(e.global);
+        if (!skewDrag) return;
+
+        // Pixels, like the other drags: a skew change in radians is tiny for
+        // a few pixels of slide on a tall clip.
+        if (
+          hasDragMovement(
+            DRAG_MOVE_EPSILON,
+            skewDrag.pointerDelta.x,
+            skewDrag.pointerDelta.y,
+          )
+        ) {
+          current.didMove = true;
+        }
+
+        sprite.skew.set(skewDrag.skew.x, skewDrag.skew.y);
+        sprite.scale.set(skewDrag.visualScale.scaleX, skewDrag.visualScale.scaleY);
+        const { positionOffset, newPositionParams } = skewDrag;
+        if (positionOffset && newPositionParams) {
+          if (current.didMove && !current.transformIds.position) {
+            current.transformIds.position = ensurePositionTransformForLive(
+              current.clipId,
+              current.startPositionParams.x,
+            );
+          }
+          sprite.position.set(
+            current.startSprite.x + positionOffset.x,
+            current.startSprite.y + positionOffset.y,
+          );
+          current.lastPositionParams = newPositionParams;
+        }
+        onLiveSpriteTransform?.();
+        current.lastSkewParams = skewDrag.newSkewParams;
+
+        if (current.transformIds.skew) {
+          liveParamStore.notify(current.transformIds.skew, "x", skewDrag.newSkewParams.x);
+          liveParamStore.notify(current.transformIds.skew, "y", skewDrag.newSkewParams.y);
         }
         if (current.transformIds.position && newPositionParams) {
           liveParamStore.notify(current.transformIds.position, "x", newPositionParams.x);
@@ -712,6 +867,52 @@ export function useTransformInteractionController(
                 current.transformIds.position = positionCommit.transformId;
               }
             }
+          } else if (current.mode === "skew") {
+            const finalSkew = e && viewport ? computeSkewDrag(e.global) : null;
+            const finalSkewParams =
+              finalSkew !== null ? finalSkew.newSkewParams : current.lastSkewParams;
+            const finalPositionParams =
+              finalSkew !== null
+                ? finalSkew.newPositionParams
+                : current.lastPositionParams;
+
+            if (finalSkewParams) {
+              const skewBaseTransforms = finalPositionParams
+                ? commitOppositeEdgePosition(
+                    latestClip,
+                    nextTransforms,
+                    finalPositionParams,
+                  )
+                : nextTransforms;
+              // Skew params are radians, but the commit pipeline applies the
+              // control's degrees → radians `toModel`; hand it degrees.
+              const skewCommit = commitTransformControls({
+                clip: latestClip,
+                transforms: skewBaseTransforms,
+                groupId: "skew",
+                values: {
+                  x: (finalSkewParams.x * 180) / Math.PI,
+                  y: (finalSkewParams.y * 180) / Math.PI,
+                },
+                transformId: current.transformIds.skew ?? undefined,
+                playheadTicks: playbackClock.time,
+                keyframeSourceTimeTicks: resolveSourceKeyframeTime(latestClip),
+                pointEpsilonTicks: POINT_EPSILON_TICKS,
+                actions: {
+                  addClipTransform: addTimelineClipTransform,
+                  updateClipTransform: updateTimelineClipTransform,
+                  setClipTransforms: (clipId, transforms) =>
+                    setTimelineClipTransforms(clipId, transforms, {
+                      historyCoalesce: current.historyCoalesceKey
+                        ? { key: current.historyCoalesceKey, end: true }
+                        : undefined,
+                    }),
+                },
+              });
+              if (skewCommit) {
+                current.transformIds.skew = skewCommit.transformId;
+              }
+            }
           } else if (current.mode === "scale") {
             const finalScale = e && viewport ? computeScaleDrag(e.global) : null;
             const finalScaleParams =
@@ -723,35 +924,14 @@ export function useTransformInteractionController(
                 ? finalScale.newPositionParams
                 : current.lastPositionParams;
 
-            let scaleBaseTransforms = nextTransforms;
-            if (finalScaleParams && finalPositionParams) {
-              // Position goes first and leaves the history step open, so the
-              // scale commit below closes one undo step covering both.
-              const positionCommit = commitTransformControls({
-                clip: latestClip,
-                transforms: nextTransforms,
-                groupId: "position",
-                values: finalPositionParams,
-                transformId: current.transformIds.position ?? undefined,
-                playheadTicks: playbackClock.time,
-                keyframeSourceTimeTicks: resolveSourceKeyframeTime(latestClip),
-                pointEpsilonTicks: POINT_EPSILON_TICKS,
-                actions: {
-                  addClipTransform: addTimelineClipTransform,
-                  updateClipTransform: updateTimelineClipTransform,
-                  setClipTransforms: (clipId, transforms) =>
-                    setTimelineClipTransforms(clipId, transforms, {
-                      historyCoalesce: current.historyCoalesceKey
-                        ? { key: current.historyCoalesceKey, end: false }
-                        : undefined,
-                    }),
-                },
-              });
-              if (positionCommit) {
-                current.transformIds.position = positionCommit.transformId;
-                scaleBaseTransforms = positionCommit.nextTransforms;
-              }
-            }
+            const scaleBaseTransforms =
+              finalScaleParams && finalPositionParams
+                ? commitOppositeEdgePosition(
+                    latestClip,
+                    nextTransforms,
+                    finalPositionParams,
+                  )
+                : nextTransforms;
 
             if (finalScaleParams) {
               const scaleCommit = commitTransformControls({
@@ -886,6 +1066,7 @@ export function useTransformInteractionController(
           position: transform?.id ?? null,
           scale: null,
           rotation: null,
+          skew: null,
         },
         lastPositionParams: { x: startX, y: startY },
         path: initialPathState,
@@ -909,12 +1090,9 @@ export function useTransformInteractionController(
       selectCanvasClip(activeClip.id);
 
       const isRotateHandle = key.startsWith("rot-");
-      const mode: InteractionMode =
-        isRotateHandle || e.altKey ? "rotate" : "scale";
-      const historyCoalesceKey =
-        mode === "scale"
-          ? `canvas-scale-drag:${activeClip.id}:${++transformDragSequence}`
-          : null;
+      // Ctrl / Cmd on an edge handle shears that edge; corners stay scale
+      // handles (moving one corner alone needs perspective).
+      const isEdgeHandle = !isRotateHandle && key.length === 1;
       let nextTransforms = [...(activeClip.transformations || [])];
       let scaleTransform = nextTransforms.find(
         (transform) => transform.type === "scale",
@@ -922,6 +1100,22 @@ export function useTransformInteractionController(
       let rotationTransform = nextTransforms.find(
         (transform) => transform.type === "rotation",
       ) as RotationTransform | undefined;
+      let skewTransform = nextTransforms.find(
+        (transform) => transform.type === "skew",
+      ) as SkewTransform | undefined;
+      // A disabled skew transform doesn't render, and enabling it would apply
+      // its stale values, so the edge drags as a plain scale handle instead.
+      const canSkew = skewTransform?.isEnabled !== false;
+      const mode: InteractionMode =
+        isRotateHandle || e.altKey
+          ? "rotate"
+          : isEdgeHandle && (e.ctrlKey || e.metaKey) && canSkew
+            ? "skew"
+            : "scale";
+      const historyCoalesceKey =
+        mode === "scale" || mode === "skew"
+          ? `canvas-${mode}-drag:${activeClip.id}:${++transformDragSequence}`
+          : null;
 
       let didMaterializeTransform = false;
       if (mode === "scale" && !scaleTransform) {
@@ -943,6 +1137,18 @@ export function useTransformInteractionController(
             createdRotation,
           );
           rotationTransform = createdRotation as RotationTransform;
+          didMaterializeTransform = true;
+        }
+      }
+
+      if (mode === "skew" && !skewTransform) {
+        const createdSkew = createAddTransform("skew");
+        if (createdSkew) {
+          nextTransforms = insertTransformRespectingDefaultOrder(
+            nextTransforms,
+            createdSkew,
+          );
+          skewTransform = createdSkew as SkewTransform;
           didMaterializeTransform = true;
         }
       }
@@ -976,6 +1182,17 @@ export function useTransformInteractionController(
       const paramAngle = rotationTransform
         ? resolveScalar(rotationTransform.parameters.angle, rotationInputTime, 0)
         : 0;
+      const skewInputTime = skewTransform
+        ? resolveSourceKeyframeTime(activeClip)
+        : localVisualTime;
+      const skewParams = {
+        x: skewTransform
+          ? resolveScalar(skewTransform.parameters.x, skewInputTime, 0)
+          : 0,
+        y: skewTransform
+          ? resolveScalar(skewTransform.parameters.y, skewInputTime, 0)
+          : 0,
+      };
 
       const positionTransform = getPositionTransform(activeClip) ?? undefined;
       const startPosition = resolvePositionAtVisualTime(
@@ -987,7 +1204,7 @@ export function useTransformInteractionController(
       // it) and enabling it would apply its stale values, so scale about the
       // centre instead, as for paths.
       const keepOppositeSideFixed =
-        mode === "scale" &&
+        (mode === "scale" || mode === "skew") &&
         positionTransform?.isEnabled !== false &&
         !startPosition.path &&
         !startPosition.customPathActive;
@@ -1008,7 +1225,9 @@ export function useTransformInteractionController(
         startSprite: { x: sprite.position.x, y: sprite.position.y },
         startVisualScale: { x: visualScaleX, y: visualScaleY },
         startVisualRotation: sprite.rotation,
+        startVisualSkew: { x: sprite.skew.x, y: sprite.skew.y },
         startParams: { x: paramX, y: paramY, angle: paramAngle },
+        startSkewParams: skewParams,
         startPositionParams: { x: startPosition.x, y: startPosition.y },
         keepOppositeSideFixed,
         baseScale: { x: baseX, y: baseY },
@@ -1016,6 +1235,7 @@ export function useTransformInteractionController(
           position: keepOppositeSideFixed ? (positionTransform?.id ?? null) : null,
           scale: scaleTransform?.id ?? null,
           rotation: rotationTransform?.id ?? null,
+          skew: skewTransform?.id ?? null,
         },
         historyCoalesceKey,
         scaleLinked: scaleTransform?.parameters.isLinked !== false,

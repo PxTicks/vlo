@@ -267,6 +267,8 @@ export function applyTransformStack(
           x: 0,
           y: 0,
           rotation: 0,
+          skewX: 0,
+          skewY: 0,
         }
       : getBaseLayout(ctx.container, ctx.content, baseLayoutMode);
 

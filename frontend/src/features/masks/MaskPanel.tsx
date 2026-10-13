@@ -255,11 +255,21 @@ export const MaskPanel = memo(function MaskPanel() {
     }
   }
 
+  // Masks have no skew yet: their hit areas, brush mapping and tracking
+  // still invert layout with rotation-only maths.
   const layoutDefinitions = useMemo(
     () =>
-      getDefaultTransforms().filter(
-        (definition) => definition.type === "layout",
-      ),
+      getDefaultTransforms()
+        .filter((definition) => definition.type === "layout")
+        .map((definition) => ({
+          ...definition,
+          uiConfig: {
+            ...definition.uiConfig,
+            groups: definition.uiConfig.groups.filter(
+              (group) => group.id !== "skew",
+            ),
+          },
+        })),
     [],
   );
   const growDefinitions = useMemo(() => {

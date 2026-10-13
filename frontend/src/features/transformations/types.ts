@@ -102,6 +102,14 @@ export interface RotationParams {
   [key: string]: unknown;
 }
 
+/** Shear angles in radians: `x` slides horizontal edges sideways (height
+ *  kept), `y` slides vertical edges up/down (width kept), as CSS skew. */
+export interface SkewParams {
+  x: ScalarParameter;
+  y: ScalarParameter;
+  [key: string]: unknown;
+}
+
 // Helper types to strictly type the generic ClipTransform when we know the type
 export interface PositionTransform extends ClipTransform {
   type: "position";
@@ -116,6 +124,11 @@ export interface ScaleTransform extends ClipTransform {
 export interface RotationTransform extends ClipTransform {
   type: "rotation";
   parameters: RotationParams;
+}
+
+export interface SkewTransform extends ClipTransform {
+  type: "skew";
+  parameters: SkewParams;
 }
 
 export interface SpeedParams {
@@ -236,6 +249,7 @@ export type AnyTransform =
   | PositionTransform
   | ScaleTransform
   | RotationTransform
+  | SkewTransform
   | SpeedTransform
   | VolumeTransform
   | AudioEffectTransform

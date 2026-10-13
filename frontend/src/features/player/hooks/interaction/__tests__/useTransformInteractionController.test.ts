@@ -1519,6 +1519,213 @@ describe("useTransformInteractionController", () => {
     ).toEqual([]);
   });
 
+  it("ctrl-drags an edge into a skew with the opposite edge fixed", () => {
+    const clip = createEdgeScaleClip("clip_skew_edge", [
+      {
+        id: "position_skew_edge",
+        type: "position",
+        isEnabled: true,
+        parameters: { x: 10, y: -5 },
+      },
+    ]);
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    placeEdgeScaleSprite();
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    // Top edge of the 100x50 sprite at y = 515; slide it 20 px right.
+    act(() => {
+      result.current.onHandlePointerDown(
+        {
+          stopPropagation: vi.fn(),
+          global: { x: 960, y: 515 },
+          altKey: false,
+          ctrlKey: true,
+        } as unknown as FederatedPointerEvent,
+        "n",
+      );
+      getStageHandler("pointermove")?.({
+        global: { x: 980, y: 515 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const expectedSkew = Math.atan(-20 / 50);
+    expect(mockSprite.skew.x).toBeCloseTo(expectedSkew);
+    // Height kept: Pixi scale lengthened by 1/cos of the shear.
+    expect(mockSprite.scale.y).toBeCloseTo(1 / Math.cos(expectedSkew));
+    expect(mockSprite.position.x).toBeCloseTo(970);
+
+    act(() => {
+      getStageHandler("pointerup")?.({
+        global: { x: 980, y: 515 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const transforms = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    const skew = transforms?.find((transform) => transform.type === "skew");
+    expect(skew?.parameters.x as number).toBeCloseTo(expectedSkew);
+    expect(skew?.parameters.y as number).toBeCloseTo(0);
+    expect(
+      transforms?.find((transform) => transform.type === "position")?.parameters,
+    ).toMatchObject({ x: 20, y: -5 });
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    const undone = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    expect(undone?.some((transform) => transform.type === "skew")).toBe(false);
+    expect(
+      undone?.find((transform) => transform.type === "position")?.parameters,
+    ).toMatchObject({ x: 10, y: -5 });
+  });
+
+  it("saves a small skew drag on a tall clip", () => {
+    const clip = createEdgeScaleClip("clip_skew_small", []);
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    mockSprite.texture = new Texture({
+      source: new TextureSource({ width: 1920, height: 1080 }),
+    });
+    mockSprite.anchor.set(0.5);
+    mockSprite.position.set(960, 540);
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    // 5 px of slide on a 1080 px edge is a skew change under 0.01 rad.
+    act(() => {
+      result.current.onHandlePointerDown(
+        {
+          stopPropagation: vi.fn(),
+          global: { x: 960, y: 0 },
+          altKey: false,
+          ctrlKey: true,
+        } as unknown as FederatedPointerEvent,
+        "n",
+      );
+      getStageHandler("pointermove")?.({
+        global: { x: 965, y: 0 },
+      } as unknown as FederatedPointerEvent);
+      getStageHandler("pointerup")?.({
+        global: { x: 965, y: 0 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const skew = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)
+      ?.transformations.find((transform) => transform.type === "skew");
+    expect(skew?.parameters.x as number).toBeCloseTo(Math.atan(-5 / 1080));
+  });
+
+  it("scales instead of skewing when the skew transform is disabled", () => {
+    const clip = createEdgeScaleClip("clip_skew_disabled", [
+      {
+        id: "skew_disabled",
+        type: "skew",
+        isEnabled: false,
+        parameters: { x: 0.3, y: 0 },
+      },
+    ]);
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    placeEdgeScaleSprite();
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    act(() => {
+      result.current.onHandlePointerDown(
+        {
+          stopPropagation: vi.fn(),
+          global: { x: 1010, y: 540 },
+          altKey: false,
+          ctrlKey: true,
+        } as unknown as FederatedPointerEvent,
+        "e",
+      );
+      getStageHandler("pointermove")?.({
+        global: { x: 1060, y: 540 },
+      } as unknown as FederatedPointerEvent);
+      getStageHandler("pointerup")?.({
+        global: { x: 1060, y: 540 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    expect(mockSprite.skew.y).toBe(0);
+    const transforms = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    expect(transforms?.find((transform) => transform.type === "skew")).toEqual({
+      id: "skew_disabled",
+      type: "skew",
+      isEnabled: false,
+      parameters: { x: 0.3, y: 0 },
+    });
+    expect(
+      transforms?.find((transform) => transform.type === "scale")?.parameters,
+    ).toMatchObject({ x: 1.5 });
+  });
+
+  it("keeps corner handles as scale handles with ctrl held", () => {
+    const clip = createEdgeScaleClip("clip_skew_corner", []);
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    placeEdgeScaleSprite();
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    act(() => {
+      result.current.onHandlePointerDown(
+        {
+          stopPropagation: vi.fn(),
+          global: { x: 1010, y: 565 },
+          altKey: false,
+          ctrlKey: true,
+        } as unknown as FederatedPointerEvent,
+        "se",
+      );
+      getStageHandler("pointermove")?.({
+        global: { x: 1060, y: 590 },
+      } as unknown as FederatedPointerEvent);
+      getStageHandler("pointerup")?.({
+        global: { x: 1060, y: 590 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const transforms = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    expect(transforms?.some((transform) => transform.type === "skew")).toBe(false);
+    expect(mockSprite.skew.x).toBe(0);
+    expect(mockSprite.scale.x).toBeCloseTo(1.5);
+  });
+
   it("materializes and commits rotation from rotate and alt-drag handles", () => {
     const clip = {
       id: "clip_rotate",

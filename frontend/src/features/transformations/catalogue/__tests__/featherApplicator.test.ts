@@ -75,6 +75,7 @@ vi.mock("pixi.js", () => {
       position = { copyFrom: vi.fn() };
       scale = { copyFrom: vi.fn() };
       rotation = 0;
+      skew = { copyFrom: vi.fn() };
       anchor = { copyFrom: vi.fn() };
       pivot = { copyFrom: vi.fn() };
       destroy = vi.fn();

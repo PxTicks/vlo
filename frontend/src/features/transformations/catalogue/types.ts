@@ -27,6 +27,10 @@ export interface TransformState {
   x: number;
   y: number;
   rotation: number;
+  /** True shear angles in radians (CSS-style); see `layoutApplicator`.
+   *  Absent means 0. */
+  skewX?: number;
+  skewY?: number;
   /* Visual Effects State (Data-Driven) */
   filters: FilterOperation[];
   /** PixiJS blend mode applied to the rendered target. Defaults to "normal"
@@ -65,6 +69,7 @@ export interface ClipTransformTarget {
   position: ClipRenderPoint;
   scale: ClipRenderPoint;
   rotation: number;
+  skew?: ClipRenderPoint;
   anchor?: {
     set: (x: number, y?: number) => void;
   };

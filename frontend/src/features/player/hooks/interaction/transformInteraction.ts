@@ -14,7 +14,7 @@ export interface TransformCommitActions {
 export interface CommitTransformControlInput {
   clip: TimelineClip;
   transforms: ClipTransform[];
-  groupId: "position" | "scale" | "rotation";
+  groupId: "position" | "scale" | "rotation" | "skew";
   controlName: "x" | "y" | "angle";
   value: number;
   playheadTicks: number;

@@ -125,6 +125,7 @@ export const featherApplicator: StateApplicator = (
     companion.position.copyFrom(sprite.position);
     companion.scale.copyFrom(sprite.scale);
     companion.rotation = sprite.rotation;
+    companion.skew.copyFrom(sprite.skew);
     companion.anchor.copyFrom(sprite.anchor);
     companion.pivot.copyFrom(sprite.pivot);
     companion.alpha = sprite.alpha;

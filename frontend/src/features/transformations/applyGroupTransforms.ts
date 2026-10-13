@@ -57,6 +57,7 @@ export function applyGroupTransforms(
   container.position.set(0, 0);
   container.scale.set(1, 1);
   container.rotation = 0;
+  container.skew.set(0, 0);
   // Debug-mode visible cue (separate from any transform-driven alpha): this
   // function only runs for groups active at `currentTick` (the orchestrator
   // detaches inactive group containers), so flipping alpha here makes "the

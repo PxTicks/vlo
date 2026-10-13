@@ -1059,6 +1059,7 @@ export class SpriteClipMaskController {
     }
 
     targetSprite.rotation = this.sprite.rotation;
+    copyPoint(targetSprite.skew, this.sprite.skew);
   }
 
   private syncContainerTransformToContent(targetContainer: Container): void {
@@ -1092,13 +1093,18 @@ export class SpriteClipMaskController {
     setPoint(targetContainer.scale, this.sprite.scale.x, this.sprite.scale.y);
     setPoint(targetContainer.pivot, this.sprite.pivot.x, this.sprite.pivot.y);
     targetContainer.rotation = this.sprite.rotation;
+    setPoint(
+      targetContainer.skew,
+      this.sprite.skew?.x ?? 0,
+      this.sprite.skew?.y ?? 0,
+    );
   }
 
   /**
    * Match `maskContainer` to the content sprite's screen transform. Its child
    * mask nodes are laid out in centre-relative content space (the sprite uses
    * `anchor 0.5`, so a node at local origin maps to the sprite's position), so
-   * copying position/scale/rotation/pivot places the regular-path mask exactly
+   * copying position/scale/rotation/pivot/skew places the regular-path mask exactly
    * over the content. Mirrors `syncMaskSpriteTransform` for the composited path.
    */
   private syncMaskContainerTransform(): void {
@@ -1112,11 +1118,13 @@ export class SpriteClipMaskController {
     const position = this.sprite.position as { x: number; y: number } | undefined;
     const scale = this.sprite.scale as { x: number; y: number } | undefined;
     const pivot = this.sprite.pivot as { x: number; y: number } | undefined;
+    const skew = this.sprite.skew as { x: number; y: number } | undefined;
     this.setContainerTransform(
       { x: position?.x ?? 0, y: position?.y ?? 0 },
       { x: scale?.x ?? 1, y: scale?.y ?? 1 },
       this.sprite.rotation ?? 0,
       { x: pivot?.x ?? 0, y: pivot?.y ?? 0 },
+      { x: skew?.x ?? 0, y: skew?.y ?? 0 },
     );
   }
 
@@ -1125,7 +1133,13 @@ export class SpriteClipMaskController {
    * path renders it into a content-sized texture with its own centre transform.
    */
   private resetMaskContainerTransform(): void {
-    this.setContainerTransform({ x: 0, y: 0 }, { x: 1, y: 1 }, 0, { x: 0, y: 0 });
+    this.setContainerTransform(
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+      0,
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+    );
   }
 
   private setContainerTransform(
@@ -1133,6 +1147,7 @@ export class SpriteClipMaskController {
     scale: { x: number; y: number },
     rotation: number,
     pivot: { x: number; y: number },
+    skew: { x: number; y: number },
   ): void {
     const setPoint = (
       target:
@@ -1159,6 +1174,7 @@ export class SpriteClipMaskController {
     setPoint(this.maskContainer.position, position.x, position.y);
     setPoint(this.maskContainer.scale, scale.x, scale.y);
     setPoint(this.maskContainer.pivot, pivot.x, pivot.y);
+    setPoint(this.maskContainer.skew, skew.x, skew.y);
     this.maskContainer.rotation = rotation;
   }
 

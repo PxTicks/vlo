@@ -185,6 +185,8 @@ export function computeCommitMutation({
     };
   } else if (groupConfig) {
     groupConfig.controls.forEach((control) => {
+      // Spacers only lay out the panel; they hold no parameter.
+      if (control.type === "spacer") return;
       finalParams[control.name] = control.defaultValue;
     });
 

@@ -222,7 +222,10 @@ def test_minimax_h3_edit_rules_expose_the_result_frame_and_hide_the_rest():
 
     frame = widgets[str(STILL_NODE)]["widgets"]["index"]
     assert frame["label"] == "Result frame"
-    assert (frame["min"], frame["max"], frame["default"]) == (0, 1, RESULT_FRAME)
+    # Fixed, not a control: latent 0 is the source, so only the frame the model
+    # generates is ever kept.
+    assert frame["hidden"] is True
+    assert "min" not in frame and "control" not in frame
     for hidden in ("batch_index", "length"):
         assert widgets[str(SLICE_NODE)]["widgets"][hidden]["hidden"] is True
     assert widgets[str(GENERATOR_NODE)]["widgets"]["length"]["hidden"] is True

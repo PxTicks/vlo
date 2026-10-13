@@ -124,15 +124,7 @@
         "index": {
           "label": "Result frame",
           "value_type": "int",
-          "control": "slider",
-          "slider_display": "number",
-          "min": 0,
-          "max": 1,
-          "step": 1,
-          "default": 1,
-          "group_id": "image_generation",
-          "group_title": "Image Generation",
-          "group_order": 4
+          "hidden": true
         }
       }
     },

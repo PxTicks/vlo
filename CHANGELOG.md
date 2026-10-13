@@ -11,8 +11,8 @@ Notable changes to VLO are documented here.
   picture, so the video model can be used to change a still. **MiniMax H3 Image
   Edit** attaches the source as the first frame and keeps the frame it
   generates; **MiniMax H3 Image Edit (Reference)** attaches it as a reference,
-  optionally alongside further image, video and audio references, and keeps the
-  picture that is drawn from them.
+  optionally alongside further image references, and keeps the picture that is
+  drawn from them.
 
 ## 0.3.1
 

@@ -112,39 +112,6 @@
         "required": true
       }
     },
-    "142": {
-      "present": {
-        "label": "Video inputs",
-        "input_type": "video",
-        "param": "files",
-        "class_type": "vloMemoryLoadVideoBatch",
-        "section_id": "inputs",
-        "repeatable": {
-          "max": 3,
-          "item_options": ["audio"]
-        },
-        "required": false
-      },
-      "selection": {
-        "export_fps": "project",
-        "frame_step": 4,
-        "max_frames": 360,
-        "message": "Select and prepare the reference video in vlo"
-      }
-    },
-    "143": {
-      "present": {
-        "label": "Audio inputs",
-        "input_type": "audio",
-        "param": "audios",
-        "class_type": "vloMemoryLoadAudioBatch",
-        "section_id": "inputs",
-        "repeatable": {
-          "max": 3
-        },
-        "required": false
-      }
-    },
     "145": {
       "widgets": {
         "attention": {
@@ -173,15 +140,7 @@
         "index": {
           "label": "Result frame",
           "value_type": "int",
-          "control": "slider",
-          "slider_display": "number",
-          "min": 0,
-          "max": 1,
-          "step": 1,
-          "default": 0,
-          "group_id": "image_generation",
-          "group_title": "Image Generation",
-          "group_order": 4
+          "hidden": true
         }
       }
     },
@@ -227,22 +186,6 @@
   },
   "derived_widgets": [],
   "rewrites": [
-    {
-      "when": {
-        "kind": "input_presence",
-        "inputs": ["142"],
-        "match": "all_missing"
-      },
-      "bypass": ["142"]
-    },
-    {
-      "when": {
-        "kind": "input_presence",
-        "inputs": ["143"],
-        "match": "all_missing"
-      },
-      "bypass": ["143"]
-    },
     {
       "when": {
         "kind": "compare",

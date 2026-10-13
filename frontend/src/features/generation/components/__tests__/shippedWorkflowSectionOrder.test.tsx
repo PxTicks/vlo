@@ -200,7 +200,6 @@ describe("shipped MiniMax workflow section order", () => {
     renderPanel(loadSections(dir, "vlo_minimax_h3_edit"), [
       widget("151", "attention", "Attention backend", "advanced_settings"),
       widget("150", "lora_name", "Model", "lora_loaders"),
-      widget("156", "index", "Result frame", "image_generation"),
       widget("124", "steps", "Steps", "image_generation"),
     ]);
 
@@ -218,7 +217,6 @@ describe("shipped MiniMax workflow section order", () => {
       widget("145", "attention", "Attention backend", "advanced_settings"),
       widget("148", "lora_name", "Model", "lora_loaders"),
       widget("136", "ref_image_size", "Reference image size", "references"),
-      widget("156", "index", "Result frame", "image_generation"),
       widget("124", "steps", "Steps", "image_generation"),
     ]);
 

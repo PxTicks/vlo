@@ -9,16 +9,14 @@ continued: `subject_definitions` says what the reference provides,
 lighting and the change — and `overall_soundscape` and `non_diegetic_music` are
 `N/A` for a still.
 
-- References are numbered in the order they are listed, so the first image is
-  `<Picture 1>`. Add more images to the same input, and video and audio
-  references alongside them, to cite them as `<Picture 2>`, `<Video 1>`,
-  `<Audio 1>` and so on. A reference video can carry its own soundtrack,
-  switched on per video.
+- Add further images to the same input to cite them as `<Picture 2>`,
+  `<Picture 3>` and so on — references are numbered in the order they are
+  listed, and the first image frames the generation.
 - `MiniMax H3 Image Edit (Reference)` pins **Length** to 5 frames, the shortest
   count on H3's `17k+5` grid. Five pixel frames pack into two latent frames, and
   nothing past them would be kept, so a longer clip only costs time.
-- **Result frame** chooses which latent frame becomes the picture. `0`, the
-  default, is the generated picture; `1` is a frame of motion further on.
+- The frame kept is fixed at latent frame `0`: the causal first frame, which is
+  the picture the prompt asks for and the one frame the decode is exact for.
 - **Reference image size** trades fidelity for time: `match` fits each reference
   to the generation's pixel area, `max` keeps the reference pipeline's 2048px
   short edge.

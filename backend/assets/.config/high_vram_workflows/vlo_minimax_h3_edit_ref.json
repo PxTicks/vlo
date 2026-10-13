@@ -1,5 +1,5 @@
 {
-  "id": "3ba7b6cb-f847-4799-adf4-eaa91d771571",
+  "id": "3eb74f3a-fbff-4393-b107-7f492287991a",
   "revision": 0,
   "last_node_id": 158,
   "last_link_id": 301,
@@ -23,10 +23,10 @@
       "title": "Note: MiniMax H3 Image Edit, Reference",
       "properties": {},
       "widgets_values": [
-        "## MiniMax H3 Image Edit, Reference (vlo)\n\nThe reference-side edit. [MiniMax H3](https://www.minimax.io/blog/minimax-h3) has no image-to-image mode, so a picture drawn *from* a source image is a **five-frame full-reference generation**: the source is attached as `<Picture 1>`, the prompt rewrites it into the picture you want, and `MiniMaxH3StillLatent` keeps the one latent frame that becomes the picture.\n\n## About this workflow\n\n- **Source image** is required, and is this workflow's only reference (`<Picture 1>`). For several images, videos and audio, use the *MiniMax H3 (Reference)* workflow instead.\n- **Length** is pinned to 5 frames — the shortest count on H3's `17k+5` grid. Five pixel frames pack into **two latent frames**, and only those two are sampled.\n- **Result frame** picks which latent frame becomes the picture. `0`, the default, is the causal first frame: the picture the prompt asks for, and the one frame the decode is exact for. `1` is a frame of motion further on, decoded as if it opened the clip.\n- **H3 Still Latent** wraps the chosen frame as the shortest clip the H3 VAE can decode, and a one-frame slice keeps its exact decode. Decoding a single token on its own is what produces tile seams and patch noise (Comfy-Org/ComfyUI#15416), which is why the slice exists.\n- **No soundtrack**. The reference adapter takes an audio VAE as a required input, so the file is loaded, but nothing is decoded from it and the soundscape fields in the prompt are ignored.\n\n**Key inputs**\n\n- **Source image**: the picture to draw from. Its aspect ratio frames the generation.\n- **Prompt**: the full-reference block — `subject_definitions` (what `<Picture 1>` provides, as `<Subject 1>`), `summary`, `retention_analysis`, `detailed_description` (the picture itself), then `overall_soundscape` and `non_diegetic_music`.\n- **Reference image size**: `match` scales each reference down to the generation's pixel area; `max` keeps the reference pipeline's 2048px short edge for the most identity fidelity, at several times the sampling cost.\n- **Width / Height**: driven by vlo's resolution and aspect-ratio controls. H3's native canvas is a 768px short edge, capped at 768x1344 pixels, rounded to a multiple of 32.\n- **Result frame**: `0` is the generated picture, the default; `1` continues a frame further.\n"
+        "## MiniMax H3 Image Edit, Reference (vlo)\n\nThe reference-side edit. [MiniMax H3](https://www.minimax.io/blog/minimax-h3) has no image-to-image mode, so a picture drawn *from* a source image is a **five-frame full-reference generation**: the source is attached as `<Picture 1>`, the prompt rewrites it into the picture you want, and `MiniMaxH3StillLatent` keeps the one latent frame that becomes the picture.\n\n## About this workflow\n\n- **Source image** is required, and is `<Picture 1>`. Extra images, videos and audio can be attached as further references (`<Picture 2>`, `<Video 1>`, `<Audio 1>`); references are numbered in the order they are listed, and the first image frames the generation.\n- **Length** is pinned to 5 frames — the shortest count on H3's `17k+5` grid. Five pixel frames pack into **two latent frames**, and only those two are sampled.\n- **Result frame** picks which latent frame becomes the picture. `0`, the default, is the causal first frame: the picture the prompt asks for, and the one frame the decode is exact for. `1` is a frame of motion further on, decoded as if it opened the clip.\n- **H3 Still Latent** wraps the chosen frame as the shortest clip the H3 VAE can decode, and a one-frame slice keeps its exact decode. Decoding a single token on its own is what produces tile seams and patch noise (Comfy-Org/ComfyUI#15416), which is why the slice exists.\n- **No soundtrack**. The reference adapter takes an audio VAE as a required input, so the file is loaded, but nothing is decoded from it and the soundscape fields in the prompt are ignored.\n\n**Key inputs**\n\n- **Source image**: the picture to draw from, and the only required reference. Add more images to the same list to cite them as further `<Picture N>` references.\n- **Prompt**: the full-reference block — `subject_definitions` (what `<Picture 1>` provides, as `<Subject 1>`), `summary`, `retention_analysis`, `detailed_description` (the picture itself), then `overall_soundscape` and `non_diegetic_music`.\n- **Video inputs / Audio inputs**: optional `<Video N>` / `<Audio N>` references. A reference video can carry its own soundtrack, switched on per video.\n- **Reference image size**: `match` scales each reference down to the generation's pixel area; `max` keeps the reference pipeline's 2048px short edge for the most identity fidelity, at several times the sampling cost.\n- **Width / Height**: driven by vlo's resolution and aspect-ratio controls. H3's native canvas is a 768px short edge, capped at 768x1344 pixels, rounded to a multiple of 32.\n- **Result frame**: `0` is the generated picture, the default; `1` continues a frame further.\n"
       ],
       "widgets_values_named": {
-        "text": "## MiniMax H3 Image Edit, Reference (vlo)\n\nThe reference-side edit. [MiniMax H3](https://www.minimax.io/blog/minimax-h3) has no image-to-image mode, so a picture drawn *from* a source image is a **five-frame full-reference generation**: the source is attached as `<Picture 1>`, the prompt rewrites it into the picture you want, and `MiniMaxH3StillLatent` keeps the one latent frame that becomes the picture.\n\n## About this workflow\n\n- **Source image** is required, and is this workflow's only reference (`<Picture 1>`). For several images, videos and audio, use the *MiniMax H3 (Reference)* workflow instead.\n- **Length** is pinned to 5 frames — the shortest count on H3's `17k+5` grid. Five pixel frames pack into **two latent frames**, and only those two are sampled.\n- **Result frame** picks which latent frame becomes the picture. `0`, the default, is the causal first frame: the picture the prompt asks for, and the one frame the decode is exact for. `1` is a frame of motion further on, decoded as if it opened the clip.\n- **H3 Still Latent** wraps the chosen frame as the shortest clip the H3 VAE can decode, and a one-frame slice keeps its exact decode. Decoding a single token on its own is what produces tile seams and patch noise (Comfy-Org/ComfyUI#15416), which is why the slice exists.\n- **No soundtrack**. The reference adapter takes an audio VAE as a required input, so the file is loaded, but nothing is decoded from it and the soundscape fields in the prompt are ignored.\n\n**Key inputs**\n\n- **Source image**: the picture to draw from. Its aspect ratio frames the generation.\n- **Prompt**: the full-reference block — `subject_definitions` (what `<Picture 1>` provides, as `<Subject 1>`), `summary`, `retention_analysis`, `detailed_description` (the picture itself), then `overall_soundscape` and `non_diegetic_music`.\n- **Reference image size**: `match` scales each reference down to the generation's pixel area; `max` keeps the reference pipeline's 2048px short edge for the most identity fidelity, at several times the sampling cost.\n- **Width / Height**: driven by vlo's resolution and aspect-ratio controls. H3's native canvas is a 768px short edge, capped at 768x1344 pixels, rounded to a multiple of 32.\n- **Result frame**: `0` is the generated picture, the default; `1` continues a frame further.\n"
+        "text": "## MiniMax H3 Image Edit, Reference (vlo)\n\nThe reference-side edit. [MiniMax H3](https://www.minimax.io/blog/minimax-h3) has no image-to-image mode, so a picture drawn *from* a source image is a **five-frame full-reference generation**: the source is attached as `<Picture 1>`, the prompt rewrites it into the picture you want, and `MiniMaxH3StillLatent` keeps the one latent frame that becomes the picture.\n\n## About this workflow\n\n- **Source image** is required, and is `<Picture 1>`. Extra images, videos and audio can be attached as further references (`<Picture 2>`, `<Video 1>`, `<Audio 1>`); references are numbered in the order they are listed, and the first image frames the generation.\n- **Length** is pinned to 5 frames — the shortest count on H3's `17k+5` grid. Five pixel frames pack into **two latent frames**, and only those two are sampled.\n- **Result frame** picks which latent frame becomes the picture. `0`, the default, is the causal first frame: the picture the prompt asks for, and the one frame the decode is exact for. `1` is a frame of motion further on, decoded as if it opened the clip.\n- **H3 Still Latent** wraps the chosen frame as the shortest clip the H3 VAE can decode, and a one-frame slice keeps its exact decode. Decoding a single token on its own is what produces tile seams and patch noise (Comfy-Org/ComfyUI#15416), which is why the slice exists.\n- **No soundtrack**. The reference adapter takes an audio VAE as a required input, so the file is loaded, but nothing is decoded from it and the soundscape fields in the prompt are ignored.\n\n**Key inputs**\n\n- **Source image**: the picture to draw from, and the only required reference. Add more images to the same list to cite them as further `<Picture N>` references.\n- **Prompt**: the full-reference block — `subject_definitions` (what `<Picture 1>` provides, as `<Subject 1>`), `summary`, `retention_analysis`, `detailed_description` (the picture itself), then `overall_soundscape` and `non_diegetic_music`.\n- **Video inputs / Audio inputs**: optional `<Video N>` / `<Audio N>` references. A reference video can carry its own soundtrack, switched on per video.\n- **Reference image size**: `match` scales each reference down to the generation's pixel area; `max` keeps the reference pipeline's 2048px short edge for the most identity fidelity, at several times the sampling cost.\n- **Width / Height**: driven by vlo's resolution and aspect-ratio controls. H3's native canvas is a 768px short edge, capped at 768x1344 pixels, rounded to a multiple of 32.\n- **Result frame**: `0` is the generated picture, the default; `1` continues a frame further.\n"
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -556,7 +556,7 @@
           "name": "ref_videos",
           "shape": 7,
           "type": "VIDEO",
-          "link": null
+          "link": 284
         },
         {
           "localized_name": "ref_video_audios",
@@ -570,7 +570,7 @@
           "name": "ref_audios",
           "shape": 7,
           "type": "AUDIO",
-          "link": null
+          "link": 285
         },
         {
           "localized_name": "prompt",
@@ -624,7 +624,7 @@
           "widget": {
             "name": "use_embedded_video_audio"
           },
-          "link": null
+          "link": 294
         }
       ],
       "outputs": [
@@ -1120,6 +1120,148 @@
       ],
       "widgets_values_named": {
         "images": [],
+        "disable_in_memory": false
+      }
+    },
+    {
+      "id": 142,
+      "type": "vloMemoryLoadVideoBatch",
+      "pos": [
+        -1129.28331061377,
+        5618.700045824744
+      ],
+      "size": [
+        320,
+        300
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "Videos",
+          "name": "files",
+          "type": "COMBO",
+          "widget": {
+            "name": "files"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "disable_in_memory",
+          "name": "disable_in_memory",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "disable_in_memory"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "include_audio",
+          "name": "include_audio",
+          "type": "STRING",
+          "widget": {
+            "name": "include_audio"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "videos",
+          "name": "videos",
+          "shape": 6,
+          "type": "VIDEO",
+          "links": [
+            284
+          ]
+        },
+        {
+          "localized_name": "use audio",
+          "name": "use audio",
+          "shape": 6,
+          "type": "BOOLEAN",
+          "links": [
+            294
+          ]
+        }
+      ],
+      "title": "Reference Videos",
+      "properties": {
+        "Node name for S&R": "vloMemoryLoadVideoBatch",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        [],
+        false,
+        ""
+      ],
+      "widgets_values_named": {
+        "files": [],
+        "disable_in_memory": false,
+        "include_audio": ""
+      }
+    },
+    {
+      "id": 143,
+      "type": "vloMemoryLoadAudioBatch",
+      "pos": [
+        -767.1332424550801,
+        5623.000083722819
+      ],
+      "size": [
+        320,
+        300
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "Audio clips",
+          "name": "audios",
+          "type": "COMBO",
+          "widget": {
+            "name": "audios"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "disable_in_memory",
+          "name": "disable_in_memory",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "disable_in_memory"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "audios",
+          "name": "audios",
+          "shape": 6,
+          "type": "AUDIO",
+          "links": [
+            285
+          ]
+        }
+      ],
+      "title": "Standalone Reference Audio",
+      "properties": {
+        "Node name for S&R": "vloMemoryLoadAudioBatch",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        [],
+        false
+      ],
+      "widgets_values_named": {
+        "audios": [],
         "disable_in_memory": false
       }
     },
@@ -1737,6 +1879,22 @@
       "IMAGE"
     ],
     [
+      284,
+      142,
+      0,
+      136,
+      4,
+      "VIDEO"
+    ],
+    [
+      285,
+      143,
+      0,
+      136,
+      6,
+      "AUDIO"
+    ],
+    [
       289,
       145,
       0,
@@ -1775,6 +1933,14 @@
       150,
       0,
       "MODEL"
+    ],
+    [
+      294,
+      142,
+      1,
+      136,
+      12,
+      "BOOLEAN"
     ],
     [
       296,
@@ -1876,7 +2042,7 @@
       "bounding": [
         506.4699787640386,
         4845.287376816053,
-        1120,
+        1200,
         670
       ],
       "color": "#3f789e",
@@ -1884,11 +2050,11 @@
     },
     {
       "id": 5,
-      "title": "Source Image",
+      "title": "Reference Inputs",
       "bounding": [
         -1520,
         5540,
-        700,
+        1120,
         390
       ],
       "color": "#3f789e",

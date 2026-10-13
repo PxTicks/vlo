@@ -96,9 +96,6 @@
           "group_id": "reference_options",
           "group_title": "Reference Options",
           "group_order": 3
-        },
-        "use_embedded_video_audio": {
-          "hidden": true
         }
       }
     },
@@ -110,9 +107,42 @@
         "class_type": "vloMemoryLoadImageBatch",
         "section_id": "inputs",
         "repeatable": {
-          "max": 1
+          "max": 9
         },
         "required": true
+      }
+    },
+    "142": {
+      "present": {
+        "label": "Video inputs",
+        "input_type": "video",
+        "param": "files",
+        "class_type": "vloMemoryLoadVideoBatch",
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 3,
+          "item_options": ["audio"]
+        },
+        "required": false
+      },
+      "selection": {
+        "export_fps": "project",
+        "frame_step": 4,
+        "max_frames": 360,
+        "message": "Select and prepare the reference video in vlo"
+      }
+    },
+    "143": {
+      "present": {
+        "label": "Audio inputs",
+        "input_type": "audio",
+        "param": "audios",
+        "class_type": "vloMemoryLoadAudioBatch",
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 3
+        },
+        "required": false
       }
     },
     "145": {
@@ -197,6 +227,22 @@
   },
   "derived_widgets": [],
   "rewrites": [
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["142"],
+        "match": "all_missing"
+      },
+      "bypass": ["142"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["143"],
+        "match": "all_missing"
+      },
+      "bypass": ["143"]
+    },
     {
       "when": {
         "kind": "compare",

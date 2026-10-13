@@ -2,9 +2,10 @@
 
 The sibling of ``vlo_minimax_h3_edit``: the source picture is attached as a
 reference rather than as the first frame, so the model draws a new five-frame
-clip from it and one latent frame of that clip becomes the picture. These
-checks pin the reference wiring, the required audio VAE the VLO batch adapter
-asks for, and the still slice both edits share.
+clip from it and one latent frame of that clip becomes the picture. The source
+is the one required reference; further images, videos and audio may be attached
+alongside it. These checks pin that reference wiring, the required audio VAE
+the VLO batch adapter asks for, and the still slice both edits share.
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ WORKFLOW_DIRS = (
 )
 
 SOURCE_NODE = 141
+VIDEO_NODE = 142
+AUDIO_NODE = 143
 ADAPTER_NODE = 136
 DECODE_NODE = 122
 STILL_NODE = 156
@@ -58,7 +61,7 @@ def test_minimax_h3_edit_ref_workflow_is_packaged_in_both_modes():
     ResolvedWorkflowRules.model_validate(default_rules)
 
 
-def test_minimax_h3_edit_ref_workflow_attaches_one_image_reference():
+def test_minimax_h3_edit_ref_workflow_attaches_ordered_references():
     workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
     nodes = {node["id"]: node for node in workflow["nodes"]}
     links = {link[0]: tuple(link[1:5]) for link in workflow["links"]}
@@ -68,24 +71,36 @@ def test_minimax_h3_edit_ref_workflow_attaches_one_image_reference():
     # ComfyUI's autogrowing native node, which is the shape vlo authors.
     assert node_types.count("vloMiniMaxH3ReferenceToVideoBatch") == 1
     assert node_types.count("vloMemoryLoadImageBatch") == 1
-    assert not {
-        "vloMemoryLoadVideoBatch",
-        "vloMemoryLoadAudioBatch",
-        "LoadImage",
-        "LoadVideo",
-        "LoadAudio",
-    }.intersection(node_types)
+    assert node_types.count("vloMemoryLoadVideoBatch") == 1
+    assert node_types.count("vloMemoryLoadAudioBatch") == 1
+    assert not {"LoadImage", "LoadVideo", "LoadAudio"}.intersection(node_types)
 
     adapter = nodes[ADAPTER_NODE]
-    source = nodes[SOURCE_NODE]
-    assert source["title"] == "Source Image"
+    assert nodes[SOURCE_NODE]["title"] == "Source Image"
+    # One link per reference kind, in the adapter's own slot order: the source
+    # image is `<Picture 1>` because it is the first image in that list.
     assert links[adapter["inputs"][_input_index(adapter, "ref_images")]["link"]][:2] == (
         SOURCE_NODE,
         0,
     )
-    # No video or audio references: their slots stay unconnected.
-    for slot in ("ref_videos", "ref_video_audios", "ref_audios"):
-        assert adapter["inputs"][_input_index(adapter, slot)]["link"] is None
+    assert links[adapter["inputs"][_input_index(adapter, "ref_videos")]["link"]][:2] == (
+        VIDEO_NODE,
+        0,
+    )
+    assert links[adapter["inputs"][_input_index(adapter, "ref_audios")]["link"]][:2] == (
+        AUDIO_NODE,
+        0,
+    )
+    assert adapter["inputs"][_input_index(adapter, "ref_video_audios")]["link"] is None
+
+    # Per-video audio inclusion arrives as a BOOLEAN list from the video batch
+    # loader, so the adapter's flag input has to be linked rather than a widget.
+    audio_flag_link = adapter["inputs"][
+        _input_index(adapter, "use_embedded_video_audio")
+    ]["link"]
+    assert audio_flag_link is not None
+    flag_link = links[audio_flag_link]
+    assert flag_link[:2] == (VIDEO_NODE, 1)
 
 
 def test_minimax_h3_edit_ref_workflow_satisfies_the_adapters_required_vae():
@@ -98,6 +113,7 @@ def test_minimax_h3_edit_ref_workflow_satisfies_the_adapters_required_vae():
     # so the file is loaded and linked; nothing decodes sound.
     assert node_types.count("VAELoader") == 2
     assert "VAEDecodeAudio" not in node_types
+    assert "vloSaveVideo" not in node_types
     adapter = nodes[ADAPTER_NODE]
     for slot in ("vae", "audio_vae"):
         origin = links[adapter["inputs"][_input_index(adapter, slot)]["link"]][0]
@@ -173,13 +189,15 @@ def test_minimax_h3_edit_ref_rules_require_one_source_image_and_a_prompt():
             "message": "A prompt is required.",
         },
     ]
+    # The source is the first image in an otherwise ordinary reference batch,
+    # so it can carry further images as `<Picture 2>`, and nothing may drop it.
     assert rules["nodes"][str(SOURCE_NODE)]["present"] == {
         "label": "Source image",
         "input_type": "image",
         "param": "images",
         "class_type": "vloMemoryLoadImageBatch",
         "section_id": "inputs",
-        "repeatable": {"max": 1},
+        "repeatable": {"max": 9},
         "required": True,
     }
     # The prompt is presented as text so it picks up prompt carryover and the
@@ -189,11 +207,24 @@ def test_minimax_h3_edit_ref_rules_require_one_source_image_and_a_prompt():
         "input_type": "text",
         "param": "prompt",
     }
-    # The adapter's wholesale audio flag is meaningless without reference
-    # videos, so the panel never shows it.
-    assert rules["nodes"][str(ADAPTER_NODE)]["widgets"]["use_embedded_video_audio"] == {
-        "hidden": True
-    }
+    # The adapter's wholesale audio flag is fed by the video loader's per-video
+    # flags instead, so it is never a panel widget.
+    assert "use_embedded_video_audio" not in rules["nodes"][str(ADAPTER_NODE)]["widgets"]
+
+
+def test_minimax_h3_edit_ref_rules_expose_optional_video_and_audio_references():
+    rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
+
+    video = rules["nodes"][str(VIDEO_NODE)]
+    assert video["present"]["class_type"] == "vloMemoryLoadVideoBatch"
+    assert video["present"]["repeatable"] == {"max": 3, "item_options": ["audio"]}
+    assert video["present"]["required"] is False
+    assert video["selection"]["export_fps"] == "project"
+
+    audio = rules["nodes"][str(AUDIO_NODE)]
+    assert audio["present"]["class_type"] == "vloMemoryLoadAudioBatch"
+    assert audio["present"]["repeatable"] == {"max": 3}
+    assert audio["present"]["required"] is False
 
 
 def test_minimax_h3_edit_ref_rules_expose_the_reference_and_result_controls():
@@ -235,23 +266,34 @@ def test_minimax_h3_edit_ref_rules_frame_the_canvas_on_the_source_image():
         }
     ]
 
-    # This workflow numbers Spectrum 146, not the 148 of the first-frame edit.
-    [rewrite] = rules["rewrites"]
-    assert rewrite["when"]["ref"]["control_id"] == "spectrum_enabled"
-    assert rewrite["bypass"] == [str(SPECTRUM_NODE)]
 
-
-def test_minimax_h3_edit_ref_rules_only_bypass_the_spectrum_patch():
+def test_minimax_h3_edit_ref_rules_bypass_only_the_absent_optional_branches():
     workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
     rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
     node_types = {str(node["id"]): node["type"] for node in workflow["nodes"]}
 
+    assert rules["rewrites"][:2] == [
+        {
+            "when": {
+                "kind": "input_presence",
+                "inputs": [str(node_id)],
+                "match": "all_missing",
+            },
+            "bypass": [str(node_id)],
+        }
+        for node_id in (VIDEO_NODE, AUDIO_NODE)
+    ]
+    # The required source is never bypassed: an empty image list fails
+    # validation instead of quietly turning the edit into a text-to-video run.
+    assert all(
+        str(SOURCE_NODE) not in rule["bypass"] for rule in rules["rewrites"]
+    )
+
+    # This workflow numbers Spectrum 146, not the 148 of the first-frame edit.
+    spectrum_rewrite = rules["rewrites"][2]
+    assert spectrum_rewrite["when"]["ref"]["control_id"] == "spectrum_enabled"
+    assert spectrum_rewrite["bypass"] == [str(SPECTRUM_NODE)]
     assert node_types[str(SPECTRUM_NODE)] == "SpectrumApplyMiniMaxH3"
-    # Nothing else is rule-bypassed: the source branch and the required audio
-    # VAE both have to stay in the graph.
-    assert {node_id for rule in rules["rewrites"] for node_id in rule["bypass"]} == {
-        str(SPECTRUM_NODE)
-    }
 
 
 def test_minimax_h3_edit_ref_rules_only_reference_nodes_in_the_graph():

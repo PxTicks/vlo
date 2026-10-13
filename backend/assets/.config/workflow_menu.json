@@ -151,6 +151,11 @@
       "order": 1
     },
     {
+      "workflow_id": "vlo_minimax_h3_edit.json",
+      "parent_id": "image.edit",
+      "order": 2
+    },
+    {
       "workflow_id": "vlo_SeedVR2_image.json",
       "parent_id": "image.enhance",
       "order": 0

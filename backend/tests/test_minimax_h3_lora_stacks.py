@@ -12,6 +12,7 @@ from services.workflow_rules import load_rules_model_for_workflow
 
 WORKFLOW_CHAINS = (
     ("i2v", (127, 150, 153, 154, 155, 151)),
+    ("edit", (127, 150, 153, 154, 155, 151)),
     ("r2v", (127, 148, 150, 151, 152, 145)),
     ("inpaint", (44, 99, 100, 101, 102, 47)),
     ("inpaint_flf2va", (44, 99, 100, 101, 102, 47)),

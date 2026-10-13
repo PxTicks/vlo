@@ -594,6 +594,7 @@ describe("shipped workflow LoRA stacks", () => {
 
   const minimaxWorkflows = [
     { workflow: "i2v", nodes: ["150", "153", "154", "155"] },
+    { workflow: "edit", nodes: ["150", "153", "154", "155"] },
     { workflow: "r2v", nodes: ["148", "150", "151", "152"] },
     { workflow: "inpaint", nodes: ["99", "100", "101", "102"] },
     { workflow: "inpaint_flf2va", nodes: ["99", "100", "101", "102"] },

@@ -2,6 +2,14 @@
 
 Notable changes to VLO are documented here.
 
+## Unreleased
+
+### Added
+
+- A MiniMax H3 image edit workflow under Image > Edit. It samples the shortest
+  legal H3 clip (5 frames) from the source picture as the first frame and keeps
+  the last decoded frame, so the video model can be used to change a still.
+
 ## 0.3.1
 
 ### Added

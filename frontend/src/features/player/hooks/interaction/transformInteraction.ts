@@ -97,7 +97,9 @@ export function commitTransformControl({
   });
   if (!result) return null;
 
-  if (!result.wasCreated) {
+  if (result.changedOtherTransforms) {
+    actions.setClipTransforms(clip.id, result.nextTransforms);
+  } else if (!result.wasCreated) {
     const committedTransform = result.nextTransforms.find(
       (transform) => transform.id === result.transformId,
     );

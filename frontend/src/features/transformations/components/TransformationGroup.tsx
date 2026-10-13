@@ -45,6 +45,9 @@ interface TransformationGroupProps {
   ) => void;
   onSetTransforms?: (nextTransforms: ClipTransform[]) => void;
   keyframeColor?: string;
+  /** False when a parent renders the keyframe button for this group (the
+   *  layout groups share one). */
+  showKeyframe?: boolean;
   onGroupEdited?: () => void;
   captureSnapshot?: () => unknown | null;
   restoreSnapshot?: (snapshot: unknown) => void;
@@ -67,6 +70,7 @@ export const TransformationGroup = memo(function TransformationGroup({
   onUpdateTransform,
   onSetTransforms,
   keyframeColor,
+  showKeyframe = true,
   onGroupEdited,
   captureSnapshot,
   restoreSnapshot,
@@ -174,13 +178,17 @@ export const TransformationGroup = memo(function TransformationGroup({
       headerActions={headerActions}
       disabled={disabled}
       hideTitle={hideTitle}
-      keyframe={{
-        enabled: keyframeManager.enabled,
-        active: keyframeManager.active,
-        onToggle: keyframeManager.toggleKeyframe,
-        color: keyframeColor,
-        disabled: disableKeyframe,
-      }}
+      keyframe={
+        showKeyframe
+          ? {
+              enabled: keyframeManager.enabled,
+              active: keyframeManager.active,
+              onToggle: keyframeManager.toggleKeyframe,
+              color: keyframeColor,
+              disabled: disableKeyframe,
+            }
+          : undefined
+      }
     />
   );
 });

@@ -116,6 +116,52 @@ export function lockCornerScaleAspectRatio(
   };
 }
 
+interface FixedHandleOffsetInput {
+  handle: string | null;
+  /** Sprite anchor in normalized texture coordinates (0.5 = centre). */
+  anchor: ScaleLike;
+  baseSize: SizeLike;
+  rotation: number;
+  startScale: ScaleLike;
+  nextScale: ScaleLike;
+}
+
+/**
+ * Position delta (parent space) that keeps the point opposite the dragged
+ * handle fixed while scale changes from `startScale` to `nextScale`.
+ *
+ * Layout scales about the sprite anchor, so without this offset an edge drag
+ * stretches both sides. An axis the handle does not drag keeps scaling about
+ * the anchor (e.g. a linked "e" drag grows symmetrically top and bottom).
+ */
+export function computeFixedHandleOffset({
+  handle,
+  anchor,
+  baseSize,
+  rotation,
+  startScale,
+  nextScale,
+}: FixedHandleOffsetInput): Delta {
+  // 1. Normalized texture coordinate of the point that must stay put.
+  const fixedX = handle?.includes("e") ? 0 : handle?.includes("w") ? 1 : anchor.x;
+  const fixedY = handle?.includes("s") ? 0 : handle?.includes("n") ? 1 : anchor.y;
+
+  // 2. That point relative to the anchor, in unscaled texture pixels.
+  const localX = (fixedX - anchor.x) * baseSize.width;
+  const localY = (fixedY - anchor.y) * baseSize.height;
+
+  // 3. How far the scale change would move it, rotated into parent space;
+  //    shifting position by this cancels the movement.
+  const offsetX = (startScale.x - nextScale.x) * localX;
+  const offsetY = (startScale.y - nextScale.y) * localY;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  return {
+    x: offsetX * cos - offsetY * sin,
+    y: offsetX * sin + offsetY * cos,
+  };
+}
+
 export function getAngleFromPoint(
   point: { x: number; y: number },
   center: { x: number; y: number },

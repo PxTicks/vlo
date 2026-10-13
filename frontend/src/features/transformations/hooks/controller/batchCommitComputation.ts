@@ -2,7 +2,12 @@ import type { ClipTransform, TimelineClip } from "../../../../types/TimelineType
 import { isDefaultTransform } from "../../catalogue/TransformationRegistry";
 import { isSplineParameter } from "../../types";
 import { insertTransformRespectingDefaultOrder } from "./transformOrdering";
-import { computeCommitMutation } from "./commitComputation";
+import { computeCommitMutation, resolveCommitKeyframeTime } from "./commitComputation";
+import {
+  completeLayoutKeyframeCommit,
+  isLayoutKeyframeGroupType,
+  prepareLayoutKeyframeCommit,
+} from "../../utils/layoutKeyframeGroup";
 
 interface BatchCommitComputationInput {
   groupId: string;
@@ -49,7 +54,20 @@ export function computeBatchCommitMutations({
     });
   }
 
-  let nextTransforms = transforms;
+  // Layout groups share one keyframe track (see layoutKeyframeGroup): key the
+  // target into it first, then key the siblings at the commit time.
+  const keyLayoutTrack =
+    isLayoutKeyframeGroupType(groupId) &&
+    activeClip !== undefined &&
+    Object.values(values).every((value) => typeof value === "number");
+  let nextTransforms = keyLayoutTrack
+    ? prepareLayoutKeyframeCommit(
+        transforms,
+        groupId,
+        initialTransformId,
+        pointEpsilonTicks,
+      )
+    : transforms;
   let transformId = initialTransformId;
   const applyLinkedControls = Object.keys(values).length <= 1;
 
@@ -91,5 +109,13 @@ export function computeBatchCommitMutations({
     transformId = commit.createdTransform.id;
   }
 
+  if (keyLayoutTrack && activeClip) {
+    return completeLayoutKeyframeCommit(
+      nextTransforms,
+      groupId,
+      resolveCommitKeyframeTime(activeClip, playheadTicks, keyframeSourceTimeTicks),
+      pointEpsilonTicks,
+    );
+  }
   return nextTransforms;
 }

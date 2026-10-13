@@ -7,7 +7,12 @@ import type {
 import type { ControlCommitOptions } from "../../panelUI/types";
 import type { TransformationDefinition } from "../catalogue/types";
 import { getTransformLayerDomain } from "../utils/layerDomain";
-import { getSectionGroupKeyframeColor } from "../utils/sectionKeyframes";
+import {
+  getSectionGroupKeyframeColor,
+  resolveSectionGroupColorIndex,
+} from "../utils/sectionKeyframes";
+import { isLayoutKeyframeGroupType } from "../utils/layoutKeyframeGroup";
+import { LayoutKeyframeButton } from "./LayoutKeyframeButton";
 import { getDefaultTransformationSectionModels } from "../utils/defaultSectionModels";
 import { TransformationGroup } from "./TransformationGroup";
 import { TransformationResetButton } from "./TransformationResetButton";
@@ -80,6 +85,7 @@ export function DefaultTransformationSections({
       definition.uiConfig.groups.map((group) => ({ definition, group })),
     );
     const groupIds = groupItems.map((item) => item.group.id);
+    const firstLayoutGroupIndex = groupIds.findIndex(isLayoutKeyframeGroupType);
     const isSectionEnabled = groupIds.every((groupId) => {
       const transform = activeTransforms.find((item) => item.type === groupId);
       return transform?.isEnabled ?? true;
@@ -91,6 +97,33 @@ export function DefaultTransformationSections({
       activeTransforms.some((item) => item.type === groupId),
     );
 
+    const showSectionReset =
+      onResetDefaultGroups !== undefined && resettableGroupIds.length > 0;
+    const sectionHeaderActions =
+      showSectionReset || firstLayoutGroupIndex !== -1 ? (
+        <>
+          {showSectionReset ? (
+            <TransformationResetButton
+              label={`Reset ${section.title}`}
+              tooltip={`Reset ${section.title} to defaults`}
+              onReset={() => onResetDefaultGroups(resettableGroupIds)}
+            />
+          ) : null}
+          {/* Position, scale and rotation share one keyframe track, so it is
+              keyed from the section header instead of per group. */}
+          {firstLayoutGroupIndex !== -1 ? (
+            <LayoutKeyframeButton
+              clipId={activeContextId}
+              timelineClip={timelineClip}
+              targetTransforms={activeTransforms}
+              onSetTransforms={onSetTransforms}
+              color={getSectionGroupKeyframeColor(firstLayoutGroupIndex)}
+              onToggleKeyframe={() => onActivateSection(section.sectionId)}
+            />
+          ) : null}
+        </>
+      ) : undefined;
+
     return (
       <TransformationSection
         key={section.sectionId}
@@ -100,15 +133,7 @@ export function DefaultTransformationSections({
         dimmed={dimmed}
         isActive={activeSectionId === section.sectionId}
         onSectionClick={() => onActivateSection(section.sectionId)}
-        headerActions={
-          onResetDefaultGroups && resettableGroupIds.length > 0 ? (
-            <TransformationResetButton
-              label={`Reset ${section.title}`}
-              tooltip={`Reset ${section.title} to defaults`}
-              onReset={() => onResetDefaultGroups(resettableGroupIds)}
-            />
-          ) : undefined
-        }
+        headerActions={sectionHeaderActions}
         sectionToggle={{
           checked: isSectionEnabled,
           onChange: (enabled) => onSetDefaultGroupsEnabled(groupIds, enabled),
@@ -161,7 +186,10 @@ export function DefaultTransformationSections({
                 targetTransforms={activeTransforms}
                 onUpdateTransform={onUpdateTransform}
                 onSetTransforms={onSetTransforms}
-                keyframeColor={getSectionGroupKeyframeColor(groupIndex)}
+                keyframeColor={getSectionGroupKeyframeColor(
+                  resolveSectionGroupColorIndex(groupIds, groupIndex),
+                )}
+                showKeyframe={!isLayoutKeyframeGroupType(group.id)}
                 onGroupEdited={() => onActivateSection(section.sectionId)}
                 captureSnapshot={captureSnapshot}
                 restoreSnapshot={restoreSnapshot}

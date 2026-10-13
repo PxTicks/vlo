@@ -162,29 +162,64 @@ describe("TransformationPanel toggles", () => {
     expect(toggled?.isEnabled).toBe(false);
   }, 15000);
 
-  it("materializes and disables missing default display transforms", () => {
-    mockTimeline([]);
+  it("shows one keyframe button for the layout group", () => {
+    mockTimeline([
+      {
+        id: "position_1",
+        type: "position",
+        isEnabled: true,
+        parameters: { x: 10, y: 0 },
+        keyframeTimes: [0],
+      } as Parameters<typeof mockTimeline>[0][number],
+      {
+        id: "scale_1",
+        type: "scale",
+        isEnabled: true,
+        parameters: { x: 1.5, y: 1.5, isLinked: true },
+      },
+    ]);
 
     render(<TransformationPanel />);
 
-    fireEvent.click(screen.getByLabelText("Display enabled"));
+    // One button in the Layout header (lit by position's key at the
+    // playhead) plus Blend's opacity group; none on position/scale/rotation.
+    expect(screen.getAllByTitle(/keyframe/i)).toHaveLength(2);
+    const layoutButton = screen.getByTitle("Keyframe exists at playhead");
+
+    fireEvent.click(layoutButton);
 
     expect(mockSetClipTransforms).toHaveBeenCalledTimes(1);
     const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
-    const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
-
-    // Layout, Fit Mode, Opacity and Blend Mode are unified into the single "Display"
-    // section, so its toggle materialises all of them at once.
-    expect(typed.map((transform) => transform.type)).toEqual([
-      "position",
-      "scale",
-      "rotation",
-      "fitMode",
-      "opacity",
-      "blendMode",
+    const layout = (
+      nextTransforms as Array<{ type: string; keyframeTimes?: number[] }>
+    ).filter((transform) => ["position", "scale"].includes(transform.type));
+    expect(layout.map((transform) => transform.keyframeTimes ?? [])).toEqual([
+      [],
+      [],
     ]);
-    expect(typed.every((transform) => transform.isEnabled === false)).toBe(true);
   });
+
+  it.each([
+    ["Layout", ["position", "scale", "rotation", "fitMode"]],
+    ["Blend", ["opacity", "blendMode"]],
+  ])(
+    "materializes and disables missing %s section transforms",
+    (sectionTitle, expectedTypes) => {
+      mockTimeline([]);
+
+      render(<TransformationPanel />);
+
+      fireEvent.click(screen.getByLabelText(`${sectionTitle} enabled`));
+
+      expect(mockSetClipTransforms).toHaveBeenCalledTimes(1);
+      const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
+      const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
+
+      // A bundled section's toggle materialises all of its transforms at once.
+      expect(typed.map((transform) => transform.type)).toEqual(expectedTypes);
+      expect(typed.every((transform) => transform.isEnabled === false)).toBe(true);
+    },
+  );
 
   it("inserts disabled default display transforms before dynamic transforms", () => {
     mockTimeline([
@@ -199,31 +234,29 @@ describe("TransformationPanel toggles", () => {
 
     render(<TransformationPanel />);
 
-    fireEvent.click(screen.getByLabelText("Display enabled"));
+    fireEvent.click(screen.getByLabelText("Layout enabled"));
 
     expect(mockSetClipTransforms).toHaveBeenCalledTimes(1);
     const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
-    // The unified Display toggle materialises position/scale/rotation/fitMode/
-    // opacity/blendMode, inserted before the pre-existing dynamic filter.
+    // The Layout toggle materialises position/scale/rotation/fitMode,
+    // inserted before the pre-existing dynamic filter.
     expect(typed.map((transform) => transform.type)).toEqual([
       "position",
       "scale",
       "rotation",
       "fitMode",
-      "opacity",
-      "blendMode",
       "filter",
     ]);
     // Only the materialised default-transforms should be disabled; the
     // pre-existing dynamic filter remains enabled.
     expect(
       typed
-        .slice(0, 6)
+        .slice(0, 4)
         .every((transform) => transform.isEnabled === false),
     ).toBe(true);
-    expect(typed[6].isEnabled).toBe(true);
+    expect(typed[4].isEnabled).toBe(true);
   });
 
   it("shows add path choices when no position path exists and can arm recording", () => {

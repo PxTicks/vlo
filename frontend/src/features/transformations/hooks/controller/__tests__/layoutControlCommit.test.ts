@@ -81,4 +81,126 @@ describe("commitLayoutControlToTransforms", () => {
       ],
     });
   });
+
+  describe("shared layout keyframe track", () => {
+    it("keys every layout transform when scale is edited against keyed position", () => {
+      const transforms: ClipTransform[] = [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: {
+            x: {
+              type: "spline",
+              points: [
+                { time: 0, value: 0 },
+                { time: 300, value: 300 },
+              ],
+            },
+            y: 0,
+          },
+          keyframeTimes: [0, 300],
+        },
+        {
+          id: "scale_1",
+          type: "scale",
+          isEnabled: true,
+          parameters: { x: 1.5, y: 1.5, isLinked: false },
+        },
+      ];
+
+      const result = commitLayoutControlToTransforms({
+        clip: createClip(transforms),
+        transforms,
+        groupId: "scale",
+        controlName: "x",
+        value: 2,
+        playheadTicks: 150,
+        pointEpsilonTicks: 1,
+      });
+
+      expect(result?.changedOtherTransforms).toBe(true);
+      const [position, scale] = result!.nextTransforms;
+      // Scale changes only at the playhead; it holds 1.5 at the other keys.
+      expect(scale.keyframeTimes).toEqual([0, 150, 300]);
+      expect(scale.parameters.x).toEqual({
+        type: "spline",
+        points: [
+          { time: 0, value: 1.5 },
+          { time: 150, value: 2 },
+          { time: 300, value: 1.5 },
+        ],
+      });
+      // Position gets a key at the playhead holding its current value.
+      expect(position.keyframeTimes).toEqual([0, 150, 300]);
+      expect(position.parameters.x).toMatchObject({
+        points: [
+          { time: 0, value: 0 },
+          { time: 150, value: 150 },
+          { time: 300, value: 300 },
+        ],
+      });
+    });
+
+    it("commits a constant without keys while the track is empty", () => {
+      const transforms: ClipTransform[] = [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: { x: 10, y: 0 },
+        },
+      ];
+
+      const result = commitLayoutControlToTransforms({
+        clip: createClip(transforms),
+        transforms,
+        groupId: "scale",
+        controlName: "x",
+        value: 2,
+        playheadTicks: 150,
+        pointEpsilonTicks: 1,
+      });
+
+      expect(result?.changedOtherTransforms).toBe(false);
+      expect(result?.nextTransforms[0]).toBe(transforms[0]);
+      expect(result?.nextTransforms[1]).toMatchObject({
+        type: "scale",
+        parameters: { x: 2 },
+      });
+      expect(result?.nextTransforms[1].keyframeTimes ?? []).toEqual([]);
+    });
+
+    it("does not key the track for non-numeric layout controls", () => {
+      const transforms: ClipTransform[] = [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: { x: 0, y: 0 },
+          keyframeTimes: [0],
+        },
+        {
+          id: "scale_1",
+          type: "scale",
+          isEnabled: true,
+          parameters: { x: 1, y: 1, isLinked: true },
+        },
+      ];
+
+      const result = commitLayoutControlToTransforms({
+        clip: createClip(transforms),
+        transforms,
+        groupId: "scale",
+        controlName: "isLinked",
+        value: false,
+        playheadTicks: 150,
+        pointEpsilonTicks: 1,
+      });
+
+      expect(result?.changedOtherTransforms).toBe(false);
+      expect(result?.nextTransforms[0]).toBe(transforms[0]);
+      expect(result?.nextTransforms[1].keyframeTimes ?? []).toEqual([]);
+    });
+  });
 });

@@ -10,7 +10,16 @@ function extractDefaultParams(typeOrFilterName: string, isFilter: boolean) {
     ? getEntryByFilterName(typeOrFilterName)
     : getEntryByType(typeOrFilterName);
 
-  entry?.uiConfig.groups.forEach((group) => {
+  // A definition that handles several transform types (layout: position /
+  // scale / rotation) keys each type's controls by its group id; taking every
+  // group would let scale's x/y defaults overwrite position's.
+  const ownGroup =
+    !isFilter && entry && entry.type !== typeOrFilterName
+      ? entry.uiConfig.groups.find((group) => group.id === typeOrFilterName)
+      : undefined;
+  const groups = ownGroup ? [ownGroup] : (entry?.uiConfig.groups ?? []);
+
+  groups.forEach((group) => {
     group.controls.forEach((control) => {
       if (control.type === "custom" || control.type === "spacer") return;
       params[control.name] = control.defaultValue;

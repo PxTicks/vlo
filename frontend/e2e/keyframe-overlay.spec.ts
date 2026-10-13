@@ -3,9 +3,9 @@ import { expect, test } from './fixtures';
 /**
  * Keyframe diamonds on the timeline clip.
  *
- * Regression: the Adjust panel bundles layout/fit-mode/blend-mode into one
- * "Display" section whose id (`default:display`) names no transformation
- * definition, so the overlay resolved no groups and drew no diamonds for
+ * Regression: the Adjust panel bundles definitions into sections (layout with
+ * fit mode; opacity with blend mode) whose ids name no single transformation
+ * definition, so the overlay once resolved no groups and drew no diamonds for
  * position/scale/rotation keyframes. Speed is a single-definition section and
  * kept working, so both are asserted here — the pair pins the section-id
  * contract between the panel and `collectSectionKeyframes`.

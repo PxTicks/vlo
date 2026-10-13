@@ -23,6 +23,11 @@ import { isDefaultTransform } from "../catalogue/TransformationRegistry";
 import { clampedClipSourceTime } from "../../timeline/time";
 import { computeCommitMutation } from "./controller/commitComputation";
 import { computeBatchCommitMutations } from "./controller/batchCommitComputation";
+import {
+  commitLayoutControlToTransforms,
+  type LayoutCommitGroup,
+} from "./controller/layoutControlCommit";
+import { isLayoutKeyframeGroupType } from "../utils/layoutKeyframeGroup";
 import { computeSpeedShapeUpdateForTransforms } from "./controller/speedDuration";
 import { createAddTransform } from "./controller/transformFactory";
 import {
@@ -592,6 +597,26 @@ export function useTransformationController(
           activeClip,
           playbackClock.time,
         );
+      }
+
+      // Layout groups share one keyframe track, so a commit can key the
+      // sibling transforms too; write the whole stack.
+      if (activeClip && isLayoutKeyframeGroupType(groupId)) {
+        const layoutCommit = commitLayoutControlToTransforms({
+          clip: activeClip,
+          transforms: currentTransforms,
+          groupId: groupId as LayoutCommitGroup,
+          controlName,
+          value,
+          transformId,
+          playheadTicks: playbackClock.time,
+          pointEpsilonTicks: POINT_EPSILON_TICKS,
+          keyframeSourceTimeTicks,
+        });
+        if (layoutCommit) {
+          applyTargetTransforms(layoutCommit.nextTransforms, options);
+        }
+        return;
       }
 
       const commit = computeCommitMutation({

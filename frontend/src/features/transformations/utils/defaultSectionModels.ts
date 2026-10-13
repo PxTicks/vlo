@@ -1,18 +1,39 @@
 import type { TransformationDefinition } from "../catalogue/types";
 import { getDefaultSectionId } from "./sectionIds";
 
-const DISPLAY_SECTION_TYPE = "display";
-// Layout (position/scale/rotation), Fit Mode, Opacity and Blend Mode are
-// unified into a single "Display" section — one section with a titled
-// sub-group per transform.
-const DISPLAY_DEFINITION_TYPES = new Set([
-  "layout",
-  "fitMode",
-  "opacity",
-  "blendMode",
-]);
+interface BundledSection {
+  sectionType: string;
+  title: string;
+  /** Membership test for the definitions the section bundles, in panel order. */
+  includes: (definition: TransformationDefinition) => boolean;
+}
 
-const AUDIO_SECTION_TYPE = "audio";
+const LAYOUT_DEFINITION_TYPES = new Set(["layout", "fitMode"]);
+const BLEND_DEFINITION_TYPES = new Set(["opacity", "blendMode"]);
+
+// Sections that bundle several definitions, one titled sub-group per group:
+// - "Layout": position / scale / rotation (one shared keyframe track, keyed
+//   from the section header) plus fit mode.
+// - "Blend": opacity and blend mode.
+// - "Audio": volume with the audio effects, which share
+//   `compatibleClips: "audio"`.
+const BUNDLED_SECTIONS: readonly BundledSection[] = [
+  {
+    sectionType: "layout",
+    title: "Layout",
+    includes: (definition) => LAYOUT_DEFINITION_TYPES.has(definition.type),
+  },
+  {
+    sectionType: "blend",
+    title: "Blend",
+    includes: (definition) => BLEND_DEFINITION_TYPES.has(definition.type),
+  },
+  {
+    sectionType: "audio",
+    title: "Audio",
+    includes: (definition) => definition.compatibleClips === "audio",
+  },
+];
 
 export interface DefaultTransformationSectionModel {
   sectionId: string;
@@ -21,57 +42,31 @@ export interface DefaultTransformationSectionModel {
   hideGroupTitles?: boolean;
 }
 
-// Volume + the audio effects share `compatibleClips: "audio"` and are bundled
-// into a single "Audio" section — one section with a sub-group per effect, the
-// same shape as the Layout section (position/scale/rotation) and Display
-// (fitMode/blendMode).
-function isAudioDefinition(definition: TransformationDefinition): boolean {
-  return definition.compatibleClips === "audio";
-}
-
 export function getDefaultTransformationSectionModels(
   definitions: TransformationDefinition[],
 ): DefaultTransformationSectionModel[] {
-  const displayDefinitions = definitions.filter((definition) =>
-    DISPLAY_DEFINITION_TYPES.has(definition.type),
-  );
-  const audioDefinitions = definitions.filter(isAudioDefinition);
-
   return definitions.flatMap((definition): DefaultTransformationSectionModel[] => {
-    if (DISPLAY_DEFINITION_TYPES.has(definition.type)) {
-      if (displayDefinitions[0]?.type !== definition.type) {
-        return [];
-      }
-
+    const bundle = BUNDLED_SECTIONS.find((candidate) => candidate.includes(definition));
+    if (!bundle) {
       return [
         {
-          sectionId: getDefaultSectionId(DISPLAY_SECTION_TYPE),
-          title: "Display",
-          definitions: displayDefinitions,
+          sectionId: getDefaultSectionId(definition.type),
+          title: definition.label,
+          definitions: [definition],
         },
       ];
     }
 
-    if (isAudioDefinition(definition)) {
-      // Emit the bundled section once, at the first audio definition.
-      if (audioDefinitions[0]?.type !== definition.type) {
-        return [];
-      }
-
-      return [
-        {
-          sectionId: getDefaultSectionId(AUDIO_SECTION_TYPE),
-          title: "Audio",
-          definitions: audioDefinitions,
-        },
-      ];
+    // Emit the bundled section once, at its first definition.
+    const bundled = definitions.filter(bundle.includes);
+    if (bundled[0] !== definition) {
+      return [];
     }
-
     return [
       {
-        sectionId: getDefaultSectionId(definition.type),
-        title: definition.label,
-        definitions: [definition],
+        sectionId: getDefaultSectionId(bundle.sectionType),
+        title: bundle.title,
+        definitions: bundled,
       },
     ];
   });

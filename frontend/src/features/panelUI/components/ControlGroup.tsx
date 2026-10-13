@@ -1,10 +1,11 @@
 import React, { memo, useMemo } from "react";
-import { Box, IconButton, Typography } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import type {
   ControlCommitOptions,
   LayoutGroup,
   ControlRenderProps,
 } from "../types";
+import { KeyframeToggleButton } from "./KeyframeToggleButton";
 
 interface ControlGroupProps {
   group: LayoutGroup;
@@ -121,33 +122,12 @@ export const ControlGroup = memo(function ControlGroup({
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
             {headerActions}
             {keyframe?.enabled ? (
-              <IconButton
-                size="small"
-                onClick={keyframe.onToggle}
+              <KeyframeToggleButton
+                active={keyframe.active}
+                onToggle={keyframe.onToggle}
+                color={keyframe.color}
                 disabled={keyframe.disabled}
-                title={
-                  keyframe.active
-                    ? "Keyframe exists at playhead"
-                    : "Add keyframe at playhead"
-                }
-                sx={{ p: 0.25 }}
-              >
-                <Box
-                  sx={(theme) => ({
-                    width: 8,
-                    height: 8,
-                    transform: "rotate(45deg)",
-                    backgroundColor: keyframe.active
-                      ? keyframe.color ?? theme.palette.secondary.main
-                      : "transparent",
-                    border: `1px solid ${keyframe.color ?? theme.palette.text.secondary}`,
-                    boxShadow: keyframe.active
-                      ? "0 0 4px rgba(0,0,0,0.5)"
-                      : "none",
-                    opacity: keyframe.disabled ? 0.45 : 1,
-                  })}
-                />
-              </IconButton>
+              />
             ) : null}
           </Box>
         </Box>

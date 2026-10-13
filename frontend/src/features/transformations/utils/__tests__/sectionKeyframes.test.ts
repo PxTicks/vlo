@@ -25,7 +25,7 @@ const baseClip: TimelineClip = {
 };
 
 describe("sectionKeyframes", () => {
-  it("collects keyframes from all groups in a default section with group colors", () => {
+  it("collects layout keyframes from all three transforms in one colour", () => {
     const clip: TimelineClip = {
       ...baseClip,
       transformations: [
@@ -63,19 +63,47 @@ describe("sectionKeyframes", () => {
       "rotation",
     ]);
 
-    const colorsByGroup = new Map(
-      markers.map((marker) => [marker.groupId, marker.color]),
-    );
-    // Layout's UI groups are now [position, scale, rotation] (indices
-    // 0/1/2) since fitMode was split into its own catalogue entry.
-    expect(colorsByGroup.get("position")).toBe(getSectionGroupKeyframeColor(0));
-    expect(colorsByGroup.get("scale")).toBe(getSectionGroupKeyframeColor(1));
-    expect(colorsByGroup.get("rotation")).toBe(getSectionGroupKeyframeColor(2));
+    // Position, scale and rotation share one keyframe track, so they share
+    // the first layout group's colour and lane.
+    expect(
+      markers.every(
+        (marker) =>
+          marker.color === getSectionGroupKeyframeColor(0) &&
+          marker.groupIndex === 0 &&
+          marker.isLayoutTrack,
+      ),
+    ).toBe(true);
   });
 
-  it("collects layout keyframes for the bundled Display section id", () => {
-    // The Adjust panel renders layout, fit mode and blend mode as one "Display"
-    // section, so the active section id names no definition of its own.
+  it("shows one layout marker per time when the transforms share a key", () => {
+    const clip: TimelineClip = {
+      ...baseClip,
+      transformations: [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: { x: 0, y: 0 },
+          keyframeTimes: [120, 360],
+        },
+        {
+          id: "scale_1",
+          type: "scale",
+          isEnabled: true,
+          parameters: { x: 1, y: 1 },
+          keyframeTimes: [120, 360.5],
+        },
+      ],
+    };
+
+    const markers = collectSectionKeyframes(clip, getDefaultSectionId("layout"));
+
+    expect(markers.map((marker) => marker.inputTime)).toEqual([120, 360]);
+  });
+
+  it("collects layout keyframes for the bundled Layout section id", () => {
+    // The Adjust panel renders layout and fit mode as one "Layout" section,
+    // resolved through the section models rather than a single definition.
     const clip: TimelineClip = {
       ...baseClip,
       transformations: [
@@ -91,16 +119,15 @@ describe("sectionKeyframes", () => {
 
     const markers = collectSectionKeyframes(
       clip,
-      getDefaultSectionId("display"),
+      getDefaultSectionId("layout"),
     );
 
     expect(markers).toHaveLength(1);
     expect(markers[0]).toMatchObject({
       groupId: "scale",
       inputTime: 240,
-      // Layout leads the Display section, so its groups keep the same colors
-      // they had as a standalone section.
-      color: getSectionGroupKeyframeColor(1),
+      // Position, scale and rotation share the first layout group's colour.
+      color: getSectionGroupKeyframeColor(0),
     });
   });
 

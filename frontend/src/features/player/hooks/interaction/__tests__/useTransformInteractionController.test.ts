@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { act } from "react";
 import {
-  Application, Container, FederatedPointerEvent, Graphics, Sprite, } from "pixi.js";
+  Application, Container, FederatedPointerEvent, Graphics, Sprite, Texture, TextureSource, } from "pixi.js";
 import type {
   TimelineClip, TimelineTrack, } from "../../../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../../timeline";
@@ -1230,6 +1230,293 @@ describe("useTransformInteractionController", () => {
       .clips.find((candidate) => candidate.id === clip.id)
       ?.transformations.find((transform) => transform.type === "scale");
     expect(undoneScale?.parameters).toMatchObject({ x: 1, y: 1 });
+  });
+
+  const createEdgeScaleClip = (
+    id: string,
+    transformations: TimelineClip["transformations"],
+  ) =>
+    ({
+      id,
+      trackId: "track_1",
+      type: "video",
+      assetId: "asset_1",
+      name: "Edge scale",
+      start: 0,
+      timelineDuration: 100,
+      sourceDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      transformations,
+    }) as TimelineClip;
+
+  // 100x50 texture centred at (960, 540): its east edge sits at x = 1010.
+  const placeEdgeScaleSprite = () => {
+    mockSprite.texture = new Texture({
+      source: new TextureSource({ width: 100, height: 50 }),
+    });
+    mockSprite.anchor.set(0.5);
+    mockSprite.position.set(960, 540);
+    mockSprite.scale.set(1, 1);
+  };
+
+  const dragEastHandle = (
+    result: { current: ReturnType<typeof useTransformInteractionController> },
+    toX: number,
+  ) => {
+    act(() => {
+      result.current.onHandlePointerDown(
+        {
+          stopPropagation: vi.fn(),
+          global: { x: 1010, y: 540 },
+          altKey: false,
+        } as unknown as FederatedPointerEvent,
+        "e",
+      );
+      getStageHandler("pointermove")?.({
+        global: { x: toX, y: 540 },
+      } as unknown as FederatedPointerEvent);
+      getStageHandler("pointerup")?.({
+        global: { x: toX, y: 540 },
+      } as unknown as FederatedPointerEvent);
+    });
+  };
+
+  it("keeps the opposite edge fixed by moving position, undone in one step", () => {
+    const clip = createEdgeScaleClip("clip_fixed_edge", [
+      {
+        id: "position_fixed_edge",
+        type: "position",
+        isEnabled: true,
+        parameters: { x: 10, y: -5 },
+      },
+    ]);
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    placeEdgeScaleSprite();
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    dragEastHandle(result, 1060);
+
+    // Width 100 -> 150 with the west edge (x = 910) held: centre moves +25.
+    expect(mockSprite.scale.x).toBeCloseTo(1.5);
+    expect(mockSprite.position.x - (100 * mockSprite.scale.x) / 2).toBeCloseTo(910);
+    const committed = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    expect(
+      committed?.find((transform) => transform.type === "scale")?.parameters,
+    ).toMatchObject({ x: 1.5, y: 1.5 });
+    expect(
+      committed?.find((transform) => transform.type === "position")?.parameters,
+    ).toMatchObject({ x: 35, y: -5 });
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    const undone = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    expect(undone?.some((transform) => transform.type === "scale")).toBe(false);
+    expect(
+      undone?.find((transform) => transform.type === "position")?.parameters,
+    ).toMatchObject({ x: 10, y: -5 });
+  });
+
+  it("materializes position for a fixed-edge drag on an untransformed clip", () => {
+    const clip = createEdgeScaleClip("clip_fixed_edge_fresh", []);
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    placeEdgeScaleSprite();
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    dragEastHandle(result, 1060);
+
+    const committed = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    expect(
+      committed?.find((transform) => transform.type === "position")?.parameters,
+    ).toMatchObject({ x: 25, y: 0 });
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    const undone = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    expect(
+      undone?.some(
+        (transform) => transform.type === "position" || transform.type === "scale",
+      ),
+    ).toBe(false);
+  });
+
+  it("scales about the centre when position follows a path", () => {
+    const path = {
+      type: "path2d" as const,
+      curve: "centripetal_catmull_rom" as const,
+      controlPoints: [
+        { x: 0, y: 0 },
+        { x: 10, y: 10 },
+      ],
+      timing: {
+        type: "spline" as const,
+        points: [
+          { time: 0, value: 0 },
+          { time: 1, value: 1 },
+        ],
+      },
+    };
+    const clip = createEdgeScaleClip("clip_fixed_edge_path", [
+      {
+        id: "position_path_edge",
+        type: "position",
+        isEnabled: true,
+        parameters: { x: 0, y: 0, path },
+      },
+    ]);
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    placeEdgeScaleSprite();
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    dragEastHandle(result, 1060);
+
+    expect(mockSprite.position.x).toBe(960);
+    const position = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)
+      ?.transformations.find((transform) => transform.type === "position");
+    expect(position?.parameters).toEqual({ x: 0, y: 0, path });
+  });
+
+  it("scales about the centre when the position transform is disabled", () => {
+    const clip = createEdgeScaleClip("clip_fixed_edge_disabled", [
+      {
+        id: "position_disabled_edge",
+        type: "position",
+        isEnabled: false,
+        parameters: { x: 10, y: -5 },
+      },
+    ]);
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    placeEdgeScaleSprite();
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    dragEastHandle(result, 1060);
+
+    expect(mockSprite.position.x).toBe(960);
+    const transforms = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    expect(
+      transforms?.filter((transform) => transform.type === "position"),
+    ).toEqual([
+      {
+        id: "position_disabled_edge",
+        type: "position",
+        isEnabled: false,
+        parameters: { x: 10, y: -5 },
+      },
+    ]);
+    expect(
+      transforms?.find((transform) => transform.type === "scale")?.parameters,
+    ).toMatchObject({ x: 1.5, y: 1.5 });
+  });
+
+  it("keys position into the layout track when scale is keyframed", () => {
+    const clip = createEdgeScaleClip("clip_fixed_edge_keyed", [
+      {
+        id: "position_keyed_edge",
+        type: "position",
+        isEnabled: true,
+        parameters: { x: 10, y: -5 },
+      },
+      {
+        id: "scale_keyed_edge",
+        type: "scale",
+        isEnabled: true,
+        parameters: { x: 1, y: 1, isLinked: true },
+        keyframeTimes: [0],
+      },
+    ]);
+    useTimelineStore.getState().addClip(clip);
+    activeClipRef = { current: clip };
+    placeEdgeScaleSprite();
+    playbackClock.setTime(50);
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    dragEastHandle(result, 1060);
+
+    const transforms = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    const position = transforms?.find((transform) => transform.type === "position");
+    const scale = transforms?.find((transform) => transform.type === "scale");
+    // Position no longer shifts at every frame: it holds its old value at the
+    // track's existing key and changes only at the playhead.
+    expect(position?.keyframeTimes).toEqual([0, 50]);
+    expect(position?.parameters.x).toEqual({
+      type: "spline",
+      points: [
+        { time: 0, value: 10 },
+        { time: 50, value: 35 },
+      ],
+    });
+    expect(scale?.keyframeTimes).toEqual([0, 50]);
+    expect(scale?.parameters.x).toEqual({
+      type: "spline",
+      points: [
+        { time: 0, value: 1 },
+        { time: 50, value: 1.5 },
+      ],
+    });
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    const undone = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    expect(
+      undone?.find((transform) => transform.type === "position"),
+    ).toMatchObject({ parameters: { x: 10, y: -5 } });
+    expect(
+      undone?.find((transform) => transform.type === "position")?.keyframeTimes ?? [],
+    ).toEqual([]);
   });
 
   it("materializes and commits rotation from rotate and alt-drag handles", () => {

@@ -6,6 +6,7 @@ import { createSourceTimeOverlayItem } from "../../timeline/clipOverlayApi";
 import {
   getTimelineClipById,
   parseMaskClipId,
+  setTimelineClipTransforms,
   updateTimelineClipTransform,
   useMaskClipsForParent,
 } from "../../timeline/api";
@@ -13,10 +14,17 @@ import { useTimelineViewStore } from "../../timeline/hooks/useTimelineViewStore"
 import { buildFrameSnappedSourceTimeDrag } from "../../timeline/utils/snapDragOverlay";
 import { useProjectStore } from "../../project/useProjectStore";
 import { getTicksPerFrame } from "../../timelineSelection";
-import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
+import type { TimelineClip } from "../../../types/TimelineTypes";
 import { isSplineParameter } from "../types";
 import { useTransformationViewStore } from "../store/useTransformationViewStore";
-import { collectSectionKeyframes } from "../utils/sectionKeyframes";
+import {
+  collectSectionKeyframes,
+  type SectionKeyframeMarker,
+} from "../utils/sectionKeyframes";
+import {
+  getLayoutKeyframeTimes,
+  moveLayoutKeyframe,
+} from "../utils/layoutKeyframeGroup";
 
 const POINT_EPSILON_TICKS = 1;
 
@@ -91,10 +99,9 @@ function resolveHostClip(
 }
 
 function findNeighborSourceTimes(
-  transform: ClipTransform | undefined,
+  times: readonly number[],
   sourceTimeTicks: number,
 ): { prev: number | null; next: number | null } {
-  const times = transform?.keyframeTimes ?? [];
   if (times.length === 0) return { prev: null, next: null };
 
   // `keyframeTimes` is maintained sorted; locate the dragged entry by
@@ -109,6 +116,38 @@ function findNeighborSourceTimes(
     prev: index > 0 ? sorted[index - 1] : null,
     next: index < sorted.length - 1 ? sorted[index + 1] : null,
   };
+}
+
+/** Keyframe times a marker's drag is bounded by: the shared layout track for
+ *  layout markers, otherwise the marker's own transform. */
+function getMarkerTrackTimes(
+  hostClip: TimelineClip,
+  marker: SectionKeyframeMarker,
+): number[] {
+  if (marker.isLayoutTrack) {
+    return getLayoutKeyframeTimes(hostClip.transformations, POINT_EPSILON_TICKS);
+  }
+  return (
+    hostClip.transformations.find((t) => t.id === marker.transformId)
+      ?.keyframeTimes ?? []
+  );
+}
+
+function commitLayoutKeyframeMove(
+  hostClipId: string,
+  oldSourceTimeTicks: number,
+  newSourceTimeTicks: number,
+): void {
+  const hostClip = getTimelineClipById(hostClipId);
+  if (!hostClip) return;
+  const nextTransforms = moveLayoutKeyframe(
+    hostClip.transformations,
+    oldSourceTimeTicks,
+    newSourceTimeTicks,
+    POINT_EPSILON_TICKS,
+  );
+  if (nextTransforms === hostClip.transformations) return;
+  setTimelineClipTransforms(hostClipId, nextTransforms);
 }
 
 function commitKeyframeMove(
@@ -204,11 +243,8 @@ function useKeyframeOverlayItems({
             clip,
             initialSourceTimeTicks: marker.inputTime,
             ...(() => {
-              const transform = hostClip.transformations.find(
-                (t) => t.id === marker.transformId,
-              );
               const { prev, next } = findNeighborSourceTimes(
-                transform,
+                getMarkerTrackTimes(hostClip, marker),
                 marker.inputTime,
               );
               return {
@@ -220,6 +256,14 @@ function useKeyframeOverlayItems({
               getTicksPerFrame(useProjectStore.getState().config.fps),
             getZoomScale: () => useTimelineViewStore.getState().zoomScale,
             onCommit: (snappedSourceTimeTicks) => {
+              if (marker.isLayoutTrack) {
+                commitLayoutKeyframeMove(
+                  hostClip.id,
+                  marker.inputTime,
+                  snappedSourceTimeTicks,
+                );
+                return;
+              }
               commitKeyframeMove(
                 hostClip.id,
                 marker.transformId,

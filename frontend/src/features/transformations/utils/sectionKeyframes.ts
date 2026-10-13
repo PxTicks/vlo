@@ -10,6 +10,10 @@ import {
 import { clipSourceTimeToVisual } from "./clipTimeDomains";
 import { getDefaultTransformationSectionModels } from "./defaultSectionModels";
 import {
+  isLayoutKeyframeGroupType,
+  isLayoutKeyframeTransform,
+} from "./layoutKeyframeGroup";
+import {
   DEFAULT_SECTION_PREFIX,
   DYNAMIC_SECTION_PREFIX,
   getDefaultSectionId,
@@ -17,6 +21,8 @@ import {
 } from "./sectionIds";
 
 export { getDefaultSectionId, getDynamicSectionId };
+
+const LAYOUT_MARKER_EPSILON_TICKS = 1;
 
 export const SECTION_GROUP_KEYFRAME_COLORS = [
   "#ffb000",
@@ -32,6 +38,7 @@ interface ResolvedSectionGroup {
   groupIndex: number;
   transform: ClipTransform;
   color: string;
+  isLayoutTrack: boolean;
 }
 
 export interface SectionKeyframeMarker {
@@ -43,6 +50,23 @@ export interface SectionKeyframeMarker {
   inputTime: number;
   visualTime: number;
   color: string;
+  /** One marker for the shared position/scale/rotation keyframe track; its
+   *  `transformId` is one of the three, edits must go through the track. */
+  isLayoutTrack: boolean;
+}
+
+/**
+ * Colour index for the group at `groupIndex` in a section's flattened group
+ * list: position, scale and rotation share the colour of the first of them,
+ * since they share one keyframe track.
+ */
+export function resolveSectionGroupColorIndex(
+  groupIds: readonly string[],
+  groupIndex: number,
+): number {
+  if (!isLayoutKeyframeGroupType(groupIds[groupIndex] ?? "")) return groupIndex;
+  const firstLayoutIndex = groupIds.findIndex(isLayoutKeyframeGroupType);
+  return firstLayoutIndex === -1 ? groupIndex : firstLayoutIndex;
 }
 
 export function getSectionGroupKeyframeColor(index: number): string {
@@ -54,12 +78,12 @@ export function getSectionGroupKeyframeColor(index: number): string {
 /**
  * The definitions a default section renders, in panel order.
  *
- * Sections are not 1:1 with definitions: "Display" bundles layout, fit mode and
- * blend mode, and "Audio" bundles volume with the audio effects, so their
- * section ids ("default:display", "default:audio") name no definition at all.
+ * Sections are not 1:1 with definitions: "Layout" bundles layout with fit mode,
+ * "Blend" bundles opacity and blend mode, and "Audio" bundles volume with the
+ * audio effects; "default:blend" and "default:audio" name no definition at all.
  * Resolve through the same section models the panel renders from, and fall back
  * to a bare definition type for panels that address a definition's own section
- * directly (the mask panel's standalone layout section).
+ * directly.
  */
 function resolveSectionDefinitions(
   sectionType: string,
@@ -82,11 +106,15 @@ function resolveDefaultSectionGroups(
   const resolved: ResolvedSectionGroup[] = [];
   // Group index runs across the whole section, matching the flattened order
   // `DefaultTransformationSections` uses to colour each group's keyframe dot.
+  const definitions = resolveSectionDefinitions(sectionType);
+  const groupIds = definitions.flatMap((definition) =>
+    definition.uiConfig.groups.map((group) => group.id),
+  );
   let groupIndex = 0;
 
-  resolveSectionDefinitions(sectionType).forEach((definition) => {
+  definitions.forEach((definition) => {
     definition.uiConfig.groups.forEach((group) => {
-      const currentGroupIndex = groupIndex;
+      const currentGroupIndex = resolveSectionGroupColorIndex(groupIds, groupIndex);
       groupIndex += 1;
 
       const transform = clip.transformations.find(
@@ -108,6 +136,7 @@ function resolveDefaultSectionGroups(
         groupIndex: currentGroupIndex,
         transform,
         color: getSectionGroupKeyframeColor(currentGroupIndex),
+        isLayoutTrack: isLayoutKeyframeTransform(transform),
       });
     });
   });
@@ -132,6 +161,7 @@ function resolveDynamicSectionGroups(
         groupIndex: 0,
         transform,
         color: getSectionGroupKeyframeColor(0),
+        isLayoutTrack: false,
       },
     ];
   }
@@ -141,6 +171,7 @@ function resolveDynamicSectionGroups(
     groupIndex,
     transform,
     color: getSectionGroupKeyframeColor(groupIndex),
+    isLayoutTrack: false,
   }));
 }
 
@@ -170,18 +201,35 @@ export function collectSectionKeyframes(
   sectionId: string,
 ): SectionKeyframeMarker[] {
   const groups = resolveSectionGroups(clip, sectionId);
+  // Unaligned keys from older projects still show once per time.
+  const layoutTimes: number[] = [];
 
   return groups
     .flatMap((group) =>
-      (group.transform.keyframeTimes ?? []).map((inputTime, markerIndex) => ({
-        id: `${group.transform.id}:${group.groupId}:${inputTime}:${markerIndex}`,
-        groupId: group.groupId,
-        groupIndex: group.groupIndex,
-        transformId: group.transform.id,
-        inputTime,
-        visualTime: clipSourceTimeToVisual(clip, inputTime),
-        color: group.color,
-      })),
+      (group.transform.keyframeTimes ?? []).flatMap((inputTime, markerIndex) => {
+        if (group.isLayoutTrack) {
+          if (
+            layoutTimes.some(
+              (time) => Math.abs(time - inputTime) <= LAYOUT_MARKER_EPSILON_TICKS,
+            )
+          ) {
+            return [];
+          }
+          layoutTimes.push(inputTime);
+        }
+        return [
+          {
+            id: `${group.transform.id}:${group.groupId}:${inputTime}:${markerIndex}`,
+            groupId: group.groupId,
+            groupIndex: group.groupIndex,
+            transformId: group.transform.id,
+            inputTime,
+            visualTime: clipSourceTimeToVisual(clip, inputTime),
+            color: group.color,
+            isLayoutTrack: group.isLayoutTrack,
+          },
+        ];
+      }),
     )
     .sort((a, b) => {
       if (a.visualTime !== b.visualTime) {

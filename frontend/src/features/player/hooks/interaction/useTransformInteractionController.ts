@@ -36,6 +36,7 @@ import {
   unbindStagePointerListeners,
 } from "./pointerStage";
 import {
+  computeFixedHandleOffset,
   computeHandleScale,
   getAngleFromPoint,
   lockCornerScaleAspectRatio,
@@ -86,6 +87,11 @@ interface InteractionState {
   startVisualScale: { x: number; y: number };
   startVisualRotation: number;
   startParams: { x: number; y: number; angle: number };
+  /** Position parameters at drag start, for scale drags that move position. */
+  startPositionParams: { x: number; y: number };
+  /** Scale drags keep the side opposite the handle fixed by moving position.
+   *  Off when position follows a path, which cannot take a plain offset. */
+  keepOppositeSideFixed: boolean;
   baseScale: { x: number; y: number };
   initialAngle: number;
   transformIds: { position: string | null; scale: string | null; rotation: string | null };
@@ -109,6 +115,8 @@ function createInitialInteractionState(): InteractionState {
     startVisualScale: { x: 1, y: 1 },
     startVisualRotation: 0,
     startParams: { x: 0, y: 0, angle: 0 },
+    startPositionParams: { x: 0, y: 0 },
+    keepOppositeSideFixed: false,
     baseScale: { x: 1, y: 1 },
     initialAngle: 0,
     transformIds: { position: null, scale: null, rotation: null },
@@ -307,7 +315,10 @@ export function useTransformInteractionController(
       });
     };
 
-    const ensurePositionTransformForLive = (clipId: string): string | null => {
+    const ensurePositionTransformForLive = (
+      clipId: string,
+      startX: number,
+    ): string | null => {
       const clip = findClipById(clipId);
       if (!clip) return null;
 
@@ -321,7 +332,7 @@ export function useTransformInteractionController(
       const commit = computeCommitMutation({
         groupId: "position",
         controlName: "x",
-        value: interactionRef.current.startParams.x,
+        value: startX,
         transforms: clip.transformations || [],
         activeClip: clip,
         playheadTicks: playbackClock.time,
@@ -376,13 +387,38 @@ export function useTransformInteractionController(
         current.scaleLinked,
       );
 
+      const newVisualScale = {
+        x: lockedParamScale.x * current.baseScale.x,
+        y: lockedParamScale.y * current.baseScale.y,
+      };
+      const positionOffset = current.keepOppositeSideFixed
+        ? computeFixedHandleOffset({
+            handle: current.handle,
+            anchor: sprite.anchor,
+            baseSize: {
+              width: sprite.texture.width || 1,
+              height: sprite.texture.height || 1,
+            },
+            rotation: current.startVisualRotation,
+            startScale: current.startVisualScale,
+            nextScale: newVisualScale,
+          })
+        : null;
+
       return {
         localDx: scaleDrag.localDelta.x,
         localDy: scaleDrag.localDelta.y,
         newParamX: lockedParamScale.x,
         newParamY: lockedParamScale.y,
-        newVisualScaleX: lockedParamScale.x * current.baseScale.x,
-        newVisualScaleY: lockedParamScale.y * current.baseScale.y,
+        newVisualScaleX: newVisualScale.x,
+        newVisualScaleY: newVisualScale.y,
+        newPositionParams: positionOffset
+          ? {
+              x: current.startPositionParams.x + positionOffset.x,
+              y: current.startPositionParams.y + positionOffset.y,
+            }
+          : null,
+        positionOffset,
       };
     };
 
@@ -466,7 +502,10 @@ export function useTransformInteractionController(
         }
 
         if (current.didMove && !current.transformIds.position) {
-          const materializedTransformId = ensurePositionTransformForLive(current.clipId);
+          const materializedTransformId = ensurePositionTransformForLive(
+            current.clipId,
+            current.startParams.x,
+          );
           if (materializedTransformId) {
             current.transformIds.position = materializedTransformId;
           }
@@ -489,10 +528,6 @@ export function useTransformInteractionController(
         const scaleDrag = computeScaleDrag(e.global);
         if (!scaleDrag) return;
 
-        sprite.scale.set(scaleDrag.newVisualScaleX, scaleDrag.newVisualScaleY);
-        onLiveSpriteTransform?.();
-        current.lastScaleParams = { x: scaleDrag.newParamX, y: scaleDrag.newParamY };
-
         if (
           hasDragMovement(
             DRAG_MOVE_EPSILON,
@@ -503,9 +538,31 @@ export function useTransformInteractionController(
           current.didMove = true;
         }
 
+        sprite.scale.set(scaleDrag.newVisualScaleX, scaleDrag.newVisualScaleY);
+        const { positionOffset, newPositionParams } = scaleDrag;
+        if (positionOffset && newPositionParams) {
+          if (current.didMove && !current.transformIds.position) {
+            current.transformIds.position = ensurePositionTransformForLive(
+              current.clipId,
+              current.startPositionParams.x,
+            );
+          }
+          sprite.position.set(
+            current.startSprite.x + positionOffset.x,
+            current.startSprite.y + positionOffset.y,
+          );
+          current.lastPositionParams = newPositionParams;
+        }
+        onLiveSpriteTransform?.();
+        current.lastScaleParams = { x: scaleDrag.newParamX, y: scaleDrag.newParamY };
+
         if (current.transformIds.scale) {
           liveParamStore.notify(current.transformIds.scale, "x", scaleDrag.newParamX);
           liveParamStore.notify(current.transformIds.scale, "y", scaleDrag.newParamY);
+        }
+        if (current.transformIds.position && newPositionParams) {
+          liveParamStore.notify(current.transformIds.position, "x", newPositionParams.x);
+          liveParamStore.notify(current.transformIds.position, "y", newPositionParams.y);
         }
         return;
       }
@@ -661,11 +718,45 @@ export function useTransformInteractionController(
               finalScale !== null
                 ? { x: finalScale.newParamX, y: finalScale.newParamY }
                 : current.lastScaleParams;
+            const finalPositionParams =
+              finalScale !== null
+                ? finalScale.newPositionParams
+                : current.lastPositionParams;
+
+            let scaleBaseTransforms = nextTransforms;
+            if (finalScaleParams && finalPositionParams) {
+              // Position goes first and leaves the history step open, so the
+              // scale commit below closes one undo step covering both.
+              const positionCommit = commitTransformControls({
+                clip: latestClip,
+                transforms: nextTransforms,
+                groupId: "position",
+                values: finalPositionParams,
+                transformId: current.transformIds.position ?? undefined,
+                playheadTicks: playbackClock.time,
+                keyframeSourceTimeTicks: resolveSourceKeyframeTime(latestClip),
+                pointEpsilonTicks: POINT_EPSILON_TICKS,
+                actions: {
+                  addClipTransform: addTimelineClipTransform,
+                  updateClipTransform: updateTimelineClipTransform,
+                  setClipTransforms: (clipId, transforms) =>
+                    setTimelineClipTransforms(clipId, transforms, {
+                      historyCoalesce: current.historyCoalesceKey
+                        ? { key: current.historyCoalesceKey, end: false }
+                        : undefined,
+                    }),
+                },
+              });
+              if (positionCommit) {
+                current.transformIds.position = positionCommit.transformId;
+                scaleBaseTransforms = positionCommit.nextTransforms;
+              }
+            }
 
             if (finalScaleParams) {
               const scaleCommit = commitTransformControls({
                 clip: latestClip,
-                transforms: nextTransforms,
+                transforms: scaleBaseTransforms,
                 groupId: "scale",
                 values: finalScaleParams,
                 transformId: current.transformIds.scale ?? undefined,
@@ -886,6 +977,21 @@ export function useTransformInteractionController(
         ? resolveScalar(rotationTransform.parameters.angle, rotationInputTime, 0)
         : 0;
 
+      const positionTransform = getPositionTransform(activeClip) ?? undefined;
+      const startPosition = resolvePositionAtVisualTime(
+        activeClip,
+        positionTransform,
+        localVisualTime,
+      );
+      // A disabled position transform can't carry the offset (rendering skips
+      // it) and enabling it would apply its stale values, so scale about the
+      // centre instead, as for paths.
+      const keepOppositeSideFixed =
+        mode === "scale" &&
+        positionTransform?.isEnabled !== false &&
+        !startPosition.path &&
+        !startPosition.customPathActive;
+
       const localPos = toViewportLocal(viewport, e.global);
       const visualScaleX = sprite.scale.x;
       const visualScaleY = sprite.scale.y;
@@ -903,9 +1009,11 @@ export function useTransformInteractionController(
         startVisualScale: { x: visualScaleX, y: visualScaleY },
         startVisualRotation: sprite.rotation,
         startParams: { x: paramX, y: paramY, angle: paramAngle },
+        startPositionParams: { x: startPosition.x, y: startPosition.y },
+        keepOppositeSideFixed,
         baseScale: { x: baseX, y: baseY },
         transformIds: {
-          position: null,
+          position: keepOppositeSideFixed ? (positionTransform?.id ?? null) : null,
           scale: scaleTransform?.id ?? null,
           rotation: rotationTransform?.id ?? null,
         },

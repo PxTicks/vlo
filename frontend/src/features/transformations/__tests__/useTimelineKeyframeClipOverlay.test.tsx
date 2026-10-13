@@ -138,23 +138,21 @@ describe("useTimelineKeyframeClipOverlay", () => {
           : null,
       ),
     ).toEqual([120, 240, 360, 480]);
-    // Layout's UI groups are now [position, scale, rotation] (indices
-    // 0/1/2) since fitMode was split into its own catalogue entry. Lanes
-    // and palette indices shift accordingly:
-    //   position (0) → top, orange  (#ffb000)
-    //   scale    (1) → middle, blue (#648fff)
-    //   rotation (2) → bottom
+    // Position, scale and rotation are one keyframe track: one lane and the
+    // first layout group's colour (orange) for every diamond.
     expect(result.current.map((item) => item.placement.lane)).toEqual([
-      "top",
       "middle",
-      "top",
-      "bottom",
+      "middle",
+      "middle",
+      "middle",
     ]);
-
-    const firstContent = result.current[0].content as ReactElement<{ sx?: { backgroundColor?: string } }>;
-    const secondContent = result.current[1].content as ReactElement<{ sx?: { backgroundColor?: string } }>;
-    expect(firstContent.props.sx?.backgroundColor).toBe("#ffb000");
-    expect(secondContent.props.sx?.backgroundColor).toBe("#648fff");
+    expect(
+      result.current.map(
+        (item) =>
+          (item.content as ReactElement<{ sx?: { backgroundColor?: string } }>)
+            .props.sx?.backgroundColor,
+      ),
+    ).toEqual(["#ffb000", "#ffb000", "#ffb000", "#ffb000"]);
   });
 
   it("projects active mask section keyframes onto the parent clip overlay", () => {
@@ -272,6 +270,70 @@ describe("useTimelineKeyframeClipOverlay", () => {
         ],
       },
     });
+  });
+
+  it("moves a layout diamond in every layout transform as one undo step", () => {
+    const clip: TimelineClip = {
+      ...baseClip,
+      transformations: [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: {
+            x: {
+              type: "spline",
+              points: [
+                { time: TICKS_PER_SECOND, value: 0 },
+                { time: 3 * TICKS_PER_SECOND, value: 100 },
+              ],
+            },
+            y: 0,
+          },
+          keyframeTimes: [TICKS_PER_SECOND, 3 * TICKS_PER_SECOND],
+        },
+        {
+          id: "scale_1",
+          type: "scale",
+          isEnabled: true,
+          parameters: { x: 1.5, y: 1.5, isLinked: true },
+          keyframeTimes: [TICKS_PER_SECOND, 3 * TICKS_PER_SECOND],
+        },
+      ],
+    };
+
+    useTimelineStore.setState({ clips: [clip] });
+    useTransformationViewStore.setState({
+      activeSection: {
+        clipId: clip.id,
+        sectionId: getDefaultSectionId("layout"),
+      },
+    });
+
+    const { result } = renderHook(() => useOverlayItems(clip));
+    expect(result.current).toHaveLength(2);
+    result.current[0].drag?.onDragEnd?.(
+      makeDragContext(clip, TICKS_PER_SECOND),
+    );
+
+    const transforms = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id)?.transformations;
+    expect(transforms?.map((transform) => transform.keyframeTimes)).toEqual([
+      [2 * TICKS_PER_SECOND, 3 * TICKS_PER_SECOND],
+      [2 * TICKS_PER_SECOND, 3 * TICKS_PER_SECOND],
+    ]);
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(
+      useTimelineStore
+        .getState()
+        .clips.find((candidate) => candidate.id === clip.id)
+        ?.transformations.map((transform) => transform.keyframeTimes),
+    ).toEqual([
+      [TICKS_PER_SECOND, 3 * TICKS_PER_SECOND],
+      [TICKS_PER_SECOND, 3 * TICKS_PER_SECOND],
+    ]);
   });
 
   it("uses the default cursor for draggable overlay keyframes", () => {

@@ -106,6 +106,28 @@ export type CommitComputationResult =
   | CommitUpdateComputation
   | CommitCreateComputation;
 
+/**
+ * Source-media time (project ticks) a commit at `playheadTicks` keys at.
+ * Prefers the caller's presentation-aware source time; otherwise pulls the raw
+ * playhead back through the clip's own speed stack (correct when no
+ * adjustment retimes the clip).
+ */
+export function resolveCommitKeyframeTime(
+  activeClip: TimelineClip,
+  playheadTicks: number,
+  keyframeSourceTimeTicks?: number,
+): number {
+  if (keyframeSourceTimeTicks !== undefined) return keyframeSourceTimeTicks;
+  const clipStart = activeClip.start;
+  return clipVisualToSourceTime(
+    activeClip,
+    Math.max(
+      clipStart,
+      Math.min(playheadTicks, clipStart + activeClip.timelineDuration),
+    ) - clipStart,
+  );
+}
+
 export function computeCommitMutation({
   groupId,
   controlName,
@@ -234,19 +256,11 @@ export function computeCommitMutation({
       currentKeyframeTimes.length > 0 || isControlSplineInPlace;
 
     if (shouldSyncGroup && activeClip) {
-      const clipStart = activeClip.start;
-      // Prefer the caller's presentation-aware source-media time; otherwise
-      // pull the raw playhead back through the clip's own speed stack (correct
-      // when no adjustment retimes the clip).
-      const keyframeTime =
-        keyframeSourceTimeTicks ??
-        clipVisualToSourceTime(
-          activeClip,
-          Math.max(
-            clipStart,
-            Math.min(playheadTicks, clipStart + activeClip.timelineDuration),
-          ) - clipStart,
-        );
+      const keyframeTime = resolveCommitKeyframeTime(
+        activeClip,
+        playheadTicks,
+        keyframeSourceTimeTicks,
+      );
 
       newKeyframeTimes = [...currentKeyframeTimes];
       if (

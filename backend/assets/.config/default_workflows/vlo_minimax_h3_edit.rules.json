@@ -121,18 +121,27 @@
     },
     "156": {
       "widgets": {
-        "batch_index": {
+        "index": {
           "label": "Result frame",
           "value_type": "int",
           "control": "slider",
           "slider_display": "number",
           "min": 0,
-          "max": 4,
+          "max": 1,
           "step": 1,
-          "default": 4,
+          "default": 1,
           "group_id": "image_generation",
           "group_title": "Image Generation",
           "group_order": 4
+        }
+      }
+    },
+    "157": {
+      "widgets": {
+        "batch_index": {
+          "label": "Pixel frame",
+          "value_type": "int",
+          "hidden": true
         },
         "length": {
           "label": "Frames to keep",

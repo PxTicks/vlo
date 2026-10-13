@@ -2,10 +2,10 @@
 
 H3 is a video model, and an edited still from it is a five-frame I2VA
 generation cut back to one picture: the source image frames the scene, the
-prompt describes the change, and the last frame of the decode is what vlo
-keeps. These checks pin the shape that makes that true — one required source
-input, the length fixed at the shortest legal clip, no audio half, and the
-decode sliced to a single picture.
+prompt describes the change, and one latent frame of the sampled clip becomes
+the picture. These checks pin the shape that makes that true — one required
+source input, the length fixed at the shortest legal clip, no audio half, and
+the decode sliced to a single picture.
 """
 
 from __future__ import annotations
@@ -30,10 +30,15 @@ SOURCE_NODE = 141
 RESIZE_NODE = 143
 GENERATOR_NODE = 136
 DECODE_NODE = 122
-SLICE_NODE = 156
-PREVIEW_NODE = 157
+STILL_NODE = 156
+SLICE_NODE = 157
+PREVIEW_NODE = 158
 WIDTH_NODE = 145
 HEIGHT_NODE = 146
+
+# Latent frame 0 is the keyframe the source image is encoded into; frame 1 is
+# the edit.
+RESULT_FRAME = 1
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -109,8 +114,7 @@ def test_minimax_h3_edit_workflow_wires_one_required_source_into_first_frame():
     assert nodes[SOURCE_NODE]["title"] == "Source Image"
     assert nodes[SOURCE_NODE]["widgets_values"][0] == ""
 
-    # Both keyframe branches stretch to the generation canvas, so the source is
-    # never cropped here.
+    # The source is stretched to the generation canvas, never cropped here.
     assert resize["widgets_values"][0] == "scale dimensions"
     assert resize["widgets_values"][3] == "disabled"
 
@@ -138,20 +142,39 @@ def test_minimax_h3_edit_workflow_samples_the_shortest_clip():
     assert generator["widgets_values_named"]["length"] == 5
 
 
-def test_minimax_h3_edit_workflow_keeps_the_last_decoded_frame():
+def test_minimax_h3_edit_workflow_keeps_one_latent_frame_of_the_edit():
     workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
     nodes = {node["id"]: node for node in workflow["nodes"]}
     links = {link[0]: tuple(link[1:5]) for link in workflow["links"]}
 
-    slice_inputs = {spec["name"]: spec for spec in nodes[SLICE_NODE]["inputs"]}
-    assert nodes[SLICE_NODE]["type"] == "ImageFromBatch"
-    assert links[slice_inputs["image"]["link"]][:2] == (DECODE_NODE, 0)
-    # Frame 0 is the source again, so the edited picture is the last of five.
-    assert nodes[SLICE_NODE]["widgets_values"] == [4, 1]
+    # Five pixel frames pack into two latent frames, and the edit is the second.
+    still = nodes[STILL_NODE]
+    assert still["type"] == "MiniMaxH3StillLatent"
+    assert links[still["inputs"][_input_index(still, "samples")]["link"]][:2] == (125, 0)
+    assert still["widgets_values"] == [RESULT_FRAME]
 
-    preview_inputs = {spec["name"]: spec for spec in nodes[PREVIEW_NODE]["inputs"]}
-    assert nodes[PREVIEW_NODE]["type"] == "PreviewImage"
-    assert links[preview_inputs["images"]["link"]][:2] == (SLICE_NODE, 0)
+    # The still wraps that one token as the shortest clip the H3 VAE decodes —
+    # a single token on its own produces tile seams and patch noise — and the
+    # decode's first pixel frame is that token exactly.
+    decode = nodes[DECODE_NODE]
+    assert links[decode["inputs"][_input_index(decode, "samples")]["link"]][:2] == (
+        STILL_NODE,
+        0,
+    )
+    slice_node = nodes[SLICE_NODE]
+    assert slice_node["type"] == "ImageFromBatch"
+    assert links[slice_node["inputs"][_input_index(slice_node, "image")]["link"]][:2] == (
+        DECODE_NODE,
+        0,
+    )
+    assert slice_node["widgets_values"] == [0, 1]
+
+    preview = nodes[PREVIEW_NODE]
+    assert preview["type"] == "PreviewImage"
+    assert links[preview["inputs"][_input_index(preview, "images")]["link"]][:2] == (
+        SLICE_NODE,
+        0,
+    )
 
 
 def test_minimax_h3_edit_rules_require_a_source_image_and_a_prompt():
@@ -197,10 +220,11 @@ def test_minimax_h3_edit_rules_expose_the_result_frame_and_hide_the_rest():
     rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
     widgets = rules["nodes"]
 
-    frame = widgets[str(SLICE_NODE)]["widgets"]["batch_index"]
+    frame = widgets[str(STILL_NODE)]["widgets"]["index"]
     assert frame["label"] == "Result frame"
-    assert (frame["min"], frame["max"], frame["default"]) == (0, 4, 4)
-    assert widgets[str(SLICE_NODE)]["widgets"]["length"]["hidden"] is True
+    assert (frame["min"], frame["max"], frame["default"]) == (0, 1, RESULT_FRAME)
+    for hidden in ("batch_index", "length"):
+        assert widgets[str(SLICE_NODE)]["widgets"][hidden]["hidden"] is True
     assert widgets[str(GENERATOR_NODE)]["widgets"]["length"]["hidden"] is True
 
     section_orders = {section["id"]: section["order"] for section in rules["sections"]}

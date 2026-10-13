@@ -9,7 +9,10 @@ composition, then the change, and finish on the result — that last state is th
 frame vlo keeps.
 
 - `MiniMax H3 Image Edit` pins **Length** to 5 frames, the shortest count on
-  H3's `17k+5` grid. Nothing past the first two latent frames is kept, so a
-  longer clip only costs time.
-- **Result frame** chooses which decoded frame becomes the picture. `0` is the
-  source frame again; the edited picture is the last frame.
+  H3's `17k+5` grid. Five pixel frames pack into two latent frames, and nothing
+  past them would be kept, so a longer clip only costs time.
+- **Result frame** chooses which latent frame becomes the picture. `0` is the
+  source frame; `1`, the default, is the edit.
+
+For the same idea with the source attached as a *reference* instead of as the
+first frame, see **MiniMax H3 Image Edit (Reference)**.

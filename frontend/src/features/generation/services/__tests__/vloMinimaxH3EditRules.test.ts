@@ -5,41 +5,50 @@ import { resolve } from "node:path";
 import { evaluateRewrites, type RewriteRule } from "../evaluateRewrites";
 
 /**
- * H3 image edit's only rewrite is the accelerator switch. Spectrum caches
- * sampling steps, so turning it off has to bypass the patch node rather than
- * leave it in the graph. The source image has no rewrite at all: it is required,
- * and nothing may drop it out of the prompt.
+ * Both H3 image edits have exactly one rewrite: the accelerator switch.
+ * Spectrum caches sampling steps, so turning it off has to bypass the patch
+ * node rather than leave it in the graph. The source image has no rewrite at
+ * all — it is required, and nothing may drop it out of the prompt.
+ *
+ * The two workflows number Spectrum differently, which is exactly how a copied
+ * rewrite ends up pointing at the wrong node, so the expected node is pinned
+ * per workflow.
  */
-const RULES_PATH = resolve(
+const CONFIG_DIR = resolve(
   __dirname,
-  "../../../../../../backend/assets/.config/default_workflows/vlo_minimax_h3_edit.rules.json",
+  "../../../../../../backend/assets/.config/default_workflows",
 );
 
-const rules = JSON.parse(readFileSync(RULES_PATH, "utf-8")) as {
-  rewrites: RewriteRule[];
-};
+const CASES = [
+  { workflow: "vlo_minimax_h3_edit", spectrumNode: "148" },
+  { workflow: "vlo_minimax_h3_edit_ref", spectrumNode: "146" },
+] as const;
 
-// Media inputs register under both their node id and "<nodeId>:<param>".
-const SOURCE_INPUT_IDS = new Set(["141", "141:image"]);
+function loadRewrites(workflow: string): RewriteRule[] {
+  const rules = JSON.parse(
+    readFileSync(resolve(CONFIG_DIR, `${workflow}.rules.json`), "utf-8"),
+  ) as { rewrites: RewriteRule[] };
+  return rules.rewrites;
+}
 
-function bypassFor(spectrumEnabled: boolean): string[] {
-  return evaluateRewrites(rules.rewrites, SOURCE_INPUT_IDS, {
+function bypassFor(rewrites: RewriteRule[], spectrumEnabled: boolean): string[] {
+  return evaluateRewrites(rewrites, new Set(["141", "141:image"]), {
     frontend_control_spectrum_enabled: spectrumEnabled,
   }).bypass;
 }
 
-describe("vlo_minimax_h3_edit rewrites", () => {
+describe.each(CASES)("$workflow rewrites", ({ workflow, spectrumNode }) => {
+  const rewrites = loadRewrites(workflow);
+
   it("keeps the Spectrum patch while the control is on", () => {
-    expect(bypassFor(true)).toEqual([]);
+    expect(bypassFor(rewrites, true)).toEqual([]);
   });
 
   it("bypasses the Spectrum patch when the control is off", () => {
-    expect(bypassFor(false)).toEqual(["148"]);
+    expect(bypassFor(rewrites, false)).toEqual([spectrumNode]);
   });
 
   it("declares no input-presence rewrite, so the source image is never dropped", () => {
-    expect(rules.rewrites.every((rule) => rule.when.kind !== "input_presence")).toBe(
-      true,
-    );
+    expect(rewrites.every((rule) => rule.when.kind !== "input_presence")).toBe(true);
   });
 });

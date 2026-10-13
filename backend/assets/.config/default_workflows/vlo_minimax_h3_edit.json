@@ -1,8 +1,8 @@
 {
-  "id": "ad3c8d66-981f-4dbd-89a3-3dcd42ccde77",
+  "id": "52dad581-b181-4e0b-8a41-10b9f3d0185c",
   "revision": 0,
-  "last_node_id": 157,
-  "last_link_id": 242,
+  "last_node_id": 158,
+  "last_link_id": 243,
   "nodes": [
     {
       "id": 117,
@@ -50,10 +50,10 @@
       "title": "Note: MiniMax H3 Image Edit",
       "properties": {},
       "widgets_values": [
-        "## MiniMax H3 Image Edit (vlo)\n\nA still edited by the video model. [MiniMax H3](https://www.minimax.io/blog/minimax-h3) has no image-to-image mode, so the edit is a **five-frame I2VA generation**: the source picture is the first frame, the prompt describes what the shot should end up looking like, and the last frame of the decode is the picture vlo keeps.\n\n## About this workflow\n\n- **Source image** is required. It is stretched to the generation canvas and wired to `first_frame`, so H3 reads it with the I2VA instruction (`<Picture 1>` at 0.00 seconds) rather than as a loose reference.\n- **Length** is pinned to 5 frames — the shortest count on H3's `17k+5` grid, and the cheapest pass the model can be asked for. Nothing past the first two latent frames would be kept.\n- **Result frame** picks which decoded frame becomes the picture. Frame 0 is the source frame again (the causal first latent frame is the encoded keyframe, and the decode is exact for it), so the edited picture is the last frame. Intermediate indices sit between the two.\n- **No soundtrack**. H3 samples the audio half of its latent either way; this graph decodes the picture only, so the audio VAE is not loaded and the soundscape fields in the prompt are ignored.\n\n**Key inputs**\n\n- **Source image**: the picture to change. Its aspect ratio frames the generation.\n- **Prompt**: the I2VA block — the first-frame instruction line, then `integrated_multimodal_description` (style, subjects and composition of the source, then the change, ending on the result), then `overall_soundscape` and `non_diegetic_music`.\n- **Width / Height**: driven by vlo's resolution and aspect-ratio controls. H3's native canvas is a 768px short edge, capped at 768x1344 pixels, rounded to a multiple of 32.\n- **Result frame**: `0` is the source frame, `1`-`4` walk toward the edited result; the last frame is the default.\n"
+        "## MiniMax H3 Image Edit (vlo)\n\nA still edited by the video model. [MiniMax H3](https://www.minimax.io/blog/minimax-h3) has no image-to-image mode, so the edit is a **five-frame I2VA generation**: the source picture is the first frame, the prompt describes what the shot should end up looking like, and `MiniMaxH3StillLatent` hands the video VAE the single latent frame that becomes the picture.\n\n## About this workflow\n\n- **Source image** is required. It is stretched to the generation canvas and wired to `first_frame`, so H3 reads it with the I2VA instruction (`<Picture 1>` at 0.00 seconds) rather than as a loose reference.\n- **Length** is pinned to 5 frames — the shortest count on H3's `17k+5` grid. Five pixel frames pack into **two latent frames**, and only those two are sampled.\n- **Result frame** picks which latent frame becomes the picture. `0` is the source frame (the encoded keyframe, where the decode is exact); `1`, the default, is the edit.\n- **H3 Still Latent** wraps the chosen frame as the shortest clip the H3 VAE can decode, and a one-frame slice keeps its exact decode. Decoding a single token on its own is what produces tile seams and patch noise (Comfy-Org/ComfyUI#15416), which is why the slice exists.\n- **No soundtrack**. H3 samples the audio half of its latent either way; this graph decodes the picture only, so the audio VAE is not loaded and the soundscape fields in the prompt are ignored.\n\n**Key inputs**\n\n- **Source image**: the picture to change. Its aspect ratio frames the generation.\n- **Prompt**: the I2VA block — the first-frame instruction line, then `integrated_multimodal_description` (style, subjects and composition of the source, then the change, ending on the result), then `overall_soundscape` and `non_diegetic_music`.\n- **Width / Height**: driven by vlo's resolution and aspect-ratio controls. H3's native canvas is a 768px short edge, capped at 768x1344 pixels, rounded to a multiple of 32.\n- **Result frame**: `0` is the source frame, `1` is the edit; the edit is the default.\n"
       ],
       "widgets_values_named": {
-        "text": "## MiniMax H3 Image Edit (vlo)\n\nA still edited by the video model. [MiniMax H3](https://www.minimax.io/blog/minimax-h3) has no image-to-image mode, so the edit is a **five-frame I2VA generation**: the source picture is the first frame, the prompt describes what the shot should end up looking like, and the last frame of the decode is the picture vlo keeps.\n\n## About this workflow\n\n- **Source image** is required. It is stretched to the generation canvas and wired to `first_frame`, so H3 reads it with the I2VA instruction (`<Picture 1>` at 0.00 seconds) rather than as a loose reference.\n- **Length** is pinned to 5 frames — the shortest count on H3's `17k+5` grid, and the cheapest pass the model can be asked for. Nothing past the first two latent frames would be kept.\n- **Result frame** picks which decoded frame becomes the picture. Frame 0 is the source frame again (the causal first latent frame is the encoded keyframe, and the decode is exact for it), so the edited picture is the last frame. Intermediate indices sit between the two.\n- **No soundtrack**. H3 samples the audio half of its latent either way; this graph decodes the picture only, so the audio VAE is not loaded and the soundscape fields in the prompt are ignored.\n\n**Key inputs**\n\n- **Source image**: the picture to change. Its aspect ratio frames the generation.\n- **Prompt**: the I2VA block — the first-frame instruction line, then `integrated_multimodal_description` (style, subjects and composition of the source, then the change, ending on the result), then `overall_soundscape` and `non_diegetic_music`.\n- **Width / Height**: driven by vlo's resolution and aspect-ratio controls. H3's native canvas is a 768px short edge, capped at 768x1344 pixels, rounded to a multiple of 32.\n- **Result frame**: `0` is the source frame, `1`-`4` walk toward the edited result; the last frame is the default.\n"
+        "text": "## MiniMax H3 Image Edit (vlo)\n\nA still edited by the video model. [MiniMax H3](https://www.minimax.io/blog/minimax-h3) has no image-to-image mode, so the edit is a **five-frame I2VA generation**: the source picture is the first frame, the prompt describes what the shot should end up looking like, and `MiniMaxH3StillLatent` hands the video VAE the single latent frame that becomes the picture.\n\n## About this workflow\n\n- **Source image** is required. It is stretched to the generation canvas and wired to `first_frame`, so H3 reads it with the I2VA instruction (`<Picture 1>` at 0.00 seconds) rather than as a loose reference.\n- **Length** is pinned to 5 frames — the shortest count on H3's `17k+5` grid. Five pixel frames pack into **two latent frames**, and only those two are sampled.\n- **Result frame** picks which latent frame becomes the picture. `0` is the source frame (the encoded keyframe, where the decode is exact); `1`, the default, is the edit.\n- **H3 Still Latent** wraps the chosen frame as the shortest clip the H3 VAE can decode, and a one-frame slice keeps its exact decode. Decoding a single token on its own is what produces tile seams and patch noise (Comfy-Org/ComfyUI#15416), which is why the slice exists.\n- **No soundtrack**. H3 samples the audio half of its latent either way; this graph decodes the picture only, so the audio VAE is not loaded and the soundscape fields in the prompt are ignored.\n\n**Key inputs**\n\n- **Source image**: the picture to change. Its aspect ratio frames the generation.\n- **Prompt**: the I2VA block — the first-frame instruction line, then `integrated_multimodal_description` (style, subjects and composition of the source, then the change, ending on the result), then `overall_soundscape` and `non_diegetic_music`.\n- **Width / Height**: driven by vlo's resolution and aspect-ratio controls. H3's native canvas is a 768px short edge, capped at 768x1344 pixels, rounded to a multiple of 32.\n- **Result frame**: `0` is the source frame, `1` is the edit; the edit is the default.\n"
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -499,7 +499,7 @@
           "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
-          "link": 212
+          "link": 241
         },
         {
           "localized_name": "vae",
@@ -514,7 +514,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            241
+            242
           ]
         }
       ],
@@ -1640,6 +1640,59 @@
     },
     {
       "id": 156,
+      "type": "MiniMaxH3StillLatent",
+      "pos": [
+        561.6738270839993,
+        4917.597864191353
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "samples",
+          "name": "samples",
+          "type": "LATENT",
+          "link": 212
+        },
+        {
+          "localized_name": "index",
+          "name": "index",
+          "type": "INT",
+          "widget": {
+            "name": "index"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "LATENT",
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            241
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MiniMaxH3StillLatent",
+        "cnr_id": "comfyui-minimax-creator",
+        "ver": "3.2.0"
+      },
+      "widgets_values": [
+        1
+      ],
+      "widgets_values_named": {
+        "index": 1
+      }
+    },
+    {
+      "id": 157,
       "type": "ImageFromBatch",
       "pos": [
         819.8553135377335,
@@ -1650,14 +1703,14 @@
         106
       ],
       "flags": {},
-      "order": 16,
+      "order": 18,
       "mode": 0,
       "inputs": [
         {
           "localized_name": "image",
           "name": "image",
           "type": "IMAGE",
-          "link": 241
+          "link": 242
         },
         {
           "localized_name": "batch_index",
@@ -1684,7 +1737,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            242
+            243
           ]
         }
       ],
@@ -1695,16 +1748,16 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        4,
+        0,
         1
       ],
       "widgets_values_named": {
-        "batch_index": 4,
+        "batch_index": 0,
         "length": 1
       }
     },
     {
-      "id": 157,
+      "id": 158,
       "type": "PreviewImage",
       "pos": [
         1150.0,
@@ -1715,14 +1768,14 @@
         520
       ],
       "flags": {},
-      "order": 17,
+      "order": 19,
       "mode": 0,
       "inputs": [
         {
           "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
-          "link": 242
+          "link": 243
         }
       ],
       "outputs": [
@@ -1812,14 +1865,6 @@
       125,
       3,
       "SIGMAS"
-    ],
-    [
-      212,
-      125,
-      0,
-      122,
-      0,
-      "LATENT"
     ],
     [
       218,
@@ -1934,18 +1979,34 @@
       "INT"
     ],
     [
-      241,
-      122,
+      212,
+      125,
       0,
       156,
+      0,
+      "LATENT"
+    ],
+    [
+      241,
+      156,
+      0,
+      122,
+      0,
+      "LATENT"
+    ],
+    [
+      242,
+      122,
+      0,
+      157,
       0,
       "IMAGE"
     ],
     [
-      242,
-      156,
-      0,
+      243,
       157,
+      0,
+      158,
       0,
       "IMAGE"
     ]
@@ -1993,7 +2054,7 @@
       "bounding": [
         521.6738270839994,
         4837.597864191353,
-        1010,
+        1120,
         681.1192960654462
       ],
       "color": "#3f789e",

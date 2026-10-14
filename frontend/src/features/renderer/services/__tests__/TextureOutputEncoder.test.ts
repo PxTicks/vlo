@@ -715,7 +715,14 @@ describe("TextureOutputEncoder blank-output probe", () => {
         throw new Error("context lost");
       }),
     };
-    const extract = { pixels: vi.fn(() => rgba([0, 9, 0, 255])) };
+    // Pixi 8 returns the buffer with its size, not the bare buffer.
+    const extract = {
+      pixels: vi.fn(() => ({
+        pixels: new Uint8ClampedArray(rgba([0, 9, 0, 255])),
+        width: 1,
+        height: 1,
+      })),
+    };
     await expect(encodeFrames({ gl, extract })).resolves.toEqual({
       mask: { hasVisibleContent: true },
     });

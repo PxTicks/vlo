@@ -1,4 +1,10 @@
-import { Container, Sprite, type Application, type Texture } from "pixi.js";
+import {
+  Container,
+  Sprite,
+  type Application,
+  type GetPixelsOutput,
+  type Texture,
+} from "pixi.js";
 import {
   AudioBufferSource,
   BufferTarget,
@@ -108,7 +114,7 @@ interface ManagedOutput {
 }
 
 interface RendererExtractApi {
-  pixels?: (target?: unknown) => Uint8Array | Uint8ClampedArray;
+  pixels?: (target?: unknown) => GetPixelsOutput;
   canvas?: (target?: unknown) => HTMLCanvasElement | Promise<HTMLCanvasElement>;
 }
 
@@ -580,7 +586,9 @@ export class TextureOutputEncoder {
 
     if (extract?.pixels) {
       try {
-        return pixelsContainNonBlackContent(extract.pixels(this.outputStage));
+        return pixelsContainNonBlackContent(
+          extract.pixels(this.outputStage).pixels,
+        );
       } catch {
         // Fall through to the canvas-based path below.
       }

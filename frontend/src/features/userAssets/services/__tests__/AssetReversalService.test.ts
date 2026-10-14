@@ -1,4 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  BufferTarget,
+  Input,
+  InputAudioTrack,
+  InputVideoTrack,
+  Output,
+  VideoSample,
+  WrappedAudioBuffer,
+} from "mediabunny";
 
 interface MockVideoTrack {
   codedWidth: number;
@@ -8,7 +17,7 @@ interface MockVideoTrack {
 }
 
 interface MockAudioTrack {
-  codec?: string | null;
+  codec?: InputAudioTrack["codec"];
   computeDuration: ReturnType<typeof vi.fn>;
   getFirstTimestamp: ReturnType<typeof vi.fn>;
 }
@@ -16,25 +25,23 @@ interface MockAudioTrack {
 const mocks = vi.hoisted(() => ({
   videoTrack: null as MockVideoTrack | null,
   audioTrack: null as MockAudioTrack | null,
-  videoSamples: [] as Array<{
-    timestamp: number;
-    duration: number;
-    draw: ReturnType<typeof vi.fn>;
-    close: ReturnType<typeof vi.fn>;
-  }>,
-  audioBuffers: [] as Array<{
-    buffer: AudioBuffer;
-    timestamp: number;
-    duration: number;
-  }>,
+  videoSamples: [] as Array<
+    Pick<VideoSample, "timestamp" | "duration"> & {
+      draw: ReturnType<typeof vi.fn>;
+      close: ReturnType<typeof vi.fn>;
+    }
+  >,
+  audioBuffers: [] as WrappedAudioBuffer[],
   canvasContexts: [] as Array<object | null>,
-  target: { buffer: new Uint8Array([1, 2, 3]) as Uint8Array | null },
+  target: {
+    buffer: new Uint8Array([1, 2, 3]).buffer as ArrayBuffer | null,
+  } satisfies Partial<BufferTarget>,
   outputMimeType: "mock" as "mock" | "missing",
   input: {
     getPrimaryVideoTrack: vi.fn(),
     getPrimaryAudioTrack: vi.fn(),
     dispose: vi.fn(),
-  },
+  } satisfies Partial<Input>,
   output: {
     addVideoTrack: vi.fn(),
     addAudioTrack: vi.fn(),
@@ -42,11 +49,11 @@ const mocks = vi.hoisted(() => ({
     finalize: vi.fn(async () => undefined),
     getMimeType: vi.fn(async () => "application/mock"),
     target: null as unknown,
-  },
+  } satisfies Partial<Omit<Output, "target">> & { target: unknown },
   videoSource: {
     add: vi.fn(async () => undefined),
     close: vi.fn(),
-  },
+  } satisfies Partial<import("mediabunny").VideoSampleSource>,
   audioSource: {
     add: vi.fn(async () => undefined),
     close: vi.fn(),
@@ -141,11 +148,11 @@ function videoTrack(
     codedHeight,
     computeDuration: vi.fn(async () => duration),
     getFirstTimestamp: vi.fn(async () => firstTimestamp),
-  };
+  } satisfies Partial<InputVideoTrack | InputAudioTrack>;
 }
 
 function audioTrack(
-  codec: string | null = "aac",
+  codec: InputAudioTrack["codec"] = "aac",
   duration = 1,
   firstTimestamp = 0,
 ): MockAudioTrack {
@@ -153,7 +160,7 @@ function audioTrack(
     codec,
     computeDuration: vi.fn(async () => duration),
     getFirstTimestamp: vi.fn(async () => firstTimestamp),
-  };
+  } satisfies Partial<InputVideoTrack | InputAudioTrack>;
 }
 
 function videoSample(timestamp: number, duration: number) {
@@ -162,7 +169,7 @@ function videoSample(timestamp: number, duration: number) {
     duration,
     draw: vi.fn(),
     close: vi.fn(),
-  };
+  } satisfies Partial<VideoSample>;
 }
 
 function audioBuffer(channels: number[][], sampleRate = 4): AudioBuffer {
@@ -229,7 +236,7 @@ describe("reverseAssetFile", () => {
     mocks.videoSamples = [];
     mocks.audioBuffers = [];
     mocks.canvasContexts = [];
-    mocks.target.buffer = new Uint8Array([1, 2, 3]);
+    mocks.target.buffer = new Uint8Array([1, 2, 3]).buffer;
     mocks.outputMimeType = "mock";
     mocks.createdVideoSamples = [];
     installCanvasAndAudioMocks();
@@ -359,9 +366,18 @@ describe("reverseAssetFile", () => {
     });
   });
 
-  it.each([
+  it.each<
+    [
+      InputAudioTrack["codec"],
+      typeof WavOutputFormat | typeof Mp4OutputFormat,
+      string,
+      string,
+      string,
+    ]
+  >([
     ["pcm-s16", WavOutputFormat, "wav", "audio/wav", "pcm-s16"],
-    ["mystery", Mp4OutputFormat, "m4a", "audio/mp4", "aac"],
+    // Not a codec mediabunny reports today: stands in for one added later.
+    ["mystery" as InputAudioTrack["codec"], Mp4OutputFormat, "m4a", "audio/mp4", "aac"],
     [null, Mp4OutputFormat, "m4a", "audio/mp4", "aac"],
   ])(
     "selects a compatible audio container for %s",

@@ -1,3 +1,9 @@
+import type {
+  CanvasSink,
+  Input,
+  InputVideoTrack,
+  WrappedCanvas,
+} from "mediabunny";
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { useAssetStore } from "../useAssetStore";
 import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
@@ -13,20 +19,23 @@ const { mockCanvases } = vi.hoisted(() => {
       next: vi.fn(),
       return: vi.fn(),
       [Symbol.asyncIterator]: vi.fn(),
-    },
+    } satisfies Partial<AsyncGenerator<WrappedCanvas, void>>,
   };
 });
 
 // Mock dependencies
-vi.mock("mediabunny", () => {
+vi.mock("mediabunny", async () => {
+  const { fake } = await import("../../../testUtils/libraryFakes");
   const mockCanvasSink = {
-    canvases: vi.fn(() => mockCanvases),
-  };
+    canvases: vi.fn(() =>
+      fake<AsyncGenerator<WrappedCanvas, void>>(mockCanvases),
+    ),
+  } satisfies Partial<CanvasSink>;
   const mockInput = vi.fn(() => ({
     computeDuration: vi.fn().mockResolvedValue(10), // 10 seconds
-    getPrimaryVideoTrack: vi.fn().mockResolvedValue({}),
+    getPrimaryVideoTrack: vi.fn().mockResolvedValue(fake<InputVideoTrack>({})),
     dispose: vi.fn(),
-  }));
+  }) satisfies Partial<Input>);
 
   return {
     Input: mockInput,

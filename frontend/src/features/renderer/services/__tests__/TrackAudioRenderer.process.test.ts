@@ -1,12 +1,9 @@
+import type { AudioBufferSink, WrappedAudioBuffer } from "mediabunny";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../../core/time/constants";
 
-interface WrappedBuffer {
-  buffer: AudioBuffer;
-  timestamp: number;
-  duration: number;
-}
+type WrappedBuffer = WrappedAudioBuffer;
 
 const mocks = vi.hoisted(() => ({
   bufferBatches: [] as WrappedBuffer[][],
@@ -19,11 +16,11 @@ const mocks = vi.hoisted(() => ({
   pastEndBuffer: null as WrappedBuffer | null,
 }));
 
-vi.mock("mediabunny", () => ({
+vi.mock("mediabunny", async () => ({
   Input: vi.fn(),
   AudioBufferSink: vi.fn(function () {
     return {
-      buffers(start = 0) {
+      buffers(start = 0): AsyncGenerator<WrappedAudioBuffer, void> {
         mocks.sinkStarts.push(start);
         if (mocks.sinkStarts.length > 200) {
           throw new Error(`the renderer kept reopening its iterator: ${mocks.sinkStarts.slice(0, 8).join(", ")}`);
@@ -32,20 +29,26 @@ vi.mock("mediabunny", () => ({
           ? [mocks.pastEndBuffer]
           : [...(mocks.bufferBatches.shift() ?? [])];
         const iterator = {
-          next: vi.fn(async () =>
-            values.length > 0
-              ? { done: false, value: values.shift() }
-              : { done: true, value: undefined },
+          next: vi.fn(
+            async (): Promise<IteratorResult<WrappedAudioBuffer, void>> =>
+              values.length > 0
+                ? { done: false, value: values.shift()! }
+                : { done: true, value: undefined },
           ),
-          return: vi.fn(async () => ({ done: true, value: undefined })),
+          return: vi.fn(
+            async (): Promise<IteratorResult<WrappedAudioBuffer, void>> => ({
+              done: true,
+              value: undefined,
+            }),
+          ),
           [Symbol.asyncIterator]() {
-            return this;
+            return this as unknown as AsyncGenerator<WrappedAudioBuffer, void>;
           },
-        };
+        } satisfies Partial<AsyncGenerator<WrappedAudioBuffer, void>>;
         mocks.iterators.push(iterator);
-        return iterator;
+        return iterator as unknown as AsyncGenerator<WrappedAudioBuffer, void>;
       },
-    };
+    } satisfies Partial<AudioBufferSink>;
   }),
 }));
 

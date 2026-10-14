@@ -1,18 +1,21 @@
+import type { BufferTarget, Input, InputAudioTrack } from "mediabunny";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TimelineSelection } from "../../../../types/TimelineTypes";
 
 const mocks = vi.hoisted(() => ({
-  audioTrack: { id: "audio" } as unknown,
-  target: { buffer: new Uint8Array([1, 2, 3]) as Uint8Array | null },
+  audioTrack: { id: 1 } satisfies Partial<InputAudioTrack> as unknown,
+  target: {
+    buffer: new Uint8Array([1, 2, 3]).buffer as ArrayBuffer | null,
+  } satisfies Partial<BufferTarget>,
   input: {
     getPrimaryAudioTrack: vi.fn(),
     computeDuration: vi.fn(async () => 0),
     dispose: vi.fn(),
-  },
+  } satisfies Partial<Input>,
   conversion: {
-    isValid: true,
+    isValid: true as boolean,
     execute: vi.fn(async () => undefined),
-  },
+  } satisfies Partial<import("mediabunny").Conversion>,
   renderTimelineSelectionToMp4: vi.fn(),
 }));
 
@@ -59,7 +62,7 @@ describe("manualSlotMedia", () => {
     vi.clearAllMocks();
     mocks.conversion.isValid = true;
     mocks.audioTrack = { id: "audio" };
-    mocks.target.buffer = new Uint8Array([1, 2, 3]);
+    mocks.target.buffer = new Uint8Array([1, 2, 3]).buffer;
     mocks.renderTimelineSelectionToMp4.mockResolvedValue(
       new File(["video"], "selection.mp4", { type: "video/mp4" }),
     );

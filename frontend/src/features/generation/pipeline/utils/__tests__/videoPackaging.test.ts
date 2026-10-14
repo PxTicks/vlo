@@ -11,18 +11,21 @@ const mocks = vi.hoisted(() => {
   const videoSource = {
     add: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
-  };
+  } satisfies Partial<import("mediabunny").CanvasSource>;
   const audioSource = {
     add: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
-  };
+  } satisfies Partial<import("mediabunny").AudioBufferSource>;
   const output = {
-    addVideoTrack: vi.fn(async () => undefined),
-    addAudioTrack: vi.fn(async () => undefined),
+    // Synchronous in mediabunny: they return the output track, not a promise.
+    addVideoTrack: vi.fn(),
+    addAudioTrack: vi.fn(),
     start: vi.fn(async () => undefined),
     finalize: vi.fn(async () => undefined),
-  };
-  const target = { buffer: new Uint8Array([1, 2, 3]) as Uint8Array | null };
+  } satisfies Partial<import("mediabunny").Output>;
+  const target = {
+    buffer: new Uint8Array([1, 2, 3]).buffer as ArrayBuffer | null,
+  } satisfies Partial<import("mediabunny").BufferTarget>;
   return {
     context2d,
     canvas,
@@ -83,7 +86,7 @@ function audioFile(name = "audio.wav"): File {
 describe("videoPackaging", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.target.buffer = new Uint8Array([1, 2, 3]);
+    mocks.target.buffer = new Uint8Array([1, 2, 3]).buffer;
     mocks.canvas.getContext.mockReturnValue(mocks.context2d);
     vi.stubGlobal(
       "createImageBitmap",

@@ -176,6 +176,10 @@ export default defineConfig(({ mode }) => {
       globals: true,
       environment: "jsdom",
       setupFiles: "./src/setupTests.ts",
+      // V8 coverage plus a worker per core runs tests several times slower
+      // than a plain run, so sub-second tests can cross the 5 s default. Every
+      // coverage script sets COVERAGE_STAGE; the plain lane keeps the default.
+      ...(process.env.COVERAGE_STAGE ? { testTimeout: 20_000 } : {}),
       // Playwright specs stay out of Vitest, while e2e/__tests__ pins the
       // Node-side fixture harness against production persistence schemas.
       // `*.perf.test.*` files are the timing lane (`npm run bench:timeline`),

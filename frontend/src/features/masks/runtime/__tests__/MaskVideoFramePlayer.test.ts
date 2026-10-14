@@ -159,15 +159,15 @@ vi.mock("pixi.js", async () => {
     width: 1,
     height: 1,
     destroyed: false,
-    destroy: vi.fn(),
+    destroy: vi.fn<Texture["destroy"]>(),
   });
 
   class MockSprite implements Partial<Sprite> {
-    anchor = fake<ObservablePoint>({ set: vi.fn() });
+    anchor = fake<ObservablePoint>({ set: vi.fn<ObservablePoint["set"]>() });
     texture = textureEmpty;
     visible = true;
     destroyed = false;
-    destroy = vi.fn(() => {
+    destroy = vi.fn<Sprite["destroy"]>(() => {
       this.destroyed = true;
     });
   }
@@ -180,7 +180,7 @@ vi.mock("pixi.js", async () => {
           width: bitmap?.width ?? 1,
           height: bitmap?.height ?? 1,
           destroyed: false,
-          destroy: vi.fn(),
+          destroy: vi.fn<Texture["destroy"]>(),
         }),
       ),
       EMPTY: textureEmpty,

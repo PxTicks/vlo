@@ -48,14 +48,14 @@ vi.mock("pixi.js", async () => {
     Application: class MockApplication implements Partial<Application> {
       renderer = fake<Renderer>({});
       stage = fake<Container>({
-        on: vi.fn(),
-        off: vi.fn(),
+        on: vi.fn<Container["on"]>(),
+        off: vi.fn<Container["off"]>(),
       });
       ticker = fake<Ticker>({
-        add: vi.fn(),
-        remove: vi.fn(),
+        add: vi.fn<Ticker["add"]>(),
+        remove: vi.fn<Ticker["remove"]>(),
       });
-      destroy = vi.fn();
+      destroy = vi.fn<Application["destroy"]>();
     },
   };
 });

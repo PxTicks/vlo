@@ -4,7 +4,9 @@ import type {
   ObservablePoint,
   RenderTexture as PixiRenderTexture,
   Sprite as PixiSprite,
+  Texture as PixiTexture,
 } from "pixi.js";
+import { fake } from "../../../../testUtils/libraryFakes";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -14,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   createdGraphics: [] as Array<Partial<PixiGraphics>>,
   createdSprites: [] as PixiSprite[],
   createdContainers: [] as Array<Partial<PixiContainer>>,
-  textureFrom: vi.fn(),
+  textureFrom: vi.fn<typeof import("pixi.js").Texture.from>(),
   requestRender: vi.fn(),
 }));
 
@@ -24,7 +26,7 @@ vi.mock("pixi.js", async () => {
     create: vi.fn((options: Record<string, unknown>) => {
       // `options` is test bookkeeping, not a RenderTexture member.
       const texture = Object.assign(
-        fake<PixiRenderTexture>({ destroy: vi.fn() }),
+        fake<PixiRenderTexture>({ destroy: vi.fn<PixiRenderTexture["destroy"]>() }),
         { options },
       );
       mocks.createdTextures.push(texture);
@@ -33,36 +35,38 @@ vi.mock("pixi.js", async () => {
   };
   const Graphics = vi.fn(function () {
     const graphics = {
-      rect: vi.fn(),
-      fill: vi.fn(),
-      circle: vi.fn(),
-      moveTo: vi.fn(),
-      lineTo: vi.fn(),
-      stroke: vi.fn(),
-      destroy: vi.fn(),
+      rect: vi.fn<PixiGraphics["rect"]>(),
+      fill: vi.fn<PixiGraphics["fill"]>(),
+      circle: vi.fn<PixiGraphics["circle"]>(),
+      moveTo: vi.fn<PixiGraphics["moveTo"]>(),
+      lineTo: vi.fn<PixiGraphics["lineTo"]>(),
+      stroke: vi.fn<PixiGraphics["stroke"]>(),
+      destroy: vi.fn<PixiGraphics["destroy"]>(),
     } satisfies Partial<PixiGraphics>;
-    graphics.rect.mockReturnValue(graphics);
-    graphics.fill.mockReturnValue(graphics);
-    graphics.circle.mockReturnValue(graphics);
-    graphics.moveTo.mockReturnValue(graphics);
-    graphics.lineTo.mockReturnValue(graphics);
-    graphics.stroke.mockReturnValue(graphics);
+    // Graphics calls chain: each returns the same instance.
+    const self = graphics as unknown as PixiGraphics;
+    graphics.rect.mockReturnValue(self);
+    graphics.fill.mockReturnValue(self);
+    graphics.circle.mockReturnValue(self);
+    graphics.moveTo.mockReturnValue(self);
+    graphics.lineTo.mockReturnValue(self);
+    graphics.stroke.mockReturnValue(self);
     mocks.createdGraphics.push(graphics);
     return graphics;
   });
   const Sprite = vi.fn(function (texture: unknown) {
     const sprite = {
       texture,
-      position: fake<ObservablePoint>({ set: vi.fn() }),
+      position: fake<ObservablePoint>({ set: vi.fn<ObservablePoint["set"]>() }),
       width: 0,
       height: 0,
-      destroy: vi.fn(),
+      destroy: vi.fn<Omit<PixiSprite, "texture">["destroy"]>(),
     } satisfies Partial<Omit<PixiSprite, "texture">> & { texture: unknown };
     mocks.createdSprites.push(sprite as unknown as PixiSprite);
     return sprite;
   });
   const Container = vi.fn(function () {
-    const container = { addChild: vi.fn() } satisfies Partial<PixiContainer>;
+    const container = { addChild: vi.fn<PixiContainer["addChild"]>() } satisfies Partial<PixiContainer>;
     mocks.createdContainers.push(container);
     return container;
   });
@@ -130,7 +134,9 @@ describe("brushBufferRegistry behavior", () => {
     mocks.createdGraphics = [];
     mocks.createdSprites = [];
     mocks.createdContainers = [];
-    mocks.textureFrom.mockImplementation(() => ({ destroy: vi.fn() }));
+    mocks.textureFrom.mockImplementation(() =>
+      fake<PixiTexture>({ destroy: vi.fn<PixiTexture["destroy"]>() }),
+    );
     activeRenderer = renderer();
     for (const id of ["mask", "other", "hydrate", "extract"]) {
       disposeBrushBuffer(id);
@@ -484,7 +490,7 @@ describe("brushBufferRegistry behavior", () => {
       }
     }
     vi.stubGlobal("Image", ImageMock);
-    const texture = { destroy: vi.fn() };
+    const texture = fake<PixiTexture>({ destroy: vi.fn<PixiTexture["destroy"]>() });
     mocks.textureFrom.mockReturnValue(texture);
     const bounds = { x: 2, y: 3, width: 4, height: 5 };
 

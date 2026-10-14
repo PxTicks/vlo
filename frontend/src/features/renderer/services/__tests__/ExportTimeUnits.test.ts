@@ -11,30 +11,30 @@ vi.mock("pixi.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("pixi.js")>();
   const { fake } = await import("../../../../testUtils/libraryFakes");
   const point = (x: number, y: number) =>
-    fake<ObservablePoint>({ x, y, set: vi.fn() });
+    fake<ObservablePoint>({ x, y, set: vi.fn<ObservablePoint["set"]>() });
   return {
     ...actual,
     Container: class MockContainer implements Partial<Container> {
-      addChild = vi.fn();
+      addChild = vi.fn<Container["addChild"]>();
       zIndex = 0;
-      destroy = vi.fn();
-      removeFromParent = vi.fn();
+      destroy = vi.fn<Container["destroy"]>();
+      removeFromParent = vi.fn<Container["removeFromParent"]>();
     },
     Sprite: class MockSprite implements Partial<Sprite> {
       anchor = point(0, 0);
-      texture = fake<Texture>({ destroy: vi.fn() });
+      texture = fake<Texture>({ destroy: vi.fn<Texture["destroy"]>() });
       visible = false;
       position = point(0, 0);
       scale = point(1, 1);
       pivot = point(0, 0);
       rotation = 0;
-      destroy = vi.fn();
-      setMask = vi.fn();
-      addChild = vi.fn();
+      destroy = vi.fn<Sprite["destroy"]>();
+      setMask = vi.fn<Sprite["setMask"]>();
+      addChild = vi.fn<Sprite["addChild"]>();
     },
     Texture: {
-      from: vi.fn(() => fake<Texture>({ destroy: vi.fn() })),
-      EMPTY: fake<Texture>({ destroy: vi.fn() }),
+      from: vi.fn(() => fake<Texture>({ destroy: vi.fn<Texture["destroy"]>() })),
+      EMPTY: fake<Texture>({ destroy: vi.fn<Texture["destroy"]>() }),
     },
   };
 });

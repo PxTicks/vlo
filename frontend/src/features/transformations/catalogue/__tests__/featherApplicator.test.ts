@@ -32,7 +32,7 @@ vi.mock("pixi.js", async () => {
     });
   const MOCK_TEXTURE = texture(100, 100);
   const TEXTURE_EMPTY = texture(0, 0);
-  const point = () => fake<ObservablePoint>({ copyFrom: vi.fn() });
+  const point = () => fake<ObservablePoint>({ copyFrom: vi.fn<ObservablePoint["copyFrom"]>() });
   return {
     Filter: {
       from: () => new MockFilter(),
@@ -94,7 +94,7 @@ vi.mock("pixi.js", async () => {
       skew = point();
       anchor = point();
       pivot = point();
-      destroy = vi.fn();
+      destroy = vi.fn<Sprite["destroy"]>();
     },
   };
 });

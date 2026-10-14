@@ -21,20 +21,20 @@ vi.mock("pixi.js", async () => {
     return {
         ...original,
         Application: class MockApplication implements Partial<Application> {
-            init = vi.fn().mockResolvedValue(undefined);
-            destroy = vi.fn();
+            init = vi.fn<Application["init"]>().mockResolvedValue(undefined);
+            destroy = vi.fn<Application["destroy"]>();
             stage = fake<Container>({
                 eventMode: 'passive', // Default
                 hitArea: null,
-                addChild: vi.fn(),
-                removeChild: vi.fn(),
+                addChild: vi.fn<Container["addChild"]>(),
+                removeChild: vi.fn<Container["removeChild"]>(),
             });
             renderer = fake<Renderer>({
-                resize: vi.fn(),
+                resize: vi.fn<Renderer["resize"]>(),
             });
             ticker = fake<Ticker>({
-                start: vi.fn(),
-                stop: vi.fn(),
+                start: vi.fn<Ticker["start"]>(),
+                stop: vi.fn<Ticker["stop"]>(),
             });
             screen = fake<Rectangle>({ width: 100, height: 100 }); // Mock screen rect
         }

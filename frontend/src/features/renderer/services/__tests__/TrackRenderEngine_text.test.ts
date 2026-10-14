@@ -52,7 +52,7 @@ vi.mock("pixi.js", async () => {
   const actual = await vi.importActual<typeof import("pixi.js")>("pixi.js");
   const { fake } = await import("../../../../testUtils/libraryFakes");
   const point = (x: number, y: number) =>
-    fake<ObservablePoint>({ x, y, set: vi.fn() });
+    fake<ObservablePoint>({ x, y, set: vi.fn<ObservablePoint["set"]>() });
   return {
     ...actual,
     Text: class MockText implements Partial<Text> {
@@ -61,31 +61,31 @@ vi.mock("pixi.js", async () => {
       constructor(options: unknown) {
         this.options = options;
       }
-      destroy = vi.fn();
+      destroy = vi.fn<Text["destroy"]>();
     },
     Texture: {
       from: vi.fn(() =>
         fake<Texture>({
           width: 100,
           height: 100,
-          destroy: vi.fn(),
+          destroy: vi.fn<Texture["destroy"]>(),
         }),
       ),
-      EMPTY: fake<Texture>({ width: 0, height: 0, destroy: vi.fn() }),
+      EMPTY: fake<Texture>({ width: 0, height: 0, destroy: vi.fn<Texture["destroy"]>() }),
     },
     Sprite: class MockSprite implements Partial<Sprite> {
       anchor = point(0, 0);
-      texture = fake<Texture>({ width: 0, height: 0, destroy: vi.fn() });
+      texture = fake<Texture>({ width: 0, height: 0, destroy: vi.fn<Texture["destroy"]>() });
       visible = false;
       position = point(0, 0);
       scale = point(1, 1);
       pivot = point(0, 0);
       rotation = 0;
-      addChild = vi.fn();
-      setMask = vi.fn();
-      addEffect = vi.fn();
-      removeEffect = vi.fn();
-      destroy = vi.fn();
+      addChild = vi.fn<Sprite["addChild"]>();
+      setMask = vi.fn<Sprite["setMask"]>();
+      addEffect = vi.fn<Sprite["addEffect"]>();
+      removeEffect = vi.fn<Sprite["removeEffect"]>();
+      destroy = vi.fn<Sprite["destroy"]>();
     },
     Container: class MockContainer implements Partial<Container> {
       parent = null as Container | null;
@@ -95,8 +95,8 @@ vi.mock("pixi.js", async () => {
       scale = point(1, 1);
       pivot = point(0, 0);
       rotation = 0;
-      addChild = vi.fn();
-      getLocalBounds = vi.fn(() =>
+      addChild = vi.fn<Container["addChild"]>();
+      getLocalBounds = vi.fn<Container["getLocalBounds"]>(() =>
         fake<Bounds>({
           x: -160,
           y: -90,
@@ -104,8 +104,8 @@ vi.mock("pixi.js", async () => {
           height: 180,
         }),
       );
-      removeFromParent = vi.fn();
-      destroy = vi.fn(() => {
+      removeFromParent = vi.fn<Container["removeFromParent"]>();
+      destroy = vi.fn<Container["destroy"]>(() => {
         this.destroyed = true;
       });
     },

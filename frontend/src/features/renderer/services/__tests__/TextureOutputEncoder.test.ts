@@ -56,11 +56,11 @@ vi.mock("pixi.js", async () => {
   const { fake } = await import("../../../../testUtils/libraryFakes");
   return {
     Container: class implements Partial<PixiContainer> {
-      addChild = vi.fn();
-      destroy = vi.fn();
+      addChild = vi.fn<PixiContainer["addChild"]>();
+      destroy = vi.fn<PixiContainer["destroy"]>();
     },
     Sprite: class implements Partial<PixiSprite> {
-      anchor = fake<ObservablePoint>({ set: vi.fn() });
+      anchor = fake<ObservablePoint>({ set: vi.fn<ObservablePoint["set"]>() });
     },
   };
 });
@@ -72,11 +72,11 @@ vi.mock("../../utils/outputTransformStack", () => ({
 vi.mock("mediabunny", () => ({
   Output: class implements Partial<MediabunnyOutput> {
     constructor() { outputs.push(this); }
-    addVideoTrack = vi.fn();
-    addAudioTrack = vi.fn();
-    start = vi.fn().mockResolvedValue(undefined);
-    cancel = vi.fn().mockResolvedValue(undefined);
-    finalize = vi.fn().mockResolvedValue(undefined);
+    addVideoTrack = vi.fn<MediabunnyOutput["addVideoTrack"]>();
+    addAudioTrack = vi.fn<MediabunnyOutput["addAudioTrack"]>();
+    start = vi.fn<MediabunnyOutput["start"]>().mockResolvedValue(undefined);
+    cancel = vi.fn<MediabunnyOutput["cancel"]>().mockResolvedValue(undefined);
+    finalize = vi.fn<MediabunnyOutput["finalize"]>().mockResolvedValue(undefined);
   },
   Mp4OutputFormat: class implements Partial<Mp4OutputFormat> {
     constructor(options: ConstructorParameters<typeof Mp4OutputFormat>[0]) {
@@ -92,7 +92,7 @@ vi.mock("mediabunny", () => ({
     constructor(_canvas: HTMLCanvasElement, config: (typeof canvasSourceConfigs)[number]) {
       canvasSourceConfigs.push(config);
     }
-    add = vi.fn(() => {
+    add = vi.fn<CanvasSource["add"]>(() => {
       let resolve!: () => void;
       let reject!: (reason: unknown) => void;
       const promise = new Promise<void>((res, rej) => {
@@ -102,11 +102,11 @@ vi.mock("mediabunny", () => ({
       addCalls.push({ resolve, reject, promise });
       return promise;
     });
-    close = vi.fn().mockResolvedValue(undefined);
+    close = vi.fn<CanvasSource["close"]>().mockResolvedValue(undefined);
   },
   AudioBufferSource: class implements Partial<AudioBufferSource> {
-    add = vi.fn();
-    close = vi.fn();
+    add = vi.fn<AudioBufferSource["add"]>();
+    close = vi.fn<AudioBufferSource["close"]>();
   },
 }));
 
@@ -747,7 +747,7 @@ describe("TextureOutputEncoder blank-output probe", () => {
       }),
     };
     const extract = fake<ExtractSystem>({
-      pixels: vi.fn(() => ({
+      pixels: vi.fn<ExtractSystem["pixels"]>(() => ({
         pixels: new Uint8ClampedArray(rgba([0, 9, 0, 255])),
         width: 1,
         height: 1,
@@ -764,10 +764,10 @@ describe("TextureOutputEncoder blank-output probe", () => {
       getImageData: () => ({ data: rgba([0, 0, 0, 255]) }),
     }));
     const extract = fake<ExtractSystem>({
-      pixels: vi.fn(() => {
+      pixels: vi.fn<ExtractSystem["pixels"]>(() => {
         throw new Error("unsupported");
       }),
-      canvas: vi.fn(() => canvas),
+      canvas: vi.fn<ExtractSystem["canvas"]>(() => canvas),
     });
     await expect(encodeFrames({ extract })).resolves.toEqual({
       mask: { hasVisibleContent: false },

@@ -9,19 +9,19 @@ const mocks = vi.hoisted(() => {
     getContext: vi.fn(() => context2d),
   };
   const videoSource = {
-    add: vi.fn(async () => undefined),
-    close: vi.fn(async () => undefined),
+    add: vi.fn<import("mediabunny").CanvasSource["add"]>(async () => undefined),
+    close: vi.fn<import("mediabunny").CanvasSource["close"]>(async () => undefined),
   } satisfies Partial<import("mediabunny").CanvasSource>;
   const audioSource = {
-    add: vi.fn(async () => undefined),
-    close: vi.fn(async () => undefined),
+    add: vi.fn<import("mediabunny").AudioBufferSource["add"]>(async () => undefined),
+    close: vi.fn<import("mediabunny").AudioBufferSource["close"]>(async () => undefined),
   } satisfies Partial<import("mediabunny").AudioBufferSource>;
   const output = {
     // Synchronous in mediabunny: they return the output track, not a promise.
-    addVideoTrack: vi.fn(),
-    addAudioTrack: vi.fn(),
-    start: vi.fn(async () => undefined),
-    finalize: vi.fn(async () => undefined),
+    addVideoTrack: vi.fn<import("mediabunny").Output["addVideoTrack"]>(),
+    addAudioTrack: vi.fn<import("mediabunny").Output["addAudioTrack"]>(),
+    start: vi.fn<import("mediabunny").Output["start"]>(async () => undefined),
+    finalize: vi.fn<import("mediabunny").Output["finalize"]>(async () => undefined),
   } satisfies Partial<import("mediabunny").Output>;
   const target = {
     buffer: new Uint8Array([1, 2, 3]).buffer as ArrayBuffer | null,

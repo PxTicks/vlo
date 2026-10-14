@@ -1,20 +1,23 @@
 import type { BufferTarget, Input, InputAudioTrack } from "mediabunny";
+import { fake } from "../../../../testUtils/libraryFakes";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TimelineSelection } from "../../../../types/TimelineTypes";
 
 const mocks = vi.hoisted(() => ({
-  audioTrack: { id: 1 } satisfies Partial<InputAudioTrack> as unknown,
+  audioTrack: { id: 1 } satisfies Partial<InputAudioTrack> as unknown as
+    | InputAudioTrack
+    | null,
   target: {
     buffer: new Uint8Array([1, 2, 3]).buffer as ArrayBuffer | null,
   } satisfies Partial<BufferTarget>,
   input: {
-    getPrimaryAudioTrack: vi.fn(),
-    computeDuration: vi.fn(async () => 0),
-    dispose: vi.fn(),
+    getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+    computeDuration: vi.fn<Input["computeDuration"]>(async () => 0),
+    dispose: vi.fn<Input["dispose"]>(),
   } satisfies Partial<Input>,
   conversion: {
     isValid: true as boolean,
-    execute: vi.fn(async () => undefined),
+    execute: vi.fn<import("mediabunny").Conversion["execute"]>(async () => undefined),
   } satisfies Partial<import("mediabunny").Conversion>,
   renderTimelineSelectionToMp4: vi.fn(),
 }));
@@ -61,7 +64,7 @@ describe("manualSlotMedia", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.conversion.isValid = true;
-    mocks.audioTrack = { id: "audio" };
+    mocks.audioTrack = fake<InputAudioTrack>({ id: 1 });
     mocks.target.buffer = new Uint8Array([1, 2, 3]).buffer;
     mocks.renderTimelineSelectionToMp4.mockResolvedValue(
       new File(["video"], "selection.mp4", { type: "video/mp4" }),
@@ -103,7 +106,7 @@ describe("manualSlotMedia", () => {
       extractAudioFromVideo(new File(["video"], "silent.mp4")),
     ).resolves.toBeNull();
 
-    mocks.audioTrack = { id: "audio" };
+    mocks.audioTrack = fake<InputAudioTrack>({ id: 1 });
     mocks.target.buffer = null;
     await expect(
       extractAudioFromVideo(new File(["video"], "broken.mp4")),
@@ -161,7 +164,7 @@ describe("manualSlotMedia", () => {
     mocks.audioTrack = null;
     await expect(trimAudioFile(file, 0, 96_000)).resolves.toBeNull();
 
-    mocks.audioTrack = { id: "audio" };
+    mocks.audioTrack = fake<InputAudioTrack>({ id: 1 });
     mocks.conversion.isValid = false;
     await expect(trimAudioFile(file, 0, 96_000)).resolves.toBeNull();
     expect(mocks.conversion.execute).not.toHaveBeenCalled();

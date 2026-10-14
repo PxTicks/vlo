@@ -42,9 +42,9 @@ vi.mock("pixi.js", async () => {
   return {
     ...actual,
     Graphics: class implements Partial<import("pixi.js").Graphics> {
-      rect = vi.fn().mockReturnThis();
-      fill = vi.fn().mockReturnThis();
-      clear = vi.fn();
+      rect = vi.fn<import("pixi.js").Graphics["rect"]>().mockReturnThis();
+      fill = vi.fn<import("pixi.js").Graphics["fill"]>().mockReturnThis();
+      clear = vi.fn<import("pixi.js").Graphics["clear"]>();
     },
     Application: vi.fn(),
   };

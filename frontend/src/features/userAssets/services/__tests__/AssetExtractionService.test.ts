@@ -15,7 +15,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   conversionOptions: null as unknown,
-  dispose: vi.fn(),
+  dispose: vi.fn<import("mediabunny").Input["dispose"]>(),
   execute: vi.fn(async () => undefined),
   captureFrame: vi.fn(async () =>
     new File(["png"], "source-frame.png", { type: "image/png" }),
@@ -34,7 +34,7 @@ vi.mock("mediabunny", async () => {
 
   class MockInput implements Partial<Input> {
     dispose = mocks.dispose;
-    getPrimaryAudioTrack = vi.fn(async () =>
+    getPrimaryAudioTrack = vi.fn<Input["getPrimaryAudioTrack"]>(async () =>
       fake<InputAudioTrack>({ id: 1, codec: "mp3" }),
     );
   }

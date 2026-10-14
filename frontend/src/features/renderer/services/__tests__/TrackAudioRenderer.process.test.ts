@@ -29,13 +29,13 @@ vi.mock("mediabunny", async () => ({
           ? [mocks.pastEndBuffer]
           : [...(mocks.bufferBatches.shift() ?? [])];
         const iterator = {
-          next: vi.fn(
+          next: vi.fn<AsyncGenerator<WrappedAudioBuffer, void>["next"]>(
             async (): Promise<IteratorResult<WrappedAudioBuffer, void>> =>
               values.length > 0
                 ? { done: false, value: values.shift()! }
                 : { done: true, value: undefined },
           ),
-          return: vi.fn(
+          return: vi.fn<AsyncGenerator<WrappedAudioBuffer, void>["return"]>(
             async (): Promise<IteratorResult<WrappedAudioBuffer, void>> => ({
               done: true,
               value: undefined,

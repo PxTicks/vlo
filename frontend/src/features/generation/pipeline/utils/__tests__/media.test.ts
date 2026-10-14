@@ -27,7 +27,7 @@ const mediaMocks = vi.hoisted(() => ({
   >,
   outputBuffer: new Uint8Array([1, 2, 3]).buffer as ArrayBuffer | null,
   getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
-  dispose: vi.fn(),
+  dispose: vi.fn<Input["dispose"]>(),
   execute: vi.fn<Conversion["execute"]>(),
   conversionInit: vi.fn<typeof Conversion.init>(),
 }));

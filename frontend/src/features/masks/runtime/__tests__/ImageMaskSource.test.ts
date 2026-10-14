@@ -1,10 +1,11 @@
-import type { ObservablePoint, Sprite as PixiSprite } from "pixi.js";
+import type { ObservablePoint, Sprite as PixiSprite, Texture } from "pixi.js";
+import { fake } from "../../../../testUtils/libraryFakes";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 
 const mocks = vi.hoisted(() => ({
   ensureAssetSourceLoaded: vi.fn(),
-  textureFrom: vi.fn(),
+  textureFrom: vi.fn<typeof import("pixi.js").Texture.from>(),
   emptyTexture: { destroyed: false },
 }));
 
@@ -16,7 +17,7 @@ vi.mock("pixi.js", async () => {
     public destroyed = false;
     public width = 0;
     public height = 0;
-    public readonly anchor = fake<ObservablePoint>({ set: vi.fn() });
+    public readonly anchor = fake<ObservablePoint>({ set: vi.fn<ObservablePoint["set"]>() });
 
     public destroy(): void {
       this.destroyed = true;
@@ -54,12 +55,14 @@ describe("ImageMaskSource", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.ensureAssetSourceLoaded.mockResolvedValue(null);
-    mocks.textureFrom.mockReturnValue({
-      width: 64,
-      height: 32,
-      destroyed: false,
-      destroy: vi.fn(),
-    });
+    mocks.textureFrom.mockReturnValue(
+      fake<Texture>({
+        width: 64,
+        height: 32,
+        destroyed: false,
+        destroy: vi.fn<Texture["destroy"]>(),
+      }),
+    );
 
     class ImageMock {
       public crossOrigin = "";
@@ -185,12 +188,12 @@ describe("ImageMaskSource", () => {
   });
 
   it("destroys only its owned image texture on disposal", async () => {
-    const texture = {
+    const texture = fake<Texture>({
       width: 10,
       height: 10,
       destroyed: false,
-      destroy: vi.fn(),
-    };
+      destroy: vi.fn<Texture["destroy"]>(),
+    });
     mocks.textureFrom.mockReturnValue(texture);
     const source = new ImageMaskSource();
 
@@ -203,12 +206,12 @@ describe("ImageMaskSource", () => {
   });
 
   it("fails closed while replacing an image mask", async () => {
-    const oldTexture = {
+    const oldTexture = fake<Texture>({
       width: 10,
       height: 10,
       destroyed: false,
-      destroy: vi.fn(),
-    };
+      destroy: vi.fn<Texture["destroy"]>(),
+    });
     mocks.textureFrom.mockReturnValue(oldTexture);
     const source = new ImageMaskSource();
     await source.setSource(createAsset());

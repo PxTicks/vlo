@@ -85,22 +85,22 @@ const {
     // `texture` is left unchecked: tests clear it to null to model "no frame
     // yet", where real Pixi would substitute Texture.EMPTY.
     mockSprite: {
-      anchor: fake<ObservablePoint>({ set: vi.fn() }),
+      anchor: fake<ObservablePoint>({ set: vi.fn<ObservablePoint["set"]>() }),
       zIndex: 0,
       texture: null as unknown,
       visible: true,
-      destroy: vi.fn(),
-      on: vi.fn(),
-      off: vi.fn(),
+      destroy: vi.fn<Omit<Sprite, "texture">["destroy"]>(),
+      on: vi.fn<Omit<Sprite, "texture">["on"]>(),
+      off: vi.fn<Omit<Sprite, "texture">["off"]>(),
       eventMode: "passive" as EventMode,
       cursor: "default" as Cursor | string,
       scale: fake<ObservablePoint>({ x: 1, y: 1 }),
       rotation: 0,
       position: fake<ObservablePoint>({ x: 0, y: 0 }),
       pivot: fake<ObservablePoint>({ x: 0, y: 0 }),
-      getGlobalPosition: vi.fn(() => fake<Point>({ x: 0, y: 0 })),
-      setMask: vi.fn(),
-      addChild: vi.fn(),
+      getGlobalPosition: vi.fn<Omit<Sprite, "texture">["getGlobalPosition"]>(() => fake<Point>({ x: 0, y: 0 })),
+      setMask: vi.fn<Omit<Sprite, "texture">["setMask"]>(),
+      addChild: vi.fn<Omit<Sprite, "texture">["addChild"]>(),
     } satisfies Partial<Omit<Sprite, "texture">> & { texture: unknown },
     MockWorker: MockWorkerClass,
   };
@@ -123,10 +123,10 @@ vi.mock("pixi.js", async () => {
         fake<Texture>({
           width: 100,
           height: 100,
-          destroy: vi.fn(),
+          destroy: vi.fn<Texture["destroy"]>(),
         }),
       ),
-      EMPTY: fake<Texture>({ destroy: vi.fn() }),
+      EMPTY: fake<Texture>({ destroy: vi.fn<Texture["destroy"]>() }),
     },
     // Every Sprite the engine creates is the one shared, checked fake.
     Sprite: class implements Partial<Sprite> {
@@ -139,25 +139,25 @@ vi.mock("pixi.js", async () => {
       zIndex = 0;
       effects: Effect[] = [];
       mask: Container | null = null;
-      addChild = vi.fn(<U extends ContainerChild[]>(...added: U): U[0] => {
+      addChild = vi.fn<Container["addChild"]>(<U extends ContainerChild[]>(...added: U): U[0] => {
         this.children.push(...added);
         return added[0];
       });
-      removeChild = vi.fn();
-      setMask = vi.fn();
-      addEffect = vi.fn((effect: Effect) => {
+      removeChild = vi.fn<Container["removeChild"]>();
+      setMask = vi.fn<Container["setMask"]>();
+      addEffect = vi.fn<Container["addEffect"]>((effect: Effect) => {
         if (!this.effects.includes(effect)) {
           this.effects.push(effect);
         }
       });
-      removeEffect = vi.fn((effect: Effect) => {
+      removeEffect = vi.fn<Container["removeEffect"]>((effect: Effect) => {
         this.effects = this.effects.filter((entry) => entry !== effect);
       });
-      destroy = vi.fn();
-      removeFromParent = vi.fn();
-      on = vi.fn();
-      off = vi.fn();
-      sortChildren = vi.fn();
+      destroy = vi.fn<Container["destroy"]>();
+      removeFromParent = vi.fn<Container["removeFromParent"]>();
+      on = vi.fn<Container["on"]>();
+      off = vi.fn<Container["off"]>();
+      sortChildren = vi.fn<Container["sortChildren"]>();
     },
     Application: vi.fn(),
   };

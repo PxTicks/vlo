@@ -10,6 +10,7 @@ import type { Mock } from "vitest";
 import { Application, Container } from "pixi.js";
 import type {
   ObservablePoint,
+  RenderOptions,
   Renderer,
   Sprite,
   Texture as PixiTexture,
@@ -71,7 +72,11 @@ vi.mock("pixi.js", async () => {
   const point = (x = 1, y = 1) =>
     fake<ObservablePoint>({
       // Mirrors Pixi's ObservablePoint.set(x, y = x).
-      set: vi.fn(function (this: ObservablePoint, nextX = 0, nextY = nextX) {
+      set: vi.fn<ObservablePoint["set"]>(function (
+        this: ObservablePoint,
+        nextX = 0,
+        nextY = nextX,
+      ) {
         this.x = nextX;
         this.y = nextY;
         return this;
@@ -83,33 +88,34 @@ vi.mock("pixi.js", async () => {
     ...actual,
     Application: class MockApplication implements Partial<Application> {
       stage = fake<Container>({
-        addChild: vi.fn(),
+        addChild: vi.fn<Container["addChild"]>(),
         scale: point(),
-        sortChildren: vi.fn(),
+        sortChildren: vi.fn<Container["sortChildren"]>(),
         sortableChildren: false,
       });
       renderer = fake<Renderer>({
         width: 0,
         height: 0,
-        render: vi.fn(),
+        // render is overloaded; the exporter passes a single options object.
+        render: vi.fn<(options: Container | RenderOptions) => void>(),
       });
       canvas = document.createElement("canvas");
-      init = vi.fn(async (opts?: { width?: number; height?: number }) => {
+      init = vi.fn<Application["init"]>(async (opts?: { width?: number; height?: number }) => {
         const size = { width: opts?.width ?? 0, height: opts?.height ?? 0 };
         Object.assign(this.renderer, size);
         this.canvas.width = size.width;
         this.canvas.height = size.height;
       });
-      destroy = vi.fn();
-      render = vi.fn();
+      destroy = vi.fn<Application["destroy"]>();
+      render = vi.fn<Application["render"]>();
     },
     Container: class MockContainer implements Partial<Container> {
       scale = point();
-      addChild = vi.fn();
-      sortChildren = vi.fn();
+      addChild = vi.fn<Container["addChild"]>();
+      sortChildren = vi.fn<Container["sortChildren"]>();
       sortableChildren = false;
-      destroy = vi.fn();
-      removeFromParent = vi.fn();
+      destroy = vi.fn<Container["destroy"]>();
+      removeFromParent = vi.fn<Container["removeFromParent"]>();
     },
     Sprite: class MockSprite implements Partial<Sprite> {
       anchor = point(0, 0);
@@ -122,24 +128,24 @@ vi.mock("pixi.js", async () => {
       blendMode = "normal" as const;
       filters = null as unknown as Sprite["filters"];
       texture = null as unknown as PixiTexture;
-      destroy = vi.fn();
+      destroy = vi.fn<Sprite["destroy"]>();
       visible = true;
-      setMask = vi.fn();
-      addChild = vi.fn();
+      setMask = vi.fn<Sprite["setMask"]>();
+      addChild = vi.fn<Sprite["addChild"]>();
     },
     RenderTexture: {
       create: vi.fn(({ width, height }: { width: number; height: number }) =>
         fake<import("pixi.js").RenderTexture>({
           width,
           height,
-          resize: vi.fn(),
-          destroy: vi.fn(),
+          resize: vi.fn<import("pixi.js").RenderTexture["resize"]>(),
+          destroy: vi.fn<import("pixi.js").RenderTexture["destroy"]>(),
         }),
       ),
     },
     Texture: {
-      from: vi.fn(() => fake<PixiTexture>({ destroy: vi.fn() })),
-      EMPTY: fake<PixiTexture>({ destroy: vi.fn() }),
+      from: vi.fn(() => fake<PixiTexture>({ destroy: vi.fn<PixiTexture["destroy"]>() })),
+      EMPTY: fake<PixiTexture>({ destroy: vi.fn<PixiTexture["destroy"]>() }),
     },
   };
 });
@@ -191,11 +197,11 @@ vi.mock("../aacEncoderFallback", () => ({
 vi.mock("mediabunny", () => {
   return {
     Output: class implements Partial<Output> {
-      addVideoTrack = vi.fn();
-      addAudioTrack = vi.fn();
-      start = vi.fn();
-      cancel = vi.fn().mockResolvedValue(undefined);
-      finalize = vi.fn();
+      addVideoTrack = vi.fn<Output["addVideoTrack"]>();
+      addAudioTrack = vi.fn<Output["addAudioTrack"]>();
+      start = vi.fn<Output["start"]>();
+      cancel = vi.fn<Output["cancel"]>().mockResolvedValue(undefined);
+      finalize = vi.fn<Output["finalize"]>();
     },
     Mp4OutputFormat: class {},
     WebMOutputFormat: class {},
@@ -204,12 +210,12 @@ vi.mock("mediabunny", () => {
     },
     StreamTarget: class {},
     CanvasSource: class implements Partial<CanvasSource> {
-      add = vi.fn();
-      close = vi.fn();
+      add = vi.fn<CanvasSource["add"]>();
+      close = vi.fn<CanvasSource["close"]>();
     },
     AudioBufferSource: class implements Partial<AudioBufferSource> {
-      add = vi.fn();
-      close = vi.fn();
+      add = vi.fn<AudioBufferSource["add"]>();
+      close = vi.fn<AudioBufferSource["close"]>();
     },
   };
 });

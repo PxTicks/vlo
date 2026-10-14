@@ -24,13 +24,13 @@ vi.mock("pixi.js", async () => {
     ...actual,
     Texture: {
       ...actual.Texture,
-      EMPTY: fake<Texture>({ width: 1, height: 1, destroy: vi.fn() }),
+      EMPTY: fake<Texture>({ width: 1, height: 1, destroy: vi.fn<Texture["destroy"]>() }),
       from: vi.fn(() =>
         fake<Texture>({
           width: 640,
           height: 360,
           destroyed: false,
-          destroy: vi.fn(),
+          destroy: vi.fn<Texture["destroy"]>(),
         }),
       ),
     },

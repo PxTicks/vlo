@@ -1,6 +1,7 @@
 import type {
   AlphaMask,
   Container,
+  ContainerChild,
   Effect,
   Graphics,
   Mask,
@@ -101,7 +102,7 @@ vi.mock("pixi.js", async () => {
   const actual = await vi.importActual<typeof import("pixi.js")>("pixi.js");
   const { fake } = await import("../../../../testUtils/libraryFakes");
   const point = (x: number, y: number) =>
-    fake<ObservablePoint>({ x, y, set: vi.fn() });
+    fake<ObservablePoint>({ x, y, set: vi.fn<ObservablePoint["set"]>() });
   return {
     ...actual,
     Texture: {
@@ -109,7 +110,7 @@ vi.mock("pixi.js", async () => {
         fake<Texture>({
           width: 100,
           height: 100,
-          destroy: vi.fn(),
+          destroy: vi.fn<Texture["destroy"]>(),
         }),
       ),
       EMPTY: fake<Texture>({}),
@@ -120,13 +121,13 @@ vi.mock("pixi.js", async () => {
       scale = point(1, 1);
       pivot = point(0, 0);
       rotation = 0;
-      clear = vi.fn(() => this as unknown as Graphics);
-      poly = vi.fn(() => this as unknown as Graphics);
-      fill = vi.fn(() => this as unknown as Graphics);
+      clear = vi.fn<Graphics["clear"]>(() => this as unknown as Graphics);
+      poly = vi.fn<Graphics["poly"]>(() => this as unknown as Graphics);
+      fill = vi.fn<Graphics["fill"]>(() => this as unknown as Graphics);
     },
     Sprite: class MockSprite implements Partial<Sprite> {
       anchor = point(0, 0);
-      texture = fake<Texture>({ width: 100, height: 100, destroy: vi.fn() });
+      texture = fake<Texture>({ width: 100, height: 100, destroy: vi.fn<Texture["destroy"]>() });
       visible = true;
       position = point(0, 0);
       scale = point(1, 1);
@@ -134,17 +135,17 @@ vi.mock("pixi.js", async () => {
       rotation = 0;
       effects: Effect[] = [];
       mask: Mask = null;
-      addChild = vi.fn();
-      setMask = vi.fn();
-      addEffect = vi.fn((effect: Effect) => {
+      addChild = vi.fn<Sprite["addChild"]>();
+      setMask = vi.fn<Sprite["setMask"]>();
+      addEffect = vi.fn<Sprite["addEffect"]>((effect: Effect) => {
         if (!this.effects.includes(effect)) {
           this.effects.push(effect);
         }
       });
-      removeEffect = vi.fn((effect: Effect) => {
+      removeEffect = vi.fn<Sprite["removeEffect"]>((effect: Effect) => {
         this.effects = this.effects.filter((entry) => entry !== effect);
       });
-      destroy = vi.fn();
+      destroy = vi.fn<Sprite["destroy"]>();
     },
     AlphaMask: class MockAlphaMask implements Partial<AlphaMask> {
       mask: Container;
@@ -152,7 +153,7 @@ vi.mock("pixi.js", async () => {
       constructor(options?: { mask?: Container }) {
         this.mask = options?.mask ?? (null as unknown as Container);
       }
-      destroy = vi.fn();
+      destroy = vi.fn<AlphaMask["destroy"]>();
     },
     Container: class MockContainer implements Partial<Container> {
       parent = null as Container | null;
@@ -164,20 +165,23 @@ vi.mock("pixi.js", async () => {
       scale = point(1, 1);
       pivot = point(0, 0);
       rotation = 0;
-      addChild = vi.fn();
-      addChildAt = vi.fn();
-      removeChild = vi.fn();
-      setMask = vi.fn();
-      addEffect = vi.fn((effect: Effect) => {
+      addChild = vi.fn<Container["addChild"]>();
+      // A spy would erase the generic signature; no test inspects the calls.
+      addChildAt<U extends ContainerChild>(child: U, _index: number): U {
+        return child;
+      }
+      removeChild = vi.fn<Container["removeChild"]>();
+      setMask = vi.fn<Container["setMask"]>();
+      addEffect = vi.fn<Container["addEffect"]>((effect: Effect) => {
         if (!this.effects.includes(effect)) {
           this.effects.push(effect);
         }
       });
-      removeEffect = vi.fn((effect: Effect) => {
+      removeEffect = vi.fn<Container["removeEffect"]>((effect: Effect) => {
         this.effects = this.effects.filter((entry) => entry !== effect);
       });
-      removeFromParent = vi.fn();
-      destroy = vi.fn(() => {
+      removeFromParent = vi.fn<Container["removeFromParent"]>();
+      destroy = vi.fn<Container["destroy"]>(() => {
         this.destroyed = true;
       });
     },

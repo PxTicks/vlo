@@ -16,8 +16,8 @@ import { projectMutationGuard } from "../../../core/project/projectMutationGuard
 const { mockCanvases } = vi.hoisted(() => {
   return {
     mockCanvases: {
-      next: vi.fn(),
-      return: vi.fn(),
+      next: vi.fn<AsyncGenerator<WrappedCanvas, void>["next"]>(),
+      return: vi.fn<AsyncGenerator<WrappedCanvas, void>["return"]>(),
       [Symbol.asyncIterator]: vi.fn(),
     } satisfies Partial<AsyncGenerator<WrappedCanvas, void>>,
   };
@@ -27,7 +27,7 @@ const { mockCanvases } = vi.hoisted(() => {
 vi.mock("mediabunny", async () => {
   const { fake } = await import("../../../testUtils/libraryFakes");
   const mockCanvasSink = {
-    canvases: vi.fn(() =>
+    canvases: vi.fn<CanvasSink["canvases"]>(() =>
       fake<AsyncGenerator<WrappedCanvas, void>>(mockCanvases),
     ),
   } satisfies Partial<CanvasSink>;

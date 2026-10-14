@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type {
   BufferTarget,
   Input,
@@ -12,14 +12,14 @@ import type {
 interface MockVideoTrack {
   codedWidth: number;
   codedHeight: number;
-  computeDuration: ReturnType<typeof vi.fn>;
-  getFirstTimestamp: ReturnType<typeof vi.fn>;
+  computeDuration: Mock<InputVideoTrack["computeDuration"]>;
+  getFirstTimestamp: Mock<InputVideoTrack["getFirstTimestamp"]>;
 }
 
 interface MockAudioTrack {
   codec?: InputAudioTrack["codec"];
-  computeDuration: ReturnType<typeof vi.fn>;
-  getFirstTimestamp: ReturnType<typeof vi.fn>;
+  computeDuration: Mock<InputAudioTrack["computeDuration"]>;
+  getFirstTimestamp: Mock<InputAudioTrack["getFirstTimestamp"]>;
 }
 
 const mocks = vi.hoisted(() => ({
@@ -38,26 +38,26 @@ const mocks = vi.hoisted(() => ({
   } satisfies Partial<BufferTarget>,
   outputMimeType: "mock" as "mock" | "missing",
   input: {
-    getPrimaryVideoTrack: vi.fn(),
-    getPrimaryAudioTrack: vi.fn(),
-    dispose: vi.fn(),
+    getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+    getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+    dispose: vi.fn<Input["dispose"]>(),
   } satisfies Partial<Input>,
   output: {
-    addVideoTrack: vi.fn(),
-    addAudioTrack: vi.fn(),
-    start: vi.fn(async () => undefined),
-    finalize: vi.fn(async () => undefined),
-    getMimeType: vi.fn(async () => "application/mock"),
+    addVideoTrack: vi.fn<Omit<Output, "target">["addVideoTrack"]>(),
+    addAudioTrack: vi.fn<Omit<Output, "target">["addAudioTrack"]>(),
+    start: vi.fn<Omit<Output, "target">["start"]>(async () => undefined),
+    finalize: vi.fn<Omit<Output, "target">["finalize"]>(async () => undefined),
+    getMimeType: vi.fn<Omit<Output, "target">["getMimeType"]>(async () => "application/mock"),
     target: null as unknown,
   } satisfies Partial<Omit<Output, "target">> & { target: unknown },
   videoSource: {
-    add: vi.fn(async () => undefined),
-    close: vi.fn(),
+    add: vi.fn<import("mediabunny").VideoSampleSource["add"]>(async () => undefined),
+    close: vi.fn<import("mediabunny").VideoSampleSource["close"]>(),
   } satisfies Partial<import("mediabunny").VideoSampleSource>,
   audioSource: {
-    add: vi.fn(async () => undefined),
-    close: vi.fn(),
-  },
+    add: vi.fn<import("mediabunny").AudioBufferSource["add"]>(async () => undefined),
+    close: vi.fn<import("mediabunny").AudioBufferSource["close"]>(),
+  } satisfies Partial<import("mediabunny").AudioBufferSource>,
   createdVideoSamples: [] as Array<{
     canvas: unknown;
     options: { timestamp: number; duration: number };
@@ -65,7 +65,9 @@ const mocks = vi.hoisted(() => ({
   }>,
 }));
 
-vi.mock("mediabunny", () => ({
+vi.mock("mediabunny", async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  return {
   ALL_FORMATS: ["all"],
   QUALITY_HIGH: 1,
   BlobSource: vi.fn(function (file: File) {
@@ -75,8 +77,12 @@ vi.mock("mediabunny", () => ({
     return mocks.target;
   }),
   Input: vi.fn(function () {
-    mocks.input.getPrimaryVideoTrack.mockImplementation(async () => mocks.videoTrack);
-    mocks.input.getPrimaryAudioTrack.mockImplementation(async () => mocks.audioTrack);
+    mocks.input.getPrimaryVideoTrack.mockImplementation(async () =>
+      mocks.videoTrack ? fake<InputVideoTrack>(mocks.videoTrack) : null,
+    );
+    mocks.input.getPrimaryAudioTrack.mockImplementation(async () =>
+      mocks.audioTrack ? fake<InputAudioTrack>(mocks.audioTrack) : null,
+    );
     return mocks.input;
   }),
   VideoSampleSink: vi.fn(function () {
@@ -122,11 +128,16 @@ vi.mock("mediabunny", () => ({
     canvas: unknown,
     options: { timestamp: number; duration: number },
   ) {
-    const sample = { canvas, options, close: vi.fn() };
+    const sample = {
+      canvas,
+      options,
+      close: vi.fn<import("mediabunny").VideoSample["close"]>(),
+    };
     mocks.createdVideoSamples.push(sample);
     return sample;
   }),
-}));
+  };
+});
 
 import {
   AudioBufferSource,
@@ -146,9 +157,9 @@ function videoTrack(
   return {
     codedWidth,
     codedHeight,
-    computeDuration: vi.fn(async () => duration),
-    getFirstTimestamp: vi.fn(async () => firstTimestamp),
-  } satisfies Partial<InputVideoTrack | InputAudioTrack>;
+    computeDuration: vi.fn<InputVideoTrack["computeDuration"]>(async () => duration),
+    getFirstTimestamp: vi.fn<InputVideoTrack["getFirstTimestamp"]>(async () => firstTimestamp),
+  } satisfies Partial<InputVideoTrack>;
 }
 
 function audioTrack(
@@ -158,17 +169,26 @@ function audioTrack(
 ): MockAudioTrack {
   return {
     codec,
-    computeDuration: vi.fn(async () => duration),
-    getFirstTimestamp: vi.fn(async () => firstTimestamp),
-  } satisfies Partial<InputVideoTrack | InputAudioTrack>;
+    computeDuration: vi.fn<InputAudioTrack["computeDuration"]>(async () => duration),
+    getFirstTimestamp: vi.fn<InputAudioTrack["getFirstTimestamp"]>(async () => firstTimestamp),
+  } satisfies Partial<InputAudioTrack>;
 }
 
 function videoSample(timestamp: number, duration: number) {
   return {
     timestamp,
     duration,
-    draw: vi.fn(),
-    close: vi.fn(),
+    // draw is overloaded; the reverser uses the destination-rectangle form.
+    draw: vi.fn<
+      (
+        context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+        dx: number,
+        dy: number,
+        dWidth?: number,
+        dHeight?: number,
+      ) => void
+    >(),
+    close: vi.fn<VideoSample["close"]>(),
   } satisfies Partial<VideoSample>;
 }
 

@@ -27,18 +27,18 @@ vi.mock("mediabunny", async () => {
   const { fake } = await import("../../../../testUtils/libraryFakes");
   const MockInput = vi.fn(function () {
     return fake<Input>({
-      getMimeType: vi.fn(),
-      computeDuration: vi.fn(),
-      getPrimaryVideoTrack: vi.fn(),
-      getPrimaryAudioTrack: vi.fn(),
-      dispose: vi.fn(),
+      getMimeType: vi.fn<Input["getMimeType"]>(),
+      computeDuration: vi.fn<Input["computeDuration"]>(),
+      getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+      getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+      dispose: vi.fn<Input["dispose"]>(),
     });
   });
   const MockCanvasSink = vi.fn(function () {
     return fake<CanvasSink>({
-      canvases: vi.fn(() => fake<AsyncGenerator<WrappedCanvas, void>>({
-        next: vi.fn().mockResolvedValue({ value: undefined }),
-        return: vi.fn().mockResolvedValue(undefined),
+      canvases: vi.fn<CanvasSink["canvases"]>(() => fake<AsyncGenerator<WrappedCanvas, void>>({
+        next: vi.fn<AsyncGenerator<WrappedCanvas, void>["next"]>().mockResolvedValue({ done: true, value: undefined }),
+        return: vi.fn<AsyncGenerator<WrappedCanvas, void>["return"]>().mockResolvedValue({ done: true, value: undefined }),
       })),
     });
   });
@@ -166,11 +166,11 @@ describe("MediaFileProcessor", () => {
     const getPrimaryAudioTrack = vi.fn().mockResolvedValue(fake<InputAudioTrack>({}));
     vi.mocked(Input).mockImplementationOnce(function () {
       return fake<Input>({
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn(),
-        getPrimaryVideoTrack: vi.fn(),
+        getMimeType: vi.fn<Input["getMimeType"]>(),
+        computeDuration: vi.fn<Input["computeDuration"]>(),
+        getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
         getPrimaryAudioTrack: getPrimaryAudioTrack,
-        dispose: vi.fn(),
+        dispose: vi.fn<Input["dispose"]>(),
       });
     });
 
@@ -182,11 +182,11 @@ describe("MediaFileProcessor", () => {
   it("should return false if no audio track", async () => {
     vi.mocked(Input).mockImplementationOnce(function () {
       return fake<Input>({
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn(),
-        getPrimaryVideoTrack: vi.fn(),
-        getPrimaryAudioTrack: vi.fn().mockResolvedValue(null),
-        dispose: vi.fn(),
+        getMimeType: vi.fn<Input["getMimeType"]>(),
+        computeDuration: vi.fn<Input["computeDuration"]>(),
+        getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+        getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>().mockResolvedValue(null),
+        dispose: vi.fn<Input["dispose"]>(),
       });
     });
 
@@ -213,16 +213,16 @@ describe("MediaFileProcessor", () => {
   it("should compute media duration", async () => {
     const computeDuration = vi.fn().mockResolvedValue(12.5);
     const getPrimaryVideoTrack = vi.fn().mockResolvedValue(fake<InputVideoTrack>({
-      computeDuration: vi.fn().mockResolvedValue(5),
-      getFirstTimestamp: vi.fn().mockRejectedValue(new Error("probe failed")),
+      computeDuration: vi.fn<InputVideoTrack["computeDuration"]>().mockResolvedValue(5),
+      getFirstTimestamp: vi.fn<InputVideoTrack["getFirstTimestamp"]>().mockRejectedValue(new Error("probe failed")),
     }));
     vi.mocked(Input).mockImplementationOnce(function () {
       return fake<Input>({
-        getMimeType: vi.fn(),
+        getMimeType: vi.fn<Input["getMimeType"]>(),
         computeDuration,
         getPrimaryVideoTrack,
-        getPrimaryAudioTrack: vi.fn(),
-        dispose: vi.fn(),
+        getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+        dispose: vi.fn<Input["dispose"]>(),
       });
     });
 
@@ -236,38 +236,38 @@ describe("MediaFileProcessor", () => {
     vi.mocked(Input)
       .mockImplementationOnce(function () {
         return fake<Input>({
-          getMimeType: vi.fn().mockResolvedValue(""),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
+          getMimeType: vi.fn<Input["getMimeType"]>().mockResolvedValue(""),
+          computeDuration: vi.fn<Input["computeDuration"]>(),
+          getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+          getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+          dispose: vi.fn<Input["dispose"]>(),
         });
       })
       .mockImplementationOnce(function () {
         return fake<Input>({
-          getMimeType: vi.fn().mockRejectedValue(new Error("probe failed")),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
+          getMimeType: vi.fn<Input["getMimeType"]>().mockRejectedValue(new Error("probe failed")),
+          computeDuration: vi.fn<Input["computeDuration"]>(),
+          getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+          getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+          dispose: vi.fn<Input["dispose"]>(),
         });
       })
       .mockImplementationOnce(function () {
         return fake<Input>({
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn().mockResolvedValue(Number.NaN),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
+          getMimeType: vi.fn<Input["getMimeType"]>(),
+          computeDuration: vi.fn<Input["computeDuration"]>().mockResolvedValue(Number.NaN),
+          getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+          getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+          dispose: vi.fn<Input["dispose"]>(),
         });
       })
       .mockImplementationOnce(function () {
         return fake<Input>({
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn().mockRejectedValue(new Error("duration failed")),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
+          getMimeType: vi.fn<Input["getMimeType"]>(),
+          computeDuration: vi.fn<Input["computeDuration"]>().mockRejectedValue(new Error("duration failed")),
+          getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+          getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+          dispose: vi.fn<Input["dispose"]>(),
         });
       });
 
@@ -290,14 +290,14 @@ describe("MediaFileProcessor", () => {
     const execute = vi.fn().mockResolvedValue(undefined);
     vi.mocked(Input).mockImplementationOnce(function () {
       return fake<Input>({
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn(),
-        getPrimaryVideoTrack: vi.fn(),
-        getPrimaryAudioTrack: vi.fn().mockResolvedValue(fake<InputAudioTrack>({
+        getMimeType: vi.fn<Input["getMimeType"]>(),
+        computeDuration: vi.fn<Input["computeDuration"]>(),
+        getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+        getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>().mockResolvedValue(fake<InputAudioTrack>({
           id: 1,
           codec: "aac",
         })),
-        dispose: vi.fn(),
+        dispose: vi.fn<Input["dispose"]>(),
       });
     });
     const { Conversion } = await import("mediabunny");
@@ -321,14 +321,14 @@ describe("MediaFileProcessor", () => {
     const execute = vi.fn().mockResolvedValue(undefined);
     vi.mocked(Input).mockImplementationOnce(function () {
       return fake<Input>({
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn(),
-        getPrimaryVideoTrack: vi.fn(),
-        getPrimaryAudioTrack: vi.fn().mockResolvedValue(fake<InputAudioTrack>({
+        getMimeType: vi.fn<Input["getMimeType"]>(),
+        computeDuration: vi.fn<Input["computeDuration"]>(),
+        getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+        getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>().mockResolvedValue(fake<InputAudioTrack>({
           id: 1,
           codec: undefined,
         })),
-        dispose: vi.fn(),
+        dispose: vi.fn<Input["dispose"]>(),
       });
     });
     const { Conversion } = await import("mediabunny");
@@ -356,25 +356,25 @@ describe("MediaFileProcessor", () => {
     vi.mocked(Input)
       .mockImplementationOnce(function () {
         return fake<Input>({
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn().mockResolvedValue(null),
-          dispose: vi.fn(),
+          getMimeType: vi.fn<Input["getMimeType"]>(),
+          computeDuration: vi.fn<Input["computeDuration"]>(),
+          getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+          getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>().mockResolvedValue(null),
+          dispose: vi.fn<Input["dispose"]>(),
         });
       })
       .mockImplementationOnce(function () {
         return fake<Input>({
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn().mockResolvedValue(fake<InputAudioTrack>({
+          getMimeType: vi.fn<Input["getMimeType"]>(),
+          computeDuration: vi.fn<Input["computeDuration"]>(),
+          getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+          getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>().mockResolvedValue(fake<InputAudioTrack>({
             id: 1,
             codec: "aac",
             sampleRate: 48000,
             numberOfChannels: 2,
           })),
-          dispose: vi.fn(),
+          dispose: vi.fn<Input["dispose"]>(),
         });
       });
     const noTrack = new MediaFileProcessor(file);
@@ -384,7 +384,7 @@ describe("MediaFileProcessor", () => {
       return fake<BufferTarget>({ buffer: null });
     });
     vi.mocked(Conversion.init).mockResolvedValueOnce(fake<Conversion>({
-      execute: vi.fn().mockResolvedValue(undefined),
+      execute: vi.fn<Conversion["execute"]>().mockResolvedValue(undefined),
     }));
     const noBuffer = new MediaFileProcessor(file);
     await expect(noBuffer.extractPrimaryAudioTrack()).resolves.toBeNull();
@@ -393,21 +393,21 @@ describe("MediaFileProcessor", () => {
   it("uses the planned MIME type when the output cannot report one", async () => {
     vi.mocked(Input).mockImplementationOnce(function () {
       return fake<Input>({
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn(),
-        getPrimaryVideoTrack: vi.fn(),
-        getPrimaryAudioTrack: vi.fn().mockResolvedValue(fake<InputAudioTrack>({
+        getMimeType: vi.fn<Input["getMimeType"]>(),
+        computeDuration: vi.fn<Input["computeDuration"]>(),
+        getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
+        getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>().mockResolvedValue(fake<InputAudioTrack>({
           id: 1,
           codec: "opus",
         })),
-        dispose: vi.fn(),
+        dispose: vi.fn<Input["dispose"]>(),
       });
     });
     vi.mocked(Output).mockImplementationOnce(function ({ target }) {
       return fake<Output>({ target: target as Target });
     });
     vi.mocked(Conversion.init).mockResolvedValueOnce(fake<Conversion>({
-      execute: vi.fn().mockResolvedValue(undefined),
+      execute: vi.fn<Conversion["execute"]>().mockResolvedValue(undefined),
     }));
     const extracted = await new MediaFileProcessor(file).extractPrimaryAudioTrack();
     expect(extracted?.type).toBe("audio/ogg");
@@ -424,24 +424,24 @@ describe("MediaFileProcessor", () => {
 
     vi.mocked(Input).mockImplementationOnce(function () {
       return fake<Input>({
-        getMimeType: vi.fn(),
+        getMimeType: vi.fn<Input["getMimeType"]>(),
         computeDuration,
-        getPrimaryVideoTrack: vi.fn().mockResolvedValue(fake<InputVideoTrack>({
+        getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>().mockResolvedValue(fake<InputVideoTrack>({
           computeDuration: trackComputeDuration,
           computePacketStats,
           displayWidth: 1920,
           displayHeight: 1080,
           getFirstTimestamp,
         })),
-        getPrimaryAudioTrack: vi.fn(),
-        dispose: vi.fn(),
+        getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+        dispose: vi.fn<Input["dispose"]>(),
       });
     });
     vi.mocked(CanvasSink).mockImplementationOnce(function () {
       return fake<CanvasSink>({
-        canvases: vi.fn(() => fake<AsyncGenerator<WrappedCanvas, void>>({
-          next: vi.fn().mockResolvedValue({ value: undefined }),
-          return: vi.fn().mockResolvedValue(undefined),
+        canvases: vi.fn<CanvasSink["canvases"]>(() => fake<AsyncGenerator<WrappedCanvas, void>>({
+          next: vi.fn<AsyncGenerator<WrappedCanvas, void>["next"]>().mockResolvedValue({ done: true, value: undefined }),
+          return: vi.fn<AsyncGenerator<WrappedCanvas, void>["return"]>().mockResolvedValue({ done: true, value: undefined }),
         })),
       });
     });
@@ -456,24 +456,24 @@ describe("MediaFileProcessor", () => {
 
   it("uses the true track span when choosing a thumbnail timestamp", async () => {
     const canvases = vi.fn(() => fake<AsyncGenerator<WrappedCanvas, void>>({
-      next: vi.fn().mockResolvedValue({ value: undefined }),
-      return: vi.fn().mockResolvedValue(undefined),
+      next: vi.fn<AsyncGenerator<WrappedCanvas, void>["next"]>().mockResolvedValue({ done: true, value: undefined }),
+      return: vi.fn<AsyncGenerator<WrappedCanvas, void>["return"]>().mockResolvedValue({ done: true, value: undefined }),
     }));
     vi.mocked(Input).mockImplementationOnce(function () {
       return fake<Input>({
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn(),
-        getPrimaryVideoTrack: vi.fn().mockResolvedValue(fake<InputVideoTrack>({
-          computeDuration: vi.fn().mockResolvedValue(3),
-          getFirstTimestamp: vi.fn().mockResolvedValue(2),
-          computePacketStats: vi.fn().mockResolvedValue(fake<PacketStats>({
+        getMimeType: vi.fn<Input["getMimeType"]>(),
+        computeDuration: vi.fn<Input["computeDuration"]>(),
+        getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>().mockResolvedValue(fake<InputVideoTrack>({
+          computeDuration: vi.fn<InputVideoTrack["computeDuration"]>().mockResolvedValue(3),
+          getFirstTimestamp: vi.fn<InputVideoTrack["getFirstTimestamp"]>().mockResolvedValue(2),
+          computePacketStats: vi.fn<InputVideoTrack["computePacketStats"]>().mockResolvedValue(fake<PacketStats>({
             averagePacketRate: 30,
           })),
           displayWidth: 1920,
           displayHeight: 1080,
         })),
-        getPrimaryAudioTrack: vi.fn(),
-        dispose: vi.fn(),
+        getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+        dispose: vi.fn<Input["dispose"]>(),
       });
     });
     vi.mocked(CanvasSink).mockImplementationOnce(function () {
@@ -493,24 +493,24 @@ describe("MediaFileProcessor", () => {
     const iteratorReturn = vi.fn().mockResolvedValue(undefined);
     vi.mocked(Input).mockImplementationOnce(function () {
       return fake<Input>({
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn().mockResolvedValue(5),
-        getPrimaryVideoTrack: vi.fn().mockResolvedValue(fake<InputVideoTrack>({
-          computeDuration: vi.fn().mockRejectedValue(new Error("bad track duration")),
-          computePacketStats: vi.fn().mockRejectedValue(new Error("bad stats")),
+        getMimeType: vi.fn<Input["getMimeType"]>(),
+        computeDuration: vi.fn<Input["computeDuration"]>().mockResolvedValue(5),
+        getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>().mockResolvedValue(fake<InputVideoTrack>({
+          computeDuration: vi.fn<InputVideoTrack["computeDuration"]>().mockRejectedValue(new Error("bad track duration")),
+          computePacketStats: vi.fn<InputVideoTrack["computePacketStats"]>().mockRejectedValue(new Error("bad stats")),
           displayWidth: 100,
           displayHeight: 200,
-          getFirstTimestamp: vi.fn().mockRejectedValue(new Error("no timestamp")),
+          getFirstTimestamp: vi.fn<InputVideoTrack["getFirstTimestamp"]>().mockRejectedValue(new Error("no timestamp")),
         })),
-        getPrimaryAudioTrack: vi.fn(),
-        dispose: vi.fn(),
+        getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+        dispose: vi.fn<Input["dispose"]>(),
       });
     });
     vi.mocked(CanvasSink).mockImplementationOnce(function (_track, options) {
       expect(options).toMatchObject({ height: 320, poolSize: 1 });
       return {
         canvases: vi.fn(() => fake<AsyncGenerator<WrappedCanvas, void>>({
-          next: vi.fn().mockResolvedValue({ value: undefined }),
+          next: vi.fn<AsyncGenerator<WrappedCanvas, void>["next"]>().mockResolvedValue({ done: true, value: undefined }),
           return: iteratorReturn,
         })),
       };
@@ -531,11 +531,11 @@ describe("MediaFileProcessor", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(Input).mockImplementationOnce(function () {
       return fake<Input>({
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn(),
-        getPrimaryVideoTrack: vi.fn().mockRejectedValue(new Error("broken")),
-        getPrimaryAudioTrack: vi.fn(),
-        dispose: vi.fn(),
+        getMimeType: vi.fn<Input["getMimeType"]>(),
+        computeDuration: vi.fn<Input["computeDuration"]>(),
+        getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>().mockRejectedValue(new Error("broken")),
+        getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+        dispose: vi.fn<Input["dispose"]>(),
       });
     });
     await expect(
@@ -552,29 +552,29 @@ describe("MediaFileProcessor", () => {
     vi.mocked(Input)
       .mockImplementationOnce(function () {
         return fake<Input>({
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn().mockResolvedValue(null),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
+          getMimeType: vi.fn<Input["getMimeType"]>(),
+          computeDuration: vi.fn<Input["computeDuration"]>(),
+          getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>().mockResolvedValue(null),
+          getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+          dispose: vi.fn<Input["dispose"]>(),
         });
       })
       .mockImplementationOnce(function () {
         return fake<Input>({
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn().mockResolvedValue(fake<InputVideoTrack>({ id: 3 })),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
+          getMimeType: vi.fn<Input["getMimeType"]>(),
+          computeDuration: vi.fn<Input["computeDuration"]>(),
+          getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>().mockResolvedValue(fake<InputVideoTrack>({ id: 3 })),
+          getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+          dispose: vi.fn<Input["dispose"]>(),
         });
       })
       .mockImplementationOnce(function () {
         return fake<Input>({
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn().mockResolvedValue(fake<InputVideoTrack>({ id: 3 })),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
+          getMimeType: vi.fn<Input["getMimeType"]>(),
+          computeDuration: vi.fn<Input["computeDuration"]>(),
+          getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>().mockResolvedValue(fake<InputVideoTrack>({ id: 3 })),
+          getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+          dispose: vi.fn<Input["dispose"]>(),
         });
       });
     await expect(
@@ -582,7 +582,7 @@ describe("MediaFileProcessor", () => {
     ).resolves.toBeNull();
 
     vi.mocked(Conversion.init).mockResolvedValueOnce(fake<Conversion>({
-      execute: vi.fn().mockResolvedValue(undefined),
+      execute: vi.fn<Conversion["execute"]>().mockResolvedValue(undefined),
     }));
     await expect(
       new MediaFileProcessor(file).generateProxyVideo(),
@@ -600,11 +600,11 @@ describe("MediaFileProcessor", () => {
     function mockVideoInput() {
       vi.mocked(Input).mockImplementationOnce(function () {
         return fake<Input>({
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn().mockResolvedValue(fake<InputVideoTrack>({ id: 3 })),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
+          getMimeType: vi.fn<Input["getMimeType"]>(),
+          computeDuration: vi.fn<Input["computeDuration"]>(),
+          getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>().mockResolvedValue(fake<InputVideoTrack>({ id: 3 })),
+          getPrimaryAudioTrack: vi.fn<Input["getPrimaryAudioTrack"]>(),
+          dispose: vi.fn<Input["dispose"]>(),
         });
       });
     }
@@ -622,7 +622,7 @@ describe("MediaFileProcessor", () => {
       const cancel = vi.fn().mockResolvedValue(undefined);
       vi.mocked(Conversion.init).mockResolvedValueOnce(fake<Conversion>({
         // A wedged encoder: execute never settles.
-        execute: vi.fn(() => new Promise<void>(() => undefined)),
+        execute: vi.fn<Conversion["execute"]>(() => new Promise<void>(() => undefined)),
         cancel,
       }));
       const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -638,8 +638,8 @@ describe("MediaFileProcessor", () => {
     it("converts video only, so progress cannot freeze on a shorter audio track", async () => {
       mockVideoInput();
       vi.mocked(Conversion.init).mockResolvedValueOnce(fake<Conversion>({
-        execute: vi.fn().mockResolvedValue(undefined),
-        cancel: vi.fn(),
+        execute: vi.fn<Conversion["execute"]>().mockResolvedValue(undefined),
+        cancel: vi.fn<Conversion["cancel"]>(),
       }));
 
       await expect(
@@ -673,7 +673,7 @@ describe("MediaFileProcessor", () => {
       const controller = new AbortController();
       const cancel = vi.fn().mockResolvedValue(undefined);
       vi.mocked(Conversion.init).mockResolvedValueOnce(fake<Conversion>({
-        execute: vi.fn(() => new Promise<void>(() => undefined)),
+        execute: vi.fn<Conversion["execute"]>(() => new Promise<void>(() => undefined)),
         cancel,
       }));
 

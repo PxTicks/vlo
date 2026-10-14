@@ -626,3 +626,144 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     );
   });
 });
+
+describe("TextureOutputEncoder blank-output probe", () => {
+  const texture = {} as unknown as Texture;
+  const definition: OutputVideoDefinition = {
+    id: "mask",
+    format: "mp4",
+    contentProbe: "non_black_pixels",
+  };
+
+  function rgba(...pixels: Array<[number, number, number, number]>) {
+    return new Uint8Array(pixels.flat());
+  }
+
+  async function encodeFrames(
+    renderer: Record<string, unknown>,
+    frameCount = 1,
+    outputDefinition: OutputVideoDefinition = definition,
+  ) {
+    const app = {
+      canvas: {} as HTMLCanvasElement,
+      renderer: { render: vi.fn(), ...renderer },
+    } as unknown as Application;
+    const encoder = new TextureOutputEncoder(app, 30, [outputDefinition]);
+    try {
+      await encoder.start();
+      for (let frame = 0; frame < frameCount; frame += 1) {
+        await encoder.addTextureFrame(texture, frame / 30, 1 / 30);
+        addCalls.at(-1)!.resolve();
+      }
+      return (await encoder.finalize()).analyses;
+    } finally {
+      encoder.dispose();
+    }
+  }
+
+  function webgl(frames: Uint8Array[]) {
+    const readPixels = vi.fn(
+      (_x: number, _y: number, _w: number, _h: number, _f: number, _t: number, out: Uint8Array) => {
+        out.set(frames.shift() ?? new Uint8Array(out.length));
+      },
+    );
+    return {
+      gl: {
+        drawingBufferWidth: 2,
+        drawingBufferHeight: 1,
+        RGBA: 1,
+        UNSIGNED_BYTE: 2,
+        readPixels,
+      },
+      readPixels,
+    };
+  }
+
+  beforeEach(() => {
+    addCalls.length = 0;
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("flags an export whose frames are all black, ignoring alpha", async () => {
+    const { gl } = webgl([
+      rgba([0, 0, 0, 255], [0, 0, 0, 0]),
+      rgba([0, 0, 0, 128], [0, 0, 0, 255]),
+    ]);
+    await expect(encodeFrames({ gl }, 2)).resolves.toEqual({
+      mask: { hasVisibleContent: false },
+    });
+  });
+
+  it("stops probing once any channel shows content", async () => {
+    const { gl, readPixels } = webgl([
+      rgba([0, 0, 0, 255], [0, 0, 1, 255]),
+    ]);
+    await expect(encodeFrames({ gl }, 3)).resolves.toEqual({
+      mask: { hasVisibleContent: true },
+    });
+    expect(readPixels).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to Pixi pixel extraction when WebGL readback fails", async () => {
+    const gl = {
+      drawingBufferWidth: 1,
+      drawingBufferHeight: 1,
+      readPixels: vi.fn(() => {
+        throw new Error("context lost");
+      }),
+    };
+    const extract = { pixels: vi.fn(() => rgba([0, 9, 0, 255])) };
+    await expect(encodeFrames({ gl, extract })).resolves.toEqual({
+      mask: { hasVisibleContent: true },
+    });
+    expect(extract.pixels).toHaveBeenCalled();
+  });
+
+  it("falls back to an extracted canvas when pixel extraction fails", async () => {
+    const canvas = {
+      width: 1,
+      height: 1,
+      getContext: () => ({
+        getImageData: () => ({ data: rgba([0, 0, 0, 255]) }),
+      }),
+    };
+    const extract = {
+      pixels: vi.fn(() => {
+        throw new Error("unsupported");
+      }),
+      canvas: vi.fn(async () => canvas),
+    };
+    await expect(encodeFrames({ extract })).resolves.toEqual({
+      mask: { hasVisibleContent: false },
+    });
+  });
+
+  it.each([
+    ["no readback API", {}],
+    ["a zero-size drawing buffer", { gl: { drawingBufferWidth: 0, drawingBufferHeight: 0, readPixels: vi.fn() } }],
+    ["a canvas without a 2D context", { extract: { canvas: () => ({ getContext: () => null }) } }],
+    [
+      "a canvas extraction failure",
+      {
+        extract: {
+          canvas: () => {
+            throw new Error("tainted");
+          },
+        },
+      },
+    ],
+  ])("reports no analysis when content cannot be measured (%s)", async (_label, renderer) => {
+    await expect(encodeFrames(renderer, 2)).resolves.toEqual({});
+  });
+
+  it("does not probe outputs that did not ask for it", async () => {
+    const { gl, readPixels } = webgl([]);
+    await expect(
+      encodeFrames({ gl }, 1, { id: "video", format: "mp4" }),
+    ).resolves.toEqual({});
+    expect(readPixels).not.toHaveBeenCalled();
+  });
+});

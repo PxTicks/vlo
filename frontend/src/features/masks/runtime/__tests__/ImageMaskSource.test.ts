@@ -1,3 +1,4 @@
+import type { ObservablePoint, Sprite as PixiSprite } from "pixi.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 
@@ -7,14 +8,15 @@ const mocks = vi.hoisted(() => ({
   emptyTexture: { destroyed: false },
 }));
 
-vi.mock("pixi.js", () => {
-  class Sprite {
+vi.mock("pixi.js", async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  class Sprite implements Partial<Omit<PixiSprite, "texture">> {
     public texture = mocks.emptyTexture;
     public visible = false;
     public destroyed = false;
     public width = 0;
     public height = 0;
-    public readonly anchor = { set: vi.fn() };
+    public readonly anchor = fake<ObservablePoint>({ set: vi.fn() });
 
     public destroy(): void {
       this.destroyed = true;

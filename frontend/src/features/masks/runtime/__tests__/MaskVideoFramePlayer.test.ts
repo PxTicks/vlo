@@ -1,3 +1,4 @@
+import type { ObservablePoint, Sprite, Texture } from "pixi.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TICKS_PER_SECOND } from "../../../../core/time/constants";
 import type { Asset } from "../../../../types/Asset";
@@ -152,16 +153,17 @@ vi.mock("../../../userAssets", () => ({
   ensureAssetSourceLoaded: vi.fn(async () => null),
 }));
 
-vi.mock("pixi.js", () => {
-  const textureEmpty = {
+vi.mock("pixi.js", async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  const textureEmpty = fake<Texture>({
     width: 1,
     height: 1,
     destroyed: false,
     destroy: vi.fn(),
-  };
+  });
 
-  class MockSprite {
-    anchor = { set: vi.fn() };
+  class MockSprite implements Partial<Sprite> {
+    anchor = fake<ObservablePoint>({ set: vi.fn() });
     texture = textureEmpty;
     visible = true;
     destroyed = false;
@@ -173,12 +175,14 @@ vi.mock("pixi.js", () => {
   return {
     Sprite: MockSprite,
     Texture: {
-      from: vi.fn((bitmap?: { width?: number; height?: number }) => ({
-        width: bitmap?.width ?? 1,
-        height: bitmap?.height ?? 1,
-        destroyed: false,
-        destroy: vi.fn(),
-      })),
+      from: vi.fn((bitmap?: { width?: number; height?: number }) =>
+        fake<Texture>({
+          width: bitmap?.width ?? 1,
+          height: bitmap?.height ?? 1,
+          destroyed: false,
+          destroy: vi.fn(),
+        }),
+      ),
       EMPTY: textureEmpty,
     },
   };

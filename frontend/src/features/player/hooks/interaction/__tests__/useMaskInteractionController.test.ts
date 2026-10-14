@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Application, Container, FederatedPointerEvent, Sprite } from "pixi.js";
+import type { Renderer, Ticker } from "pixi.js";
 import type {
   TimelineClip,
   MaskTimelineClip,
@@ -40,19 +41,20 @@ const {
 }));
 
 vi.mock("pixi.js", async () => {
-  const originalModule = await vi.importActual("pixi.js");
+  const originalModule = await vi.importActual<typeof import("pixi.js")>("pixi.js");
+  const { fake } = await import("../../../../../testUtils/libraryFakes");
   return {
     ...originalModule,
-    Application: class MockApplication {
-      renderer = {};
-      stage = {
+    Application: class MockApplication implements Partial<Application> {
+      renderer = fake<Renderer>({});
+      stage = fake<Container>({
         on: vi.fn(),
         off: vi.fn(),
-      };
-      ticker = {
+      });
+      ticker = fake<Ticker>({
         add: vi.fn(),
         remove: vi.fn(),
-      };
+      });
       destroy = vi.fn();
     },
   };

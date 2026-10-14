@@ -1,37 +1,32 @@
+import type {
+  Container as PixiContainer,
+  Graphics as PixiGraphics,
+  ObservablePoint,
+  RenderTexture as PixiRenderTexture,
+  Sprite as PixiSprite,
+} from "pixi.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  createdTextures: [] as Array<{
-    options: Record<string, unknown>;
-    destroy: ReturnType<typeof vi.fn>;
-  }>,
-  createdGraphics: [] as Array<{
-    rect: ReturnType<typeof vi.fn>;
-    fill: ReturnType<typeof vi.fn>;
-    circle: ReturnType<typeof vi.fn>;
-    moveTo: ReturnType<typeof vi.fn>;
-    lineTo: ReturnType<typeof vi.fn>;
-    stroke: ReturnType<typeof vi.fn>;
-    destroy: ReturnType<typeof vi.fn>;
-  }>,
-  createdSprites: [] as Array<{
-    texture: unknown;
-    position: { set: ReturnType<typeof vi.fn> };
-    width: number;
-    height: number;
-    destroy: ReturnType<typeof vi.fn>;
-  }>,
-  createdContainers: [] as Array<{
-    addChild: ReturnType<typeof vi.fn>;
-  }>,
+  createdTextures: [] as Array<
+    PixiRenderTexture & { options: Record<string, unknown> }
+  >,
+  createdGraphics: [] as Array<Partial<PixiGraphics>>,
+  createdSprites: [] as PixiSprite[],
+  createdContainers: [] as Array<Partial<PixiContainer>>,
   textureFrom: vi.fn(),
   requestRender: vi.fn(),
 }));
 
-vi.mock("pixi.js", () => {
+vi.mock("pixi.js", async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
   const RenderTexture = {
     create: vi.fn((options: Record<string, unknown>) => {
-      const texture = { options, destroy: vi.fn() };
+      // `options` is test bookkeeping, not a RenderTexture member.
+      const texture = Object.assign(
+        fake<PixiRenderTexture>({ destroy: vi.fn() }),
+        { options },
+      );
       mocks.createdTextures.push(texture);
       return texture;
     }),
@@ -45,7 +40,7 @@ vi.mock("pixi.js", () => {
       lineTo: vi.fn(),
       stroke: vi.fn(),
       destroy: vi.fn(),
-    };
+    } satisfies Partial<PixiGraphics>;
     graphics.rect.mockReturnValue(graphics);
     graphics.fill.mockReturnValue(graphics);
     graphics.circle.mockReturnValue(graphics);
@@ -58,16 +53,16 @@ vi.mock("pixi.js", () => {
   const Sprite = vi.fn(function (texture: unknown) {
     const sprite = {
       texture,
-      position: { set: vi.fn() },
+      position: fake<ObservablePoint>({ set: vi.fn() }),
       width: 0,
       height: 0,
       destroy: vi.fn(),
-    };
-    mocks.createdSprites.push(sprite);
+    } satisfies Partial<Omit<PixiSprite, "texture">> & { texture: unknown };
+    mocks.createdSprites.push(sprite as unknown as PixiSprite);
     return sprite;
   });
   const Container = vi.fn(function () {
-    const container = { addChild: vi.fn() };
+    const container = { addChild: vi.fn() } satisfies Partial<PixiContainer>;
     mocks.createdContainers.push(container);
     return container;
   });

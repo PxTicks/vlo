@@ -1,3 +1,9 @@
+import type {
+  Input,
+  InputVideoTrack,
+  VideoSample,
+  VideoSampleSink,
+} from "mediabunny";
 import {
   describe,
   it,
@@ -30,19 +36,22 @@ const { openedSources } = vi.hoisted(() => ({
   openedSources: [] as unknown[],
 }));
 
-vi.mock("mediabunny", () => {
+vi.mock("mediabunny", async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
   return {
-    Input: class {
+    Input: class implements Partial<Input> {
       constructor(options: { source: unknown }) {
         openedSources.push(options.source);
       }
 
       getPrimaryVideoTrack() {
-        return Promise.resolve({
-          displayWidth: 1920,
-          displayHeight: 1080,
-          getFirstTimestamp: () => Promise.resolve(0),
-        });
+        return Promise.resolve(
+          fake<InputVideoTrack>({
+            displayWidth: 1920,
+            displayHeight: 1080,
+            getFirstTimestamp: () => Promise.resolve(0),
+          }),
+        );
       }
       [Symbol.dispose]() {}
     },
@@ -58,18 +67,18 @@ vi.mock("mediabunny", () => {
         this.blob = blob;
       }
     },
-    VideoSampleSink: class {
+    VideoSampleSink: class implements Partial<VideoSampleSink> {
       async *samplesAtTimestamps(timestamps: number[]) {
         for (const ts of timestamps) {
-          yield {
+          yield fake<VideoSample>({
             timestamp: ts,
-            toVideoFrame: () => ({ close: () => {} }),
+            toVideoFrame: () => fake<VideoFrame>({ close: () => {} }),
             [Symbol.dispose]() {},
-          };
+          });
         }
       }
     },
-    ALL_FORMATS: {},
+    ALL_FORMATS: [],
   };
 });
 

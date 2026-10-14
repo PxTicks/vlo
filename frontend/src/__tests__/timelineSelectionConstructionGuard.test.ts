@@ -42,7 +42,8 @@ it("constructs and changes selection geometry only in the timing boundary", () =
     return file && hasSelectionConstruction(file, checker);
   }).map((path) => path.replace(process.cwd(), ""));
   expect(violations).toEqual([]);
-}, 20000);
+  // Type-checks the whole source tree; the coverage run starves it of CPU.
+}, 90_000);
 
 function checkExample(source: string): boolean {
   const file = ts.createSourceFile("example.ts", `

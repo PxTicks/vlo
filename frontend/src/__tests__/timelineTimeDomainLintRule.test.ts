@@ -46,7 +46,9 @@ function lint(expression: string, lenient = false) {
   );
 }
 
-describe("no-incompatible-timeline-time-arithmetic", () => {
+// The first lint call boots the TypeScript project service, which takes far
+// longer than the default timeout when the coverage run saturates every core.
+describe("no-incompatible-timeline-time-arithmetic", { timeout: 30_000 }, () => {
   it("rejects arithmetic and comparisons across timeline domains", () => {
     for (const expression of [
       "presentation - stored",

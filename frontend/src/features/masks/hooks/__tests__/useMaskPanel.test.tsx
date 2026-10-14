@@ -1,17 +1,19 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeStatus } from "../../../../types/RuntimeStatus";
 import type { MaskCompositionComponent } from "../../../../types/Components";
 import type {
-  AssetBackedClipType, AssetBackedTimelineClip, MaskTimelineClip, TimelineClip, } from "../../../../types/TimelineTypes";
+  AssetBackedClipType, AssetBackedTimelineClip, MaskBooleanExpression, MaskTimelineClip, TimelineClip, } from "../../../../types/TimelineTypes";
 import { playbackClock } from "../../../../core/playback/PlaybackClock";
 import { TICKS_PER_SECOND } from "../../../timeline";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { useAssetStore } from "../../../userAssets";
 import { useMaskViewStore } from "../../store/useMaskViewStore";
 import {
+  clearSam2EditorSession,
   generateMaskFrame,
   generateMaskVideo,
+  initSam2EditorSession,
   registerSourceVideo,
 } from "../../services/sam2Api";
 import {
@@ -916,5 +918,384 @@ describe("useMaskPanel", () => {
         }),
       ]),
     );
+  });
+
+  describe("mask management", () => {
+    function setupBrushMasks(...localIds: string[]) {
+      const parent = createParentClip("clip_manage");
+      const masks = localIds.map((localId) =>
+        createBrushMaskClip(parent, localId),
+      );
+      useTimelineStore.setState({
+        clips: [parent, ...masks],
+        selectedClipIds: [parent.id],
+      });
+      return { parent, masks };
+    }
+
+    function maskClip(parentId: string, localId: string) {
+      return useTimelineStore
+        .getState()
+        .clips.find((clip) => clip.id === `${parentId}::mask::${localId}`) as
+        | MaskTimelineClip
+        | undefined;
+    }
+
+    it("selects, renames and inverts the selected mask", () => {
+      const { parent } = setupBrushMasks("one", "two");
+      const { result } = renderHook(() => useMaskPanel());
+
+      act(() => result.current.selection.selectMask("two"));
+      expect(result.current.selection.selectedMaskId).toBe("two");
+
+      act(() => result.current.mask.setMaskName("Sky"));
+      act(() => result.current.mask.setMaskInverted(true));
+
+      expect(maskClip(parent.id, "two")).toMatchObject({
+        name: "Sky",
+        maskInverted: true,
+      });
+      expect(result.current.mask.maskInverted).toBe(true);
+      expect(maskClip(parent.id, "one")?.maskInverted).toBe(false);
+    });
+
+    it("edits the clip's mask equation settings", () => {
+      setupBrushMasks("one", "two");
+      const { result } = renderHook(() => useMaskPanel());
+      const expression: MaskBooleanExpression = {
+        kind: "operation",
+        operator: "intersect",
+        left: { kind: "mask_ref", maskId: "one" },
+        right: { kind: "mask_ref", maskId: "two" },
+      };
+
+      act(() => result.current.mask.setMaskBooleanExpression(expression));
+      act(() => result.current.mask.setMaskCompositionAlgebra("inverse"));
+      act(() => result.current.mask.setMaskExpressionEnabled(false));
+
+      expect(result.current.mask.maskBooleanExpression).toEqual(expression);
+      expect(result.current.mask.maskCompositionAlgebra).toBe("inverse");
+      expect(result.current.mask.maskExpressionEnabled).toBe(false);
+    });
+
+    it("only previews a selected mask while the mask tab is open", () => {
+      const { parent } = setupBrushMasks("one");
+      const { result } = renderHook(() => useMaskPanel());
+      act(() => result.current.selection.selectMask("one"));
+
+      act(() => result.current.mask.setMaskPreview(true));
+      expect(useMaskViewStore.getState().maskPreviewTarget).toBeNull();
+
+      act(() => useMaskViewStore.getState().setMaskTabActive(true));
+      act(() => result.current.mask.setMaskPreview(true));
+      expect(useMaskViewStore.getState().maskPreviewTarget).toEqual({
+        clipId: parent.id,
+        maskId: "one",
+      });
+      expect(result.current.mask.isPreviewing).toBe(true);
+
+      act(() => result.current.mask.setMaskPreview(false));
+      expect(useMaskViewStore.getState().maskPreviewTarget).toBeNull();
+    });
+
+    it("selects the copy after duplicating a mask", () => {
+      const { parent } = setupBrushMasks("one");
+      const { result } = renderHook(() => useMaskPanel());
+
+      act(() => result.current.selection.duplicateMask("one"));
+
+      const selected = result.current.selection.selectedMaskId;
+      expect(selected).not.toBe("one");
+      expect(maskClip(parent.id, selected!)).toMatchObject({
+        maskType: "brush",
+      });
+      expect(result.current.selection.masks).toHaveLength(2);
+    });
+
+    it("moves the selection to a neighbour when deleting the selected mask", () => {
+      const { parent } = setupBrushMasks("one", "two", "three");
+      const { result } = renderHook(() => useMaskPanel());
+
+      act(() => result.current.selection.selectMask("two"));
+      act(() => result.current.selection.deleteSelectedMask());
+      expect(maskClip(parent.id, "two")).toBeUndefined();
+      expect(result.current.selection.selectedMaskId).toBe("three");
+
+      act(() => result.current.selection.deleteMask("three"));
+      expect(result.current.selection.selectedMaskId).toBe("one");
+
+      // Deleting an unselected mask keeps the current selection.
+      act(() => result.current.selection.duplicateMask("one"));
+      const copy = result.current.selection.selectedMaskId!;
+      act(() => result.current.selection.deleteMask("one"));
+      expect(result.current.selection.selectedMaskId).toBe(copy);
+
+      act(() => result.current.selection.deleteMask(copy));
+      expect(result.current.selection.masks).toEqual([]);
+      expect(result.current.selection.selectedMaskId).toBeNull();
+    });
+
+    it("explains why masks cannot be added to audio clips", () => {
+      const parent = createParentClip("clip_audio", "audio");
+      useTimelineStore.setState({
+        clips: [parent],
+        selectedClipIds: [parent.id],
+      });
+      const { result } = renderHook(() => useMaskPanel());
+
+      expect(result.current.panel.isAddDisabled).toBe(true);
+      expect(result.current.panel.addDisabledReason).toBe(
+        "Masks are only available for visual clips.",
+      );
+      act(() => result.current.panel.requestDraw("rectangle"));
+      expect(useTimelineStore.getState().clips).toEqual([parent]);
+    });
+
+    it("ignores edits when no clip is selected", () => {
+      const { parent, masks } = setupBrushMasks("one");
+      useTimelineStore.setState({ selectedClipIds: [] });
+      const { result } = renderHook(() => useMaskPanel());
+
+      expect(result.current.panel.isAddDisabled).toBe(true);
+      expect(result.current.panel.addDisabledReason).toBeNull();
+      act(() => {
+        result.current.selection.selectMask("one");
+        result.current.selection.duplicateMask("one");
+        result.current.selection.deleteMask("one");
+        result.current.selection.deleteSelectedMask();
+        result.current.mask.setMaskName("ignored");
+        result.current.mask.setMaskInverted(true);
+        result.current.mask.setMaskExpressionEnabled(false);
+        result.current.mask.setMaskBooleanExpression(null);
+        result.current.mask.setMaskCompositionAlgebra("inverse");
+        result.current.panel.requestDraw("circle");
+      });
+
+      expect(useTimelineStore.getState().clips).toEqual([parent, ...masks]);
+    });
+  });
+
+  describe("SAM2 editing", () => {
+    function sam2Available() {
+      vi.mocked(getRuntimeStatus).mockResolvedValue({
+        backend: { status: "ok", mode: "development", frontendBuildPresent: true },
+        comfyui: { status: "disconnected", url: "", error: null },
+        sam2: { status: "available", error: null },
+      } satisfies RuntimeStatus);
+    }
+
+    function setupSam2(
+      points: MaskTimelineClip["maskPoints"] = [],
+      maskOverrides: Partial<MaskTimelineClip> = {},
+    ) {
+      const parent = createParentClip("clip_sam2_edit", "image");
+      const mask = {
+        ...createSam2MaskClip(parent, "mask_a", "apply"),
+        maskPoints: points,
+        ...maskOverrides,
+      };
+      const second = createSam2MaskClip(parent, "mask_b", "apply");
+      useTimelineStore.setState({
+        clips: [parent, mask, second],
+        selectedClipIds: [parent.id],
+      });
+      useMaskViewStore.setState({
+        selectedMaskByClipId: { [parent.id]: "mask_a" },
+        isMaskTabActive: true,
+      });
+      useAssetStore.setState({
+        assets: [
+          {
+            id: parent.assetId,
+            type: "image",
+            name: "still.png",
+            src: "still.png",
+            hash: "sam2-edit-hash",
+            file: new File(["png"], "still.png", { type: "image/png" }),
+            createdAt: 0,
+          },
+        ],
+      });
+      vi.mocked(registerSourceVideo).mockResolvedValue({
+        sourceId: "sam2_source_edit",
+        width: 640,
+        height: 360,
+        fps: 25,
+        frameCount: 1,
+        durationSec: 0.04,
+      });
+      return { parent, mask };
+    }
+
+    function currentMask(parentId: string, localId = "mask_a") {
+      return useTimelineStore
+        .getState()
+        .clips.find(
+          (clip): clip is MaskTimelineClip =>
+            clip.id === `${parentId}::mask::${localId}`,
+        );
+    }
+
+    const point = { x: 0.25, y: 0.75, label: 1 as const, timeTicks: 0 };
+
+    beforeEach(() => {
+      vi.stubGlobal(
+        "createImageBitmap",
+        vi.fn(async () => ({ close: vi.fn(), width: 640, height: 360 })),
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("clamps the grow amount and clears points", () => {
+      const { parent } = setupSam2([point]);
+      const { result } = renderHook(() => useMaskPanel());
+
+      act(() => result.current.sam2.setSam2GrowAmount(-5));
+      expect(currentMask(parent.id)?.sam2GrowAmount).toBe(0);
+      act(() => result.current.sam2.setSam2GrowAmount(Number.NaN));
+      expect(currentMask(parent.id)?.sam2GrowAmount).toBe(0);
+      act(() => result.current.sam2.setSam2GrowAmount(12));
+      expect(result.current.sam2.sam2GrowAmount).toBe(12);
+
+      act(() => result.current.sam2.clearSam2CurrentFramePoints());
+      // A still image has one frame, so every point sits on the current one.
+      expect(currentMask(parent.id)?.maskPoints).toEqual([]);
+
+      act(() => {
+        useTimelineStore
+          .getState()
+          .updateClipMask(parent.id, "mask_a", { maskPoints: [point] });
+      });
+      act(() => result.current.sam2.clearSam2Points());
+      expect(currentMask(parent.id)?.maskPoints).toEqual([]);
+    });
+
+    it("asks for points before previewing a frame", async () => {
+      sam2Available();
+      setupSam2([]);
+      const { result } = renderHook(() => useMaskPanel());
+
+      await act(async () => {
+        await result.current.sam2.generateSam2FramePreview();
+      });
+
+      expect(result.current.sam2.sam2FramePreviewError).toBe(
+        "Add at least one SAM2 point before previewing.",
+      );
+      expect(generateMaskFrame).not.toHaveBeenCalled();
+    });
+
+    it("shows a single-frame preview for the current frame's points", async () => {
+      sam2Available();
+      const { parent } = setupSam2([point]);
+      vi.mocked(generateMaskFrame).mockResolvedValue({
+        blob: new Blob(["mask"], { type: "image/png" }),
+        width: 640,
+        height: 360,
+        frameIndex: 0,
+        timeTicks: 0,
+      });
+      const { result } = renderHook(() => useMaskPanel());
+
+      await act(async () => {
+        await result.current.sam2.generateSam2FramePreview();
+      });
+
+      expect(initSam2EditorSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceId: "sam2_source_edit",
+          maskId: "mask_a",
+        }),
+      );
+      expect(generateMaskFrame).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceId: "sam2_source_edit",
+          points: [point],
+          maskId: "mask_a",
+        }),
+        { signal: undefined },
+      );
+      expect(
+        useMaskViewStore.getState().sam2LivePreviewByClipId[parent.id],
+      ).toMatchObject({ maskId: "mask_a", width: 640, height: 360 });
+      expect(result.current.sam2.sam2FramePreviewError).toBeNull();
+      expect(result.current.sam2.isSam2FrameGenerating).toBe(false);
+    });
+
+    it("reports a failed frame preview", async () => {
+      sam2Available();
+      setupSam2([point]);
+      vi.mocked(generateMaskFrame).mockRejectedValue(new Error("CUDA OOM"));
+      const { result } = renderHook(() => useMaskPanel());
+
+      await act(async () => {
+        await result.current.sam2.generateSam2FramePreview();
+      });
+
+      expect(result.current.sam2.sam2FramePreviewError).toBe("CUDA OOM");
+      expect(result.current.sam2.isSam2FrameGenerating).toBe(false);
+    });
+
+    it("releases the editor session when another mask is selected", async () => {
+      sam2Available();
+      const { parent } = setupSam2([point]);
+      vi.mocked(generateMaskFrame).mockResolvedValue({
+        blob: new Blob(["mask"], { type: "image/png" }),
+        width: 640,
+        height: 360,
+        frameIndex: 0,
+        timeTicks: 0,
+      });
+      const { result } = renderHook(() => useMaskPanel());
+      await act(async () => {
+        await result.current.sam2.generateSam2FramePreview();
+      });
+      expect(clearSam2EditorSession).not.toHaveBeenCalled();
+
+      act(() => result.current.selection.selectMask("mask_b"));
+
+      expect(clearSam2EditorSession).toHaveBeenCalledWith(
+        expect.objectContaining({ maskId: "mask_a" }),
+      );
+      expect(
+        useMaskViewStore.getState().sam2LivePreviewByClipId[parent.id],
+      ).toBeUndefined();
+    });
+
+    it("deletes the superseded mask asset once nothing else uses it", async () => {
+      sam2Available();
+      const { parent } = setupSam2([point], {
+        sam2MaskAssetId: "old_sam2_asset",
+      });
+      const addLocalAsset = vi.fn(async (file: File) => ({
+        id: "new_sam2_asset",
+        type: "image" as const,
+        name: file.name,
+        src: "new.png",
+        hash: "new-hash",
+        file,
+        createdAt: 0,
+      }));
+      const deleteAsset = vi.fn(async () => undefined);
+      useAssetStore.setState({ addLocalAsset, deleteAsset });
+      vi.mocked(generateMaskFrame).mockResolvedValue({
+        blob: new Blob(["mask"], { type: "image/png" }),
+        width: 640,
+        height: 360,
+        frameIndex: 0,
+        timeTicks: 0,
+      });
+      const { result } = renderHook(() => useMaskPanel());
+
+      await act(async () => {
+        await result.current.sam2.generateSam2Mask();
+      });
+
+      expect(currentMask(parent.id)?.sam2MaskAssetId).toBe("new_sam2_asset");
+      expect(deleteAsset).toHaveBeenCalledWith("old_sam2_asset");
+    });
   });
 });

@@ -139,7 +139,7 @@ vi.mock("pixi.js", async () => {
     },
     Texture: {
       from: vi.fn(() => fake<PixiTexture>({ destroy: vi.fn() })),
-      EMPTY: "empty",
+      EMPTY: fake<PixiTexture>({ destroy: vi.fn() }),
     },
   };
 });

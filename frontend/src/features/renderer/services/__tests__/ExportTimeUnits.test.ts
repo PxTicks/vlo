@@ -1,3 +1,4 @@
+import type { Container, ObservablePoint, Sprite, Texture } from "pixi.js";
 import { TrackRenderEngine } from "../TrackRenderEngine";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
@@ -8,30 +9,32 @@ import { resetSharedDecoderWorkerPoolForTests } from "../DecoderWorkerPool";
 // Mock PixiJS
 vi.mock("pixi.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("pixi.js")>();
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  const point = (x: number, y: number) =>
+    fake<ObservablePoint>({ x, y, set: vi.fn() });
   return {
     ...actual,
-    Container: class MockContainer {
+    Container: class MockContainer implements Partial<Container> {
       addChild = vi.fn();
-      pluginName = "";
       zIndex = 0;
       destroy = vi.fn();
       removeFromParent = vi.fn();
     },
-    Sprite: class MockSprite {
-      anchor = { set: vi.fn() };
-      texture = { destroy: vi.fn() };
+    Sprite: class MockSprite implements Partial<Sprite> {
+      anchor = point(0, 0);
+      texture = fake<Texture>({ destroy: vi.fn() });
       visible = false;
-      position = { x: 0, y: 0, set: vi.fn() };
-      scale = { x: 1, y: 1, set: vi.fn() };
-      pivot = { x: 0, y: 0, set: vi.fn() };
+      position = point(0, 0);
+      scale = point(1, 1);
+      pivot = point(0, 0);
       rotation = 0;
       destroy = vi.fn();
       setMask = vi.fn();
       addChild = vi.fn();
     },
     Texture: {
-      from: vi.fn(() => ({ destroy: vi.fn() })),
-      EMPTY: "empty",
+      from: vi.fn(() => fake<Texture>({ destroy: vi.fn() })),
+      EMPTY: fake<Texture>({ destroy: vi.fn() }),
     },
   };
 });

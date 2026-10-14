@@ -1,3 +1,10 @@
+import type {
+  Application,
+  Container,
+  Rectangle,
+  Renderer,
+  Ticker,
+} from "pixi.js";
 import { renderHook, act } from "@testing-library/react";
 import { usePixiApp } from "../usePixiApp";
 import { usePlayerStore } from "../../usePlayerStore";
@@ -9,26 +16,27 @@ import {
 
 // Mock Pixi
 vi.mock("pixi.js", async () => {
-    const original = await vi.importActual("pixi.js");
+    const original = await vi.importActual<typeof import("pixi.js")>("pixi.js");
+    const { fake } = await import("../../../../testUtils/libraryFakes");
     return {
         ...original,
-        Application: class MockApplication {
+        Application: class MockApplication implements Partial<Application> {
             init = vi.fn().mockResolvedValue(undefined);
             destroy = vi.fn();
-            stage = {
+            stage = fake<Container>({
                 eventMode: 'passive', // Default
                 hitArea: null,
                 addChild: vi.fn(),
                 removeChild: vi.fn(),
-            };
-            renderer = {
+            });
+            renderer = fake<Renderer>({
                 resize: vi.fn(),
-            };
-            ticker = {
+            });
+            ticker = fake<Ticker>({
                 start: vi.fn(),
                 stop: vi.fn(),
-            };
-            screen = { width: 100, height: 100 }; // Mock screen rect
+            });
+            screen = fake<Rectangle>({ width: 100, height: 100 }); // Mock screen rect
         }
     };
 });

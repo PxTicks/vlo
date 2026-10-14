@@ -1,3 +1,5 @@
+import type { Conversion, Input, InputVideoTrack } from "mediabunny";
+import { fake } from "../../../../../testUtils/libraryFakes";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ASPECT_RATIO_RESIZE_VIDEO_BITRATE,
@@ -19,23 +21,23 @@ import {
 import type { AspectRatioProcessingMetadata } from "../../../types";
 
 const mediaMocks = vi.hoisted(() => ({
-  primaryVideoTrack: null as null | {
-    displayWidth: number;
-    displayHeight: number;
-  },
+  primaryVideoTrack: null as null | Pick<
+    InputVideoTrack,
+    "displayWidth" | "displayHeight"
+  >,
   outputBuffer: new Uint8Array([1, 2, 3]).buffer as ArrayBuffer | null,
-  getPrimaryVideoTrack: vi.fn(),
+  getPrimaryVideoTrack: vi.fn<Input["getPrimaryVideoTrack"]>(),
   dispose: vi.fn(),
-  execute: vi.fn(),
-  conversionInit: vi.fn(),
+  execute: vi.fn<Conversion["execute"]>(),
+  conversionInit: vi.fn<typeof Conversion.init>(),
 }));
 
 vi.mock("mediabunny", () => {
-  class Input {
+  class Input implements Partial<import("mediabunny").Input> {
     getPrimaryVideoTrack = mediaMocks.getPrimaryVideoTrack;
     dispose = mediaMocks.dispose;
   }
-  class BufferTarget {
+  class BufferTarget implements Partial<import("mediabunny").BufferTarget> {
     buffer = mediaMocks.outputBuffer;
   }
   class Output {}
@@ -80,15 +82,17 @@ beforeEach(() => {
   mediaMocks.primaryVideoTrack = null;
   mediaMocks.outputBuffer = new Uint8Array([1, 2, 3]).buffer;
   mediaMocks.getPrimaryVideoTrack.mockReset();
-  mediaMocks.getPrimaryVideoTrack.mockImplementation(
-    async () => mediaMocks.primaryVideoTrack,
+  mediaMocks.getPrimaryVideoTrack.mockImplementation(async () =>
+    mediaMocks.primaryVideoTrack
+      ? fake<InputVideoTrack>(mediaMocks.primaryVideoTrack)
+      : null,
   );
   mediaMocks.dispose.mockReset();
   mediaMocks.execute.mockReset();
   mediaMocks.conversionInit.mockReset();
-  mediaMocks.conversionInit.mockImplementation(async () => ({
-    execute: mediaMocks.execute,
-  }));
+  mediaMocks.conversionInit.mockImplementation(async () =>
+    fake<Conversion>({ execute: mediaMocks.execute }),
+  );
 });
 
 afterEach(() => {

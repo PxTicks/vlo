@@ -1,8 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { TransformState, ClipTransformTarget } from "../types";
+import type {
+  BlurFilter,
+  ContainerChild,
+  Filter,
+  ObservablePoint,
+  Texture,
+  TextureSource,
+} from "pixi.js";
 
 const { MockFilter } = vi.hoisted(() => {
   return {
+    // Stands in for several filter classes; each subclass below is checked.
     MockFilter: class {
       blur: number = 0;
       matrix: number[] = [];
@@ -11,19 +20,19 @@ const { MockFilter } = vi.hoisted(() => {
 });
 
 // Mock internal Pixi components used by the applicator
-vi.mock("pixi.js", () => {
-  const MOCK_TEXTURE = {
-    width: 100,
-    height: 100,
-    source: {},
-    _source: { alphaMode: "premultiply-alpha-on-upload" },
-  };
-  const TEXTURE_EMPTY = {
-    width: 0,
-    height: 0,
-    source: {},
-    _source: { alphaMode: "premultiply-alpha-on-upload" },
-  };
+vi.mock("pixi.js", async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  const texture = (width: number, height: number) =>
+    fake<Texture>({
+      width,
+      height,
+      source: fake<TextureSource>({
+        alphaMode: "premultiply-alpha-on-upload",
+      }),
+    });
+  const MOCK_TEXTURE = texture(100, 100);
+  const TEXTURE_EMPTY = texture(0, 0);
+  const point = () => fake<ObservablePoint>({ copyFrom: vi.fn() });
   return {
     Filter: {
       from: () => new MockFilter(),
@@ -35,49 +44,56 @@ vi.mock("pixi.js", () => {
         super();
       }
     },
-    BlurFilter: class extends MockFilter {
+    BlurFilter: class extends MockFilter implements Partial<BlurFilter> {
       blur: number = 0;
       strength: number = 0;
     },
     ColorMatrixFilter: class extends MockFilter {
       matrix: number[] = [];
     },
-    Container: class {
-      children: unknown[] = [];
-      parent: unknown = null;
-      filters: unknown[] | null = null;
-      addChild(child: unknown) {
-        this.children.push(child);
-        (child as { parent: unknown }).parent = this;
+    Container: class MockContainer implements Partial<Container> {
+      children: ContainerChild[] = [];
+      parent: Container | null = null;
+      filters: readonly Filter[] = [];
+      addChild<U extends ContainerChild[]>(...added: U): U[0] {
+        for (const child of added) {
+          this.children.push(child);
+          child.parent = this as unknown as Container;
+        }
+        return added[0];
       }
-      addChildAt(child: unknown, index: number) {
+      addChildAt<U extends ContainerChild>(child: U, index: number): U {
         this.children.splice(index, 0, child);
-        (child as { parent: unknown }).parent = this;
+        child.parent = this as unknown as Container;
+        return child;
       }
-      getChildIndex(child: unknown) {
+      getChildIndex(child: ContainerChild) {
         return this.children.indexOf(child);
       }
-      removeChild(child: unknown) {
-        const index = this.children.indexOf(child);
-        if (index > -1) {
-          this.children.splice(index, 1);
+      removeChild<U extends ContainerChild[]>(...removed: U): U[0] {
+        for (const child of removed) {
+          const index = this.children.indexOf(child);
+          if (index > -1) {
+            this.children.splice(index, 1);
+          }
+          child.parent = null as unknown as Container;
         }
-        (child as { parent: unknown | null }).parent = null;
+        return removed[0];
       }
     },
-    Sprite: class {
-      parent: unknown = null;
-      texture: typeof MOCK_TEXTURE = MOCK_TEXTURE;
-      mask: unknown = null;
-      filters: unknown[] | null = null;
+    Sprite: class MockSprite implements Partial<Sprite> {
+      parent: Container | null = null;
+      texture = MOCK_TEXTURE;
+      mask: Container | null = null;
+      filters: readonly Filter[] = [];
       renderable: boolean = true;
       alpha: number = 1;
-      position = { copyFrom: vi.fn() };
-      scale = { copyFrom: vi.fn() };
+      position = point();
+      scale = point();
       rotation = 0;
-      skew = { copyFrom: vi.fn() };
-      anchor = { copyFrom: vi.fn() };
-      pivot = { copyFrom: vi.fn() };
+      skew = point();
+      anchor = point();
+      pivot = point();
       destroy = vi.fn();
     },
   };

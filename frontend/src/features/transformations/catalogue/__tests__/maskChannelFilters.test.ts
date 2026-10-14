@@ -1,10 +1,12 @@
+import type { Filter } from "pixi.js";
+import { fake } from "../../../../testUtils/libraryFakes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { filterFromSpy } = vi.hoisted(() => ({
-  filterFromSpy: vi.fn(),
+  filterFromSpy: vi.fn<typeof import("pixi.js").Filter.from>(),
 }));
 
-vi.mock("pixi.js", () => ({
+vi.mock("pixi.js", async () => ({
   Filter: {
     from: filterFromSpy,
   },
@@ -21,7 +23,7 @@ import { createMaskRedToAlphaFilter } from "../mask/maskRedToAlphaFilter";
 describe("mask channel filters", () => {
   beforeEach(() => {
     filterFromSpy.mockReset();
-    filterFromSpy.mockReturnValue({});
+    filterFromSpy.mockReturnValue(fake<Filter>({}));
   });
 
   it("thresholds composite mask coverage from the red channel only", () => {

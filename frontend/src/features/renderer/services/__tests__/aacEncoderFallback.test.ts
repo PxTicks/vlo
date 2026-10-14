@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  canEncodeAudio: vi.fn(),
-  registerAacEncoder: vi.fn(),
+  canEncodeAudio: vi.fn<typeof import("mediabunny").canEncodeAudio>(),
+  registerAacEncoder:
+    vi.fn<typeof import("@mediabunny/aac-encoder").registerAacEncoder>(),
 }));
 
 vi.mock("mediabunny", () => ({ canEncodeAudio: mocks.canEncodeAudio }));

@@ -74,11 +74,13 @@ vi.mock("pixi.js", async (importOriginal) => {
     ...actual,
   } as typeof import("pixi.js") & Record<string, unknown>;
 
-  mockedPixi.Filter = class {
+  // The constructor casts are unavoidable (the fakes take no Pixi options);
+  // `implements` still checks every member they declare.
+  mockedPixi.Filter = class implements Partial<Filter> {
     destroy(): void {}
   } as unknown as typeof actual.Filter;
-  mockedPixi.Sprite = class {
-    filters: Filter[] = [];
+  mockedPixi.Sprite = class implements Partial<Sprite> {
+    filters: readonly Filter[] = [];
     alpha = 1;
     tint = 0xffffff;
   } as unknown as typeof actual.Sprite;

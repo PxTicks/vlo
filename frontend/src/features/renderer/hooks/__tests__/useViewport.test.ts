@@ -38,10 +38,10 @@ vi.mock("pixi-viewport", () => ({
 }));
 
 vi.mock("pixi.js", async () => {
-  const actual = await vi.importActual("pixi.js");
+  const actual = await vi.importActual<typeof import("pixi.js")>("pixi.js");
   return {
     ...actual,
-    Graphics: class {
+    Graphics: class implements Partial<import("pixi.js").Graphics> {
       rect = vi.fn().mockReturnThis();
       fill = vi.fn().mockReturnThis();
       clear = vi.fn();

@@ -1,3 +1,11 @@
+import type {
+  BufferTarget,
+  Conversion,
+  Input,
+  InputAudioTrack,
+  Output,
+  Target,
+} from "mediabunny";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mediaSecondsToTick } from "../../../../core/time";
 import {
@@ -18,20 +26,23 @@ vi.mock("../../../../core/media", () => ({
   captureVideoFrameFile: mocks.captureFrame,
 }));
 
-vi.mock("mediabunny", () => {
-  class MockBufferTarget {
+vi.mock("mediabunny", async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  class MockBufferTarget implements Partial<BufferTarget> {
     buffer: ArrayBuffer | null = new Uint8Array([1, 2, 3]).buffer;
   }
 
-  class MockInput {
+  class MockInput implements Partial<Input> {
     dispose = mocks.dispose;
-    getPrimaryAudioTrack = vi.fn(async () => ({ id: "audio-1", codec: "mp3" }));
+    getPrimaryAudioTrack = vi.fn(async () =>
+      fake<InputAudioTrack>({ id: 1, codec: "mp3" }),
+    );
   }
 
-  class MockOutput {
-    target: MockBufferTarget;
+  class MockOutput implements Partial<Output> {
+    target: Target;
 
-    constructor(options: { target: MockBufferTarget }) {
+    constructor(options: { target: Target }) {
       this.target = options.target;
     }
   }
@@ -43,7 +54,7 @@ vi.mock("mediabunny", () => {
     Conversion: {
       init: vi.fn(async (options: unknown) => {
         mocks.conversionOptions = options;
-        return { isValid: true, execute: mocks.execute };
+        return fake<Conversion>({ isValid: true, execute: mocks.execute });
       }),
     },
     Input: MockInput,
@@ -107,11 +118,11 @@ describe("AssetExtractionService", () => {
     });
     const audio = (
       mocks.conversionOptions as {
-        audio: (track: { id: string }) => unknown;
+        audio: (track: Pick<InputAudioTrack, "id">) => unknown;
       }
     ).audio;
-    expect(audio({ id: "audio-1" })).toEqual({ codec: "mp3" });
-    expect(audio({ id: "audio-2" })).toEqual({ discard: true });
+    expect(audio({ id: 1 })).toEqual({ codec: "mp3" });
+    expect(audio({ id: 2 })).toEqual({ discard: true });
   });
 
   it("captures a video frame through the shared robust frame service", async () => {

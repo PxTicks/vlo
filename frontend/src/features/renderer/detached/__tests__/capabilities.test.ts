@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
 const { canEncodeAudio, canEncodeVideo, ensureAacEncoder } = vi.hoisted(() => ({
-  canEncodeAudio: vi.fn(),
-  canEncodeVideo: vi.fn(),
+  canEncodeAudio: vi.fn<typeof import("mediabunny").canEncodeAudio>(),
+  canEncodeVideo: vi.fn<typeof import("mediabunny").canEncodeVideo>(),
   ensureAacEncoder: vi.fn(),
 }));
 vi.mock("mediabunny", async (importOriginal) => ({
@@ -79,8 +79,8 @@ describe("render readiness probe", () => {
   it("decides on the encoder's own acceleration preference, not the diagnostic ones", async () => {
     ensureAacEncoder.mockResolvedValue("native");
     canEncodeAudio.mockResolvedValue(true);
-    canEncodeVideo.mockImplementation(async (_codec, options: { hardwareAcceleration: string }) =>
-      options.hardwareAcceleration !== "no-preference");
+    canEncodeVideo.mockImplementation(async (_codec, options) =>
+      options?.hardwareAcceleration !== "no-preference");
     const result = await probeRenderCapabilities(mp4);
     expect(result.ready).toBe(false);
     expect(result.blockers).toEqual(["MP4 video (avc) cannot be encoded at 320x180."]);

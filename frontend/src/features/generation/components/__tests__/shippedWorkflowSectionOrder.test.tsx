@@ -196,6 +196,40 @@ describe("shipped MiniMax workflow section order", () => {
     ]);
   });
 
+  it.each(MODES)("orders the H3 image edit panel in %s", (dir) => {
+    renderPanel(loadSections(dir, "vlo_minimax_h3_edit"), [
+      widget("151", "attention", "Attention backend", "advanced_settings"),
+      widget("150", "lora_name", "Model", "lora_loaders"),
+      widget("124", "steps", "Steps", "image_generation"),
+    ]);
+
+    expectOrder([
+      "Image inputs",
+      "Prompt",
+      "Image Generation",
+      "LoRA loaders",
+      "Advanced Settings",
+    ]);
+  });
+
+  it.each(MODES)("orders the H3 reference image edit panel in %s", (dir) => {
+    renderPanel(loadSections(dir, "vlo_minimax_h3_edit_ref"), [
+      widget("145", "attention", "Attention backend", "advanced_settings"),
+      widget("148", "lora_name", "Model", "lora_loaders"),
+      widget("136", "ref_image_size", "Reference image size", "references"),
+      widget("124", "steps", "Steps", "image_generation"),
+    ]);
+
+    expectOrder([
+      "Image inputs",
+      "Prompt",
+      "Image Generation",
+      "LoRA loaders",
+      "References",
+      "Advanced Settings",
+    ]);
+  });
+
   it.each(MODES)("keeps advanced settings last and collapsed in %s", (dir) => {
     for (const workflow of [
       "vlo_minimax_h3_i2v",
@@ -203,6 +237,8 @@ describe("shipped MiniMax workflow section order", () => {
       "vlo_minimax_h3_inpaint",
       "vlo_minimax_h3_inpaint_flf2va",
       "vlo_minimax_h3_fun_controlnet_union",
+      "vlo_minimax_h3_edit",
+      "vlo_minimax_h3_edit_ref",
     ]) {
       const sections = loadSections(dir, workflow);
       const advanced = sections.find((s) => s.id === "advanced_settings");

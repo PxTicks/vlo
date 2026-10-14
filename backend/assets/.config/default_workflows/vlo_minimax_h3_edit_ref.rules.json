@@ -1,0 +1,249 @@
+{
+  "version": 3,
+  "name": "MiniMax H3 Image Edit (Reference)",
+  "sections": [
+    {
+      "id": "image_generation",
+      "title": "Image Generation",
+      "order": 2,
+      "default_open": true
+    },
+    {
+      "id": "lora_loaders",
+      "title": "LoRA loaders",
+      "order": 3,
+      "default_open": true
+    },
+    {
+      "id": "references",
+      "title": "References",
+      "order": 4,
+      "default_open": true
+    },
+    {
+      "id": "advanced_settings",
+      "title": "Advanced Settings",
+      "order": 5,
+      "default_open": false
+    }
+  ],
+  "lora_stacks": [
+    {
+      "id": "model_loras",
+      "nodes": ["148", "150", "151", "152"],
+      "section_id": "lora_loaders",
+      "group_title": "LoRA"
+    }
+  ],
+  "nodes": {
+    "124": {
+      "widgets": {
+        "steps": {
+          "label": "Steps",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 60,
+          "step": 1,
+          "default": 20,
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 3
+        }
+      }
+    },
+    "129": {
+      "widgets": {
+        "noise_seed": {
+          "label": "Noise seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 2
+        }
+      }
+    },
+    "136": {
+      "present": {
+        "label": "Prompt",
+        "input_type": "text",
+        "param": "prompt"
+      },
+      "widgets": {
+        "width": {
+          "label": "Width",
+          "value_type": "int",
+          "hidden": true
+        },
+        "height": {
+          "label": "Height",
+          "value_type": "int",
+          "hidden": true
+        },
+        "length": {
+          "label": "Clip length",
+          "value_type": "int",
+          "hidden": true
+        },
+        "ref_image_size": {
+          "label": "Reference image size",
+          "value_type": "enum",
+          "options": ["match", "max"],
+          "default": "match",
+          "section_id": "references",
+          "group_id": "reference_options",
+          "group_title": "Reference Options",
+          "group_order": 3
+        }
+      }
+    },
+    "141": {
+      "present": {
+        "label": "Source image",
+        "input_type": "image",
+        "param": "images",
+        "class_type": "vloMemoryLoadImageBatch",
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 9
+        },
+        "required": true
+      }
+    },
+    "145": {
+      "widgets": {
+        "attention": {
+          "label": "Attention backend",
+          "section_id": "advanced_settings",
+          "group_id": "model_patches",
+          "group_title": "Model",
+          "group_order": 0
+        }
+      }
+    },
+    "148": {
+      "widgets": {
+        "lora_name": {
+          "label": "Model",
+          "discover_when_bypassed": true,
+          "default_node_bypass": true,
+          "section_id": "lora_loaders",
+          "group_id": "lora_model",
+          "group_title": "Model LoRA"
+        }
+      }
+    },
+    "156": {
+      "widgets": {
+        "index": {
+          "label": "Result frame",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "157": {
+      "widgets": {
+        "batch_index": {
+          "label": "Pixel frame",
+          "value_type": "int",
+          "hidden": true
+        },
+        "length": {
+          "label": "Frames to keep",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    }
+  },
+  "frontend_controls": {
+    "spectrum_enabled": {
+      "label": "MiniMax Spectrum",
+      "value_type": "boolean",
+      "default": true,
+      "section_id": "advanced_settings",
+      "group_id": "model_patches",
+      "group_title": "Model",
+      "group_order": 1
+    }
+  },
+  "validation": {
+    "inputs": [
+      {
+        "kind": "required",
+        "input": "141",
+        "message": "A source image is required."
+      },
+      {
+        "kind": "required",
+        "input": "136:prompt",
+        "message": "A prompt is required."
+      }
+    ]
+  },
+  "derived_widgets": [],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "frontend_control",
+          "control_id": "spectrum_enabled"
+        },
+        "operator": "eq",
+        "value": false
+      },
+      "bypass": ["146"]
+    }
+  ],
+  "effect_switches": [],
+  "slots": {},
+  "media_fallbacks": [],
+  "pipeline": [
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "anchor_input": "141",
+        "resolution_ladder": { "min": 240, "max": 720, "steps": 5 },
+        "postprocess": {
+          "enabled": false
+        }
+      },
+      "targets": [
+        {
+          "width": { "node_id": "136", "param": "width" },
+          "height": { "node_id": "136", "param": "height" }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "default": 720,
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 0
+        },
+        {
+          "key": "target_aspect_ratio",
+          "label": "Aspect ratio",
+          "value_type": "string",
+          "expose": "widget",
+          "source": "client",
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 1
+        }
+      ]
+    }
+  ]
+}

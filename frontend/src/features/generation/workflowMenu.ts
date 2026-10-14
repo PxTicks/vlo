@@ -34,6 +34,8 @@ export const DEFAULT_GENERATION_WORKFLOW_MENU: MenuTreeDefinition = {
     { leafId: "vlo_krea2_turbo.json", parentId: "image.generate", order: 0 },
     { leafId: "vlo_qwen_image_2_1_edit.json", parentId: "image.edit", order: 0 },
     { leafId: "vlo_klein_multi.json", parentId: "image.edit", order: 1 },
+    { leafId: "vlo_minimax_h3_edit.json", parentId: "image.edit", order: 2 },
+    { leafId: "vlo_minimax_h3_edit_ref.json", parentId: "image.edit", order: 3 },
     { leafId: "vlo_SeedVR2_image.json", parentId: "image.enhance", order: 0 },
   ],
 };

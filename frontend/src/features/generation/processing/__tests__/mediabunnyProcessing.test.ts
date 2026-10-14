@@ -13,7 +13,6 @@ const media = vi.hoisted(() => {
   };
 
   class Input {
-    constructor(readonly options: unknown) {}
     async getPrimaryVideoTrack() {
       return state.track;
     }

@@ -45,8 +45,9 @@ describe("ScopesView", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     context = fakeContext();
+    // getContext is overloaded per context id; the view only asks for "2d".
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
-      () => context as unknown as CanvasRenderingContext2D,
+      (() => context) as unknown as HTMLCanvasElement["getContext"],
     );
     pixiMocks.getActivePixiContentTarget.mockReturnValue({
       frame: { width: 1024, height: 512 },

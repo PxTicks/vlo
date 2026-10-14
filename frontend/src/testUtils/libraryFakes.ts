@@ -8,6 +8,12 @@
  * `implements Partial<RealClass>`, checks every member a test supplies against
  * the installed library's declaration: a fake that returns the wrong shape
  * fails typecheck instead of hiding the bug.
+ *
+ * Spies need their signature too. An unparameterised `vi.fn()` returns `any`,
+ * which satisfies every member type, so `pixels: vi.fn().mockReturnValue(x)`
+ * passes whatever `x` is. Write `vi.fn<ExtractSystem["pixels"]>()` so the
+ * values a test configures are checked as well. For an overloaded or generic
+ * member, give the spy the one signature the code under test calls.
  */
 
 /**

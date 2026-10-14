@@ -321,6 +321,81 @@ describe("useTimelineStore undo/redo", () => {
     ).toBe(9600);
   });
 
+  it("removes a selected transition, clears the selection and undoes back", () => {
+    const tracks = [
+      { ...createTrack("upper", "Upper"), type: "visual" as const },
+      { ...createTrack("lower", "Lower"), type: "visual" as const },
+    ];
+    const outgoing = createClip("outgoing", "lower", 0, 9600);
+    const incoming = createClip("incoming", "upper", 4800, 9600);
+    const transition: Transition = {
+      id: "transition-remove",
+      type: "dissolve",
+      outgoingClipId: outgoing.id,
+      incomingClipId: incoming.id,
+      parameters: { easing: "linear" },
+    };
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks,
+      clips: [outgoing, incoming],
+      transitions: [transition],
+    });
+    useTimelineStore.getState().selectTransition(transition.id);
+
+    act(() => {
+      expect(useTimelineStore.getState().removeTransition("missing")).toBe(
+        false,
+      );
+      expect(useTimelineStore.getState().removeTransition(transition.id)).toBe(
+        true,
+      );
+    });
+    expect(useTimelineStore.getState().transitions).toEqual([]);
+    expect(useTimelineStore.getState().selectedTransitionId).toBeNull();
+    // The clips the transition joined stay where they were.
+    expect(useTimelineStore.getState().clips.map((clip) => clip.start)).toEqual([
+      0, 4800,
+    ]);
+
+    act(() => {
+      expect(useTimelineStore.getState().undo()).toBe(true);
+    });
+    expect(useTimelineStore.getState().transitions).toEqual([transition]);
+  });
+
+  it("keeps an unrelated selection when removing a transition", () => {
+    const tracks = [
+      { ...createTrack("upper", "Upper"), type: "visual" as const },
+      { ...createTrack("lower", "Lower"), type: "visual" as const },
+    ];
+    const clips = [
+      createClip("a", "lower", 0, 9600),
+      createClip("b", "upper", 4800, 9600),
+      createClip("c", "lower", 20000, 9600),
+      createClip("d", "upper", 24800, 9600),
+    ];
+    const first: Transition = {
+      id: "first",
+      type: "dissolve",
+      outgoingClipId: "a",
+      incomingClipId: "b",
+      parameters: {},
+    };
+    const second: Transition = { ...first, id: "second", outgoingClipId: "c", incomingClipId: "d" };
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks,
+      clips,
+      transitions: [first, second],
+    });
+    useTimelineStore.getState().selectTransition("second");
+
+    act(() => {
+      useTimelineStore.getState().removeTransition("first");
+    });
+    expect(useTimelineStore.getState().transitions).toEqual([second]);
+    expect(useTimelineStore.getState().selectedTransitionId).toBe("second");
+  });
+
   it("preserves parent speed inheritance to masks through undo/redo", () => {
     const clip = createClip("parent", "track_current", 0, 120);
     const mask: ClipMask = {

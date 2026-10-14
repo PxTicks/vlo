@@ -1489,4 +1489,275 @@ describe("ProjectPersistenceService", () => {
       migrated: false,
     });
   });
+
+  describe("open subtimeline session", () => {
+    const sessionPath = ".vloproject/composite-session.json";
+    const videoClip = {
+      id: "inner-clip",
+      trackId: "inner-track",
+      type: "video" as const,
+      name: "Inner",
+      assetId: "asset-1",
+      start: 0,
+      timelineDuration: 96000,
+      sourceDuration: 96000,
+      croppedSourceDuration: 96000,
+      transformedDuration: 96000,
+      transformedOffset: 0,
+      offset: 0,
+      transformations: [],
+    };
+    const session = {
+      stack: [
+        {
+          previousSnapshot: {
+            tracks: timeline.tracks,
+            clips: [],
+            transitions: [],
+          },
+          ownerCompositeAssetId: "composite-1",
+          ownerClipId: "composite-clip",
+          name: "Intro",
+          insertStartTick: 48000,
+          initialContentSnapshot: "{}",
+        },
+      ],
+      current: {
+        tracks: [{ ...timeline.tracks[0], id: "inner-track" }],
+        clips: [videoClip],
+        transitions: [],
+      },
+    };
+
+    it("treats a missing document as being on the main timeline", async () => {
+      const document = await projectPersistenceService.readCompositeSession();
+      expect(document).toMatchObject({
+        documentType: "vlo.composite-session",
+        session: null,
+      });
+      expect(fileSystemService.writeFile).not.toHaveBeenCalled();
+    });
+
+    it("round-trips an open session through a cold reload", async () => {
+      await projectPersistenceService.writeCompositeSession(session);
+      expect(JSON.parse(files.get(sessionPath)!).session).toEqual(session);
+
+      // A cold reload reads the file rather than the in-memory cache.
+      projectPersistenceService.resetCaches();
+      const reloaded = await projectPersistenceService.readCompositeSession();
+      expect(reloaded.session).toEqual(session);
+    });
+
+    it("hands out copies so callers cannot corrupt the cached session", async () => {
+      await projectPersistenceService.writeCompositeSession(session);
+      const first = await projectPersistenceService.readCompositeSession();
+      first.session!.current.clips.length = 0;
+      first.session!.stack[0].name = "mutated";
+
+      const second = await projectPersistenceService.readCompositeSession();
+      expect(second.session).toEqual(session);
+    });
+
+    it("clears the session when returning to the main timeline", async () => {
+      await projectPersistenceService.writeCompositeSession(session);
+      await projectPersistenceService.writeCompositeSession(null);
+
+      projectPersistenceService.resetCaches();
+      expect(
+        (await projectPersistenceService.readCompositeSession()).session,
+      ).toBeNull();
+    });
+
+    it("keeps the last of several rapid writes", async () => {
+      const renamed = {
+        ...session,
+        stack: [{ ...session.stack[0], name: "Renamed" }],
+      };
+      await Promise.all([
+        projectPersistenceService.writeCompositeSession(session),
+        projectPersistenceService.writeCompositeSession(null),
+        projectPersistenceService.writeCompositeSession(renamed),
+      ]);
+
+      projectPersistenceService.resetCaches();
+      expect(
+        (await projectPersistenceService.readCompositeSession()).session,
+      ).toEqual(renamed);
+    });
+
+    it("refuses to write a session that would not load back", async () => {
+      await expect(
+        projectPersistenceService.writeCompositeSession({
+          ...session,
+          stack: [],
+        }),
+      ).rejects.toThrow();
+      expect(files.has(sessionPath)).toBe(false);
+    });
+
+    it("rejects newer, corrupt and unreadable documents instead of discarding them", async () => {
+      files.set(
+        sessionPath,
+        JSON.stringify({
+          documentType: "vlo.composite-session",
+          schemaVersion: 99,
+          updated_at: 1,
+          session: null,
+        }),
+      );
+      await expect(
+        projectPersistenceService.readCompositeSession(),
+      ).rejects.toBeInstanceOf(ProjectSchemaVersionError);
+
+      files.set(sessionPath, "{ not json");
+      await expect(
+        projectPersistenceService.readCompositeSession(),
+      ).rejects.toThrow(SyntaxError);
+
+      files.set(
+        sessionPath,
+        JSON.stringify({
+          documentType: "vlo.composite-session",
+          schemaVersion: 1,
+          updated_at: 1,
+          session: { stack: [], current: session.current },
+        }),
+      );
+      await expect(
+        projectPersistenceService.readCompositeSession(),
+      ).rejects.toThrow();
+      // A bad document stays on disk for recovery rather than being reset.
+      expect(files.has(sessionPath)).toBe(true);
+
+      (fileSystemService.readFile as Mock).mockRejectedValueOnce(
+        new Error("Permission denied"),
+      );
+      await expect(
+        projectPersistenceService.readCompositeSession(),
+      ).rejects.toThrow(/Permission denied/);
+    });
+  });
+
+  describe("generation panel document", () => {
+    const panelPath = ".vloproject/generation-panel.json";
+    const panel = {
+      workflowId: "vlo_ltx2_5.json",
+      inputs: {
+        prompt: "a lighthouse at dusk",
+        seed: 42,
+        loras: [{ name: "detail", strength: 0.6 }],
+        audio: null,
+      },
+    };
+
+    it("starts empty and round-trips the panel through a cold reload", async () => {
+      expect(
+        (await projectPersistenceService.readGenerationPanel()).panel,
+      ).toBeNull();
+
+      await projectPersistenceService.writeGenerationPanel(panel);
+      projectPersistenceService.resetCaches();
+      expect(
+        (await projectPersistenceService.readGenerationPanel()).panel,
+      ).toEqual(panel);
+
+      await projectPersistenceService.writeGenerationPanel(null);
+      projectPersistenceService.resetCaches();
+      expect(
+        (await projectPersistenceService.readGenerationPanel()).panel,
+      ).toBeNull();
+    });
+
+    it("rejects newer and unreadable panel documents", async () => {
+      files.set(
+        panelPath,
+        JSON.stringify({
+          documentType: "vlo.generation-panel",
+          schemaVersion: 2,
+          updated_at: 1,
+          panel: null,
+        }),
+      );
+      await expect(
+        projectPersistenceService.readGenerationPanel(),
+      ).rejects.toBeInstanceOf(ProjectSchemaVersionError);
+
+      (fileSystemService.readFile as Mock).mockRejectedValueOnce(
+        new Error("Permission denied"),
+      );
+      await expect(
+        projectPersistenceService.readGenerationPanel(),
+      ).rejects.toThrow(/Permission denied/);
+    });
+  });
+
+  describe("extension storage document", () => {
+    const storagePath = ".vloproject/extension-storage.json";
+
+    it("replaces one namespace while retaining every other", async () => {
+      files.set(
+        storagePath,
+        JSON.stringify({
+          documentType: "vlo.extension-storage",
+          schemaVersion: 1,
+          updated_at: 1,
+          // An extension that is no longer installed keeps its data.
+          storage: { "example.uninstalled": { keep: true } },
+        }),
+      );
+
+      await projectPersistenceService.updateExtensionStorageNamespace(
+        "example.a",
+        { count: 1, nested: { list: [1, "two"] } },
+      );
+      await projectPersistenceService.updateExtensionStorageNamespace(
+        "example.b",
+        { enabled: false },
+      );
+      await projectPersistenceService.updateExtensionStorageNamespace(
+        "example.a",
+        undefined,
+      );
+
+      projectPersistenceService.resetCaches();
+      const reloaded = await projectPersistenceService.readExtensionStorage();
+      expect(reloaded.storage).toEqual({
+        "example.uninstalled": { keep: true },
+        "example.b": { enabled: false },
+      });
+    });
+
+    it("creates the document on first write and isolates returned copies", async () => {
+      const record = { values: [1, 2] };
+      const written =
+        await projectPersistenceService.updateExtensionStorageNamespace(
+          "example.a",
+          record,
+        );
+      record.values.push(3);
+      written.storage["example.a"].values = [];
+
+      expect(
+        (await projectPersistenceService.readExtensionStorage()).storage,
+      ).toEqual({ "example.a": { values: [1, 2] } });
+      expect(JSON.parse(files.get(storagePath)!).storage).toEqual({
+        "example.a": { values: [1, 2] },
+      });
+    });
+
+    it("rejects newer storage documents", async () => {
+      files.set(
+        storagePath,
+        JSON.stringify({
+          documentType: "vlo.extension-storage",
+          schemaVersion: 5,
+          updated_at: 1,
+          storage: {},
+        }),
+      );
+      await expect(
+        projectPersistenceService.updateExtensionStorageNamespace("example.a", {}),
+      ).rejects.toBeInstanceOf(ProjectSchemaVersionError);
+    });
+  });
 });

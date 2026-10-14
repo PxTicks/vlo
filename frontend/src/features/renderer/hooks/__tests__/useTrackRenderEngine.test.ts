@@ -2,6 +2,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { Application, Container, UPDATE_PRIORITY } from "pixi.js";
+import type {
+  ContainerChild,
+  Cursor,
+  Effect,
+  EventMode,
+  ObservablePoint,
+  Point,
+  Sprite,
+  Texture,
+} from "pixi.js";
 import { useTrackRenderEngine } from "../useTrackRenderEngine";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../timeline";
@@ -28,7 +38,8 @@ const {
   mockWorkerInstances,
   mockSprite,
   MockWorker,
-} = vi.hoisted(() => {
+} = await vi.hoisted(async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
   const instances: Array<{
     onmessage: ((e: MessageEvent) => void) | null;
     postMessage: ReturnType<typeof vi.fn>;
@@ -71,24 +82,26 @@ const {
       isPlaying: false,
     },
     mockWorkerInstances: instances,
+    // `texture` is left unchecked: tests clear it to null to model "no frame
+    // yet", where real Pixi would substitute Texture.EMPTY.
     mockSprite: {
-      anchor: { set: vi.fn() },
+      anchor: fake<ObservablePoint>({ set: vi.fn() }),
       zIndex: 0,
       texture: null as unknown,
       visible: true,
       destroy: vi.fn(),
       on: vi.fn(),
       off: vi.fn(),
-      eventMode: "passive" as unknown,
-      cursor: "default" as unknown,
-      scale: { x: 1, y: 1 },
+      eventMode: "passive" as EventMode,
+      cursor: "default" as Cursor | string,
+      scale: fake<ObservablePoint>({ x: 1, y: 1 }),
       rotation: 0,
-      position: { x: 0, y: 0 },
-      pivot: { x: 0, y: 0 },
-      getGlobalPosition: vi.fn(() => ({ x: 0, y: 0 })),
+      position: fake<ObservablePoint>({ x: 0, y: 0 }),
+      pivot: fake<ObservablePoint>({ x: 0, y: 0 }),
+      getGlobalPosition: vi.fn(() => fake<Point>({ x: 0, y: 0 })),
       setMask: vi.fn(),
       addChild: vi.fn(),
-    },
+    } satisfies Partial<Omit<Sprite, "texture">> & { texture: unknown },
     MockWorker: MockWorkerClass,
   };
 });
@@ -101,36 +114,42 @@ vi.mock("@decoder-worker-loader", () => ({
 
 // 2. Mock PIXI
 vi.mock("pixi.js", async () => {
-  const actual = await vi.importActual("pixi.js");
+  const actual = await vi.importActual<typeof import("pixi.js")>("pixi.js");
+  const { fake } = await import("../../../../testUtils/libraryFakes");
   return {
     ...actual,
     Texture: {
-      from: vi.fn(() => ({
-        width: 100,
-        height: 100,
-        destroy: vi.fn(),
-      })),
-      EMPTY: { destroy: vi.fn() },
+      from: vi.fn(() =>
+        fake<Texture>({
+          width: 100,
+          height: 100,
+          destroy: vi.fn(),
+        }),
+      ),
+      EMPTY: fake<Texture>({ destroy: vi.fn() }),
     },
     Sprite: class {
       constructor() {
         return mockSprite;
       }
     },
-    Container: class {
-      children: unknown[] = [];
+    Container: class MockContainer implements Partial<Container> {
+      children: ContainerChild[] = [];
       zIndex = 0;
-      effects: unknown[] = [];
-      mask: unknown = null;
-      addChild = vi.fn((child) => this.children.push(child));
+      effects: Effect[] = [];
+      mask: Container | null = null;
+      addChild = vi.fn(<U extends ContainerChild[]>(...added: U): U[0] => {
+        this.children.push(...added);
+        return added[0];
+      });
       removeChild = vi.fn();
       setMask = vi.fn();
-      addEffect = vi.fn((effect: unknown) => {
+      addEffect = vi.fn((effect: Effect) => {
         if (!this.effects.includes(effect)) {
           this.effects.push(effect);
         }
       });
-      removeEffect = vi.fn((effect: unknown) => {
+      removeEffect = vi.fn((effect: Effect) => {
         this.effects = this.effects.filter((entry) => entry !== effect);
       });
       destroy = vi.fn();

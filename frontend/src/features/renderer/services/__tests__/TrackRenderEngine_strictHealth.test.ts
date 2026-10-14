@@ -1,4 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  Container,
+  ContainerChild,
+  ObservablePoint,
+  Sprite,
+  Texture,
+  TextureSource,
+} from "pixi.js";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import type { Asset } from "../../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../../timeline";
@@ -20,9 +28,9 @@ const { mockWorkerBehaviors, textureFromSpy, syncMaskClipsSpy } = vi.hoisted(
         source: {
           width: bitmap?.width ?? 100,
           height: bitmap?.height ?? 100,
-        },
+        } satisfies Partial<TextureSource> as TextureSource,
         destroy: vi.fn(),
-      }),
+      } satisfies Partial<Texture>),
     );
     const syncMaskClipsSpy = vi.fn(async () => undefined);
 
@@ -102,28 +110,33 @@ vi.mock("@decoder-worker-loader", () => ({
 }));
 
 vi.mock("pixi.js", async () => {
-  const actual = await vi.importActual("pixi.js");
-  const textureEmpty = { width: 1, height: 1, destroy: vi.fn() };
+  const actual = await vi.importActual<typeof import("pixi.js")>("pixi.js");
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  const textureEmpty = fake<Texture>({ width: 1, height: 1, destroy: vi.fn() });
+  const point = (x: number, y: number) =>
+    fake<ObservablePoint>({ x, y, set: vi.fn() });
 
-  class MockSprite {
-    anchor = { set: vi.fn() };
+  class MockSprite implements Partial<Sprite> {
+    anchor = point(0, 0);
     texture = textureEmpty;
     visible = true;
-    position = { x: 0, y: 0, set: vi.fn() };
-    scale = { x: 1, y: 1, set: vi.fn() };
+    position = point(0, 0);
+    scale = point(1, 1);
     rotation = 0;
     destroy = vi.fn();
   }
 
-  class MockContainer {
-    parent: MockContainer | null = null;
+  class MockContainer implements Partial<Container> {
+    parent: Container | null = null;
     destroyed = false;
     zIndex = 0;
-    children: unknown[] = [];
-    addChild = vi.fn((child: { parent?: MockContainer | null }) => {
-      child.parent = this;
-      this.children.push(child);
-      return child;
+    children: ContainerChild[] = [];
+    addChild = vi.fn(<U extends ContainerChild[]>(...added: U): U[0] => {
+      for (const child of added) {
+        child.parent = this as unknown as Container;
+        this.children.push(child);
+      }
+      return added[0];
     });
     removeChild = vi.fn();
     removeFromParent = vi.fn(() => {

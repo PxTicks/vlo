@@ -8,6 +8,18 @@ import { ExportFileTarget } from "../ExportFileTarget";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import type { Mock } from "vitest";
 import { Application, Container } from "pixi.js";
+import type {
+  ObservablePoint,
+  Renderer,
+  Sprite,
+  Texture as PixiTexture,
+} from "pixi.js";
+import type {
+  AudioBufferSource,
+  BufferTarget,
+  CanvasSource,
+  Output,
+} from "mediabunny";
 import { RenderGroupOrchestrator } from "../RenderGroupOrchestrator";
 import { TrackRenderEngine } from "../TrackRenderEngine";
 import { AdjustmentEffectResolver } from "../AdjustmentEffectResolver";
@@ -54,77 +66,79 @@ interface MockWorker {
 
 // Mock PixiJS
 vi.mock("pixi.js", async () => {
-  const actual = await vi.importActual("pixi.js");
+  const actual = await vi.importActual<typeof import("pixi.js")>("pixi.js");
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  const point = (x = 1, y = 1) =>
+    fake<ObservablePoint>({
+      // Mirrors Pixi's ObservablePoint.set(x, y = x).
+      set: vi.fn(function (this: ObservablePoint, nextX = 0, nextY = nextX) {
+        this.x = nextX;
+        this.y = nextY;
+        return this;
+      }),
+      x,
+      y,
+    });
   return {
     ...actual,
-    Application: class MockApplication {
-      stage = {
+    Application: class MockApplication implements Partial<Application> {
+      stage = fake<Container>({
         addChild: vi.fn(),
-        scale: { set: vi.fn(), x: 1, y: 1 },
+        scale: point(),
         sortChildren: vi.fn(),
         sortableChildren: false,
-      };
-      renderer = {
+      });
+      renderer = fake<Renderer>({
         width: 0,
         height: 0,
         render: vi.fn(),
-      };
+      });
       canvas = document.createElement("canvas");
-      init = vi.fn(async (opts) => {
-        this.renderer.width = opts.width;
-        this.renderer.height = opts.height;
-        this.canvas.width = opts.width;
-        this.canvas.height = opts.height;
+      init = vi.fn(async (opts?: { width?: number; height?: number }) => {
+        const size = { width: opts?.width ?? 0, height: opts?.height ?? 0 };
+        Object.assign(this.renderer, size);
+        this.canvas.width = size.width;
+        this.canvas.height = size.height;
       });
       destroy = vi.fn();
       render = vi.fn();
     },
-    Container: class MockContainer {
-      scale = {
-        // Mirrors Pixi's ObservablePoint.set(x, y = x).
-        set: vi.fn(function (
-          this: { x: number; y: number },
-          x: number,
-          y: number = x,
-        ) {
-          this.x = x;
-          this.y = y;
-        }),
-        x: 1,
-        y: 1,
-      };
+    Container: class MockContainer implements Partial<Container> {
+      scale = point();
       addChild = vi.fn();
       sortChildren = vi.fn();
       sortableChildren = false;
       destroy = vi.fn();
       removeFromParent = vi.fn();
     },
-    Sprite: class MockSprite {
-      anchor = { set: vi.fn() };
-      position = { set: vi.fn() };
-      scale = { set: vi.fn() };
-      pivot = { set: vi.fn() };
+    Sprite: class MockSprite implements Partial<Sprite> {
+      anchor = point(0, 0);
+      position = point(0, 0);
+      scale = point();
+      pivot = point(0, 0);
       rotation = 0;
       alpha = 1;
       tint = 0xffffff;
-      blendMode = "normal";
-      filters = null;
-      texture = null;
+      blendMode = "normal" as const;
+      filters = null as unknown as Sprite["filters"];
+      texture = null as unknown as PixiTexture;
       destroy = vi.fn();
       visible = true;
       setMask = vi.fn();
       addChild = vi.fn();
     },
     RenderTexture: {
-      create: vi.fn(({ width, height }) => ({
-        width,
-        height,
-        resize: vi.fn(),
-        destroy: vi.fn(),
-      })),
+      create: vi.fn(({ width, height }: { width: number; height: number }) =>
+        fake<import("pixi.js").RenderTexture>({
+          width,
+          height,
+          resize: vi.fn(),
+          destroy: vi.fn(),
+        }),
+      ),
     },
     Texture: {
-      from: vi.fn(() => ({ destroy: vi.fn() })),
+      from: vi.fn(() => fake<PixiTexture>({ destroy: vi.fn() })),
       EMPTY: "empty",
     },
   };
@@ -176,8 +190,7 @@ vi.mock("../aacEncoderFallback", () => ({
 
 vi.mock("mediabunny", () => {
   return {
-    Output: class {
-      constructor() {}
+    Output: class implements Partial<Output> {
       addVideoTrack = vi.fn();
       addAudioTrack = vi.fn();
       start = vi.fn();
@@ -186,17 +199,15 @@ vi.mock("mediabunny", () => {
     },
     Mp4OutputFormat: class {},
     WebMOutputFormat: class {},
-    BufferTarget: class {
+    BufferTarget: class implements Partial<BufferTarget> {
       buffer = new ArrayBuffer(1);
     },
     StreamTarget: class {},
-    CanvasSource: class {
-      constructor() {}
+    CanvasSource: class implements Partial<CanvasSource> {
       add = vi.fn();
       close = vi.fn();
     },
-    AudioBufferSource: class {
-      constructor() {}
+    AudioBufferSource: class implements Partial<AudioBufferSource> {
       add = vi.fn();
       close = vi.fn();
     },

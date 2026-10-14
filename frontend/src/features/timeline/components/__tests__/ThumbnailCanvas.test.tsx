@@ -55,12 +55,14 @@ vi.mock("mediabunny", async () => {
       }
       [Symbol.dispose]() {}
     },
+    // untyped: mediabunny sources expose no public members; url tags the source.
     UrlSource: class {
       url: string;
       constructor(url: string) {
         this.url = url;
       }
     },
+    // untyped: mediabunny sources expose no public members; blob tags the source.
     BlobSource: class {
       blob: Blob;
       constructor(blob: Blob) {

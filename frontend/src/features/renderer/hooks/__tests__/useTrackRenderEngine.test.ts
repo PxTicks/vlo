@@ -128,7 +128,8 @@ vi.mock("pixi.js", async () => {
       ),
       EMPTY: fake<Texture>({ destroy: vi.fn() }),
     },
-    Sprite: class {
+    // Every Sprite the engine creates is the one shared, checked fake.
+    Sprite: class implements Partial<Sprite> {
       constructor() {
         return mockSprite;
       }

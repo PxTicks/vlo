@@ -10,7 +10,7 @@ vi.mock("mediabunny", () => {
     }
   }
 
-  class Input {
+  class Input implements Partial<import("mediabunny").Input> {
     private rejectPending: ((err: Error) => void) | null = null;
 
     getPrimaryVideoTrack(): Promise<never> {

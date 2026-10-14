@@ -1,8 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  BufferTarget as MediabunnyBufferTarget,
+  CanvasSink as MediabunnyCanvasSink,
+  Conversion as MediabunnyConversion,
+  Input as MediabunnyInput,
+  InputVideoTrack,
+  WrappedCanvas,
+} from "mediabunny";
 
-const media = vi.hoisted(() => {
+const media = await vi.hoisted(async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
   const state = {
-    track: null as null | { displayWidth: number; displayHeight: number },
+    track: null as null | Pick<InputVideoTrack, "displayWidth" | "displayHeight">,
     frames: [] as Uint8ClampedArray[],
     contextValid: true,
     disposeCount: 0,
@@ -12,19 +21,21 @@ const media = vi.hoisted(() => {
     outputBuffer: new ArrayBuffer(4) as ArrayBuffer | null,
   };
 
-  class Input {
+  class Input implements Partial<MediabunnyInput> {
     async getPrimaryVideoTrack() {
-      return state.track;
+      return state.track ? fake<InputVideoTrack>(state.track) : null;
     }
     dispose() {
       state.disposeCount += 1;
     }
   }
 
-  class CanvasSink {
-    async *canvases() {
+  class CanvasSink implements Partial<MediabunnyCanvasSink> {
+    async *canvases(): AsyncGenerator<WrappedCanvas, void> {
       for (const data of state.frames) {
-        yield {
+        yield fake<WrappedCanvas>({
+          // A DOM stand-in, not a mediabunny object: only the 2D context the
+          // analysis reads is provided.
           canvas: {
             getContext: () =>
               state.contextValid
@@ -34,13 +45,13 @@ const media = vi.hoisted(() => {
                     getImageData: () => ({ data }),
                   }
                 : null,
-          },
-        };
+          } as unknown as HTMLCanvasElement,
+        });
       }
     }
   }
 
-  class BufferTarget {
+  class BufferTarget implements Partial<MediabunnyBufferTarget> {
     get buffer() {
       return state.outputBuffer;
     }
@@ -49,10 +60,10 @@ const media = vi.hoisted(() => {
   const Conversion = {
     init: async (options: unknown) => {
       state.conversionInit?.(options);
-      return {
+      return fake<MediabunnyConversion>({
         cancel: () => state.conversionCancel?.() ?? Promise.resolve(),
         execute: () => state.conversionExecute?.() ?? Promise.resolve(),
-      };
+      });
     },
   };
 

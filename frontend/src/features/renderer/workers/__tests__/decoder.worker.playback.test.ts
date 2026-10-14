@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  CanvasSink as MediabunnyCanvasSink,
+  Input as MediabunnyInput,
+  InputVideoTrack,
+  WrappedCanvas,
+} from "mediabunny";
 
 /**
  * A 10 fps, 2 s video. Each `canvases(start)` call opens a fresh iterator from
  * the frame at or before `start`, as mediabunny's CanvasSink does.
  */
-const decoder = vi.hoisted(() => {
+const decoder = await vi.hoisted(async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
   const FPS = 10;
   const FRAME_COUNT = 20;
   const state = {
@@ -14,30 +21,31 @@ const decoder = vi.hoisted(() => {
     failAtFrame: null as number | null,
   };
 
-  class Input {
+  class Input implements Partial<MediabunnyInput> {
     async getPrimaryVideoTrack() {
       return state.hasVideoTrack
-        ? { canBeTransparent: async () => false }
+        ? fake<InputVideoTrack>({ canBeTransparent: async () => false })
         : null;
     }
     dispose() {}
   }
 
-  class CanvasSink {
-    canvases(start: number) {
+  class CanvasSink implements Partial<MediabunnyCanvasSink> {
+    canvases(start = 0): AsyncGenerator<WrappedCanvas, void> {
       state.iteratorStarts.push(start);
       let index = Math.max(0, Math.floor(start * FPS + 1e-9));
-      return {
+      return fake<AsyncGenerator<WrappedCanvas, void>>({
         async next() {
           if (state.failAtFrame !== null && index === state.failAtFrame) {
             throw new Error("decode failed");
           }
           if (index >= FRAME_COUNT) return { done: true, value: undefined };
-          const frame = {
+          const frame = fake<WrappedCanvas>({
             timestamp: index / FPS,
             duration: 1 / FPS,
-            canvas: { frameIndex: index },
-          };
+            // Tagged so tests can tell which frame a bitmap came from.
+            canvas: { frameIndex: index } as unknown as HTMLCanvasElement,
+          });
           index += 1;
           return { done: false, value: frame };
         },
@@ -45,7 +53,7 @@ const decoder = vi.hoisted(() => {
           state.returnedIterators += 1;
           return { done: true, value: undefined };
         },
-      };
+      });
     }
   }
 

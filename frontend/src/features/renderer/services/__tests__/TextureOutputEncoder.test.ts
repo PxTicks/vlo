@@ -1,5 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Application, Texture } from "pixi.js";
+import type {
+  Application,
+  Container as PixiContainer,
+  ExtractSystem,
+  ICanvas,
+  ObservablePoint,
+  Sprite as PixiSprite,
+  Texture,
+} from "pixi.js";
+import type {
+  AudioBufferSource,
+  BufferTarget,
+  CanvasSource,
+  Mp4OutputFormat,
+  Output as MediabunnyOutput,
+} from "mediabunny";
+import { fake } from "../../../../testUtils/libraryFakes";
 import { ExportFileTarget } from "../ExportFileTarget";
 import type { ExportDiagnostic } from "../exportDiagnostics";
 import {
@@ -36,22 +52,25 @@ const canvasSourceConfigs: Array<{
   ) => void;
 }> = [];
 
-vi.mock("pixi.js", () => ({
-  Container: class {
-    addChild = vi.fn();
-    destroy = vi.fn();
-  },
-  Sprite: class {
-    anchor = { set: vi.fn() };
-  },
-}));
+vi.mock("pixi.js", async () => {
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  return {
+    Container: class implements Partial<PixiContainer> {
+      addChild = vi.fn();
+      destroy = vi.fn();
+    },
+    Sprite: class implements Partial<PixiSprite> {
+      anchor = fake<ObservablePoint>({ set: vi.fn() });
+    },
+  };
+});
 
 vi.mock("../../utils/outputTransformStack", () => ({
   applyOutputTransformStack: vi.fn(),
 }));
 
 vi.mock("mediabunny", () => ({
-  Output: class {
+  Output: class implements Partial<MediabunnyOutput> {
     constructor() { outputs.push(this); }
     addVideoTrack = vi.fn();
     addAudioTrack = vi.fn();
@@ -59,15 +78,17 @@ vi.mock("mediabunny", () => ({
     cancel = vi.fn().mockResolvedValue(undefined);
     finalize = vi.fn().mockResolvedValue(undefined);
   },
-  Mp4OutputFormat: class {
-    constructor(options: { fastStart: false | "in-memory" }) { mp4Options.push(options); }
+  Mp4OutputFormat: class implements Partial<Mp4OutputFormat> {
+    constructor(options: ConstructorParameters<typeof Mp4OutputFormat>[0]) {
+      mp4Options.push(options as { fastStart: false | "in-memory" });
+    }
   },
   WebMOutputFormat: class {},
-  BufferTarget: class {
+  BufferTarget: class implements Partial<BufferTarget> {
     buffer = new ArrayBuffer(1);
   },
   StreamTarget: class {},
-  CanvasSource: class {
+  CanvasSource: class implements Partial<CanvasSource> {
     constructor(_canvas: HTMLCanvasElement, config: (typeof canvasSourceConfigs)[number]) {
       canvasSourceConfigs.push(config);
     }
@@ -83,7 +104,7 @@ vi.mock("mediabunny", () => ({
     });
     close = vi.fn().mockResolvedValue(undefined);
   },
-  AudioBufferSource: class {
+  AudioBufferSource: class implements Partial<AudioBufferSource> {
     add = vi.fn();
     close = vi.fn();
   },
@@ -635,6 +656,16 @@ describe("TextureOutputEncoder blank-output probe", () => {
     contentProbe: "non_black_pixels",
   };
 
+  /** A canvas whose 2D context is whatever the test needs to read back. */
+  function canvasWith(context: () => unknown): ICanvas {
+    return fake<ICanvas>({
+      width: 1,
+      height: 1,
+      // getContext is overloaded per context id; only "2d" is read.
+      getContext: context as ICanvas["getContext"],
+    });
+  }
+
   function rgba(...pixels: Array<[number, number, number, number]>) {
     return new Uint8Array(pixels.flat());
   }
@@ -715,14 +746,13 @@ describe("TextureOutputEncoder blank-output probe", () => {
         throw new Error("context lost");
       }),
     };
-    // Pixi 8 returns the buffer with its size, not the bare buffer.
-    const extract = {
+    const extract = fake<ExtractSystem>({
       pixels: vi.fn(() => ({
         pixels: new Uint8ClampedArray(rgba([0, 9, 0, 255])),
         width: 1,
         height: 1,
       })),
-    };
+    });
     await expect(encodeFrames({ gl, extract })).resolves.toEqual({
       mask: { hasVisibleContent: true },
     });
@@ -730,19 +760,15 @@ describe("TextureOutputEncoder blank-output probe", () => {
   });
 
   it("falls back to an extracted canvas when pixel extraction fails", async () => {
-    const canvas = {
-      width: 1,
-      height: 1,
-      getContext: () => ({
-        getImageData: () => ({ data: rgba([0, 0, 0, 255]) }),
-      }),
-    };
-    const extract = {
+    const canvas = canvasWith(() => ({
+      getImageData: () => ({ data: rgba([0, 0, 0, 255]) }),
+    }));
+    const extract = fake<ExtractSystem>({
       pixels: vi.fn(() => {
         throw new Error("unsupported");
       }),
-      canvas: vi.fn(async () => canvas),
-    };
+      canvas: vi.fn(() => canvas),
+    });
     await expect(encodeFrames({ extract })).resolves.toEqual({
       mask: { hasVisibleContent: false },
     });
@@ -751,15 +777,18 @@ describe("TextureOutputEncoder blank-output probe", () => {
   it.each([
     ["no readback API", {}],
     ["a zero-size drawing buffer", { gl: { drawingBufferWidth: 0, drawingBufferHeight: 0, readPixels: vi.fn() } }],
-    ["a canvas without a 2D context", { extract: { canvas: () => ({ getContext: () => null }) } }],
+    [
+      "a canvas without a 2D context",
+      { extract: fake<ExtractSystem>({ canvas: () => canvasWith(() => null) }) },
+    ],
     [
       "a canvas extraction failure",
       {
-        extract: {
+        extract: fake<ExtractSystem>({
           canvas: () => {
             throw new Error("tainted");
           },
-        },
+        }),
       },
     ],
   ])("reports no analysis when content cannot be measured (%s)", async (_label, renderer) => {

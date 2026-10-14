@@ -1,3 +1,4 @@
+import type { Bounds, ObservablePoint, Text, Texture } from "pixi.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Container, type Renderer, type Sprite } from "pixi.js";
 import type {
@@ -48,10 +49,14 @@ vi.mock("@decoder-worker-loader", () => ({
 }));
 
 vi.mock("pixi.js", async () => {
-  const actual = await vi.importActual("pixi.js");
+  const actual = await vi.importActual<typeof import("pixi.js")>("pixi.js");
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  const point = (x: number, y: number) =>
+    fake<ObservablePoint>({ x, y, set: vi.fn() });
   return {
     ...actual,
-    Text: class MockText {
+    Text: class MockText implements Partial<Text> {
+      // Test bookkeeping: the constructor options the engine passed.
       options: unknown;
       constructor(options: unknown) {
         this.options = options;
@@ -59,20 +64,22 @@ vi.mock("pixi.js", async () => {
       destroy = vi.fn();
     },
     Texture: {
-      from: vi.fn(() => ({
-        width: 100,
-        height: 100,
-        destroy: vi.fn(),
-      })),
-      EMPTY: { width: 0, height: 0, destroy: vi.fn() },
+      from: vi.fn(() =>
+        fake<Texture>({
+          width: 100,
+          height: 100,
+          destroy: vi.fn(),
+        }),
+      ),
+      EMPTY: fake<Texture>({ width: 0, height: 0, destroy: vi.fn() }),
     },
-    Sprite: class MockSprite {
-      anchor = { set: vi.fn() };
-      texture = { width: 0, height: 0, destroy: vi.fn() };
+    Sprite: class MockSprite implements Partial<Sprite> {
+      anchor = point(0, 0);
+      texture = fake<Texture>({ width: 0, height: 0, destroy: vi.fn() });
       visible = false;
-      position = { x: 0, y: 0, set: vi.fn() };
-      scale = { x: 1, y: 1, set: vi.fn() };
-      pivot = { x: 0, y: 0, set: vi.fn() };
+      position = point(0, 0);
+      scale = point(1, 1);
+      pivot = point(0, 0);
       rotation = 0;
       addChild = vi.fn();
       setMask = vi.fn();
@@ -80,21 +87,23 @@ vi.mock("pixi.js", async () => {
       removeEffect = vi.fn();
       destroy = vi.fn();
     },
-    Container: class MockContainer {
-      parent: { removeChild: () => void } | null = null;
+    Container: class MockContainer implements Partial<Container> {
+      parent = null as Container | null;
       destroyed = false;
       zIndex = 0;
-      position = { x: 0, y: 0, set: vi.fn() };
-      scale = { x: 1, y: 1, set: vi.fn() };
-      pivot = { x: 0, y: 0, set: vi.fn() };
+      position = point(0, 0);
+      scale = point(1, 1);
+      pivot = point(0, 0);
       rotation = 0;
       addChild = vi.fn();
-      getLocalBounds = vi.fn(() => ({
-        x: -160,
-        y: -90,
-        width: 320,
-        height: 180,
-      }));
+      getLocalBounds = vi.fn(() =>
+        fake<Bounds>({
+          x: -160,
+          y: -90,
+          width: 320,
+          height: 180,
+        }),
+      );
       removeFromParent = vi.fn();
       destroy = vi.fn(() => {
         this.destroyed = true;

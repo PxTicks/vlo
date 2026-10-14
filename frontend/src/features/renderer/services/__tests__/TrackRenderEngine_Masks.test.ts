@@ -1,3 +1,12 @@
+import type {
+  AlphaMask,
+  Container,
+  Effect,
+  Graphics,
+  Mask,
+  ObservablePoint,
+  Sprite,
+} from "pixi.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   MaskTimelineClip,
@@ -89,77 +98,82 @@ vi.mock("../../../masks/model/maskFactory", async (importOriginal) => {
 });
 
 vi.mock("pixi.js", async () => {
-  const actual = await vi.importActual("pixi.js");
+  const actual = await vi.importActual<typeof import("pixi.js")>("pixi.js");
+  const { fake } = await import("../../../../testUtils/libraryFakes");
+  const point = (x: number, y: number) =>
+    fake<ObservablePoint>({ x, y, set: vi.fn() });
   return {
     ...actual,
     Texture: {
-      from: vi.fn(() => ({
-        width: 100,
-        height: 100,
-        destroy: vi.fn(),
-      })),
-      EMPTY: {},
+      from: vi.fn(() =>
+        fake<Texture>({
+          width: 100,
+          height: 100,
+          destroy: vi.fn(),
+        }),
+      ),
+      EMPTY: fake<Texture>({}),
     },
-    Graphics: class {
+    Graphics: class MockGraphics implements Partial<Graphics> {
       visible = false;
-      position = { x: 0, y: 0, set: vi.fn() };
-      scale = { x: 1, y: 1, set: vi.fn() };
-      pivot = { x: 0, y: 0, set: vi.fn() };
+      position = point(0, 0);
+      scale = point(1, 1);
+      pivot = point(0, 0);
       rotation = 0;
-      clear = vi.fn(() => this);
-      poly = vi.fn(() => this);
-      fill = vi.fn(() => this);
+      clear = vi.fn(() => this as unknown as Graphics);
+      poly = vi.fn(() => this as unknown as Graphics);
+      fill = vi.fn(() => this as unknown as Graphics);
     },
-    Sprite: class {
-      anchor = { set: vi.fn() };
-      texture = { width: 100, height: 100, destroy: vi.fn() };
+    Sprite: class MockSprite implements Partial<Sprite> {
+      anchor = point(0, 0);
+      texture = fake<Texture>({ width: 100, height: 100, destroy: vi.fn() });
       visible = true;
-      position = { x: 0, y: 0, set: vi.fn() };
-      scale = { x: 1, y: 1, set: vi.fn() };
-      pivot = { x: 0, y: 0, set: vi.fn() };
+      position = point(0, 0);
+      scale = point(1, 1);
+      pivot = point(0, 0);
       rotation = 0;
-      effects: unknown[] = [];
-      mask: unknown = null;
+      effects: Effect[] = [];
+      mask: Mask = null;
       addChild = vi.fn();
       setMask = vi.fn();
-      addEffect = vi.fn((effect: unknown) => {
+      addEffect = vi.fn((effect: Effect) => {
         if (!this.effects.includes(effect)) {
           this.effects.push(effect);
         }
       });
-      removeEffect = vi.fn((effect: unknown) => {
+      removeEffect = vi.fn((effect: Effect) => {
         this.effects = this.effects.filter((entry) => entry !== effect);
       });
       destroy = vi.fn();
     },
-    AlphaMask: class {
-      mask: unknown;
+    AlphaMask: class MockAlphaMask implements Partial<AlphaMask> {
+      mask: Container;
       inverse = false;
-      constructor(options?: { mask?: unknown }) {
-        this.mask = options?.mask ?? null;
+      constructor(options?: { mask?: Container }) {
+        this.mask = options?.mask ?? (null as unknown as Container);
       }
       destroy = vi.fn();
     },
-    Container: class {
-      parent: { removeChild: () => void } | null = null;
+    Container: class MockContainer implements Partial<Container> {
+      parent = null as Container | null;
       destroyed = false;
       zIndex = 0;
-      effects: unknown[] = [];
-      mask: unknown = null;
-      position = { x: 0, y: 0, set: vi.fn() };
-      scale = { x: 1, y: 1, set: vi.fn() };
-      pivot = { x: 0, y: 0, set: vi.fn() };
+      effects: Effect[] = [];
+      mask: Mask = null;
+      position = point(0, 0);
+      scale = point(1, 1);
+      pivot = point(0, 0);
       rotation = 0;
       addChild = vi.fn();
       addChildAt = vi.fn();
       removeChild = vi.fn();
       setMask = vi.fn();
-      addEffect = vi.fn((effect: unknown) => {
+      addEffect = vi.fn((effect: Effect) => {
         if (!this.effects.includes(effect)) {
           this.effects.push(effect);
         }
       });
-      removeEffect = vi.fn((effect: unknown) => {
+      removeEffect = vi.fn((effect: Effect) => {
         this.effects = this.effects.filter((entry) => entry !== effect);
       });
       removeFromParent = vi.fn();

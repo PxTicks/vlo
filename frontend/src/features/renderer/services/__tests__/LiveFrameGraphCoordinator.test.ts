@@ -19,17 +19,20 @@ import {
 
 vi.mock("pixi.js", async () => {
   const actual = await vi.importActual<typeof import("pixi.js")>("pixi.js");
+  const { fake } = await import("../../../../testUtils/libraryFakes");
   return {
     ...actual,
     Texture: {
       ...actual.Texture,
-      EMPTY: { width: 1, height: 1, destroy: vi.fn() },
-      from: vi.fn(() => ({
-        width: 640,
-        height: 360,
-        destroyed: false,
-        destroy: vi.fn(),
-      })),
+      EMPTY: fake<Texture>({ width: 1, height: 1, destroy: vi.fn() }),
+      from: vi.fn(() =>
+        fake<Texture>({
+          width: 640,
+          height: 360,
+          destroyed: false,
+          destroy: vi.fn(),
+        }),
+      ),
     },
   };
 });

@@ -3,6 +3,7 @@ import { renderHook } from "@testing-library/react";
 import { act } from "react";
 import {
   Application, Container, FederatedPointerEvent, Graphics, Sprite, Texture, TextureSource, } from "pixi.js";
+import type { Rectangle, Ticker } from "pixi.js";
 import type {
   TimelineClip, TimelineTrack, } from "../../../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../../timeline";
@@ -17,22 +18,23 @@ import { useTransformationViewStore } from "../../../../transformations/store/us
 
 // Mock Pixi Application stage event bus only.
 vi.mock("pixi.js", async () => {
-  const originalModule = await vi.importActual("pixi.js");
+  const originalModule = await vi.importActual<typeof import("pixi.js")>("pixi.js");
+  const { fake } = await import("../../../../../testUtils/libraryFakes");
   return {
     ...originalModule,
-    Application: class MockApplication {
-      stage = {
+    Application: class MockApplication implements Partial<Application> {
+      stage = fake<Container>({
         on: vi.fn(),
         off: vi.fn(),
-      };
-      screen = {
+      });
+      screen = fake<Rectangle>({
         width: 1920,
         height: 1080,
-      };
-      ticker = {
+      });
+      ticker = fake<Ticker>({
         add: vi.fn(),
         remove: vi.fn(),
-      };
+      });
       destroy = vi.fn();
     },
   };

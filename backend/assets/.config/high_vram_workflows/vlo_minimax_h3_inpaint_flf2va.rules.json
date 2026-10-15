@@ -193,6 +193,15 @@
       "group_id": "model_patches",
       "group_title": "Model",
       "group_order": 1
+    },
+    "mask_grow_enabled": {
+      "label": "Grow mask",
+      "value_type": "boolean",
+      "default": true,
+      "section_id": "advanced_settings",
+      "group_id": "mask",
+      "group_title": "Mask",
+      "group_order": 2
     }
   },
   "validation": {
@@ -275,6 +284,20 @@
       },
       "bypass": [
         "45"
+      ]
+    },
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "frontend_control",
+          "control_id": "mask_grow_enabled"
+        },
+        "operator": "eq",
+        "value": false
+      },
+      "bypass": [
+        "103"
       ]
     }
   ],

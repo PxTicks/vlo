@@ -1,8 +1,8 @@
 {
   "id": "5307784b-d1d0-403e-9f5b-6d184c299114",
   "revision": 0,
-  "last_node_id": 102,
-  "last_link_id": 163,
+  "last_node_id": 103,
+  "last_link_id": 164,
   "nodes": [
     {
       "id": 3,
@@ -278,7 +278,7 @@
           "name": "MASK",
           "type": "MASK",
           "links": [
-            13
+            164
           ]
         }
       ],
@@ -4949,6 +4949,60 @@
         "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
         "strength_model": 1
       }
+    },
+    {
+      "id": 103,
+      "type": "vloGrowMask",
+      "pos": [
+        -233.87516151334685,
+        3854.6803515738893
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 50,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "mask",
+          "name": "mask",
+          "type": "MASK",
+          "link": 164
+        },
+        {
+          "localized_name": "expand",
+          "name": "expand",
+          "type": "INT",
+          "widget": {
+            "name": "expand"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            13
+          ]
+        }
+      ],
+      "title": "Grow mask",
+      "properties": {
+        "Node name for S&R": "vloGrowMask",
+        "cnr_id": "comfyui-vlo",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        16
+      ],
+      "widgets_values_named": {
+        "expand": 16
+      }
     }
   ],
   "links": [
@@ -4962,7 +5016,7 @@
     ],
     [
       13,
-      9,
+      103,
       0,
       20,
       0,
@@ -5679,6 +5733,14 @@
       74,
       3,
       "INT"
+    ],
+    [
+      164,
+      9,
+      0,
+      103,
+      0,
+      "MASK"
     ]
   ],
   "groups": [

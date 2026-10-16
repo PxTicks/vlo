@@ -154,6 +154,16 @@
       "workflow_id": "vlo_SeedVR2_image.json",
       "parent_id": "image.enhance",
       "order": 0
+    },
+    {
+      "workflow_id": "vlo_ltx2_5_refine.json",
+      "parent_id": "video.enhance",
+      "order": 2
+    },
+    {
+      "workflow_id": "vlo_ltx2_5_restore.json",
+      "parent_id": "video.enhance",
+      "order": 3
     }
   ]
 }

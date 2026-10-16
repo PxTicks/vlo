@@ -1,0 +1,90 @@
+{
+  "version": 3,
+  "name": "LTX2.5 Restore",
+  "nodes": {
+    "774": {
+      "present": {
+        "label": "Source video",
+        "input_type": "video",
+        "param": "file",
+        "class_type": "vloMemoryLoadVideo",
+        "required": true
+      },
+      "selection": {
+        "export_fps": "project",
+        "frame_step": 8,
+        "max_frames": 481
+      }
+    },
+    "592": {
+      "present": {
+        "label": "Scene and period"
+      }
+    },
+    "110": {
+      "present": {
+        "label": "Negative prompt"
+      }
+    },
+    "780": {
+      "widgets": {
+        "output_size": {
+          "label": "Output size",
+          "value_type": "enum",
+          "group_id": "enhance",
+          "group_title": "Enhance",
+          "group_order": 0
+        }
+      }
+    },
+    "782": {
+      "widgets": {
+        "seed": {
+          "label": "Noise seed",
+          "value_type": "int",
+          "group_id": "enhance",
+          "group_title": "Enhance",
+          "group_order": 1,
+          "control_after_generate": true
+        },
+        "tile_width": {
+          "label": "Tile width",
+          "value_type": "int",
+          "group_id": "enhance",
+          "group_title": "Enhance",
+          "group_order": 3
+        },
+        "tile_height": {
+          "label": "Tile height",
+          "value_type": "int",
+          "group_id": "enhance",
+          "group_title": "Enhance",
+          "group_order": 4
+        }
+      }
+    },
+    "783": {
+      "widgets": {
+        "value": {
+          "label": "Temporal window (frames)",
+          "value_type": "int",
+          "group_id": "enhance",
+          "group_title": "Enhance",
+          "group_order": 2,
+          "control": "slider",
+          "slider_display": "number",
+          "min": 9,
+          "max": 97,
+          "step": 8
+        }
+      }
+    }
+  },
+  "validation": {
+    "inputs": []
+  },
+  "derived_widgets": [],
+  "rewrites": [],
+  "slots": {},
+  "pipeline": []
+}

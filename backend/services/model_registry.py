@@ -36,6 +36,8 @@ _OPEN_FLUX_REPO_EXCEPTIONS = (
 _GATED_WORKFLOW_MODEL_REPOS = frozenset({
     "lightricks/ltx-2.5",
     "lightricks/ltx-2.3-22b-ic-lora-in-outpainting",
+    "lightricks/ltx-2.5-22b-ic-lora-refine-details",
+    "lightricks/ltx-2.5-22b-ic-lora-restore",
 })
 
 # Download policy, mirroring ComfyUI's missingModelDownload.ts. Workflow graphs

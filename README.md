@@ -347,6 +347,12 @@ python scripts/install-comfyui-nodes.py
 - https://github.com/kijai/ComfyUI-KJNodes
 <!-- comfyui-custom-nodes:end -->
 
+The **Video → Enhance → LTX2.5 Refine Details / Restore** workflows require a
+current ComfyUI-LTXVideo with `LTXVTiledFusionSampler`, `LTXVGetTilingSizes`, and
+streaming IC-LoRA guides. Update that node pack and restart ComfyUI if these
+nodes or inputs are missing. Each workflow's how-to covers its tile sizes,
+output resolution, and adapter downloads.
+
 When vlo launches ComfyUI itself, it passes `--enable-manager` and
 `--preview-method latent2rgb`, so ComfyUI-Manager is available and sampling streams
 live previews. Flags a checkout's argument parser does not advertise are

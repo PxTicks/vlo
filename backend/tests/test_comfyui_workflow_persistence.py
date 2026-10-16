@@ -304,6 +304,8 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
         "vlo_minimax_h3_fun_controlnet_union.json": "video.control",
         "vlo_SeedVR2_video.json": "video.enhance",
         "vlo_gimm_vfi.json": "video.enhance",
+        "vlo_ltx2_5_refine.json": "video.enhance",
+        "vlo_ltx2_5_restore.json": "video.enhance",
     }
 
 

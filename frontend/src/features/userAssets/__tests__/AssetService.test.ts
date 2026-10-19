@@ -75,6 +75,7 @@ describe("AssetService", () => {
       mockProcessor as unknown as MediaFileProcessor,
     );
     mockProcessor.computeDuration.mockResolvedValue(0);
+    mockProcessor.detectMimeType.mockResolvedValue("video/mp4");
   });
 
   afterEach(() => {
@@ -354,6 +355,68 @@ describe("AssetService", () => {
     expect(newAssets[0].type).toBe("audio");
     expect(newAssets[0].duration).toBe(42.75);
     expect(mockProcessor.computeDuration).toHaveBeenCalledTimes(1);
+  });
+
+  it("ingests an audio-only mp4 as audio even though the browser types it as video", async () => {
+    const audioOnlyMp4 = new File(["audio"], "CMAF_AUDIO_128.mp4", {
+      type: "video/mp4",
+    });
+
+    (fileSystemService.listDirectory as Mock).mockResolvedValue([
+      "CMAF_AUDIO_128.mp4",
+    ]);
+    (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
+      if (path === "CMAF_AUDIO_128.mp4") return audioOnlyMp4;
+      if (path === ".vloproject/assets.json") {
+        return {
+          text: async () => JSON.stringify(emptyAssetIndex),
+          name: "assets.json",
+        };
+      }
+      return new File([""], "unknown");
+    });
+    (mediaProcessingService.computeChecksum as Mock).mockResolvedValue(
+      "audio-only-hash",
+    );
+    mockProcessor.detectMimeType.mockResolvedValue(
+      'audio/mp4; codecs="mp4a.40.2"',
+    );
+    mockProcessor.computeDuration.mockResolvedValue(52.608);
+
+    const newAssets = await assetService.scanForNewAssets([]);
+
+    expect(newAssets).toHaveLength(1);
+    expect(newAssets[0].type).toBe("audio");
+    expect(newAssets[0].hasAudio).toBe(true);
+    expect(newAssets[0].duration).toBe(52.608);
+    expect(newAssets[0].file?.type).toBe('audio/mp4; codecs="mp4a.40.2"');
+    expect(mockProcessor.generateVideoMetadata).not.toHaveBeenCalled();
+  });
+
+  it("keeps the browser video type when track detection fails", async () => {
+    const videoFile = new File(["video"], "clip.mp4", { type: "video/mp4" });
+    mockProcessor.detectMimeType.mockRejectedValue(new Error("probe failed"));
+    mockProcessor.generateVideoMetadata.mockResolvedValue({
+      duration: 10,
+      thumbnail: null,
+      fps: 30,
+    });
+    (mediaProcessingService.computeChecksum as Mock).mockResolvedValue(
+      "video-hash",
+    );
+
+    const result = await assetService.ingestAssetWithResult(
+      videoFile,
+      true,
+      true,
+      [],
+    );
+
+    if (result.status !== "created") {
+      throw new Error(`Expected a created asset, got ${result.status}`);
+    }
+    expect(result.asset.type).toBe("video");
+    expect(result.asset.file?.type).toBe("video/mp4");
   });
 
   it("rejects an expected type mismatch before hashing or persistence", async () => {

@@ -374,6 +374,22 @@ export class AssetService {
           );
           file = new File([file], file.name, { type: inferredType });
         }
+      } else if (!isLut && file.type.startsWith("video/")) {
+        // A browser `video/*` type comes from the extension alone, and .mp4,
+        // .webm and .mov files can hold nothing but audio. Imported as video,
+        // such a file has no frames to decode and fails every strict render
+        // it is part of, so the container's own tracks decide.
+        try {
+          const detected = await processor.detectMimeType();
+          if (detected.startsWith("audio/")) {
+            console.log(
+              `[Ingest] ${file.name} has no video track; importing as ${detected}`,
+            );
+            file = new File([file], file.name, { type: detected });
+          }
+        } catch (err) {
+          console.warn("[Ingest] Track-based type detection failed", err);
+        }
       }
 
       // Sanitize first so the on-disk filename is always safe.

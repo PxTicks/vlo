@@ -1,8 +1,8 @@
 {
   "id": "5307784b-d1d0-403e-9f5b-6d184c299114",
   "revision": 0,
-  "last_node_id": 103,
-  "last_link_id": 164,
+  "last_node_id": 104,
+  "last_link_id": 166,
   "nodes": [
     {
       "id": 3,
@@ -1871,7 +1871,8 @@
           "name": "*",
           "type": "*",
           "links": [
-            95
+            95,
+            165
           ]
         }
       ],
@@ -3585,7 +3586,7 @@
           "localized_name": "pixels",
           "name": "pixels",
           "type": "IMAGE",
-          "link": 114
+          "link": 166
         },
         {
           "localized_name": "vae",
@@ -3606,6 +3607,66 @@
       ],
       "properties": {
         "Node name for S&R": "VAEEncode"
+      }
+    },
+    {
+      "id": 104,
+      "type": "vloFillMaskedArea",
+      "pos": [
+        915.5975996411431,
+        4191.300128421058
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 48,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 114
+        },
+        {
+          "localized_name": "mask",
+          "name": "mask",
+          "type": "MASK",
+          "link": 165
+        },
+        {
+          "localized_name": "threshold",
+          "name": "threshold",
+          "type": "FLOAT",
+          "widget": {
+            "name": "threshold"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            166
+          ]
+        }
+      ],
+      "title": "Fill masked area before encode",
+      "properties": {
+        "Node name for S&R": "vloFillMaskedArea",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0"
+      },
+      "widgets_values": [
+        0.125
+      ],
+      "widgets_values_named": {
+        "threshold": 0.125
       }
     },
     {
@@ -5325,7 +5386,7 @@
       114,
       74,
       0,
-      55,
+      104,
       0,
       "IMAGE"
     ],
@@ -5752,6 +5813,22 @@
       103,
       0,
       "MASK"
+    ],
+    [
+      165,
+      28,
+      0,
+      104,
+      1,
+      "MASK"
+    ],
+    [
+      166,
+      104,
+      0,
+      55,
+      0,
+      "IMAGE"
     ]
   ],
   "groups": [

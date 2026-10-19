@@ -212,6 +212,15 @@
       "group_id": "model_patches",
       "group_title": "Model",
       "group_order": 1
+    },
+    "prefill_enabled": {
+      "label": "Fill masked area before encoding",
+      "value_type": "boolean",
+      "default": true,
+      "section_id": "advanced_settings",
+      "group_id": "mask",
+      "group_title": "Mask",
+      "group_order": 2
     }
   },
   "validation": {
@@ -295,6 +304,20 @@
       "bypass": [
         "45"
       ]
+    },
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "frontend_control",
+          "control_id": "prefill_enabled"
+        },
+        "operator": "eq",
+        "value": false
+      },
+      "bypass": [
+        "104"
+      ]
     }
   ],
   "effect_switches": [
@@ -337,6 +360,26 @@
               "widget": "switch",
               "value": false
             }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fill_masked_area_only_on_full_denoise",
+      "cases": [
+        {
+          "when": {
+            "kind": "compare",
+            "ref": {
+              "kind": "workflow_param",
+              "node_id": "37",
+              "param": "denoise"
+            },
+            "operator": "lt",
+            "value": 1
+          },
+          "bypass": [
+            "104"
           ]
         }
       ]

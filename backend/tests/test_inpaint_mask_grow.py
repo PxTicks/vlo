@@ -1,10 +1,10 @@
-"""The MiniMax H3 inpaint workflows grow the mask by one latent cell, switchably.
+"""The MiniMax H3 inpaint workflows carry an adjustable pixel grow on the mask.
 
 A tight segmentation mask leaves object edges, motion blur and shadows outside
-it, and the model regrows the object from them. MiniMax H3 also inpaints per
-16 px latent cell, so a cell that only partly holds the mask can be kept and
-reproduce what was under it. One latent cell of growth (16 px for the H3 video
-VAE) covers both, and the panel can switch it off.
+it, and the model regrows the object from them, so the panel exposes the grow
+in pixels. It ships at 0, which vloGrowMask passes straight through: the latent
+mask's max-pooling and token snap already regenerate every cell the mask
+touches, so growth is only for margins beyond that.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ WORKFLOW_DIRS = (
 
 # stem -> (grow node id, expand px, mask producer id, [(consumer id, input name)])
 GROW_CASES = {
-    "vlo_minimax_h3_inpaint": (103, 16, 9, [(20, "mask")]),
-    "vlo_minimax_h3_inpaint_flf2va": (103, 16, 9, [(20, "mask")]),
+    "vlo_minimax_h3_inpaint": (103, 0, 9, [(20, "mask")]),
+    "vlo_minimax_h3_inpaint_flf2va": (103, 0, 9, [(20, "mask")]),
 }
 
 
@@ -51,8 +51,6 @@ def test_mask_grow_sits_between_the_resized_mask_and_its_consumers(
     assert grow["widgets_values"] == [expand]
     assert workflow["last_node_id"] >= grow_id
 
-    # Bypass passes the MASK input straight to the MASK output, which is what
-    # makes the panel toggle a clean off switch.
     assert [i["type"] for i in grow["inputs"] if "widget" not in i] == ["MASK"]
     assert [o["type"] for o in grow["outputs"]] == ["MASK"]
 
@@ -70,32 +68,44 @@ def test_mask_grow_sits_between_the_resized_mask_and_its_consumers(
     assert grown_targets == expected_targets
 
 
+@pytest.mark.parametrize("workflow_dir", WORKFLOW_DIRS, ids=["default", "high_vram"])
 @pytest.mark.parametrize("stem", sorted(GROW_CASES))
-def test_mask_grow_is_an_advanced_toggle_that_bypasses_the_node(stem: str) -> None:
-    grow_id = GROW_CASES[stem][0]
+def test_latent_mask_is_conservative_and_snapped_to_h3_tokens(
+    stem: str, workflow_dir: Path
+) -> None:
+    # Bilinear samples only the centre of each 16 px cell, so a cell the mask
+    # partly covers can be kept. H3 also labels each 2x2-cell token as kept or
+    # generated as a whole, so a token whose cells disagree has half its
+    # prediction overwritten every step. Max-pooling and a 2-cell snap rule
+    # out both.
+    workflow = _load_json(workflow_dir / f"{stem}.json")
+    latent_masks = [n for n in workflow["nodes"] if n["type"] == "vloMaskToLatentMask"]
+
+    assert len(latent_masks) == 1
+    node = latent_masks[0]
+    assert [i["name"] for i in node["inputs"] if "widget" in i] == [
+        "pooling_method",
+        "resize_mode",
+        "snap_grid",
+    ]
+    assert node["widgets_values"] == ["max", "max", 2]
+
+
+@pytest.mark.parametrize("stem", sorted(GROW_CASES))
+def test_mask_grow_is_an_advanced_pixel_widget_that_ships_off(stem: str) -> None:
+    grow_id, expand = GROW_CASES[stem][:2]
     rules = _load_json(WORKFLOW_DIRS[0] / f"{stem}.rules.json")
     ResolvedWorkflowRules.model_validate(rules)
     assert _load_json(WORKFLOW_DIRS[1] / f"{stem}.rules.json") == rules
 
-    control = rules["frontend_controls"]["mask_grow_enabled"]
-    assert control["value_type"] == "boolean"
-    assert control["default"] is True
-    assert control["section_id"] == "advanced_settings"
+    widget = rules["nodes"][str(grow_id)]["widgets"]["expand"]
+    assert widget["value_type"] == "int"
+    assert widget["unit"] == "px"
+    assert widget["min"] == 0
+    assert widget["default"] == expand
+    assert widget["section_id"] == "advanced_settings"
     assert any(section["id"] == "advanced_settings" for section in rules["sections"])
 
-    grow_rewrites = [
-        rewrite
-        for rewrite in rules["rewrites"]
-        if rewrite["when"].get("ref", {}).get("control_id") == "mask_grow_enabled"
-    ]
-    assert grow_rewrites == [
-        {
-            "when": {
-                "kind": "compare",
-                "ref": {"kind": "frontend_control", "control_id": "mask_grow_enabled"},
-                "operator": "eq",
-                "value": False,
-            },
-            "bypass": [str(grow_id)],
-        }
-    ]
+    # 0 is the off state, so nothing may bypass the node behind the widget's back.
+    assert "mask_grow_enabled" not in rules.get("frontend_controls", {})
+    assert not any(str(grow_id) in rewrite.get("bypass", []) for rewrite in rules["rewrites"])

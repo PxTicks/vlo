@@ -2046,6 +2046,15 @@
             "name": "resize_mode"
           },
           "link": null
+        },
+        {
+          "localized_name": "snap_grid",
+          "name": "snap_grid",
+          "type": "INT",
+          "widget": {
+            "name": "snap_grid"
+          },
+          "link": null
         }
       ],
       "outputs": [
@@ -2065,11 +2074,13 @@
       },
       "widgets_values": [
         "max",
-        "bilinear"
+        "max",
+        2
       ],
       "widgets_values_named": {
         "pooling_method": "max",
-        "resize_mode": "bilinear"
+        "resize_mode": "max",
+        "snap_grid": 2
       }
     },
     {
@@ -5064,10 +5075,10 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        16
+        0
       ],
       "widgets_values_named": {
-        "expand": 16
+        "expand": 0
       }
     }
   ],

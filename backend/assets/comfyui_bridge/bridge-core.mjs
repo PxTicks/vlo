@@ -878,6 +878,15 @@ export function startVloBridge({ app, api, windowObject = window }) {
     return false;
   }
 
+  async function waitForActiveWorkflow(timeoutMs = WORKFLOW_ACTIVE_TIMEOUT_MS) {
+    const deadline = Date.now() + timeoutMs;
+    while (!stopped && Date.now() < deadline) {
+      if (getActiveWorkflow()) return true;
+      await sleep(windowObject, APP_READY_POLL_MS);
+    }
+    return getActiveWorkflow() !== null;
+  }
+
   function post(message) {
     if (!activeChannelId || stopped) return;
     windowObject.parent.postMessage(
@@ -1440,9 +1449,13 @@ export function startVloBridge({ app, api, windowObject = window }) {
       throw new BridgeRuntimeError("app-not-ready", "ComfyUI is not ready");
     }
     // Readiness no longer implies a tab; a drop with none would land in a
-    // canvas graph no workflow owns.
-    if (!getActiveWorkflow()) {
-      throw new BridgeRuntimeError("workflow-unavailable", "No ComfyUI workflow is open");
+    // canvas graph no workflow owns. Wait briefly first: a zero-tab boot gets
+    // its tab from vlo's injection moments after `ready`.
+    if (!(await waitForActiveWorkflow())) {
+      throw new BridgeRuntimeError(
+        "workflow-unavailable",
+        "No ComfyUI workflow is open. Open a workflow tab in ComfyUI, then drop again.",
+      );
     }
     const clientX = Number(payload?.clientX);
     const clientY = Number(payload?.clientY);

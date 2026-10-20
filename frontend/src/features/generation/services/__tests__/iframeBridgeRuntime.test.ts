@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BRIDGE_CAPABILITIES,
   BRIDGE_PROTOCOL,
@@ -457,34 +457,74 @@ describe("hosted iframe bridge runtime", () => {
     });
   });
 
-  it("rejects an asset drop while no workflow tab is open", async () => {
-    const harness = createHarness();
-    harness.app.extensionManager.workflow.activeWorkflow = null as never;
-    harness.app.extensionManager.workflow.openWorkflows = [];
-    startVloBridge({
-      app: harness.app,
-      api: harness.api,
-      windowObject: harness.windowObject,
+  describe("asset drops with no workflow tab open", () => {
+    // Installed before createHarness so the bridge's windowObject captures the
+    // fake setTimeout.
+    beforeEach(() => {
+      vi.useFakeTimers();
     });
-    hello(harness);
-    request(harness, "drop-empty", "drop-asset", {
-      clientX: 100,
-      clientY: 200,
-      file: dropFile(),
-      targets: [],
-      create: null,
+    afterEach(() => {
+      vi.useRealTimers();
     });
 
-    await vi.waitFor(() =>
-      expect(
-        harness.posted.some((message) => message.requestId === "drop-empty"),
-      ).toBe(true),
-    );
-    expect(
-      harness.posted.find((message) => message.requestId === "drop-empty"),
-    ).toMatchObject({
-      ok: false,
-      error: { code: "workflow-unavailable" },
+    function startWithoutTab() {
+      const harness = createHarness();
+      const workflowApi = harness.app.extensionManager.workflow;
+      workflowApi.activeWorkflow = null as never;
+      workflowApi.openWorkflows = [];
+      harness.app.canvas = {
+        graph: { add: vi.fn(), getNodeOnPos: vi.fn(() => null) },
+        ds: { scale: 1, offset: [0, 0] },
+        canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+      } as never;
+      startVloBridge({
+        app: harness.app,
+        api: harness.api,
+        windowObject: harness.windowObject,
+      });
+      hello(harness);
+      request(harness, "drop-empty", "drop-asset", {
+        clientX: 100,
+        clientY: 200,
+        file: dropFile(),
+        targets: [],
+        create: null,
+      });
+      return { harness, workflowApi };
+    }
+
+    const responseTo = (harness: ReturnType<typeof createHarness>) =>
+      harness.posted.find((message) => message.requestId === "drop-empty");
+
+    it("waits for the tab vlo's injection opens instead of failing at once", async () => {
+      const { harness, workflowApi } = startWithoutTab();
+
+      await vi.advanceTimersByTimeAsync(500);
+      expect(responseTo(harness)).toBeUndefined();
+
+      workflowApi.activeWorkflow = harness.activeWorkflow;
+      await vi.advanceTimersByTimeAsync(200);
+      // Past the tab gate: this drop then fails only for having no target.
+      expect(responseTo(harness)).toMatchObject({
+        ok: false,
+        error: { code: "drop-unsupported" },
+      });
+    });
+
+    it("rejects with an actionable error once the wait runs out", async () => {
+      const { harness } = startWithoutTab();
+
+      await vi.advanceTimersByTimeAsync(2_900);
+      expect(responseTo(harness)).toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(300);
+      expect(responseTo(harness)).toMatchObject({
+        ok: false,
+        error: {
+          code: "workflow-unavailable",
+          message: expect.stringContaining("Open a workflow tab"),
+        },
+      });
     });
   });
 

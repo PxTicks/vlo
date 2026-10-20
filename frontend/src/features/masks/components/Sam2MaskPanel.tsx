@@ -478,7 +478,7 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
             aria-label="SAM2 grow amount"
             size="small"
             value={sam2GrowAmount}
-            min={0}
+            min={-200}
             max={200}
             step={1}
             onChange={(_event, value) => {

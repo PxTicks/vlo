@@ -1149,12 +1149,12 @@ describe("useMaskPanel", () => {
       vi.unstubAllGlobals();
     });
 
-    it("clamps the grow amount and clears points", () => {
+    it("accepts shrink, rejects non-finite grow amounts and clears points", () => {
       const { parent } = setupSam2([point]);
       const { result } = renderHook(() => useMaskPanel());
 
       act(() => result.current.sam2.setSam2GrowAmount(-5));
-      expect(currentMask(parent.id)?.sam2GrowAmount).toBe(0);
+      expect(currentMask(parent.id)?.sam2GrowAmount).toBe(-5);
       act(() => result.current.sam2.setSam2GrowAmount(Number.NaN));
       expect(currentMask(parent.id)?.sam2GrowAmount).toBe(0);
       act(() => result.current.sam2.setSam2GrowAmount(12));

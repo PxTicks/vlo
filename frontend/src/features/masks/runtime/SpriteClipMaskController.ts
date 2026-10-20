@@ -18,6 +18,7 @@ import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParam
 import { dispatchTransform } from "../../transformations/catalogue/TransformationRegistry";
 import type { TransformState } from "../../transformations/catalogue/types";
 import { drawMaskBaseShape, isMaskActiveAtSourceTime } from "../model/maskFactory";
+import { hasMaskEdgeOps } from "../utils/maskEdgeProfile";
 import {
   analyzeMaskBooleanExpression,
   collectUnionMaskIds,
@@ -42,7 +43,7 @@ import {
   MaskBooleanTextureRenderer,
   type ResolvedMaskCompositeState,
 } from "./MaskBooleanTextureRenderer";
-import { MaskTextureResolver } from "./MaskTextureResolver";
+import { MaskTextureResolver, toMaskEdgeOps } from "./MaskTextureResolver";
 import { MaskSceneNodeRegistry } from "./MaskSceneNodeRegistry";
 import type { AssetMaskNode, VectorMaskNode } from "./MaskSceneNodes";
 import {
@@ -560,9 +561,9 @@ export class SpriteClipMaskController {
       clipContentSize,
       rawTimeTicks,
     );
-    const hasSharedEdgeOps =
-      sharedMaskCompositeState.growAmount > 0 ||
-      (sharedMaskCompositeState.feather?.amount ?? 0) > 0;
+    const hasSharedEdgeOps = hasMaskEdgeOps(
+      toMaskEdgeOps(sharedMaskCompositeState),
+    );
     const hasCompositeInvert =
       sharedMaskCompositeState.compositeInvert &&
       resolvedMaskExpressionAnalysis.operationCount > 0;

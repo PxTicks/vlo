@@ -1,8 +1,8 @@
 import {
-  BlurFilter,
   Matrix,
   Sprite,
   type Filter,
+  type RenderTexture,
   type Renderer,
   type Texture,
 } from "pixi.js";
@@ -20,17 +20,45 @@ import {
   createMaskBooleanBlendFilter,
   type MaskBooleanBlendFilter,
 } from "../../transformations/catalogue/mask/maskBooleanBlendFilter";
-import { createMaskBinaryThresholdFilter } from "../../transformations/catalogue/mask/maskBinaryThresholdFilter";
-import { createMaskCleanupFilter } from "../../transformations/catalogue/mask/maskCleanupFilter";
-import { createMaskCoverageBoostFilter } from "../../transformations/catalogue/mask/maskCoverageBoostFilter";
 import { createMaskCoverageInvertFilter } from "../../transformations/catalogue/mask/maskCoverageInvertFilter";
 import { createMaskRedToAlphaFilter } from "../../transformations/catalogue/mask/maskRedToAlphaFilter";
+import {
+  hasMaskEdgeOps,
+  invertMaskEdgeShape,
+  resolveMaskEdgeShape,
+  type MaskEdgeOps,
+} from "../utils/maskEdgeProfile";
 import { getSam2MaskGrowAmount } from "./AssetMaskSourceFactory";
+import { MaskDistanceFieldRenderer } from "./distanceField/MaskDistanceFieldRenderer";
 import type { AssetMaskNode, VectorMaskNode } from "./MaskSceneNodes";
 import { MaskRenderTexturePool } from "./MaskRenderTexturePool";
 import { MaskSceneNodeRegistry } from "./MaskSceneNodeRegistry";
 
-const MASK_EDGE_BLUR_SCALE = 0.5;
+/** Edge ops are authored in content pixels; mask textures are content-sized. */
+function texelsPerContentPixel(
+  texture: Texture,
+  contentSize: { width: number; height: number },
+): number {
+  return contentSize.width > 0
+    ? texture.source.pixelWidth / contentSize.width
+    : 1;
+}
+
+export function toMaskEdgeOps(
+  compositeState: ResolvedMaskCompositeState,
+): MaskEdgeOps {
+  return {
+    growPx: compositeState.growAmount,
+    growInvert: compositeState.growInvert,
+    feather: compositeState.feather
+      ? {
+          amountPx: compositeState.feather.amount,
+          mode: compositeState.feather.mode,
+          invert: compositeState.feather.invert,
+        }
+      : null,
+  };
+}
 
 export interface ResolvedMaskCompositeState {
   compositeInvert: boolean;
@@ -61,7 +89,8 @@ export type ProbeMaskCoverageOptions = Pick<
 /**
  * Sprite-independent GPU pipeline that turns a mask boolean expression into a
  * coverage texture: render each referenced leaf mask, evaluate the boolean
- * expression, then apply shared composite edge ops (grow / feather / invert).
+ * expression, then apply shared composite edge ops (grow / feather / invert)
+ * through a signed distance field of the result.
  *
  * Extracted from `MaskBooleanTextureRenderer` so the same pipeline can serve
  * both the alpha-mask presentation path (today, via that renderer) and
@@ -85,12 +114,9 @@ export class MaskTextureResolver {
   private readonly maskBooleanBlendFilters: Partial<
     Record<"union" | "intersect" | "subtract", MaskBooleanBlendFilter>
   > = {};
-  private maskBinaryThresholdFilter: Filter | null = null;
-  private maskCleanupFilter: Filter | null = null;
-  private maskCoverageBoostFilter: Filter | null = null;
   private maskCoverageInvertFilter: Filter | null = null;
   private maskRedToAlphaFilter: Filter | null = null;
-  private blurFilter: BlurFilter | null = null;
+  private readonly distanceFieldRenderer: MaskDistanceFieldRenderer;
 
   constructor(
     renderer: Renderer,
@@ -100,6 +126,7 @@ export class MaskTextureResolver {
     this.renderer = renderer;
     this.nodeRegistry = nodeRegistry;
     this.hasUsableTexture = hasUsableTexture;
+    this.distanceFieldRenderer = new MaskDistanceFieldRenderer(renderer);
   }
 
   public getMaskBooleanBlendFilters(): Partial<
@@ -128,7 +155,6 @@ export class MaskTextureResolver {
       return null;
     }
 
-    this.pool.ensureMaskRenderTexture(options.contentSize);
     this.pool.ensurePerMaskRenderTexture(options.contentSize);
     this.pool.ensureEffectMaskRenderTexture(options.contentSize);
     this.pool.ensurePresentationMaskRenderTexture(options.contentSize);
@@ -162,6 +188,7 @@ export class MaskTextureResolver {
     return this.renderCompositeMaskEdgeTexture(
       evaluatedTexture,
       options.compositeState,
+      options.contentSize,
     );
   }
 
@@ -206,12 +233,9 @@ export class MaskTextureResolver {
     Object.values(this.maskBooleanBlendFilters).forEach((filter) => {
       filter?.destroy();
     });
-    this.maskBinaryThresholdFilter?.destroy();
-    this.maskCleanupFilter?.destroy();
-    this.maskCoverageBoostFilter?.destroy();
     this.maskCoverageInvertFilter?.destroy();
     this.maskRedToAlphaFilter?.destroy();
-    this.blurFilter?.destroy();
+    this.distanceFieldRenderer.dispose();
     this.pool.dispose();
   }
 
@@ -243,6 +267,31 @@ export class MaskTextureResolver {
       // (per-mask grow is applied before inversion, so it survives intact).
       const renderInverted = maskClip.maskInverted !== variant.inverted;
       const growAmount = getSam2MaskGrowAmount(maskClip);
+      const perMaskRenderTexture = this.pool.getPerMaskRenderTexture();
+
+      if (growAmount !== 0) {
+        if (!perMaskRenderTexture) {
+          return;
+        }
+        this.renderMaskSubsetToTexture(
+          new Set<string>([maskClip.id]),
+          leafTexture,
+          transform,
+        );
+        const growShape = resolveMaskEdgeShape(
+          { growPx: growAmount, growInvert: false, feather: null },
+          texelsPerContentPixel(leafTexture, contentSize),
+        );
+        this.distanceFieldRenderer.render(
+          leafTexture,
+          perMaskRenderTexture,
+          renderInverted ? invertMaskEdgeShape(growShape) : growShape,
+        );
+        this.renderTextureToTarget(perMaskRenderTexture, leafTexture, {
+          clear: true,
+        });
+        return;
+      }
 
       if (!renderInverted) {
         this.renderMaskSubsetToTexture(
@@ -250,44 +299,18 @@ export class MaskTextureResolver {
           leafTexture,
           transform,
         );
-        if (growAmount <= 0) {
-          return;
-        }
-
-        const grownTexture = this.renderGrowPass(leafTexture, growAmount, false);
-        if (grownTexture !== leafTexture) {
-          this.renderTextureToTarget(grownTexture, leafTexture, {
-            clear: true,
-          });
-        }
         return;
       }
 
-      const perMaskRenderTexture = this.pool.getPerMaskRenderTexture();
       if (!perMaskRenderTexture) {
         return;
       }
-
-      if (growAmount <= 0) {
-        this.renderMaskSubsetToTexture(
-          new Set<string>([maskClip.id]),
-          perMaskRenderTexture,
-          transform,
-        );
-        this.renderTextureToTarget(perMaskRenderTexture, leafTexture, {
-          clear: true,
-          filters: [this.getMaskCoverageInvertFilter()],
-        });
-        return;
-      }
-
       this.renderMaskSubsetToTexture(
         new Set<string>([maskClip.id]),
-        leafTexture,
+        perMaskRenderTexture,
         transform,
       );
-      const grownTexture = this.renderGrowPass(leafTexture, growAmount, false);
-      this.renderTextureToTarget(grownTexture, leafTexture, {
+      this.renderTextureToTarget(perMaskRenderTexture, leafTexture, {
         clear: true,
         filters: [this.getMaskCoverageInvertFilter()],
       });
@@ -383,199 +406,27 @@ export class MaskTextureResolver {
   private renderCompositeMaskEdgeTexture(
     sourceTexture: Texture,
     compositeState: ResolvedMaskCompositeState,
+    contentSize: { width: number; height: number },
   ): Texture {
-    const effectMaskRenderTexture = this.pool.getEffectMaskRenderTexture();
-    const perMaskRenderTexture = this.pool.getPerMaskRenderTexture();
-    const maskRenderTexture = this.pool.getMaskRenderTexture();
-    if (!effectMaskRenderTexture || !perMaskRenderTexture || !maskRenderTexture) {
+    const edgeOps = toMaskEdgeOps(compositeState);
+    if (!hasMaskEdgeOps(edgeOps)) {
       return sourceTexture;
     }
 
-    const feather = compositeState.feather;
-    const hasEdgeOps =
-      compositeState.growAmount > 0 || (feather?.amount ?? 0) > 0;
-    if (!hasEdgeOps) {
+    const target: RenderTexture | null = this.pool.getEffectMaskRenderTexture();
+    if (!target || target === sourceTexture) {
       return sourceTexture;
     }
 
-    this.renderThresholdPass(sourceTexture, effectMaskRenderTexture);
-
-    let currentTexture: Texture = effectMaskRenderTexture;
-    if (compositeState.growAmount > 0) {
-      currentTexture = this.renderGrowPass(
-        currentTexture,
-        compositeState.growAmount,
-        compositeState.growInvert,
-      );
-    }
-
-    if (!feather || feather.amount <= 0) {
-      return currentTexture;
-    }
-
-    return this.renderFeatherPass(currentTexture, feather);
-  }
-
-  private renderBlurPass(
-    sourceTexture: Texture,
-    target: Texture,
-    amount: number,
-    options: {
-      boost?: boolean;
-    } = {},
-  ): void {
-    const filters: Filter[] = [
-      this.getMaskCleanupFilter(),
-      this.getGaussianBlurFilter(amount),
-    ];
-    if (options.boost) {
-      filters.push(this.getMaskCoverageBoostFilter());
-    }
-    this.renderTextureToTarget(sourceTexture, target, {
-      clear: true,
-      filters,
-    });
-  }
-
-  private renderThresholdPass(sourceTexture: Texture, target: Texture): void {
-    this.renderTextureToTarget(sourceTexture, target, {
-      clear: true,
-      filters: [this.getMaskBinaryThresholdFilter()],
-    });
-  }
-
-  private renderCoverageInvertPass(
-    sourceTexture: Texture,
-    target: Texture,
-  ): void {
-    this.renderTextureToTarget(sourceTexture, target, {
-      clear: true,
-      filters: [this.getMaskCoverageInvertFilter()],
-    });
-  }
-
-  private renderGrowPass(
-    sourceTexture: Texture,
-    amount: number,
-    invert: boolean,
-  ): Texture {
-    if (amount <= 0) {
-      return sourceTexture;
-    }
-
-    const effectMaskRenderTexture = this.pool.getEffectMaskRenderTexture();
-    const perMaskRenderTexture = this.pool.getPerMaskRenderTexture();
-    if (!effectMaskRenderTexture || !perMaskRenderTexture) {
-      return sourceTexture;
-    }
-
-    if (!invert) {
-      this.renderBlurPass(sourceTexture, perMaskRenderTexture, amount, {
-        boost: true,
-      });
-      this.renderThresholdPass(perMaskRenderTexture, effectMaskRenderTexture);
-      return effectMaskRenderTexture;
-    }
-
-    this.renderCoverageInvertPass(sourceTexture, perMaskRenderTexture);
-    this.renderBlurPass(perMaskRenderTexture, effectMaskRenderTexture, amount, {
-      boost: true,
-    });
-    this.renderThresholdPass(effectMaskRenderTexture, perMaskRenderTexture);
-    this.renderCoverageInvertPass(perMaskRenderTexture, effectMaskRenderTexture);
-    return effectMaskRenderTexture;
-  }
-
-  private renderFeatherPass(
-    sourceTexture: Texture,
-    feather: NonNullable<ResolvedMaskCompositeState["feather"]>,
-  ): Texture {
-    const effectMaskRenderTexture = this.pool.getEffectMaskRenderTexture();
-    const perMaskRenderTexture = this.pool.getPerMaskRenderTexture();
-    const maskRenderTexture = this.pool.getMaskRenderTexture();
-    if (!effectMaskRenderTexture || !perMaskRenderTexture || !maskRenderTexture) {
-      return sourceTexture;
-    }
-
-    if (!feather.invert) {
-      return this.renderFeatherPassInCurrentSpace(sourceTexture, feather);
-    }
-
-    const invertedInputTarget = this.pool.getAlternateEffectTarget(sourceTexture);
-    if (!invertedInputTarget) {
-      return sourceTexture;
-    }
-
-    this.renderCoverageInvertPass(sourceTexture, invertedInputTarget);
-    const invertedResult = this.renderFeatherPassInCurrentSpace(
-      invertedInputTarget,
-      {
-        amount: feather.amount,
-        mode: feather.mode,
-      },
+    this.distanceFieldRenderer.render(
+      sourceTexture,
+      target,
+      resolveMaskEdgeShape(
+        edgeOps,
+        texelsPerContentPixel(sourceTexture, contentSize),
+      ),
     );
-    const finalTarget = this.pool.getAlternateEffectTarget(invertedResult);
-    if (!finalTarget) {
-      return sourceTexture;
-    }
-    this.renderCoverageInvertPass(invertedResult, finalTarget);
-    return finalTarget;
-  }
-
-  private renderFeatherPassInCurrentSpace(
-    sourceTexture: Texture,
-    feather: {
-      amount: number;
-      mode: "hard_outer" | "soft_inner" | "two_way";
-    },
-  ): Texture {
-    const outputTarget = this.pool.getAlternateEffectTarget(sourceTexture);
-    const effectMaskRenderTexture = this.pool.getEffectMaskRenderTexture();
-    const perMaskRenderTexture = this.pool.getPerMaskRenderTexture();
-    if (!outputTarget || !effectMaskRenderTexture || !perMaskRenderTexture) {
-      return sourceTexture;
-    }
-
-    if (feather.mode === "two_way") {
-      this.renderBlurPass(sourceTexture, perMaskRenderTexture, feather.amount, {
-        boost: true,
-      });
-      this.renderTextureToTarget(perMaskRenderTexture, outputTarget, {
-        clear: true,
-      });
-      this.renderTextureToTarget(sourceTexture, outputTarget, {
-        clear: false,
-      });
-      const finalBlurTarget = this.pool.getAlternateEffectTarget(outputTarget);
-      if (!finalBlurTarget) {
-        return outputTarget;
-      }
-      this.renderBlurPass(outputTarget, finalBlurTarget, feather.amount);
-      return finalBlurTarget;
-    }
-
-    this.renderBlurPass(sourceTexture, perMaskRenderTexture, feather.amount, {
-      boost: feather.mode === "hard_outer",
-    });
-
-    if (feather.mode === "soft_inner") {
-      this.renderTextureToTarget(sourceTexture, outputTarget, {
-        clear: true,
-      });
-      this.renderTextureToTarget(perMaskRenderTexture, outputTarget, {
-        clear: false,
-        blendMode: "multiply",
-      });
-      return outputTarget;
-    }
-
-    this.renderTextureToTarget(perMaskRenderTexture, outputTarget, {
-      clear: true,
-    });
-    this.renderTextureToTarget(sourceTexture, outputTarget, {
-      clear: false,
-    });
-    return outputTarget;
+    return target;
   }
 
   private renderTextureToTarget(
@@ -583,14 +434,12 @@ export class MaskTextureResolver {
     target: Texture,
     options: {
       clear?: boolean;
-      blendMode?: Sprite["blendMode"];
       filters?: Filter[] | null;
     } = {},
   ): void {
     const perMaskSprite = this.ensurePerMaskSprite();
     perMaskSprite.texture = sourceTexture;
     perMaskSprite.filters = options.filters ?? null;
-    perMaskSprite.blendMode = options.blendMode ?? "normal";
     perMaskSprite.visible = true;
 
     this.renderer.render({
@@ -600,7 +449,6 @@ export class MaskTextureResolver {
     });
 
     perMaskSprite.filters = null;
-    perMaskSprite.blendMode = "normal";
   }
 
   private ensurePerMaskSprite(): Sprite {
@@ -636,27 +484,6 @@ export class MaskTextureResolver {
     return filter;
   }
 
-  private getMaskBinaryThresholdFilter(): Filter {
-    if (!this.maskBinaryThresholdFilter) {
-      this.maskBinaryThresholdFilter = createMaskBinaryThresholdFilter();
-    }
-    return this.maskBinaryThresholdFilter;
-  }
-
-  private getMaskCleanupFilter(): Filter {
-    if (!this.maskCleanupFilter) {
-      this.maskCleanupFilter = createMaskCleanupFilter();
-    }
-    return this.maskCleanupFilter;
-  }
-
-  private getMaskCoverageBoostFilter(): Filter {
-    if (!this.maskCoverageBoostFilter) {
-      this.maskCoverageBoostFilter = createMaskCoverageBoostFilter();
-    }
-    return this.maskCoverageBoostFilter;
-  }
-
   private getMaskCoverageInvertFilter(): Filter {
     if (!this.maskCoverageInvertFilter) {
       this.maskCoverageInvertFilter = createMaskCoverageInvertFilter();
@@ -669,16 +496,6 @@ export class MaskTextureResolver {
       this.maskRedToAlphaFilter = createMaskRedToAlphaFilter();
     }
     return this.maskRedToAlphaFilter;
-  }
-
-  private getGaussianBlurFilter(amount: number): BlurFilter {
-    if (!this.blurFilter) {
-      this.blurFilter = new BlurFilter();
-    }
-    const strength = amount * MASK_EDGE_BLUR_SCALE;
-    this.blurFilter.strength = strength;
-    this.blurFilter.quality = Math.max(4, Math.ceil(strength / 5));
-    return this.blurFilter;
   }
 
   private renderMaskSubsetToTexture(

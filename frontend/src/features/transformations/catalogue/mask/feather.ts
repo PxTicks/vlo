@@ -51,8 +51,9 @@ export const featherDefinition: TransformationDefinition = {
             ],
           },
           {
+            // Ramp width in pixels.
             type: "slider",
-            label: "Amount",
+            label: "Amount (px)",
             name: "amount",
             defaultValue: 0,
             min: 0,

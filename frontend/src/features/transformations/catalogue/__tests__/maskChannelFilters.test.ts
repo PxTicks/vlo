@@ -16,7 +16,6 @@ import {
   createMaskBinaryThresholdFilter,
   createMaskPreviewOverlayFilter,
 } from "../mask/maskBinaryThresholdFilter";
-import { createMaskCoverageBoostFilter } from "../mask/maskCoverageBoostFilter";
 import { createMaskCoverageInvertFilter } from "../mask/maskCoverageInvertFilter";
 import { createMaskRedToAlphaFilter } from "../mask/maskRedToAlphaFilter";
 
@@ -59,17 +58,6 @@ describe("mask channel filters", () => {
 
     expect(fragment).toContain("float coverage = color.r;");
     expect(fragment).not.toContain("max(color.r, color.a)");
-  });
-
-  it("boosts blurred coverage to preserve the old stronger feather shoulder", () => {
-    createMaskCoverageBoostFilter();
-
-    const fragment = filterFromSpy.mock.calls[0]?.[0]?.gl?.fragment as
-      | string
-      | undefined;
-
-    expect(fragment).toContain("color.r * 3.0");
-    expect(fragment).toContain("vec4(coverage, coverage, coverage, coverage)");
   });
 
   it("inverts red coverage while preserving alpha alignment", () => {

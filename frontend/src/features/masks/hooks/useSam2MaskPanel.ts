@@ -436,7 +436,7 @@ export function useSam2MaskPanel({
       if (!selectedClipId || !selectedMaskId) return;
       if (!selectedMask || selectedMask.maskType !== "sam2") return;
 
-      const nextAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0;
+      const nextAmount = Number.isFinite(amount) ? amount : 0;
       updateClipMask(selectedClipId, selectedMaskId, {
         sam2GrowAmount: nextAmount,
       });

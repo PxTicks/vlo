@@ -82,7 +82,7 @@ export const maskClipFields = {
   maskType: z.enum(["circle", "rectangle", "triangle", "sam2", "generation", "brush"]),
   maskMode: z.enum(["apply", "preview"]),
   maskInverted: z.boolean(),
-  sam2GrowAmount: z.number().min(0).max(10_000).optional(),
+  sam2GrowAmount: z.number().min(-10_000).max(10_000).optional(),
   maskParameters: z.strictObject({
     baseWidth: z.number().positive().max(1_000_000),
     baseHeight: z.number().positive().max(1_000_000),

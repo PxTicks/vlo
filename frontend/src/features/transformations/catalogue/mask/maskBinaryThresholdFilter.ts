@@ -39,7 +39,7 @@ void main(void)
 {
     vec4 color = texture(uTexture, vTextureCoord);
     float coverage = color.r;
-    float value = coverage >= 0.2 ? 1.0 : 0.0;
+    float value = coverage >= 0.5 ? 1.0 : 0.0;
     finalColor = vec4(value, value, value, value);
 }
 `;
@@ -48,6 +48,8 @@ void main(void)
  * Hard-thresholds red-channel mask coverage into a binary white mask texture.
  * Red is the canonical runtime mask channel; relying on sampled alpha breaks
  * for non-alpha video textures because Pixi reports alpha as 1.0 everywhere.
+ * The threshold is 0.5: the edge of an anti-aliased stroke, and unbiased for
+ * red H.264 masks, whose subsampled chroma reads ~0.5 px fat at lower cuts.
  */
 export function createMaskBinaryThresholdFilter(): Filter {
   return Filter.from({
@@ -89,7 +91,7 @@ void main(void)
 {
     vec4 color = texture(uTexture, vTextureCoord);
     float coverage = max(color.r, max(color.g, color.b));
-    float value = coverage >= 0.2 ? 1.0 : 0.0;
+    float value = coverage >= 0.5 ? 1.0 : 0.0;
     float overlayAlpha = value * ${a.toFixed(6)};
     finalColor = vec4(
         ${r.toFixed(6)} * overlayAlpha,

@@ -33,11 +33,12 @@ export const maskGrowDefinition: TransformationDefinition = {
         columns: 1,
         controls: [
           {
+            // Pixels; negative shrinks.
             type: "slider",
-            label: "Amount",
+            label: "Amount (px)",
             name: "amount",
             defaultValue: 0,
-            min: 0,
+            min: -200,
             max: 200,
             step: 1,
             supportsSpline: true,

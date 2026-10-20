@@ -46,8 +46,9 @@ export function getSam2MaskGrowAmount(maskClip: MaskTimelineClip): number {
     return 0;
   }
 
+  // Negative amounts shrink the mask.
   const amount = maskClip.sam2GrowAmount ?? 0;
-  return Number.isFinite(amount) ? Math.max(0, amount) : 0;
+  return Number.isFinite(amount) ? amount : 0;
 }
 
 function getImageMaskHydrationContext(

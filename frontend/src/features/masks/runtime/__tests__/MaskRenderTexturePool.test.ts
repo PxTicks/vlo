@@ -4,40 +4,35 @@ import { MaskRenderTexturePool } from "../MaskRenderTexturePool";
 describe("MaskRenderTexturePool", () => {
   it("resizes pooled textures and clears them on dispose", () => {
     const pool = new MaskRenderTexturePool();
-    pool.ensureMaskRenderTexture({ width: 120, height: 80 });
     pool.ensurePerMaskRenderTexture({ width: 120, height: 80 });
     pool.ensureEffectMaskRenderTexture({ width: 120, height: 80 });
     pool.ensurePresentationMaskRenderTexture({ width: 120, height: 80 });
     pool.reconcileLeafMaskRenderTextures(["mask_a"], { width: 120, height: 80 });
 
-    const maskTexture = pool.getMaskRenderTexture();
     const perMaskTexture = pool.getPerMaskRenderTexture();
     const effectTexture = pool.getEffectMaskRenderTexture();
     const presentationTexture = pool.getPresentationMaskRenderTexture();
     const leafTexture = pool.getLeafMaskRenderTexture("mask_a");
 
-    pool.ensureMaskRenderTexture({ width: 240, height: 160 });
     pool.ensurePerMaskRenderTexture({ width: 240, height: 160 });
     pool.ensureEffectMaskRenderTexture({ width: 240, height: 160 });
     pool.ensurePresentationMaskRenderTexture({ width: 240, height: 160 });
     pool.reconcileLeafMaskRenderTextures(["mask_a"], { width: 240, height: 160 });
 
-    expect(pool.getMaskRenderTexture()).toBe(maskTexture);
-    expect(pool.getMaskRenderTexture()?.width).toBe(240);
     expect(pool.getPerMaskRenderTexture()).toBe(perMaskTexture);
     expect(pool.getPerMaskRenderTexture()?.height).toBe(160);
     expect(pool.getEffectMaskRenderTexture()).toBe(effectTexture);
+    expect(pool.getEffectMaskRenderTexture()?.width).toBe(240);
     expect(pool.getPresentationMaskRenderTexture()).toBe(presentationTexture);
     expect(pool.getLeafMaskRenderTexture("mask_a")).toBe(leafTexture);
 
     pool.dispose();
 
-    expect(maskTexture?.destroyed).toBe(true);
     expect(perMaskTexture?.destroyed).toBe(true);
     expect(effectTexture?.destroyed).toBe(true);
     expect(presentationTexture?.destroyed).toBe(true);
     expect(leafTexture?.destroyed).toBe(true);
-    expect(pool.getMaskRenderTexture()).toBeNull();
+    expect(pool.getEffectMaskRenderTexture()).toBeNull();
     expect(pool.getLeafMaskRenderTextures().size).toBe(0);
   });
 

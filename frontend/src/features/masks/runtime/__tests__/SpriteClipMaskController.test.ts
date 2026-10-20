@@ -24,6 +24,24 @@ import {
 import { createMaskRenderableShapeSource } from "../../model/maskRenderableLayout";
 import { useMaskViewStore } from "../../store/useMaskViewStore";
 import { resolveMaskRenderableLayout } from "../resolveMaskRenderableLayout";
+import {
+  buildJumpFloodSteps,
+  resolveMaskEdgeShape,
+  type MaskEdgeOps,
+} from "../../utils/maskEdgeProfile";
+
+/** Renders one distance-field edge op issues: seed, each flood step, shape. */
+function distanceFieldRenderCount(
+  ops: MaskEdgeOps,
+  contentSize: { width: number; height: number } = { width: 1920, height: 1080 },
+): number {
+  const { reach } = resolveMaskEdgeShape(ops);
+  return (
+    2 +
+    buildJumpFloodSteps(reach, Math.max(contentSize.width, contentSize.height))
+      .length
+  );
+}
 
 const {
   mockBrushSetHydrationContext,
@@ -509,7 +527,14 @@ describe("SpriteClipMaskController mask composition", () => {
     ).vectorMaskNodes.get(featheredMask.id);
 
     expect(alphaMaskEffect).not.toBeNull();
-    expect(renderSpy).toHaveBeenCalledTimes(6);
+    expect(renderSpy).toHaveBeenCalledTimes(
+      2 +
+        distanceFieldRenderCount({
+          growPx: 0,
+          growInvert: false,
+          feather: { amountPx: 20, mode: "soft_inner", invert: false },
+        }),
+    );
     expect(node?.presentation).toBe("graphics");
     expect(node?.graphics.visible).toBe(true);
     expect(node?.spriteHost.visible).toBe(false);
@@ -519,7 +544,7 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
-  it("applies shared hard outer feathering as an aligned blur and overlay pass", async () => {
+  it("applies shared hard outer feathering through one distance field", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSpy = vi.fn();
     const renderer = {
@@ -557,7 +582,14 @@ describe("SpriteClipMaskController mask composition", () => {
     ) ?? null) as AlphaMask | null;
 
     expect(alphaMaskEffect).not.toBeNull();
-    expect(renderSpy).toHaveBeenCalledTimes(6);
+    expect(renderSpy).toHaveBeenCalledTimes(
+      2 +
+        distanceFieldRenderCount({
+          growPx: 0,
+          growInvert: false,
+          feather: { amountPx: 20, mode: "hard_outer", invert: false },
+        }),
+    );
 
     controller.dispose();
     warnSpy.mockRestore();
@@ -1190,7 +1222,10 @@ describe("SpriteClipMaskController mask composition", () => {
     ).maskBooleanBlendFilters.union;
 
     expect(unionFilter).toBeTruthy();
-    expect(renderSpy).toHaveBeenCalledTimes(7);
+    expect(renderSpy).toHaveBeenCalledTimes(
+      4 +
+        distanceFieldRenderCount({ growPx: 8, growInvert: false, feather: null }),
+    );
     expect(
       renderSnapshots.some(
         (call) =>
@@ -1617,7 +1652,14 @@ describe("SpriteClipMaskController mask composition", () => {
       { waitForSam2: true },
     );
 
-    expect(renderSpy).toHaveBeenCalledTimes(7);
+    expect(renderSpy).toHaveBeenCalledTimes(
+      2 +
+        3 +
+        distanceFieldRenderCount(
+          { growPx: 10, growInvert: false, feather: null },
+          { width: 1, height: 1 },
+        ),
+    );
 
     controller.dispose();
     warnSpy.mockRestore();

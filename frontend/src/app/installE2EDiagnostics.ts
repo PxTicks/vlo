@@ -113,6 +113,7 @@ declare global {
         samples: { frame: number; rect: [number, number, number, number] }[];
       }) => Promise<unknown>;
       runRgbSplitConsistencyProbe?: () => Promise<unknown>;
+      runMaskDistanceFieldProbe?: () => Promise<unknown>;
       runCompositeParityProbe?: (request: {
         compositeId: string;
         placementTick: number;
@@ -252,6 +253,15 @@ export function installE2EDiagnostics(): void {
       })
       .catch((error: unknown) => {
         console.error("Failed to install Glitch consistency probe", error);
+      });
+    void import("./e2e/maskDistanceFieldProbe")
+      .then(({ runMaskDistanceFieldProbe }) => {
+        if (window.__vloE2E) {
+          window.__vloE2E.runMaskDistanceFieldProbe = runMaskDistanceFieldProbe;
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to install mask distance-field probe", error);
       });
     void import("./e2e/rgbSplitConsistencyProbe")
       .then(({ runRgbSplitConsistencyProbe }) => {

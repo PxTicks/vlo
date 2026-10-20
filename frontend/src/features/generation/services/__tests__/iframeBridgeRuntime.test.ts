@@ -418,6 +418,76 @@ describe("hosted iframe bridge runtime", () => {
     });
   });
 
+  it("announces ready and injects when ComfyUI boots with no workflow tab open", async () => {
+    const harness = createHarness();
+    const workflowApi = harness.app.extensionManager.workflow;
+    workflowApi.activeWorkflow = null as never;
+    workflowApi.openWorkflows = [];
+    // Loading a file is what opens the first tab.
+    harness.app.handleFile.mockImplementation(() => {
+      workflowApi.activeWorkflow = harness.activeWorkflow;
+      workflowApi.openWorkflows = [harness.activeWorkflow];
+    });
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+
+    hello(harness);
+    expect(harness.posted.at(-1)).toMatchObject({ type: "ready" });
+
+    request(harness, "inject-empty", "inject-workflow", {
+      graphData: { nodes: [{ id: "node-a", type: "LoadImage" }], links: [] },
+      filename: "workflow.json",
+    });
+    // No pending warnings, so the bridge waits out its 1s capture window.
+    await vi.waitFor(
+      () =>
+        expect(
+          harness.posted.some((message) => message.requestId === "inject-empty"),
+        ).toBe(true),
+      { timeout: 3000 },
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "inject-empty"),
+    ).toMatchObject({
+      ok: true,
+      result: { snapshot: { filename: "workflow" } },
+    });
+  });
+
+  it("rejects an asset drop while no workflow tab is open", async () => {
+    const harness = createHarness();
+    harness.app.extensionManager.workflow.activeWorkflow = null as never;
+    harness.app.extensionManager.workflow.openWorkflows = [];
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "drop-empty", "drop-asset", {
+      clientX: 100,
+      clientY: 200,
+      file: dropFile(),
+      targets: [],
+      create: null,
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "drop-empty"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "drop-empty"),
+    ).toMatchObject({
+      ok: false,
+      error: { code: "workflow-unavailable" },
+    });
+  });
+
   it("stamps one document id on every message it sends, not just the handshake", async () => {
     const harness = createHarness();
     startVloBridge({

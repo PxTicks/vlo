@@ -840,13 +840,16 @@ export function startVloBridge({ app, api, windowObject = window }) {
     workflowRevisions.set(active, getWorkflowRevision(active) + 1);
   }
 
+  // An open workflow tab is deliberately not a readiness condition: ComfyUI
+  // can boot with zero tabs (last tab closed, empty restore), and injection is
+  // what opens one. Gating on a tab deadlocked the handshake in `booting`.
   function isAppReady() {
     try {
       const manager = app?.extensionManager;
       return (
         typeof app?.handleFile === "function" &&
         Boolean(app.canvas) &&
-        Boolean(manager?.workflow?.activeWorkflow) &&
+        Boolean(manager?.workflow) &&
         manager.spinner !== true
       );
     } catch {
@@ -1435,6 +1438,11 @@ export function startVloBridge({ app, api, windowObject = window }) {
   async function dropAsset(payload) {
     if (!(await waitForAppReady())) {
       throw new BridgeRuntimeError("app-not-ready", "ComfyUI is not ready");
+    }
+    // Readiness no longer implies a tab; a drop with none would land in a
+    // canvas graph no workflow owns.
+    if (!getActiveWorkflow()) {
+      throw new BridgeRuntimeError("workflow-unavailable", "No ComfyUI workflow is open");
     }
     const clientX = Number(payload?.clientX);
     const clientY = Number(payload?.clientY);

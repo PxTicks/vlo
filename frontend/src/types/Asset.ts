@@ -175,6 +175,14 @@ export interface ExtractedAudioClipMetadata {
   transformations: ClipTransform[];
 }
 
+/**
+ * How a mask asset stores coverage. `binary`: coverage at or above half is
+ * inside. `tsdf8_k8`: a truncated signed distance band, level
+ * `127.5 - 8 * d` with d in pixels, negative inside
+ * (docs/mask-distance-field-plan.md). Absent means `binary`.
+ */
+export type MaskAssetEncoding = "binary" | "tsdf8_k8";
+
 export type CreationMetadata =
   | { source: "uploaded" }
   | GeneratedCreationMetadata
@@ -217,6 +225,7 @@ export type CreationMetadata =
       maskClipId: string;
       pointCount: number;
       sourceHash: string;
+      maskEncoding?: MaskAssetEncoding;
     }
   | {
       source: "sam_audio";

@@ -819,6 +819,7 @@ def test_generate_single_frame_mask_adds_points_only_on_requested_frame(
     assert generated.width == 2
     assert generated.height == 2
     assert generated.png_bytes
+    assert generated.encoding == "tsdf8_k8"
     assert fake_predictor.reset_calls == 1
     assert fake_predictor.add_calls == [3]
 
@@ -880,6 +881,8 @@ def test_generate_single_frame_mask_reads_cached_frame_when_points_omitted(
     assert generated.width == 2
     assert generated.height == 2
     assert generated.png_bytes
+    # Cached previews come from SAM2's low-resolution masks and stay binary.
+    assert generated.encoding == "binary"
 
 
 def _install_propagation_predictor(
@@ -1387,7 +1390,7 @@ def test_generate_mask_video_passes_visible_source_window_to_propagation(
     )
     monkeypatch.setattr(
         sam2_service,
-        "encode_binary_masks_to_red_mp4",
+        "encode_mask_distance_fields_mp4",
         fake_encode,
     )
 
@@ -1401,6 +1404,7 @@ def test_generate_mask_video_passes_visible_source_window_to_propagation(
     )
 
     assert generated.video_bytes == b"mp4"
+    assert generated.encoding == "tsdf8_k8"
     assert captured_window["value"] == (1, 1)
     assert np.asarray(captured_encoding["frames"]).shape == (1, 2, 2)
     assert captured_encoding["window_start_frame"] == 1

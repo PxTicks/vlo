@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildJumpFloodSteps,
+  composeMaskEdgeShapeOverLeaf,
   hasMaskEdgeOps,
+  planMaskEdgeStages,
   invertMaskEdgeShape,
   resolveMaskEdgeShape,
   resolveSeedCoordinateScale,
@@ -149,5 +151,107 @@ describe("resolveSeedCoordinateScale", () => {
       const scale = resolveSeedCoordinateScale(size);
       expect((size + 1) * scale).toBeLessThanOrEqual(65534);
     }
+  });
+});
+
+/** Coverage a shape produces at signed distance `d` of its input field. */
+function shapeAt(shape: ReturnType<typeof resolveMaskEdgeShape>, d: number): number {
+  const edge = shape.sign * (d - shape.offset);
+  const t = Math.min(
+    1,
+    Math.max(0, (edge - shape.rampStart) / (shape.rampEnd - shape.rampStart)),
+  );
+  const coverage = 1 - t * t * (3 - 2 * t);
+  return shape.invertOutput ? 1 - coverage : coverage;
+}
+
+describe("planMaskEdgeStages", () => {
+  const feathered = (
+    growPx: number,
+    mode: "hard_outer" | "soft_inner" | "two_way",
+    invert = false,
+  ): MaskEdgeOps => ({
+    growPx,
+    growInvert: false,
+    feather: { amountPx: 8, mode, invert },
+  });
+
+  it("keeps a grow, or a feather on the grown edge's exact side, as one shape", () => {
+    expect(planMaskEdgeStages({ ...NO_OPS, growPx: 6 })).toHaveLength(1);
+    expect(planMaskEdgeStages({ ...NO_OPS, growPx: -6 })).toHaveLength(1);
+    // A grown mask is exact outside; a shrunk one inside.
+    expect(planMaskEdgeStages(feathered(4, "hard_outer"))).toHaveLength(1);
+    expect(planMaskEdgeStages(feathered(-4, "soft_inner"))).toHaveLength(1);
+    expect(planMaskEdgeStages(feathered(0, "two_way"))).toHaveLength(1);
+  });
+
+  it("re-distances the grown mask when the feather reads across its edge", () => {
+    for (const ops of [
+      feathered(4, "soft_inner"),
+      feathered(-4, "hard_outer"),
+      feathered(4, "two_way"),
+      // An inverted outer feather reaches inward.
+      feathered(4, "hard_outer", true),
+    ]) {
+      const stages = planMaskEdgeStages(ops);
+      expect(stages).toHaveLength(2);
+      expect(stages[0]).toEqual(resolveMaskEdgeShape({ ...ops, feather: null }));
+      expect(stages[1]).toEqual(
+        resolveMaskEdgeShape({ growPx: 0, growInvert: false, feather: ops.feather }),
+      );
+    }
+  });
+});
+
+describe("composeMaskEdgeShapeOverLeaf", () => {
+  it("matches shaping the grown leaf's own field when the offsets agree", () => {
+    const composite = resolveMaskEdgeShape({
+      growPx: 3,
+      growInvert: false,
+      feather: { amountPx: 6, mode: "hard_outer", invert: false },
+    });
+    const cases = [
+      { growTexels: 4, inverted: false },
+      // Shrunk 4 then inverted: the composite grows the inverse, which
+      // shrinks the original further, in the same direction.
+      { growTexels: -4, inverted: true },
+    ];
+    for (const leaf of cases) {
+      const composed = composeMaskEdgeShapeOverLeaf(composite, leaf);
+      expect(composed).not.toBeNull();
+      for (let d = -20; d <= 20; d += 0.25) {
+        const leafField = (leaf.inverted ? -1 : 1) * (d - leaf.growTexels);
+        expect(shapeAt(composed!, d)).toBeCloseTo(shapeAt(composite, leafField), 9);
+      }
+    }
+  });
+
+  it("refuses offsets in opposite directions: a shrink then a grow can erase", () => {
+    // A 4 px disc shrunk 6 px is gone; growing it 6 px must not bring it back.
+    const composite = resolveMaskEdgeShape({ ...NO_OPS, growPx: 6 });
+    expect(composeMaskEdgeShapeOverLeaf(composite, { growTexels: -6, inverted: false })).toBeNull();
+    // Grown, then inverted and grown again: the second grow shrinks the original.
+    expect(composeMaskEdgeShapeOverLeaf(composite, { growTexels: 5, inverted: true })).toBeNull();
+  });
+
+  it("refuses a ramp that reads across the combined offset's edge", () => {
+    const innerFeather = resolveMaskEdgeShape({
+      ...NO_OPS,
+      feather: { amountPx: 8, mode: "soft_inner", invert: false },
+    });
+    expect(composeMaskEdgeShapeOverLeaf(innerFeather, { growTexels: 4, inverted: false })).toBeNull();
+    expect(composeMaskEdgeShapeOverLeaf(innerFeather, { growTexels: -4, inverted: false })).not.toBeNull();
+  });
+
+  it("measures how far the composed ramp reads", () => {
+    const composite = resolveMaskEdgeShape({ ...NO_OPS, growPx: 3 });
+    expect(composite.extent).toBe(3.5);
+    const composed = composeMaskEdgeShapeOverLeaf(composite, {
+      growTexels: 5,
+      inverted: false,
+    });
+    expect(composed?.offset).toBe(8);
+    expect(composed?.extent).toBe(8.5);
+    expect(composed?.reach).toBe(9.5);
   });
 });

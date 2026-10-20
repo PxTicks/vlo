@@ -64,6 +64,7 @@ describe("sam2Api", () => {
           "X-Sam2-Height": "720",
           "X-Sam2-Fps": "invalid",
           "X-Sam2-Frame-Count": "42",
+          "X-Sam2-Mask-Encoding": "tsdf8_k8",
         },
       }),
     );
@@ -85,6 +86,7 @@ describe("sam2Api", () => {
       height: 720,
       fps: 0,
       frameCount: 42,
+      encoding: "tsdf8_k8",
     });
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
       signal: controller.signal,
@@ -120,6 +122,8 @@ describe("sam2Api", () => {
       height: 50,
       frameIndex: 3,
       timeTicks: 250,
+      // Older backends send no encoding header: their masks are binary.
+      encoding: "binary",
     });
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
       signal: controller.signal,

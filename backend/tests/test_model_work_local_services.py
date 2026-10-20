@@ -72,7 +72,7 @@ def test_sam2_predictor_exclusion(
     monkeypatch.setattr(sam2_service, "get_source_metadata", lambda _source_id: source)
     monkeypatch.setattr(
         sam2_service,
-        "encode_binary_masks_to_red_mp4",
+        "encode_mask_distance_fields_mp4",
         lambda _frames, _fps, **_kwargs: b"mp4",
     )
 

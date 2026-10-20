@@ -6,7 +6,8 @@ import { expect, test } from './fixtures';
  * The probe paints binary coverage, shapes it through the production
  * renderer and reads it back. Grow must be exact pixels in both directions,
  * thin features must fatten rather than vanish or stripe, gaps must close at
- * exactly twice the grow, and feathers must follow their ramps.
+ * exactly twice the grow, and feathers must follow their ramps. A
+ * distance-band asset must decode and shape to its exact sub-pixel edge.
  */
 
 interface MaskDistanceFieldProbeResult {
@@ -18,6 +19,9 @@ interface MaskDistanceFieldProbeResult {
     largeReach: { areaRatio: number };
     wideTexture: { growPx: number; measuredPx: number };
     uniform: { emptyMax: number; fullMin: number };
+    distanceBand: { label: string; rmsError: number; maxError: number }[];
+    spriteBorder: { floodedArea: number; directArea: number; exactArea: number };
+    nonUniformScale: { growAlongX: number; growAlongY: number };
 }
 
 test.describe('mask distance-field edges', () => {
@@ -81,5 +85,25 @@ test.describe('mask distance-field edges', () => {
 
         expect(result.uniform.emptyMax).toBe(0);
         expect(result.uniform.fullMin).toBe(1);
+
+        // Distance-band (SAM2) masks shape from their own sub-pixel band: a
+        // disc matches the exact result to within the band's 8-bit levels,
+        // whether shaped in one pass or flooded from the band's zero crossing.
+        expect(result.distanceBand.length).toBe(5);
+        for (const band of result.distanceBand) {
+            expect(band.rmsError, band.label).toBeLessThanOrEqual(0.01);
+            expect(band.maxError, band.label).toBeLessThanOrEqual(0.15);
+        }
+
+        // A band drawn smaller than the content ends at the sprite border:
+        // read directly it cannot grow past it (the control), flooded from
+        // its edge it grows like any mask.
+        const { spriteBorder } = result;
+        expect(spriteBorder.directArea, 'band read directly').toBeLessThan(spriteBorder.exactArea * 0.7);
+        expect(Math.abs(spriteBorder.floodedArea - spriteBorder.exactArea) / spriteBorder.exactArea).toBeLessThanOrEqual(0.005);
+
+        // Under a non-uniform scale a 4 px grow is 4 px along both axes.
+        expect(Math.abs(result.nonUniformScale.growAlongX - 4)).toBeLessThanOrEqual(0.3);
+        expect(Math.abs(result.nonUniformScale.growAlongY - 4)).toBeLessThanOrEqual(0.3);
     });
 });

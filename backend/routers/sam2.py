@@ -192,6 +192,7 @@ async def generate_sam2_mask_video(
         "X-Sam2-Height": str(generated.height),
         "X-Sam2-Fps": f"{generated.fps:.6f}",
         "X-Sam2-Frame-Count": str(generated.frame_count),
+        "X-Sam2-Mask-Encoding": generated.encoding,
     }
     return Response(
         content=generated.video_bytes,
@@ -241,6 +242,7 @@ async def generate_sam2_mask_frame(request: Sam2GenerateFrameRequest) -> Respons
         "X-Sam2-Height": str(generated.height),
         "X-Sam2-Frame-Index": str(generated.frame_index),
         "X-Sam2-Time-Ticks": f"{generated.time_ticks:.3f}",
+        "X-Sam2-Mask-Encoding": generated.encoding,
     }
     return Response(
         content=generated.png_bytes,

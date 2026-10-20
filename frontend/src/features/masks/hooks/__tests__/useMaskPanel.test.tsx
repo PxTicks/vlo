@@ -331,6 +331,7 @@ describe("useMaskPanel", () => {
       height: 1080,
       frameIndex: 0,
       timeTicks: 0,
+      encoding: "tsdf8_k8",
     });
     vi.mocked(generateMaskVideo).mockReset();
 
@@ -370,6 +371,7 @@ describe("useMaskPanel", () => {
       maskClipId: mask.id,
       pointCount: 1,
       sourceHash: "sam2-image-parent-hash",
+      maskEncoding: "tsdf8_k8",
     });
 
     const updatedMask = useTimelineStore
@@ -728,6 +730,7 @@ describe("useMaskPanel", () => {
         height: 1080,
         fps: 30,
         frameCount: 300,
+        encoding: "tsdf8_k8",
       };
     });
 
@@ -815,6 +818,7 @@ describe("useMaskPanel", () => {
       height: 1080,
       fps: 29.97,
       frameCount: 3000,
+      encoding: "tsdf8_k8",
     });
 
     const { result } = renderHook(() => useMaskPanel());
@@ -823,6 +827,11 @@ describe("useMaskPanel", () => {
     });
 
     expect(result.current.sam2.sam2GenerateError).toBeNull();
+    // The asset records how its frames encode coverage.
+    expect(addLocalAsset).toHaveBeenCalledWith(
+      expect.any(File),
+      expect.objectContaining({ source: "sam2_mask", maskEncoding: "tsdf8_k8" }),
+    );
     expect(updateAsset).toHaveBeenCalledWith("sam2_generated_video_asset", {
       fps: 29.97,
     });
@@ -1197,6 +1206,7 @@ describe("useMaskPanel", () => {
         height: 360,
         frameIndex: 0,
         timeTicks: 0,
+        encoding: "tsdf8_k8",
       });
       const { result } = renderHook(() => useMaskPanel());
 
@@ -1248,6 +1258,7 @@ describe("useMaskPanel", () => {
         height: 360,
         frameIndex: 0,
         timeTicks: 0,
+        encoding: "tsdf8_k8",
       });
       const { result } = renderHook(() => useMaskPanel());
       await act(async () => {
@@ -1287,6 +1298,7 @@ describe("useMaskPanel", () => {
         height: 360,
         frameIndex: 0,
         timeTicks: 0,
+        encoding: "tsdf8_k8",
       });
       const { result } = renderHook(() => useMaskPanel());
 

@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../../../config";
+import type { MaskAssetEncoding } from "../../../types/Asset";
 import type { ClipMaskPoint } from "../../../types/TimelineTypes";
 
 const SAM2_API = `${API_BASE_URL}/sam2`;
@@ -27,6 +28,7 @@ export interface Sam2GeneratedMaskVideo {
   height: number;
   fps: number;
   frameCount: number;
+  encoding: MaskAssetEncoding;
 }
 
 export interface Sam2GenerateFrameRequest {
@@ -43,6 +45,7 @@ export interface Sam2GeneratedMaskFrame {
   height: number;
   frameIndex: number;
   timeTicks: number;
+  encoding: MaskAssetEncoding;
 }
 
 export interface Sam2EditorSessionRequest {
@@ -85,6 +88,11 @@ function parseNumericHeader(
   if (!raw) return fallback;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** Older backends send no encoding header: their masks are binary. */
+function parseMaskEncodingHeader(headers: Headers): MaskAssetEncoding {
+  return headers.get("X-Sam2-Mask-Encoding") === "tsdf8_k8" ? "tsdf8_k8" : "binary";
 }
 
 export async function registerSourceVideo(
@@ -155,6 +163,7 @@ export async function generateMaskVideo(
     height: parseNumericHeader(response.headers, "X-Sam2-Height", 0),
     fps: parseNumericHeader(response.headers, "X-Sam2-Fps", 0),
     frameCount: parseNumericHeader(response.headers, "X-Sam2-Frame-Count", 0),
+    encoding: parseMaskEncodingHeader(response.headers),
   };
 }
 
@@ -179,6 +188,7 @@ export async function generateMaskFrame(
     height: parseNumericHeader(response.headers, "X-Sam2-Height", 0),
     frameIndex: parseNumericHeader(response.headers, "X-Sam2-Frame-Index", 0),
     timeTicks: parseNumericHeader(response.headers, "X-Sam2-Time-Ticks", 0),
+    encoding: parseMaskEncodingHeader(response.headers),
   };
 }
 

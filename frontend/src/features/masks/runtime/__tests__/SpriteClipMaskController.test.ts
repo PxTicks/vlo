@@ -236,6 +236,22 @@ function createMaskAsset(id: string): Asset {
   };
 }
 
+/** A SAM2 mask asset stored as a distance band (docs/mask-distance-field-plan.md). */
+function createDistanceBandMaskAsset(id: string): Asset {
+  return {
+    ...createMaskAsset(id),
+    creationMetadata: {
+      source: "sam2_mask",
+      parentAssetId: "parent-asset",
+      parentClipId: "clip_1",
+      maskClipId: "clip_1::mask::mask_sam2",
+      pointCount: 1,
+      sourceHash: "parent-hash",
+      maskEncoding: "tsdf8_k8",
+    },
+  };
+}
+
 function createImageAsset(id: string): Asset {
   return {
     id,
@@ -1663,6 +1679,148 @@ describe("SpriteClipMaskController mask composition", () => {
 
     controller.dispose();
     warnSpy.mockRestore();
+  });
+
+  describe("distance-band SAM2 masks", () => {
+    async function renderCountFor(options: {
+      compositeGrowPx?: number;
+      sam2GrowAmount?: number;
+      feather?: { mode: "hard_outer" | "soft_inner" | "two_way"; amount: number };
+      maskScale?: { x: number; y: number };
+    }): Promise<number> {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const renderSpy = vi.fn();
+      const renderer = { render: renderSpy } as unknown as Renderer;
+      const sprite = new Sprite(Texture.WHITE);
+      const controller = new SpriteClipMaskController(sprite, renderer, new Container());
+      const parent = withMaskComposition(createParentClip(), {
+        expression: { kind: "mask_ref", maskId: "mask_sam2" },
+        compositeTransformations: [
+          ...(options.compositeGrowPx === undefined
+            ? []
+            : [
+                {
+                  id: "grow_1",
+                  type: "mask_grow",
+                  isEnabled: true,
+                  parameters: { amount: options.compositeGrowPx },
+                },
+              ]),
+          ...(options.feather === undefined
+            ? []
+            : [
+                {
+                  id: "feather_1",
+                  type: "feather",
+                  isEnabled: true,
+                  parameters: { ...options.feather },
+                },
+              ]),
+        ],
+      });
+      const sam2Mask = {
+        ...createMaskClip("mask_sam2", {
+          maskType: "sam2",
+          sam2MaskAssetId: "sam2-band-asset",
+          sam2GrowAmount: options.sam2GrowAmount ?? 0,
+        }),
+        ...(options.maskScale
+          ? {
+              transformations: [
+                {
+                  id: "scale_1",
+                  type: "scale",
+                  isEnabled: true,
+                  parameters: { ...options.maskScale, isLinked: false },
+                },
+              ],
+            }
+          : {}),
+      } as MaskTimelineClip;
+      const asset = createDistanceBandMaskAsset("sam2-band-asset");
+
+      await controller.syncMaskClips(
+        [sam2Mask],
+        parent,
+        { width: 1920, height: 1080 },
+        10,
+        new Map([[asset.id, asset]]),
+        { waitForSam2: true },
+      );
+      const count = renderSpy.mock.calls.length;
+      controller.dispose();
+      warnSpy.mockRestore();
+      return count;
+    }
+
+    it("shapes a grow inside the band in one pass, with no leaf render or flood", async () => {
+      // The band, the shaping pass, the presentation.
+      expect(await renderCountFor({ compositeGrowPx: 8 })).toBe(3);
+    });
+
+    it("folds the mask's own grow into the same single pass", async () => {
+      expect(await renderCountFor({ compositeGrowPx: 4, sam2GrowAmount: 6 })).toBe(3);
+    });
+
+    it("floods from the band's zero crossing for a grow beyond the band", async () => {
+      // The band, then seed + flood + shape, then the presentation.
+      expect(await renderCountFor({ compositeGrowPx: 40 })).toBe(
+        2 +
+          distanceFieldRenderCount(
+            { growPx: 40, growInvert: false, feather: null },
+            { width: 1, height: 1 },
+          ),
+      );
+    });
+
+    it("grows a band leaf without edge ops in one pass", async () => {
+      // The band, the shaping pass, the copy back to the leaf, the presentation.
+      expect(await renderCountFor({ sam2GrowAmount: 10 })).toBe(4);
+    });
+
+    const unitContent = { width: 1, height: 1 };
+    const grow = (growPx: number) => ({ growPx, growInvert: false, feather: null });
+
+    it("does not fold a shrink and a grow into one offset", async () => {
+      // A shrink then a grow can erase a feature for good, so the shrunk mask
+      // is drawn (band, shape, copy) and the grow re-distances it.
+      expect(await renderCountFor({ sam2GrowAmount: -6, compositeGrowPx: 6 })).toBe(
+        3 + distanceFieldRenderCount(grow(6), unitContent) + 1,
+      );
+    });
+
+    it("re-distances a grown mask before feathering into it", async () => {
+      // The leaf, then grow and feather as two distance fields, then the presentation.
+      expect(
+        await renderCountFor({
+          compositeGrowPx: 4,
+          feather: { mode: "soft_inner", amount: 8 },
+        }),
+      ).toBe(
+        1 +
+          distanceFieldRenderCount(grow(4), unitContent) +
+          distanceFieldRenderCount(
+            {
+              growPx: 0,
+              growInvert: false,
+              feather: { amountPx: 8, mode: "soft_inner", invert: false },
+            },
+            unitContent,
+          ) +
+          1,
+      );
+    });
+
+    it.each([
+      ["a non-uniform scale", { x: 4, y: 2 }],
+      ["a sprite smaller than the content", { x: 0.32, y: 0.32 }],
+    ])("floods from the band's edge under %s", async (_label, maskScale) => {
+      // The band's values are not content distances there: band, then
+      // seed + flood + shape, then the presentation.
+      expect(await renderCountFor({ compositeGrowPx: 4, maskScale })).toBe(
+        2 + distanceFieldRenderCount(grow(4), unitContent),
+      );
+    });
   });
 
   it("requests a missing SAM2 frame during transform-only mask sync", async () => {

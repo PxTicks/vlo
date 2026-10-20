@@ -195,15 +195,54 @@ describe("AssetMaskSourceFactory", () => {
     ).toBeNull();
   });
 
+  it("decodes each SAM2 asset by the encoding its metadata records", async () => {
+    const factory = new AssetMaskSourceFactory({} as Renderer);
+    const mask = createMask("sam2", { sam2MaskAssetId: "sam2-png" });
+    const { player, decodeFilter } = factory.createMaskSource({
+      maskId: mask.id,
+      assetId: "sam2-png",
+      kind: "image",
+    });
+    vi.spyOn(player as ImageMaskSource, "setSource").mockResolvedValue();
+    vi.spyOn(player as ImageMaskSource, "renderAt").mockResolvedValue();
+    const sync = (asset: Asset) =>
+      factory.syncMaskNode({ player, assetId: "sam2-png", decodeFilter }, mask, {
+        waitForAssetFrame: true,
+        skipFrameRender: false,
+        sourceFrame: {} as SourceFrameSyncRef,
+        parentClipContentSize: { width: 64, height: 64 },
+        assetsById: new Map([["sam2-png", asset]]),
+        hasUsableTexture: () => true,
+      });
+    const sam2Metadata = {
+      source: "sam2_mask" as const,
+      parentAssetId: "parent",
+      parentClipId: "clip_1",
+      maskClipId: mask.id,
+      pointCount: 1,
+      sourceHash: "parent-hash",
+    };
+
+    await sync({
+      ...createImageAsset("sam2-png"),
+      creationMetadata: { ...sam2Metadata, maskEncoding: "tsdf8_k8" },
+    });
+    expect(decodeFilter.encoding).toBe("tsdf8_k8");
+
+    // A regenerated asset from an older backend has no encoding: binary.
+    await sync({ ...createImageAsset("sam2-png"), creationMetadata: sam2Metadata });
+    expect(decodeFilter.encoding).toBe("binary");
+  });
+
   describe("an image mask whose source fails to load", () => {
     async function syncFailingImageMask(waitForAssetFrame: boolean) {
       const factory = new AssetMaskSourceFactory({} as Renderer);
       const mask = createMask("sam2", { sam2MaskAssetId: "sam2-png" });
-      const { player } = factory.createMaskSource({ maskId: mask.id, assetId: "sam2-png", kind: "image" });
+      const { player, decodeFilter } = factory.createMaskSource({ maskId: mask.id, assetId: "sam2-png", kind: "image" });
       expect(player).toBeInstanceOf(ImageMaskSource);
       vi.spyOn(player as ImageMaskSource, "setSource").mockRejectedValue(new Error("image gone"));
       vi.spyOn(console, "warn").mockImplementation(() => {});
-      const node = { player, assetId: "sam2-png" };
+      const node = { player, assetId: "sam2-png", decodeFilter };
       const sync = factory.syncMaskNode(node, mask, {
         waitForAssetFrame,
         skipFrameRender: false,

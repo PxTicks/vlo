@@ -1,3 +1,8 @@
+import {
+  MASK_DISTANCE_LEVELS_PER_PIXEL,
+  MASK_DISTANCE_ZERO_LEVEL,
+} from "../../model/maskAssetEncoding";
+
 /**
  * GLSL for the distance-field mask edge passes (see MaskDistanceFieldRenderer).
  *
@@ -40,6 +45,14 @@ bool decodeSeed(vec4 texel, out vec2 seed)
 }
 `;
 
+/** Decodes a distance-band texel (red) to signed texels, negative inside. */
+const FIELD_CODEC = `
+float fieldDistance(float red)
+{
+    return (${MASK_DISTANCE_ZERO_LEVEL.toFixed(1)} - red * 255.0) / ${MASK_DISTANCE_LEVELS_PER_PIXEL.toFixed(1)};
+}
+`;
+
 export const DISTANCE_FIELD_VERTEX = `#version 300 es
 precision highp float;
 in vec2 aPosition;
@@ -52,23 +65,35 @@ void main(void)
 
 /**
  * Finds, for each texel on the mask boundary, the nearest point where the
- * boundary crosses one of its four edges. Inside/outside comes from the raw
- * coverage (>= 0.5); the crossing position comes from coverage smoothed by a
- * [1 2 1] binomial (sigma ~0.7), which places a hard-edged mask's boundary
- * between its pixel steps instead of on them. Thin features whose smoothed
- * coverage never crosses 0.5 clamp to the texel centre rather than vanish.
+ * boundary crosses one of its four edges.
+ *
+ * From coverage, inside/outside comes from the raw coverage (>= 0.5) and the
+ * crossing position from coverage smoothed by a [1 2 1] binomial
+ * (sigma ~0.7), which places a hard-edged mask's boundary between its pixel
+ * steps instead of on them. Thin features whose smoothed coverage never
+ * crosses 0.5 clamp to the texel centre rather than vanish.
+ *
+ * From a distance band the boundary is the band's zero crossing, already
+ * sub-pixel: the crossing is linear in the two distances, with no smoothing.
+ * A true distance changes by at most one per texel, so a larger step is a
+ * discontinuity (the band meeting an uncovered border), not a crossing to
+ * interpolate; its edge sits halfway, as a hard-edged mask's would.
  */
 export const DISTANCE_FIELD_SEED_FRAGMENT = `${HEADER}
-uniform sampler2D uCoverage;
+uniform sampler2D uSource;
 uniform vec2 uSize;
+uniform float uSourceIsField;
 ${SEED_CODEC}
+${FIELD_CODEC}
+// One texel of true distance change, plus headroom for the band's codec error.
+const float MAX_FIELD_STEP = 1.5;
 out vec4 finalColor;
 
 float coverageAt(ivec2 texel)
 {
     // Clamping to the border means the content edge is never a mask edge.
     ivec2 clamped = clamp(texel, ivec2(0), ivec2(uSize) - ivec2(1));
-    return texelFetch(uCoverage, clamped, 0).r;
+    return texelFetch(uSource, clamped, 0).r;
 }
 
 float neighbourhood[25];
@@ -100,7 +125,9 @@ void main(void)
         }
     }
 
-    bool inside = rawAt(ivec2(0)) >= 0.5;
+    bool fromField = uSourceIsField > 0.5;
+    float fieldHere = fieldDistance(rawAt(ivec2(0)));
+    bool inside = fromField ? fieldHere < 0.0 : rawAt(ivec2(0)) >= 0.5;
     float smoothedHere = smoothedAt(ivec2(0));
     vec2 centre = vec2(texel) + 0.5;
     ivec2 size = ivec2(uSize);
@@ -116,12 +143,22 @@ void main(void)
         if (any(lessThan(neighbour, ivec2(0))) || any(greaterThanEqual(neighbour, size))) {
             continue;
         }
-        if ((rawAt(offset) >= 0.5) == inside) {
-            continue;
+        float t;
+        if (fromField) {
+            float fieldThere = fieldDistance(rawAt(offset));
+            if ((fieldThere < 0.0) == inside) {
+                continue;
+            }
+            float fieldStep = fieldHere - fieldThere;
+            t = abs(fieldStep) <= MAX_FIELD_STEP ? fieldHere / fieldStep : 0.5;
+        } else {
+            if ((rawAt(offset) >= 0.5) == inside) {
+                continue;
+            }
+            float smoothedThere = smoothedAt(offset);
+            float difference = smoothedHere - smoothedThere;
+            t = abs(difference) > 1e-6 ? (smoothedHere - 0.5) / difference : 0.5;
         }
-        float smoothedThere = smoothedAt(offset);
-        float difference = smoothedHere - smoothedThere;
-        float t = abs(difference) > 1e-6 ? (smoothedHere - 0.5) / difference : 0.5;
         t = clamp(t, 0.0, 1.0);
         if (t < bestT) {
             bestT = t;
@@ -176,33 +213,45 @@ void main(void)
 `;
 
 /**
- * Turns the nearest-seed texture into coverage: signed distance (negative
- * inside), offset by the grow, then a smoothstep ramp over the feather
- * interval. Output matches the other mask passes: coverage in every channel.
+ * Turns a signed distance (negative inside) into coverage: offset by the
+ * grow, then a smoothstep ramp over the feather interval. Output matches the
+ * other mask passes: coverage in every channel.
+ *
+ * The distance comes from the nearest seed, signed by the source coverage
+ * (uDistanceSource 0) or by the source distance band (2), or is read from
+ * the band directly when the ramp stays inside it (1).
  */
 export const DISTANCE_FIELD_SHAPE_FRAGMENT = `${HEADER}
 uniform sampler2D uSeeds;
-uniform sampler2D uCoverage;
+uniform sampler2D uSource;
+uniform float uDistanceSource;
 uniform float uOffset;
 uniform float uSign;
 uniform float uRampStart;
 uniform float uRampEnd;
 uniform float uInvertOutput;
 ${SEED_CODEC}
+${FIELD_CODEC}
 out vec4 finalColor;
 
 void main(void)
 {
     ivec2 texel = ivec2(gl_FragCoord.xy);
     vec2 centre = vec2(texel) + 0.5;
-    bool inside = texelFetch(uCoverage, texel, 0).r >= 0.5;
+    float source = texelFetch(uSource, texel, 0).r;
 
-    // With no seed in reach the texel is farther than any ramp extends.
-    vec2 seed;
-    float seedDistance = decodeSeed(texelFetch(uSeeds, texel, 0), seed)
-        ? length(seed - centre)
-        : 1.0e6;
-    float signedDistance = inside ? -seedDistance : seedDistance;
+    float signedDistance;
+    if (uDistanceSource > 0.5 && uDistanceSource < 1.5) {
+        signedDistance = fieldDistance(source);
+    } else {
+        bool inside = uDistanceSource > 1.5 ? fieldDistance(source) < 0.0 : source >= 0.5;
+        // With no seed in reach the texel is farther than any ramp extends.
+        vec2 seed;
+        float seedDistance = decodeSeed(texelFetch(uSeeds, texel, 0), seed)
+            ? length(seed - centre)
+            : 1.0e6;
+        signedDistance = inside ? -seedDistance : seedDistance;
+    }
     float edge = uSign * (signedDistance - uOffset);
     float t = clamp((edge - uRampStart) / (uRampEnd - uRampStart), 0.0, 1.0);
     float coverage = 1.0 - t * t * (3.0 - 2.0 * t);

@@ -90,7 +90,16 @@
       "src": ".vloproject/masks/subject_sam2.mp4",
       "createdAt": 0,
       "duration": 4.0,
-      "fps": 24.0
+      "fps": 24.0,
+      "creationMetadata": {
+        "source": "sam2_mask",
+        "parentAssetId": "subject",
+        "parentClipId": "subject",
+        "maskClipId": "subject::mask::sam",
+        "pointCount": 1,
+        "sourceHash": "fixture-subject",
+        "maskEncoding": "tsdf8_k8"
+      }
     },
     "tone": {
       "id": "tone",

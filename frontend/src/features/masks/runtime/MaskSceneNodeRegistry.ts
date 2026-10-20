@@ -115,15 +115,16 @@ export class MaskSceneNodeRegistry {
       }
 
       const root = new Container();
-      const { player, thresholdFilter } =
+      const { player, decodeFilter } =
         this.assetMaskSourceFactory.createMaskSource(entry);
+      root.filters = [decodeFilter];
       root.addChild(player.sprite);
       this.maskContainer.addChild(root);
       this.assetMaskNodes.set(entry.maskId, {
         root,
         player,
         assetId: entry.assetId,
-        thresholdFilter,
+        decodeFilter,
         kind: entry.kind,
       });
     });

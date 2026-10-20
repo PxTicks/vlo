@@ -3,7 +3,13 @@ from io import BytesIO
 import av
 import numpy as np
 
-from services.sam2.sam2_encoding import encode_binary_masks_to_red_mp4
+from services.sam2.sam2_distance import (
+    MASK_DISTANCE_INSIDE_LEVEL,
+    MASK_DISTANCE_LEVELS_PER_PIXEL,
+    MASK_DISTANCE_ZERO_LEVEL,
+    logits_to_distance_frame,
+)
+from services.sam2.sam2_encoding import encode_mask_distance_fields_mp4
 
 
 def _decode_first_frame(video_bytes: bytes) -> tuple[str, np.ndarray]:
@@ -16,36 +22,48 @@ def _decode_first_frame(video_bytes: bytes) -> tuple[str, np.ndarray]:
         container.close()
 
 
-def test_encode_binary_masks_to_red_mp4_uses_non_alpha_video() -> None:
-    frames = np.zeros((1, 16, 16), dtype=np.uint8)
-    frames[0, 4:12, 4:12] = 255
+def _disc_logits(size: int, radius: float) -> np.ndarray:
+    grid_y, grid_x = np.mgrid[0:size, 0:size].astype(np.float32)
+    distance = np.hypot(grid_x - size / 2 + 0.3, grid_y - size / 2 - 0.2)
+    return (radius - distance).astype(np.float32)
 
-    encoded = encode_binary_masks_to_red_mp4(frames, 24.0)
+
+def test_encode_mask_distance_fields_mp4_writes_levels_to_luma_without_alpha() -> None:
+    logits = _disc_logits(64, 18.4)
+    frames = logits_to_distance_frame(logits)[None]
+
+    encoded = encode_mask_distance_fields_mp4(frames, 24.0)
     pix_fmt, decoded = _decode_first_frame(encoded)
 
     assert "a" not in pix_fmt
-    assert np.all(decoded[4:12, 4:12, 0] > 32)
-    assert np.all(decoded[:4, :, 0] <= 32)
+    # Grey, not red: every channel carries the level.
+    assert np.abs(decoded[..., 0].astype(int) - decoded[..., 2].astype(int)).max() <= 4
+    recovered_inside = decoded[..., 0] >= MASK_DISTANCE_INSIDE_LEVEL
+    mismatched = np.count_nonzero(recovered_inside != (logits > 0))
+    # The codec may move the midpoint cut by a fraction of a pixel.
+    perimeter = 2 * np.pi * 18.4
+    assert mismatched <= 0.1 * perimeter
 
 
-def test_encode_binary_masks_to_red_mp4_preserves_binary_coverage_in_red() -> None:
-    frames = np.zeros((1, 16, 16), dtype=np.uint8)
-    frames[0, 2:14, 6:10] = 1
+def test_encode_mask_distance_fields_mp4_keeps_sub_pixel_distances() -> None:
+    logits = _disc_logits(96, 30.6)
+    frames = logits_to_distance_frame(logits)[None]
 
-    encoded = encode_binary_masks_to_red_mp4(frames, 12.0)
-    _, decoded = _decode_first_frame(encoded)
-    recovered_mask = decoded[:, :, 0] > 32
+    _, decoded = _decode_first_frame(encode_mask_distance_fields_mp4(frames, 24.0))
+    distance = (MASK_DISTANCE_ZERO_LEVEL - decoded[..., 0].astype(np.float64)) / (
+        MASK_DISTANCE_LEVELS_PER_PIXEL
+    )
+    true_distance = -logits.astype(np.float64)
+    in_band = np.abs(true_distance) < 12
+    error = np.abs(distance - true_distance)[in_band]
 
-    expected_mask = np.zeros((16, 16), dtype=bool)
-    expected_mask[2:14, 6:10] = True
-
-    assert np.array_equal(recovered_mask, expected_mask)
+    assert np.sqrt(np.mean(error**2)) < 0.3
 
 
-def test_encode_binary_masks_to_red_mp4_uses_sparse_source_timestamps() -> None:
-    frames = np.ones((3, 16, 16), dtype=np.uint8)
+def test_encode_mask_distance_fields_mp4_uses_sparse_source_timestamps() -> None:
+    frames = np.full((3, 16, 16), 255, dtype=np.uint8)
 
-    encoded = encode_binary_masks_to_red_mp4(
+    encoded = encode_mask_distance_fields_mp4(
         frames,
         10.0,
         window_start_frame=4,
@@ -56,12 +74,13 @@ def test_encode_binary_masks_to_red_mp4_uses_sparse_source_timestamps() -> None:
         stream = container.streams.video[0]
         decoded = list(container.decode(video=0))
         timestamps = [round(float(frame.time), 6) for frame in decoded]
-        red_means = [frame.to_ndarray(format="rgb24")[..., 0].mean() for frame in decoded]
+        level_means = [frame.to_ndarray(format="rgb24")[..., 0].mean() for frame in decoded]
 
         assert timestamps == [0.0, 0.4, 0.5, 0.6, 0.7, 1.1]
-        assert red_means[0] < 32
-        assert all(value > 200 for value in red_means[1:4])
-        assert all(value < 32 for value in red_means[4:])
+        # Frames outside the window are level 0: far outside the mask.
+        assert level_means[0] < 32
+        assert all(value > 200 for value in level_means[1:4])
+        assert all(value < 32 for value in level_means[4:])
         assert decoded[1].key_frame
         assert decoded[4].key_frame
         assert stream.frames == 6

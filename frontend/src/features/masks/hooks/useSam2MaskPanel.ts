@@ -14,6 +14,7 @@ import type {
   MaskTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
+import type { MaskAssetEncoding } from "../../../types/Asset";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import {
   TICKS_PER_SECOND,
@@ -805,6 +806,7 @@ export function useSam2MaskPanel({
       );
 
       let outputFile: File;
+      let outputEncoding: MaskAssetEncoding = "binary";
       let generatedVideoFps: number | null = null;
       if (parentAsset.type === "image") {
         const visibleSourceFrame = getRenderedSourceFrameReferenceFromTicks(
@@ -822,6 +824,7 @@ export function useSam2MaskPanel({
           },
           { signal: generationController.signal },
         );
+        outputEncoding = generated.encoding;
         outputFile = new File(
           [generated.blob],
           `${parentAsset.name}_sam2_${selectedMaskId}_${now}.png`,
@@ -848,6 +851,7 @@ export function useSam2MaskPanel({
           { signal: generationController.signal },
         );
         generatedVideoFps = generated.fps;
+        outputEncoding = generated.encoding;
         outputFile = new File(
           [generated.blob],
           `${parentAsset.name}_sam2_${selectedMaskId}_${now}.mp4`,
@@ -867,6 +871,7 @@ export function useSam2MaskPanel({
         maskClipId,
         pointCount: normalizedSam2Points.length,
         sourceHash,
+        ...(outputEncoding === "binary" ? {} : { maskEncoding: outputEncoding }),
       });
 
       if (!createdAsset) {

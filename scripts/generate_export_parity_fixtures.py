@@ -74,6 +74,10 @@ BADGE_COLOR = (230, 30, 30)
 SUBJECT_COLOR = (250, 140, 20)
 SAM2_SPLIT = 200
 SAM2_GROW = 20
+#: New SAM2 masks are stored as a truncated signed distance band, level
+#: 127.5 - 8 * d with d in pixels, negative inside (backend sam2_distance.py).
+SAM2_DISTANCE_ZERO_LEVEL = 127.5
+SAM2_DISTANCE_LEVELS_PER_PIXEL = 8
 GREY_SECONDS = (3.5, 4.0)
 MASK_PROJECT_ID = "mask-grade-project"
 #: A tone under the whole timeline, so an export's audio path (and a detached
@@ -158,7 +162,12 @@ def write_mask_grade_project(project: Path) -> None:
         pixels[:] = SUBJECT_COLOR
 
     def sam2_matte(pixels: np.ndarray, _index: int) -> None:
-        pixels[:, SAM2_SPLIT:] = 255
+        # Distance from each pixel centre to the edge at x = SAM2_SPLIT.
+        signed = SAM2_SPLIT - (np.arange(width) + 0.5)
+        levels = np.clip(
+            np.round(SAM2_DISTANCE_ZERO_LEVEL - SAM2_DISTANCE_LEVELS_PER_PIXEL * signed), 0, 255
+        ).astype(np.uint8)
+        pixels[:] = levels[None, :, None]
 
     _write_solid_video(assets / "subject.mp4", size, video_fps, video_frames, subject)
     _write_solid_video(masks / "subject_sam2.mp4", size, video_fps, video_frames, sam2_matte)
@@ -312,7 +321,11 @@ def write_mask_grade_project(project: Path) -> None:
                     asset("panel", "image", "assets/panel.png"),
                     asset("badge", "image", "assets/badge.png"),
                     asset("subject", "video", "assets/subject.mp4", **video),
-                    asset("subject-sam2", "video", ".vloproject/masks/subject_sam2.mp4", **video),
+                    asset("subject-sam2", "video", ".vloproject/masks/subject_sam2.mp4", **video,
+                          creationMetadata=dict(
+                              source="sam2_mask", parentAssetId="subject", parentClipId="subject",
+                              maskClipId="subject::mask::sam", pointCount=1, sourceHash="fixture-subject",
+                              maskEncoding="tsdf8_k8")),
                     asset("tone", "audio", "assets/tone.wav", duration=float(MASK_PROJECT_SECONDS)),
                 )}),
         "composites.json": dict(documentType="vlo.composites", schemaVersion=2, updated_at=0, composites={}),

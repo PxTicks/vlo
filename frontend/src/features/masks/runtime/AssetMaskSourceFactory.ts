@@ -4,7 +4,6 @@ import type {
   BrushPaintedBounds,
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
-import { createMaskBinaryThresholdFilter } from "../../transformations/catalogue/mask/maskBinaryThresholdFilter";
 import type { SourceFrameSyncRef } from "../../renderer/utils/sourceFrameSync";
 import {
   getBrushBufferForRenderer,
@@ -13,6 +12,8 @@ import {
 } from "./brushBufferRegistry";
 import { BrushBufferMaskSource } from "./BrushBufferMaskSource";
 import { ImageMaskSource } from "./ImageMaskSource";
+import { MaskAssetDecodeFilter } from "./MaskAssetDecodeFilter";
+import { resolveMaskAssetEncoding } from "../model/maskAssetEncoding";
 import { MaskVideoFramePlayer } from "./MaskVideoFramePlayer";
 import type { AssetMaskNodeEntry, AssetMaskFrameSource } from "./MaskSceneNodes";
 
@@ -152,7 +153,7 @@ export class AssetMaskSourceFactory {
 
   public createMaskSource(entry: AssetMaskNodeEntry): {
     player: AssetMaskFrameSource;
-    thresholdFilter: ReturnType<typeof createMaskBinaryThresholdFilter>;
+    decodeFilter: MaskAssetDecodeFilter;
   } {
     let player: AssetMaskFrameSource;
     if (entry.kind === "brush") {
@@ -172,12 +173,12 @@ export class AssetMaskSourceFactory {
         this.onAssetMaskFrameReady,
       );
     }
-    const thresholdFilter = createMaskBinaryThresholdFilter();
-    player.sprite.filters = [thresholdFilter];
-
+    // The caller mounts this on the node's root: the frame sprite's own
+    // filter list belongs to `applyClipTransforms`, which destroys filters it
+    // did not create.
     return {
       player,
-      thresholdFilter,
+      decodeFilter: new MaskAssetDecodeFilter(),
     };
   }
 
@@ -185,6 +186,7 @@ export class AssetMaskSourceFactory {
     node: {
       player: AssetMaskFrameSource;
       assetId: string;
+      decodeFilter: MaskAssetDecodeFilter;
     },
     maskClip: MaskTimelineClip,
     options: {
@@ -210,6 +212,9 @@ export class AssetMaskSourceFactory {
 
     const isBrushBuffer = isBrushBufferAssetId(maskAssetId);
     const asset = isBrushBuffer ? null : options.assetsById.get(maskAssetId);
+    // Regenerating a mask swaps the asset under the same node, possibly to a
+    // different encoding.
+    node.decodeFilter.setEncoding(resolveMaskAssetEncoding(asset));
 
     if (node.player instanceof BrushBufferMaskSource) {
       node.player.setHydrationContext(
@@ -289,9 +294,9 @@ export class AssetMaskSourceFactory {
 
   public disposeMaskNode(node: {
     player: AssetMaskFrameSource;
-    thresholdFilter: ReturnType<typeof createMaskBinaryThresholdFilter>;
+    decodeFilter: MaskAssetDecodeFilter;
   }): void {
-    node.thresholdFilter.destroy();
+    node.decodeFilter.destroy();
     node.player.dispose();
   }
 }

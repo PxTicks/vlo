@@ -33,7 +33,13 @@ from services.ai_models.health import capability_runtime_health
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
 from services.model_work.leases import LeaseAbandonedError
 from services.model_work.local_inference import run_local_inference
-from services.sam2.sam2_encoding import Sam2EncodingError, encode_binary_masks_to_red_mp4
+from services.sam2.sam2_distance import (
+    MASK_BINARY_ENCODING,
+    MASK_DISTANCE_ENCODING,
+    distance_frames_inside,
+    logits_to_distance_frame,
+)
+from services.sam2.sam2_encoding import Sam2EncodingError, encode_mask_distance_fields_mp4
 from services.sam2.sam2_discovery import discover_sam2_models, Sam2ModelInfo
 
 
@@ -112,6 +118,8 @@ class Sam2GeneratedMaskVideo:
     height: int
     fps: float
     frame_count: int
+    # How the frames encode coverage; see sam2_distance.
+    encoding: str = MASK_BINARY_ENCODING
 
 
 @dataclass(frozen=True)
@@ -121,6 +129,8 @@ class Sam2GeneratedMaskFrame:
     height: int
     frame_index: int
     time_ticks: float
+    # How the frame encodes coverage; see sam2_distance.
+    encoding: str = MASK_BINARY_ENCODING
 
 
 @dataclass(frozen=True)
@@ -650,8 +660,9 @@ def _store_propagated_mask(
             "SAM2 propagation cache received an unexpected frame count: "
             f"expected={expected_frame_count}, actual={frames.shape[0]}"
         )
+    # Consumers of the cache (SAM-Audio prompts) take binary masks.
     entry = _Sam2PropagatedMask(
-        packed_frames=np.packbits(frames > 0, axis=-1),
+        packed_frames=np.packbits(distance_frames_inside(frames), axis=-1),
         window_start_frame=start_frame,
         window_end_frame=end_frame,
         width=source.width,
@@ -1740,8 +1751,9 @@ def _run_sam2_propagation(
         conditioning_predictor_frames.append(predictor_frame_index)
         seeded_logits = _extract_logits_from_add_points_result(add_result)
         if seeded_logits is not None:
-            frames[frame_index - active_start_frame] = _logits_to_binary_frame(
-                seeded_logits
+            frames[frame_index - active_start_frame] = logits_to_distance_frame(
+                seeded_logits,
+                (source.height, source.width),
             )
             seen_frames.add(frame_index)
 
@@ -1783,8 +1795,9 @@ def _run_sam2_propagation(
                     continue
                 if source_frame_index < active_start_frame or source_frame_index > active_end_frame:
                     continue
-                frames[source_frame_index - active_start_frame] = _logits_to_binary_frame(
-                    logits
+                frames[source_frame_index - active_start_frame] = logits_to_distance_frame(
+                    logits,
+                    (source.height, source.width),
                 )
                 seen_frames.add(source_frame_index)
     except Sam2CancelledError:
@@ -1932,7 +1945,7 @@ def generate_mask_video(
         raise Sam2CancelledError("SAM2 generation was cancelled") from exc
     _raise_if_cancelled(cancel_check)
     try:
-        video_bytes = encode_binary_masks_to_red_mp4(
+        video_bytes = encode_mask_distance_fields_mp4(
             frames,
             source.fps,
             window_start_frame=frame_window[0],
@@ -1950,6 +1963,7 @@ def generate_mask_video(
         height=source.height,
         fps=source.fps,
         frame_count=source.frame_count,
+        encoding=MASK_DISTANCE_ENCODING,
     )
 
 
@@ -2062,9 +2076,12 @@ def _generate_single_frame_mask(
         seeded_logits = _extract_logits_from_add_points_result(add_result)
         if seeded_logits is None:
             raise Sam2RuntimeError("SAM2 did not return logits for the requested frame")
-        frame = _logits_to_binary_frame(seeded_logits)
-        frame = _resize_binary_frame_to_source(frame, source)
+        frame = logits_to_distance_frame(seeded_logits, (source.height, source.width))
+        encoding = MASK_DISTANCE_ENCODING
     else:
+        # The editor session keeps only SAM2's low-resolution masks for
+        # frames it did not just predict; these previews stay binary.
+        encoding = MASK_BINARY_ENCODING
         frame = _extract_cached_frame_from_inference_state(
             inference_state=inference_state,
             source=source,
@@ -2083,6 +2100,7 @@ def _generate_single_frame_mask(
         height=source.height,
         frame_index=target_frame_index,
         time_ticks=float(time_ticks),
+        encoding=encoding,
     )
 
 

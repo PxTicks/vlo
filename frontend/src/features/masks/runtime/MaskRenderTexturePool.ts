@@ -4,6 +4,8 @@ export class MaskRenderTexturePool {
   private perMaskRenderTexture: RenderTexture | null = null;
   private effectMaskRenderTexture: RenderTexture | null = null;
   private presentationMaskRenderTexture: RenderTexture | null = null;
+  /** A leaf's distance band, for distance-field edge ops (lazily created). */
+  private fieldRenderTexture: RenderTexture | null = null;
   private readonly leafMaskRenderTextures = new Map<string, RenderTexture>();
   private expressionRenderTextures: RenderTexture[] = [];
 
@@ -17,6 +19,20 @@ export class MaskRenderTexturePool {
 
   public getPresentationMaskRenderTexture(): RenderTexture | null {
     return this.presentationMaskRenderTexture;
+  }
+
+  public getFieldRenderTexture(): RenderTexture | null {
+    return this.fieldRenderTexture;
+  }
+
+  public ensureFieldRenderTexture(contentSize: {
+    width: number;
+    height: number;
+  }): void {
+    this.fieldRenderTexture = this.resizeTexture(
+      this.fieldRenderTexture,
+      contentSize,
+    );
   }
 
   public getLeafMaskRenderTexture(maskId: string): RenderTexture | null {
@@ -125,6 +141,8 @@ export class MaskRenderTexturePool {
     this.effectMaskRenderTexture = null;
     this.presentationMaskRenderTexture?.destroy(true);
     this.presentationMaskRenderTexture = null;
+    this.fieldRenderTexture?.destroy(true);
+    this.fieldRenderTexture = null;
 
     this.leafMaskRenderTextures.forEach((texture) => {
       texture.destroy(true);

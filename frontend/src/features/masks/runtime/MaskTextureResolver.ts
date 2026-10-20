@@ -23,11 +23,20 @@ import {
 import { createMaskCoverageInvertFilter } from "../../transformations/catalogue/mask/maskCoverageInvertFilter";
 import { createMaskRedToAlphaFilter } from "../../transformations/catalogue/mask/maskRedToAlphaFilter";
 import {
+  composeMaskEdgeShapeOverLeaf,
   hasMaskEdgeOps,
   invertMaskEdgeShape,
+  planMaskEdgeStages,
   resolveMaskEdgeShape,
   type MaskEdgeOps,
 } from "../utils/maskEdgeProfile";
+import {
+  multiplyAffine,
+  resolveAssetFieldGeometry,
+  type AssetFieldGeometry,
+} from "../utils/maskAssetGeometry";
+import { resolveDistanceFieldBand } from "../model/maskAssetEncoding";
+import type { MaskAssetDecodeOutput } from "./MaskAssetDecodeFilter";
 import { getSam2MaskGrowAmount } from "./AssetMaskSourceFactory";
 import { MaskDistanceFieldRenderer } from "./distanceField/MaskDistanceFieldRenderer";
 import type { AssetMaskNode, VectorMaskNode } from "./MaskSceneNodes";
@@ -42,6 +51,26 @@ function texelsPerContentPixel(
   return contentSize.width > 0
     ? texture.source.pixelWidth / contentSize.width
     : 1;
+}
+
+/** Renders mask nodes centred in a content-sized target. */
+function contentTransform(contentSize: { width: number; height: number }): Matrix {
+  return new Matrix().translate(contentSize.width / 2, contentSize.height / 2);
+}
+
+/** How a node's frame sprite sits in content space; see maskAssetGeometry. */
+function resolveNodeFieldGeometry(
+  node: AssetMaskNode,
+  contentSize: { width: number; height: number },
+): AssetFieldGeometry {
+  const { sprite } = node.player;
+  sprite.updateLocalTransform();
+  node.root.updateLocalTransform();
+  const spriteToContent = multiplyAffine(
+    contentTransform(contentSize),
+    multiplyAffine(node.root.localTransform, sprite.localTransform),
+  );
+  return resolveAssetFieldGeometry(spriteToContent, sprite.visualBounds, contentSize);
 }
 
 export function toMaskEdgeOps(
@@ -158,6 +187,14 @@ export class MaskTextureResolver {
     this.pool.ensurePerMaskRenderTexture(options.contentSize);
     this.pool.ensureEffectMaskRenderTexture(options.contentSize);
     this.pool.ensurePresentationMaskRenderTexture(options.contentSize);
+
+    // A lone distance-band mask with edge ops is shaped straight from its
+    // band, its own grow and inversion folded in; no leaf coverage needed.
+    const singleLeafEdge = this.renderSingleLeafEdgeFromField(options);
+    if (singleLeafEdge) {
+      return singleLeafEdge;
+    }
+
     const leafVariants = collectMaskBooleanLeafVariants(options.expression);
     this.pool.reconcileLeafMaskRenderTextures(
       leafVariants.map((variant) =>
@@ -244,10 +281,7 @@ export class MaskTextureResolver {
     maskClipByLocalId: Map<string, MaskTimelineClip>,
     contentSize: { width: number; height: number },
   ): void {
-    const transform = new Matrix().translate(
-      contentSize.width / 2,
-      contentSize.height / 2,
-    );
+    const transform = contentTransform(contentSize);
 
     leafVariants.forEach((variant) => {
       const leafTexture = this.pool.getLeafMaskRenderTexture(
@@ -273,20 +307,27 @@ export class MaskTextureResolver {
         if (!perMaskRenderTexture) {
           return;
         }
-        this.renderMaskSubsetToTexture(
-          new Set<string>([maskClip.id]),
-          leafTexture,
-          transform,
-        );
         const growShape = resolveMaskEdgeShape(
           { growPx: growAmount, growInvert: false, feather: null },
           texelsPerContentPixel(leafTexture, contentSize),
         );
-        this.distanceFieldRenderer.render(
-          leafTexture,
-          perMaskRenderTexture,
-          renderInverted ? invertMaskEdgeShape(growShape) : growShape,
-        );
+        const shape = renderInverted ? invertMaskEdgeShape(growShape) : growShape;
+        const field = this.renderLeafDistanceField(maskClip, contentSize);
+        if (field) {
+          this.distanceFieldRenderer.renderFromField(
+            field.texture,
+            perMaskRenderTexture,
+            shape,
+            field.band,
+          );
+        } else {
+          this.renderMaskSubsetToTexture(
+            new Set<string>([maskClip.id]),
+            leafTexture,
+            transform,
+          );
+          this.distanceFieldRenderer.render(leafTexture, perMaskRenderTexture, shape);
+        }
         this.renderTextureToTarget(perMaskRenderTexture, leafTexture, {
           clear: true,
         });
@@ -403,6 +444,98 @@ export class MaskTextureResolver {
     );
   }
 
+  /**
+   * Shape a single-mask expression straight from that mask's distance band.
+   * Returns null when the expression is not one distance-band mask with
+   * edge ops, leaving it to the coverage pipeline.
+   */
+  private renderSingleLeafEdgeFromField(
+    options: ResolveMaskCoverageOptions,
+  ): Texture | null {
+    const { expression, contentSize } = options;
+    if (expression.kind !== "mask_ref") {
+      return null;
+    }
+    const edgeOps = toMaskEdgeOps(options.compositeState);
+    if (!hasMaskEdgeOps(edgeOps)) {
+      return null;
+    }
+    const maskClip = options.maskClipByLocalId.get(expression.maskId);
+    if (!maskClip || !this.isMaskClipRenderable(maskClip)) {
+      return null;
+    }
+    const node = this.nodeRegistry.getAssetNode(maskClip.id);
+    const target = this.pool.getEffectMaskRenderTexture();
+    if (!node || node.decodeFilter.encoding !== "tsdf8_k8" || !target) {
+      return null;
+    }
+
+    // Folding the mask's own grow into the edge ops must be exact; anything
+    // else (a shrink then a grow, a feather across a grown edge) needs the
+    // intermediate mask, which the coverage pipeline draws and re-distances.
+    const texels = texelsPerContentPixel(target, contentSize);
+    const stages = planMaskEdgeStages(edgeOps, texels);
+    const shape =
+      stages.length === 1
+        ? composeMaskEdgeShapeOverLeaf(stages[0], {
+            growTexels: getSam2MaskGrowAmount(maskClip) * texels,
+            inverted: maskClip.maskInverted !== !!expression.inverted,
+          })
+        : null;
+    if (!shape) {
+      return null;
+    }
+    const field = this.renderLeafDistanceField(maskClip, contentSize);
+    if (!field) {
+      return null;
+    }
+    this.distanceFieldRenderer.renderFromField(
+      field.texture,
+      target,
+      shape,
+      field.band,
+    );
+    return target;
+  }
+
+  /**
+   * Render a distance-band mask's band into the pool's field texture, in
+   * content texels. Null for masks without one.
+   */
+  private renderLeafDistanceField(
+    maskClip: MaskTimelineClip,
+    contentSize: { width: number; height: number },
+  ): { texture: Texture; band: number } | null {
+    const node = this.nodeRegistry.getAssetNode(maskClip.id);
+    if (!node || node.decodeFilter.encoding !== "tsdf8_k8") {
+      return null;
+    }
+    this.pool.ensureFieldRenderTexture(contentSize);
+    const fieldTexture = this.pool.getFieldRenderTexture();
+    if (!fieldTexture) {
+      return null;
+    }
+    this.renderMaskSubsetToTexture(
+      new Set<string>([maskClip.id]),
+      fieldTexture,
+      contentTransform(contentSize),
+      "distance_field",
+    );
+    // Off a similarity, or where the sprite leaves content uncovered, the
+    // band's values are not content distances: shaping must re-distance
+    // from its zero crossing, which a band of zero forces.
+    const { distanceScale } = resolveNodeFieldGeometry(node, contentSize);
+    return {
+      texture: fieldTexture,
+      band:
+        distanceScale === null
+          ? 0
+          : resolveDistanceFieldBand(
+              distanceScale * texelsPerContentPixel(fieldTexture, contentSize),
+            ),
+    };
+  }
+
   private renderCompositeMaskEdgeTexture(
     sourceTexture: Texture,
     compositeState: ResolvedMaskCompositeState,
@@ -414,18 +547,22 @@ export class MaskTextureResolver {
     }
 
     const target: RenderTexture | null = this.pool.getEffectMaskRenderTexture();
-    if (!target || target === sourceTexture) {
+    const scratch = this.pool.getPerMaskRenderTexture();
+    if (!target || !scratch || target === sourceTexture) {
       return sourceTexture;
     }
 
-    this.distanceFieldRenderer.render(
-      sourceTexture,
-      target,
-      resolveMaskEdgeShape(
-        edgeOps,
-        texelsPerContentPixel(sourceTexture, contentSize),
-      ),
+    const stages = planMaskEdgeStages(
+      edgeOps,
+      texelsPerContentPixel(sourceTexture, contentSize),
     );
+    if (stages.length === 1) {
+      this.distanceFieldRenderer.render(sourceTexture, target, stages[0]);
+      return target;
+    }
+    // Grow, then re-distance the grown mask for the feather.
+    this.distanceFieldRenderer.render(sourceTexture, scratch, stages[0]);
+    this.distanceFieldRenderer.render(scratch, target, stages[1]);
     return target;
   }
 
@@ -502,6 +639,7 @@ export class MaskTextureResolver {
     maskIds: Set<string>,
     target: Texture,
     transform: Matrix,
+    assetOutput: MaskAssetDecodeOutput = "coverage",
   ): void {
     const previousMaskContainerVisibility =
       this.nodeRegistry.getMaskContainer().visible;
@@ -522,6 +660,7 @@ export class MaskTextureResolver {
       node.root.visible = maskIds.has(maskId);
     });
 
+    const contentSize = { width: target.width, height: target.height };
     this.nodeRegistry.assetMaskNodes.forEach((node, maskId) => {
       previousAssetVisibility.push({
         node,
@@ -531,6 +670,13 @@ export class MaskTextureResolver {
         maskIds.has(maskId) &&
         node.player.sprite.visible &&
         this.hasUsableTexture(node.player.sprite);
+      if (node.root.visible) {
+        node.decodeFilter.setOutput(assetOutput);
+        node.decodeFilter.setDistanceScale(
+          resolveNodeFieldGeometry(node, contentSize).coverageScale *
+            texelsPerContentPixel(target, contentSize),
+        );
+      }
     });
 
     this.nodeRegistry.getMaskContainer().visible = true;
@@ -548,6 +694,7 @@ export class MaskTextureResolver {
       });
       previousAssetVisibility.forEach((entry) => {
         entry.node.root.visible = entry.visible;
+        entry.node.decodeFilter.setOutput("coverage");
       });
     }
   }

@@ -34,7 +34,7 @@ def _validate_mask_frames(mask_frames: np.ndarray) -> tuple[int, int, int]:
     return frame_count, height, width
 
 
-def encode_binary_masks_to_red_mp4(
+def encode_mask_distance_fields_mp4(
     mask_frames: np.ndarray,
     fps: float,
     *,
@@ -43,12 +43,12 @@ def encode_binary_masks_to_red_mp4(
     cancel_check: Callable[[], bool] | None = None,
 ) -> bytes:
     """
-    Encode binary mask frames into an H.264 MP4 without alpha.
+    Encode distance-band mask frames (see sam2_distance) into an H.264 MP4.
 
-    Each frame stores mask coverage in the red channel only:
-    - R: 0 for background, 255 for mask
-    - G: 0
-    - B: 0
+    Each uint8 level is written to R, G and B, so it lives in full-resolution
+    luma: red alone sits mostly in half-resolution chroma, which smears the
+    edge by about half a pixel. Frames outside the window are level 0, far
+    outside the mask.
     """
     frame_count, height, width = _validate_mask_frames(mask_frames)
     if window_start_frame < 0:
@@ -82,8 +82,8 @@ def encode_binary_masks_to_red_mp4(
         # (profile_idc 244), which consumer players (Windows Media Player,
         # hardware/browser decoders) reject even though the pix_fmt is 4:2:0.
         # A low crf keeps us on a broadly-compatible 4:2:0 profile (ultrafast
-        # lands on Baseline) and the binary red-channel mask survives the >127
-        # threshold on decode. The profile cap guards against richer presets.
+        # lands on Baseline); the distance band decodes to ~0.2 px RMS and its
+        # midpoint cut is unbiased. The profile cap guards against richer presets.
         stream.options = {
             "crf": "18",
             "preset": "ultrafast",
@@ -117,8 +117,7 @@ def encode_binary_masks_to_red_mp4(
         for source_index, mask, force_keyframe in samples:
             if cancel_check is not None and cancel_check():
                 raise Sam2EncodingError("SAM2 mask encoding was cancelled")
-            rgb = np.zeros((height, width, 3), dtype=np.uint8)
-            rgb[..., 0] = (mask > 0).astype(np.uint8) * 255
+            rgb = np.repeat(np.asarray(mask, dtype=np.uint8)[..., None], 3, axis=-1)
             frame = av.VideoFrame.from_ndarray(rgb, format="rgb24")
             frame.pts = source_index
             if force_keyframe:
@@ -134,21 +133,3 @@ def encode_binary_masks_to_red_mp4(
         raise Sam2EncodingError(f"PyAV encoding failed: {exc}") from exc
 
     return buf.getvalue()
-
-
-def encode_binary_masks_to_transparent_mp4(
-    mask_frames: np.ndarray,
-    fps: float,
-    *,
-    window_start_frame: int = 0,
-    source_frame_count: int | None = None,
-    cancel_check: Callable[[], bool] | None = None,
-) -> bytes:
-    """Backward-compatible wrapper for older call sites."""
-    return encode_binary_masks_to_red_mp4(
-        mask_frames,
-        fps,
-        window_start_frame=window_start_frame,
-        source_frame_count=source_frame_count,
-        cancel_check=cancel_check,
-    )

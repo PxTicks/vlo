@@ -1,4 +1,10 @@
-import { Application, RenderTexture, Sprite, Texture } from "pixi.js";
+import { Application, Container, RenderTexture, Sprite, Texture } from "pixi.js";
+import {
+  MASK_DISTANCE_LEVELS_PER_PIXEL,
+  MASK_DISTANCE_ZERO_LEVEL,
+  resolveDistanceFieldBand,
+} from "../../features/masks/model/maskAssetEncoding";
+import { MaskAssetDecodeFilter, type MaskAssetDecodeOutput } from "../../features/masks/runtime/MaskAssetDecodeFilter";
 import { MaskDistanceFieldRenderer } from "../../features/masks/runtime/distanceField/MaskDistanceFieldRenderer";
 import {
   resolveMaskEdgeShape,
@@ -23,6 +29,9 @@ interface CoverageImage {
   values: Float32Array;
 }
 
+/** Exact signed distance in pixels at a pixel centre, negative inside. */
+type SignedDistance = (centreX: number, centreY: number) => number;
+
 interface ProbeContext {
   shape(
     width: number,
@@ -30,6 +39,28 @@ interface ProbeContext {
     inside: Inside,
     ops: MaskEdgeOps,
   ): { input: CoverageImage; output: CoverageImage };
+  /**
+   * Paint `distance` as a distance-band asset frame, decode it through the
+   * production decode filter, and shape it from the band.
+   */
+  shapeField(
+    width: number,
+    height: number,
+    distance: SignedDistance,
+    ops: MaskEdgeOps,
+  ): { output: CoverageImage; coverage: CoverageImage };
+  /**
+   * As `shapeField`, but the band frame is drawn as a transformed sprite in a
+   * `contentSize` field, and shaped with `fieldBand` (0 forces the flood).
+   */
+  shapeFieldSprite(options: {
+    frameSize: number;
+    contentSize: number;
+    distance: SignedDistance;
+    scale: { x: number; y: number };
+    ops: MaskEdgeOps;
+    fieldBand: number;
+  }): CoverageImage;
 }
 
 function smoothstep01(t: number): number {
@@ -69,6 +100,41 @@ function paintCoverage(width: number, height: number, inside: Inside): HTMLCanva
       image.data[index + 1] = value;
       image.data[index + 2] = value;
       image.data[index + 3] = value;
+    }
+  }
+  context.putImageData(image, 0, 0);
+  return canvas;
+}
+
+function paintDistanceBand(
+  width: number,
+  height: number,
+  distance: SignedDistance,
+): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("2D canvas unavailable for mask probe");
+  const image = context.createImageData(width, height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const level = Math.round(
+        Math.min(
+          255,
+          Math.max(
+            0,
+            MASK_DISTANCE_ZERO_LEVEL -
+              MASK_DISTANCE_LEVELS_PER_PIXEL * distance(x + 0.5, y + 0.5),
+          ),
+        ),
+      );
+      const index = (y * width + x) * 4;
+      // Opaque grey, like a decoded distance-band video frame.
+      image.data[index] = level;
+      image.data[index + 1] = level;
+      image.data[index + 2] = level;
+      image.data[index + 3] = 255;
     }
   }
   context.putImageData(image, 0, 0);
@@ -137,6 +203,71 @@ async function runProbe<T>(probe: (context: ProbeContext) => T): Promise<T> {
           target.destroy(true);
         }
       },
+      shapeFieldSprite({ frameSize, contentSize, distance, scale, ops, fieldBand }) {
+        const canvasTexture = Texture.from(paintDistanceBand(frameSize, frameSize, distance));
+        const decodeFilter = new MaskAssetDecodeFilter();
+        decodeFilter.setEncoding("tsdf8_k8");
+        decodeFilter.setOutput("distance_field");
+        decodeFilter.setDistanceScale(Math.min(scale.x, scale.y));
+        const root = new Container();
+        root.filters = [decodeFilter];
+        const sprite = new Sprite(canvasTexture);
+        sprite.anchor.set(0.5);
+        sprite.position.set(contentSize / 2, contentSize / 2);
+        sprite.scale.set(scale.x, scale.y);
+        root.addChild(sprite);
+        const field = RenderTexture.create({ width: contentSize, height: contentSize, resolution: 1 });
+        const target = RenderTexture.create({ width: contentSize, height: contentSize, resolution: 1 });
+        try {
+          application.renderer.render({ container: root, target: field, clear: true });
+          fieldRenderer.renderFromField(field, target, resolveMaskEdgeShape(ops), fieldBand);
+          return readRed(application, target);
+        } finally {
+          root.destroy({ children: true });
+          decodeFilter.destroy();
+          canvasTexture.destroy(true);
+          field.destroy(true);
+          target.destroy(true);
+        }
+      },
+      shapeField(width, height, distance, ops) {
+        const canvasTexture = Texture.from(paintDistanceBand(width, height, distance));
+        const decodeFilter = new MaskAssetDecodeFilter();
+        decodeFilter.setEncoding("tsdf8_k8");
+        decodeFilter.setDistanceScale(1);
+        // As in the mask scene: the decode filter sits on the node's root.
+        const root = new Container();
+        root.filters = [decodeFilter];
+        root.addChild(new Sprite(canvasTexture));
+        const decode = (output: MaskAssetDecodeOutput) => {
+          decodeFilter.setOutput(output);
+          const texture = RenderTexture.create({ width, height, resolution: 1 });
+          application.renderer.render({ container: root, target: texture, clear: true });
+          return texture;
+        };
+        const field = decode("distance_field");
+        const coverage = decode("coverage");
+        const target = RenderTexture.create({ width, height, resolution: 1 });
+        try {
+          fieldRenderer.renderFromField(
+            field,
+            target,
+            resolveMaskEdgeShape(ops),
+            resolveDistanceFieldBand(1),
+          );
+          return {
+            output: readRed(application, target),
+            coverage: readRed(application, coverage),
+          };
+        } finally {
+          root.destroy({ children: true });
+          decodeFilter.destroy();
+          canvasTexture.destroy(true);
+          field.destroy(true);
+          coverage.destroy(true);
+          target.destroy(true);
+        }
+      },
     });
   } finally {
     fieldRenderer.dispose();
@@ -161,6 +292,22 @@ export interface MaskDistanceFieldProbeResult {
   wideTexture: { growPx: number; measuredPx: number };
   /** Coverage range after shaping empty and full masks. */
   uniform: { emptyMax: number; fullMin: number };
+  /**
+   * A sub-pixel disc stored as a distance band, shaped from the band:
+   * deviation from the exact result, per case.
+   */
+  distanceBand: { label: string; rmsError: number; maxError: number }[];
+  /**
+   * A solid band frame drawn as a 32x32 sprite and grown 4 px: covered area,
+   * flooded from the band's edge vs read from the band directly (which
+   * cannot see the sprite border), against the exact rounded square.
+   */
+  spriteBorder: { floodedArea: number; directArea: number; exactArea: number };
+  /**
+   * A band disc (radius 20) scaled (2, 0.5) and grown 4 px by flooding from
+   * its edge: how far coverage extends past the scaled disc on each axis.
+   */
+  nonUniformScale: { growAlongX: number; growAlongY: number };
 }
 
 export async function runMaskDistanceFieldProbe(): Promise<MaskDistanceFieldProbeResult> {
@@ -256,6 +403,100 @@ export async function runMaskDistanceFieldProbe(): Promise<MaskDistanceFieldProb
       fullMin: Math.min(...context.shape(32, 32, () => true, grow(-10)).output.values),
     };
 
+    const distanceBand = (() => {
+      const size = 160;
+      // Vertically centred so readback orientation cannot matter; the
+      // horizontal centre and radius are sub-pixel.
+      const centreX = 79.37;
+      const centreY = size / 2;
+      const radius = 40.3;
+      const discDistance: SignedDistance = (x, y) =>
+        Math.hypot(x - centreX, y - centreY) - radius;
+      const compare = (label: string, image: CoverageImage, expected: (d: number) => number) => {
+        let squared = 0;
+        let maxError = 0;
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            const error = Math.abs(
+              image.values[y * size + x] - expected(discDistance(x + 0.5, y + 0.5)),
+            );
+            squared += error * error;
+            maxError = Math.max(maxError, error);
+          }
+        }
+        return { label, rmsError: Math.sqrt(squared / (size * size)), maxError };
+      };
+
+      const results = [];
+      const cases: [string, MaskEdgeOps][] = [
+        ["grow 5 (one pass)", grow(5)],
+        ["shrink 10 (one pass)", grow(-10)],
+        ["hard_outer feather 12 (one pass)", feather("hard_outer", 12)],
+        ["grow 30 (flood from the band)", grow(30)],
+      ];
+      for (const [label, ops] of cases) {
+        const { output, coverage } = context.shapeField(size, size, discDistance, ops);
+        results.push(compare(label, output, (d) => expectedCoverage(ops, d)));
+        if (results.length === 1) {
+          // The decode filter's own anti-aliased coverage: a one-texel edge.
+          results.push(
+            compare("decoded coverage", coverage, (d) => expectedCoverage(grow(0), d)),
+          );
+        }
+      }
+      return results;
+    })();
+
+    const spriteBorder = (() => {
+      const solid: SignedDistance = () => -100;
+      const shapeSolid = (fieldBand: number) =>
+        sum(
+          Array.from(
+            context.shapeFieldSprite({
+              frameSize: 64,
+              contentSize: 96,
+              distance: solid,
+              scale: { x: 0.5, y: 0.5 },
+              ops: grow(4),
+              fieldBand,
+            }).values,
+          ),
+        );
+      return {
+        floodedArea: shapeSolid(0),
+        directArea: shapeSolid(resolveDistanceFieldBand(0.5)),
+        // A 32 px square grown 4 px: 40 x 40 with rounded corners.
+        exactArea: 40 * 40 - (4 - Math.PI) * 4 * 4,
+      };
+    })();
+
+    const nonUniformScale = (() => {
+      const frameSize = 64;
+      const radius = 20;
+      const disc: SignedDistance = (x, y) =>
+        Math.hypot(x - frameSize / 2, y - frameSize / 2) - radius;
+      const contentSize = 128;
+      const image = context.shapeFieldSprite({
+        frameSize,
+        contentSize,
+        distance: disc,
+        scale: { x: 2, y: 0.5 },
+        ops: grow(4),
+        fieldBand: 0,
+      });
+      const middle = contentSize / 2;
+      const rowCovered = sum(row(image, middle));
+      let columnCovered = 0;
+      for (let y = 0; y < contentSize; y++) {
+        columnCovered += image.values[y * contentSize + middle];
+      }
+      return {
+        // Covered width past the scaled disc's own width, split per side.
+        growAlongX: (rowCovered - 2 * radius * 2) / 2,
+        growAlongY: (columnCovered - 2 * radius * 0.5) / 2,
+      };
+    })();
+
     return {
       straightEdge,
       thinLines,
@@ -265,6 +506,9 @@ export async function runMaskDistanceFieldProbe(): Promise<MaskDistanceFieldProb
       largeReach,
       wideTexture,
       uniform,
+      distanceBand,
+      spriteBorder,
+      nonUniformScale,
     };
   });
 }

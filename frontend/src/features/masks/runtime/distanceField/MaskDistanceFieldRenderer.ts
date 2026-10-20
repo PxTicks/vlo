@@ -24,6 +24,7 @@ function createSeedUniforms() {
   return new UniformGroup({
     uSize: { value: new Float32Array(2), type: "vec2<f32>" },
     uSeedScale: { value: 1, type: "f32" },
+    uSourceIsField: { value: 0, type: "f32" },
   });
 }
 
@@ -43,8 +44,14 @@ function createShapeUniforms() {
     uRampStart: { value: -0.5, type: "f32" },
     uRampEnd: { value: 0.5, type: "f32" },
     uInvertOutput: { value: 0, type: "f32" },
+    uDistanceSource: { value: 0, type: "f32" },
   });
 }
+
+/** Where the shape pass reads its signed distance (see the shader). */
+const DISTANCE_FROM_SEEDS_SIGNED_BY_COVERAGE = 0;
+const DISTANCE_FROM_FIELD = 1;
+const DISTANCE_FROM_SEEDS_SIGNED_BY_FIELD = 2;
 
 interface DistancePass {
   mesh: Mesh<MeshGeometry, Shader>;
@@ -87,11 +94,15 @@ function createPass(
  * (docs/mask-distance-field-plan.md).
  *
  * 1. Seed: every boundary texel stores the nearest sub-pixel point where the
- *    coverage's 0.5 boundary crosses one of its edges.
+ *    coverage's 0.5 boundary (or a distance band's zero) crosses one of its
+ *    edges.
  * 2. Flood: a bounded jump flood propagates the nearest seed to every texel
  *    within the shape's reach.
  * 3. Shape: signed distance to that seed, offset by the grow and ramped by
  *    the feather, is written to the target as coverage.
+ *
+ * A source that already is a distance band skips steps 1-2 whenever the
+ * shape's ramp stays inside the band.
  *
  * The passes draw meshes straight into owned render textures, not filters:
  * a filter copies its input every application, which would double the pass
@@ -115,8 +126,36 @@ export class MaskDistanceFieldRenderer {
     target: RenderTexture,
     shape: MaskEdgeShape,
   ): void {
-    const width = coverage.source.pixelWidth;
-    const height = coverage.source.pixelHeight;
+    this.renderPasses(coverage, target, shape, "coverage");
+  }
+
+  /**
+   * Shape a distance band (MaskAssetDecodeFilter's `distance_field` output)
+   * into `target`. A shape whose ramp reads no farther than `fieldBand`
+   * texels is a single pass; a wider one floods from the band's sub-pixel
+   * zero crossing.
+   */
+  public renderFromField(
+    field: Texture,
+    target: RenderTexture,
+    shape: MaskEdgeShape,
+    fieldBand: number,
+  ): void {
+    if (shape.extent <= fieldBand) {
+      this.renderShapePass(field, target, shape, DISTANCE_FROM_FIELD, null);
+      return;
+    }
+    this.renderPasses(field, target, shape, "field");
+  }
+
+  private renderPasses(
+    source: Texture,
+    target: RenderTexture,
+    shape: MaskEdgeShape,
+    sourceKind: "coverage" | "field",
+  ): void {
+    const width = source.source.pixelWidth;
+    const height = source.source.pixelHeight;
     if (width <= 0 || height <= 0) {
       return;
     }
@@ -128,12 +167,15 @@ export class MaskDistanceFieldRenderer {
     passes.seedUniforms.uniforms.uSize[0] = width;
     passes.seedUniforms.uniforms.uSize[1] = height;
     passes.seedUniforms.uniforms.uSeedScale = seedScale;
-    passes.seed.shader.resources.uCoverage = coverage.source;
+    passes.seedUniforms.uniforms.uSourceIsField = sourceKind === "field" ? 1 : 0;
+    passes.seed.shader.resources.uSource = source.source;
     this.renderer.render({
       container: passes.seed.mesh,
       target: seedTargets[0],
       clear: true,
     });
+    // Drop the reference so a destroyed source is not kept bound to an idle pass.
+    passes.seed.shader.resources.uSource = Texture.EMPTY.source;
 
     let read = 0;
     passes.floodUniforms.uniforms.uSize[0] = width;
@@ -150,21 +192,37 @@ export class MaskDistanceFieldRenderer {
       read = 1 - read;
     }
 
+    this.renderShapePass(
+      source,
+      target,
+      shape,
+      sourceKind === "field"
+        ? DISTANCE_FROM_SEEDS_SIGNED_BY_FIELD
+        : DISTANCE_FROM_SEEDS_SIGNED_BY_COVERAGE,
+      { texture: seedTargets[read], seedScale },
+    );
+  }
+
+  private renderShapePass(
+    source: Texture,
+    target: RenderTexture,
+    shape: MaskEdgeShape,
+    distanceSource: number,
+    seeds: { texture: RenderTexture; seedScale: number } | null,
+  ): void {
+    const passes = this.ensurePasses();
     const shapeUniforms = passes.shapeUniforms.uniforms;
-    shapeUniforms.uSeedScale = seedScale;
+    shapeUniforms.uSeedScale = seeds?.seedScale ?? 1;
     shapeUniforms.uOffset = shape.offset;
     shapeUniforms.uSign = shape.sign;
     shapeUniforms.uRampStart = shape.rampStart;
     shapeUniforms.uRampEnd = shape.rampEnd;
     shapeUniforms.uInvertOutput = shape.invertOutput ? 1 : 0;
-    passes.shape.shader.resources.uSeeds = seedTargets[read].source;
-    passes.shape.shader.resources.uCoverage = coverage.source;
+    shapeUniforms.uDistanceSource = distanceSource;
+    passes.shape.shader.resources.uSeeds = seeds?.texture.source ?? Texture.EMPTY.source;
+    passes.shape.shader.resources.uSource = source.source;
     this.renderer.render({ container: passes.shape.mesh, target, clear: true });
-
-    // Drop texture references so a destroyed coverage texture is not kept
-    // bound to an idle pass.
-    passes.seed.shader.resources.uCoverage = Texture.EMPTY.source;
-    passes.shape.shader.resources.uCoverage = Texture.EMPTY.source;
+    passes.shape.shader.resources.uSource = Texture.EMPTY.source;
   }
 
   public dispose(): void {
@@ -200,7 +258,7 @@ export class MaskDistanceFieldRenderer {
     this.passes = {
       geometry,
       seed: createPass(geometry, "mask-distance-field-seed", DISTANCE_FIELD_SEED_FRAGMENT, {
-        uCoverage: Texture.EMPTY.source,
+        uSource: Texture.EMPTY.source,
         seedUniforms,
       }),
       seedUniforms,
@@ -211,7 +269,7 @@ export class MaskDistanceFieldRenderer {
       floodUniforms,
       shape: createPass(geometry, "mask-distance-field-shape", DISTANCE_FIELD_SHAPE_FRAGMENT, {
         uSeeds: Texture.EMPTY.source,
-        uCoverage: Texture.EMPTY.source,
+        uSource: Texture.EMPTY.source,
         shapeUniforms,
       }),
       shapeUniforms,

@@ -12,10 +12,7 @@ vi.mock("pixi.js", async () => ({
   },
 }));
 
-import {
-  createMaskBinaryThresholdFilter,
-  createMaskPreviewOverlayFilter,
-} from "../mask/maskBinaryThresholdFilter";
+import { createMaskPreviewOverlayFilter } from "../mask/maskBinaryThresholdFilter";
 import { createMaskCoverageInvertFilter } from "../mask/maskCoverageInvertFilter";
 import { createMaskRedToAlphaFilter } from "../mask/maskRedToAlphaFilter";
 
@@ -23,18 +20,6 @@ describe("mask channel filters", () => {
   beforeEach(() => {
     filterFromSpy.mockReset();
     filterFromSpy.mockReturnValue(fake<Filter>({}));
-  });
-
-  it("thresholds composite mask coverage from the red channel only", () => {
-    createMaskBinaryThresholdFilter();
-
-    const fragment = filterFromSpy.mock.calls[0]?.[0]?.gl?.fragment as
-      | string
-      | undefined;
-
-    expect(fragment).toContain("float coverage = color.r;");
-    expect(fragment).not.toContain("color.a");
-    expect(fragment).not.toContain("max(color.r, color.a)");
   });
 
   it("tints preview overlays after measuring RGB coverage", () => {

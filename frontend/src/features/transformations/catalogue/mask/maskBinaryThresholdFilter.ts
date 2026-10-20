@@ -30,36 +30,6 @@ void main(void)
 }
 `;
 
-const fragmentSrc = `
-in vec2 vTextureCoord;
-out vec4 finalColor;
-uniform sampler2D uTexture;
-
-void main(void)
-{
-    vec4 color = texture(uTexture, vTextureCoord);
-    float coverage = color.r;
-    float value = coverage >= 0.5 ? 1.0 : 0.0;
-    finalColor = vec4(value, value, value, value);
-}
-`;
-
-/**
- * Hard-thresholds red-channel mask coverage into a binary white mask texture.
- * Red is the canonical runtime mask channel; relying on sampled alpha breaks
- * for non-alpha video textures because Pixi reports alpha as 1.0 everywhere.
- * The threshold is 0.5: the edge of an anti-aliased stroke, and unbiased for
- * red H.264 masks, whose subsampled chroma reads ~0.5 px fat at lower cuts.
- */
-export function createMaskBinaryThresholdFilter(): Filter {
-  return Filter.from({
-    gl: {
-      vertex: defaultVertex,
-      fragment: fragmentSrc,
-    },
-  });
-}
-
 function colorComponent(tint: number, shift: number): number {
   return ((tint >> shift) & 0xff) / 255;
 }
@@ -70,9 +40,11 @@ function clamp01(value: number): number {
 }
 
 /**
- * Presents a generated mask as a visible editor overlay. Unlike the production
- * compositor filter above, this intentionally tolerates grayscale/decoded-BGR
- * preview frames and applies the overlay tint after coverage is measured.
+ * Presents a generated mask as a visible editor overlay. Unlike the mask
+ * compositor, which reads red only, this tolerates grayscale/decoded-BGR
+ * preview frames and applies the overlay tint after coverage is measured. The
+ * 0.5 cut suits binary masks and distance-band masks alike: a band's
+ * midpoint is its edge.
  */
 export function createMaskPreviewOverlayFilter(
   tint: number,

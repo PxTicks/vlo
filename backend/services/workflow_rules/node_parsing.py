@@ -284,17 +284,34 @@ def build_input_node_map(
 # ===========================================================================
 
 
-def _coerce_widget_options(type_spec: Any) -> list[str | int | float | bool] | None:
-    if not isinstance(type_spec, (list, tuple)):
+def _coerce_widget_options(
+    type_spec: Any,
+    opts: dict[str, Any] | None = None,
+) -> list[str | int | float | bool] | None:
+    # Legacy (V1) nodes declare a combo as the option list itself; V3 nodes
+    # (io.Combo) serialize as ``("COMBO", {"options": [...]})``.
+    if isinstance(type_spec, (list, tuple)):
+        raw_options: Any = type_spec
+    elif (
+        isinstance(type_spec, str)
+        and type_spec.strip().upper() == "COMBO"
+        and isinstance(opts, dict)
+        and isinstance(opts.get("options"), (list, tuple))
+    ):
+        raw_options = opts["options"]
+    else:
         return None
     options: list[str | int | float | bool] = []
-    for option in type_spec:
+    for option in raw_options:
         if isinstance(option, (str, int, float, bool)):
             options.append(option)
     return options if options else None
 
 
-def _widget_value_type_from_type_spec(type_spec: Any) -> str | None:
+def _widget_value_type_from_type_spec(
+    type_spec: Any,
+    opts: dict[str, Any] | None = None,
+) -> str | None:
     if isinstance(type_spec, str):
         normalized = type_spec.strip().upper()
         if normalized == "INT":
@@ -305,6 +322,8 @@ def _widget_value_type_from_type_spec(type_spec: Any) -> str | None:
             return "string"
         if normalized == "BOOLEAN":
             return "boolean"
+        if normalized == "COMBO" and _coerce_widget_options(type_spec, opts):
+            return "enum"
         # Comfy uppercase non-primitives (for example IMAGE, LATENT, MODEL)
         # represent links, not editable widgets.
         if normalized == type_spec and normalized:
@@ -359,21 +378,23 @@ def get_widget_value_index_map(
         if param_def is None:
             continue
 
+        opts = (
+            param_def[1]
+            if isinstance(param_def, (list, tuple)) and len(param_def) >= 2
+            else {}
+        )
+        if not isinstance(opts, dict):
+            opts = {}
         if isinstance(param_def, (list, tuple)) and len(param_def) >= 1:
             type_spec = param_def[0]
-            if _widget_value_type_from_type_spec(type_spec) is None:
+            if _widget_value_type_from_type_spec(type_spec, opts) is None:
                 continue
 
         if param_name in linked_params:
             continue
 
         widget_value_index[param_name] = index
-        opts = (
-            param_def[1]
-            if isinstance(param_def, (list, tuple)) and len(param_def) >= 2
-            else {}
-        )
-        if isinstance(opts, dict) and opts.get("control_after_generate"):
+        if opts.get("control_after_generate"):
             index += 2
         else:
             index += 1
@@ -436,12 +457,12 @@ def build_widget_entries_for_class(
             if not isinstance(param_def, (list, tuple)) or len(param_def) < 1:
                 continue
             type_spec = param_def[0]
-            value_type = _widget_value_type_from_type_spec(type_spec)
-            if value_type is None:
-                continue
             opts = param_def[1] if len(param_def) >= 2 else {}
             if not isinstance(opts, dict):
                 opts = {}
+            value_type = _widget_value_type_from_type_spec(type_spec, opts)
+            if value_type is None:
+                continue
             control_after_generate = bool(opts.get("control_after_generate"))
             if not include_all_widgets and not control_after_generate:
                 continue
@@ -462,7 +483,7 @@ def build_widget_entries_for_class(
                 "control_after_generate": control_after_generate,
                 "value_type": value_type,
             }
-            enum_options = _coerce_widget_options(type_spec)
+            enum_options = _coerce_widget_options(type_spec, opts)
             if enum_options:
                 widget_entry["options"] = enum_options
             for num_key in ("min", "max"):
@@ -538,11 +559,11 @@ def resolve_widget_param_metadata(
     for param_name, type_spec, opts in iter_all_params(class_info):
         if param_name not in param_names:
             continue
-        value_type = _widget_value_type_from_type_spec(type_spec)
+        value_type = _widget_value_type_from_type_spec(type_spec, opts)
         if value_type is None:
             continue
         entry: dict[str, Any] = {"value_type": value_type}
-        enum_options = _coerce_widget_options(type_spec)
+        enum_options = _coerce_widget_options(type_spec, opts)
         if enum_options:
             entry["options"] = enum_options
         for num_key in ("min", "max"):

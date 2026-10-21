@@ -74,6 +74,7 @@ import { WorkflowDependencyResolver } from "./components/WorkflowDependencyResol
 import { WorkflowHowToButton } from "./components/WorkflowHowTo";
 import { ComfyuiLaunchExitDetails } from "./components/ComfyuiLaunchExitDetails";
 import { ComfyuiLaunchProgress } from "./components/ComfyuiLaunchProgress";
+import { ComfyuiNodePackNotice } from "./components/ComfyuiNodePackNotice";
 import { useProjectStore } from "../project";
 import { ExtensionUiSlot } from "../extensions/ui/publicApi";
 import { useGenerationSessionMount } from "./hooks/useGenerationSessionMount";
@@ -1310,6 +1311,8 @@ export function GenerationPanel() {
           </Typography>
         </Box>
       )}
+
+      <ComfyuiNodePackNotice report={runtimeStatus?.comfyui.vloNodePack} />
 
       {/* Workflow Selector */}
       <Box sx={{ px: 2, pb: 2 }}>

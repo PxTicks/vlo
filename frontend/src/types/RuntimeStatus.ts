@@ -86,6 +86,22 @@ export interface ComfyUiLaunchStatus {
   logTail: string[];
 }
 
+/**
+ * Whether the configured ComfyUI install carries a ComfyUI-vlo new enough for
+ * vlo's shipped workflows. Read from the pack's pyproject.toml on disk, so it is
+ * `not_checked` when vlo has no local install directory. Mirrors
+ * backend/services/comfyui/node_pack_versions.py.
+ */
+export interface ComfyUiNodePackReport {
+  status: "ok" | "outdated" | "unreadable" | "missing" | "not_checked";
+  packId: string;
+  requiredVersion: string;
+  installedVersion: string | null;
+  path: string | null;
+  /** Null when the pack is updated from ComfyUI-Manager instead. */
+  updateCommand: string | null;
+}
+
 export interface RuntimeStatus {
   backend: {
     status: BackendRuntimeStatus;
@@ -98,6 +114,7 @@ export interface RuntimeStatus {
     error: string | null;
     modelDownloadsEnabled?: boolean;
     launch?: ComfyUiLaunchStatus;
+    vloNodePack?: ComfyUiNodePackReport;
   };
   settings?: RuntimeSettings;
   hardware?: RuntimeHardware;

@@ -677,6 +677,17 @@ mkdir -p "$SCRIPT_DIR/backend/assets/models/sams"
 
 write_profile_marker
 
+# -- 8. ComfyUI-vlo version --------------------------------------------
+#
+# Report only. ComfyUI is a separate install, often running and possibly not
+# one vlo created, so the installer never changes it; this is how an update
+# tells the user their node pack has fallen behind vlo's workflows.
+
+printf '\n'
+if ! (cd "$SCRIPT_DIR/backend" && "$VENV_PY" -m services.comfyui.node_pack_versions); then
+    warn "Could not check the ComfyUI-vlo version."
+fi
+
 # -- Done ------------------------------------------------------------
 
 printf '\n'

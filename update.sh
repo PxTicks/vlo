@@ -24,7 +24,8 @@ Usage: ./update.sh [--replace-local-files] [installer options]
 
 Fetch the latest vlo source, then rerun install.sh to update dependencies and
 rebuild the frontend. Installer options such as --profiles and --update-node
-are passed through unchanged.
+are passed through unchanged. The installer ends by reporting whether the
+ComfyUI-vlo node pack in your ComfyUI is new enough; it never changes ComfyUI.
 
 If updating would replace or move a local file, the updater lists those files
 and asks first; each one is saved under .vlo-update-backups/ before it is

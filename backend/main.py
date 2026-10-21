@@ -46,6 +46,7 @@ from services.comfyui.comfyui_client import (
     get_http_client,
 )
 from services.comfyui.local_runtime import comfyui_local_runtime
+from services.comfyui.node_pack_versions import check_configured_comfyui_vlo
 from services.hardware import detect_local_vram, detect_vram_from_system_stats
 from services.ai_models.capabilities.install_jobs import (
     shutdown_runtime_capability_install_jobs,
@@ -278,6 +279,7 @@ async def get_app_status():
         for provider in app_status_providers()
     }
     settings_payload = build_public_settings_payload(vram_info)
+    vlo_node_pack = await run_in_threadpool(check_configured_comfyui_vlo)
 
     return {
         "backend": {
@@ -291,6 +293,7 @@ async def get_app_status():
             "error": comfyui_error,
             "modelDownloadsEnabled": is_comfyui_model_downloads_enabled(),
             "launch": comfyui_local_runtime.get_launch_status(),
+            "vloNodePack": vlo_node_pack,
         },
         "settings": settings_payload["settings"],
         "hardware": settings_payload["hardware"],

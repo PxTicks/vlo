@@ -88,6 +88,8 @@ echo.
 echo Fetch the latest vlo source, then rerun install.bat to update dependencies
 echo and rebuild the frontend. Installer options such as --profiles and
 echo --update-node are passed through unchanged.
+echo The installer ends by reporting whether the ComfyUI-vlo node pack in
+echo your ComfyUI is new enough; it never changes ComfyUI.
 echo.
 echo If updating would replace or move a local file, the updater lists those
 echo files and asks first; each one is saved under .vlo-update-backups\ before

@@ -80,6 +80,17 @@ def stub_capabilities(monkeypatch, capabilities: dict[str, Capability]) -> None:
     )
 
 
+def fake_node_pack_report():
+    return {
+        "status": "ok",
+        "packId": "comfyui-vlo",
+        "requiredVersion": "0.3.0",
+        "installedVersion": "0.3.0",
+        "path": "/tmp/comfy/custom_nodes/ComfyUI-vlo",
+        "updateCommand": None,
+    }
+
+
 def fake_settings_payload(_vram_info=None):
     return {
         "settings": {
@@ -166,6 +177,7 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
     monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
     monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
+    monkeypatch.setattr(main, "check_configured_comfyui_vlo", fake_node_pack_report)
     stub_capabilities(
         monkeypatch,
         {
@@ -199,6 +211,7 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
                 "logPath": None,
                 "logTail": [],
             },
+            "vloNodePack": fake_node_pack_report(),
         },
         "settings": fake_settings_payload()["settings"],
         "hardware": fake_settings_payload()["hardware"],
@@ -237,6 +250,7 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
     monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
     monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
+    monkeypatch.setattr(main, "check_configured_comfyui_vlo", fake_node_pack_report)
     stub_capabilities(
         monkeypatch,
         {
@@ -301,6 +315,7 @@ def test_app_status_ignores_installed_model_inventory(
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
     monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
     monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
+    monkeypatch.setattr(main, "check_configured_comfyui_vlo", fake_node_pack_report)
     stub_capabilities(
         monkeypatch,
         {

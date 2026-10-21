@@ -184,18 +184,29 @@ def _candidate_install_paths(path: Path) -> list[Path]:
     return candidates
 
 
-def verify_comfyui_install(path: str | Path) -> ComfyuiInstallVerification:
-    """Lightly identify an official-style checkout without importing its code."""
+def resolve_comfyui_install_path(path: str | Path) -> Path | None:
+    """The ComfyUI checkout a configured directory refers to, if any.
 
-    requested = Path(path).expanduser()
-    install_path = next(
+    Accepts the checkout itself or a folder holding it as ``ComfyUI/`` — the
+    layout of the Windows portable bundle — and stats only, so it is cheap
+    enough for polled status routes.
+    """
+
+    return next(
         (
             candidate
-            for candidate in _candidate_install_paths(requested)
+            for candidate in _candidate_install_paths(Path(path))
             if (candidate / "main.py").is_file()
         ),
         None,
     )
+
+
+def verify_comfyui_install(path: str | Path) -> ComfyuiInstallVerification:
+    """Lightly identify an official-style checkout without importing its code."""
+
+    requested = Path(path).expanduser()
+    install_path = resolve_comfyui_install_path(requested)
     if install_path is None:
         return _cache_verification({
             "requestedPath": str(requested),

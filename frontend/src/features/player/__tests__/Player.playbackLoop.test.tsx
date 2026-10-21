@@ -74,7 +74,7 @@ const {
         async (
           _time: number,
           _options: { temporalPreviewQuality?: "exact" | "approximate" },
-        ) => null,
+        ): Promise<unknown> => null,
       ),
       mockLiveFrameGraphState: {
         enabled: true,
@@ -584,6 +584,60 @@ describe("Player playback loop", () => {
     );
 
     view.unmount();
+  });
+
+  it("reports diagnostic presentation only for submitted, current frames", async () => {
+    vi.stubEnv("VITE_E2E_DIAGNOSTICS", "true");
+    const acceptPresentation = vi.fn();
+    vi.stubGlobal("__vloE2E", { acceptLiveFramePresentation: acceptPresentation });
+    mockLiveFrameGraphState.participantCount = 1;
+    // An empty but presented scene; null means the frame was superseded.
+    const presentedFrame = {
+      presentationPlan: { epoch: 1, tracks: [], adjustmentForest: [], encoderSinks: [] },
+      execution: { compositeSourceCommits: [] },
+    };
+    mockLiveFrameGraphRenderFrame.mockImplementation(async () => presentedFrame);
+    let resolveFrame!: (result: unknown) => void;
+
+    try {
+      const view = render(<Player />);
+      await waitFor(() => expect(acceptPresentation).toHaveBeenCalledWith({
+        tick: 2 * TICKS_PER_SECOND,
+        exact: true,
+      }));
+      acceptPresentation.mockClear();
+      mockLiveFrameGraphRenderFrame.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveFrame = resolve; }),
+      );
+      act(() => playbackFrameClock.setTime(3 * TICKS_PER_SECOND));
+      await waitFor(() => expect(mockLiveFrameGraphRenderFrame.mock.calls.at(-1)?.[0])
+        .toBe(3 * TICKS_PER_SECOND));
+      expect(acceptPresentation).not.toHaveBeenCalled();
+
+      await act(async () => resolveFrame(presentedFrame));
+      await waitFor(() => expect(acceptPresentation).toHaveBeenCalledWith({
+        tick: 3 * TICKS_PER_SECOND,
+        exact: true,
+      }));
+      expect(mockPixiApp.render.mock.invocationCallOrder.at(-1)).toBeLessThan(
+        acceptPresentation.mock.invocationCallOrder.at(-1) ?? 0,
+      );
+
+      // A superseded frame still flushes Pixi but must not claim its tick.
+      acceptPresentation.mockClear();
+      mockLiveFrameGraphRenderFrame.mockImplementation(async () => null);
+      const pixiRenders = mockPixiApp.render.mock.calls.length;
+      act(() => playbackFrameClock.setTime(4 * TICKS_PER_SECOND));
+      await waitFor(() => expect(mockPixiApp.render.mock.calls.length)
+        .toBeGreaterThan(pixiRenders));
+      expect(mockLiveFrameGraphRenderFrame.mock.calls.at(-1)?.[0]).toBe(4 * TICKS_PER_SECOND);
+      expect(acceptPresentation).not.toHaveBeenCalled();
+      view.unmount();
+    } finally {
+      mockLiveFrameGraphRenderFrame.mockImplementation(async () => null);
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
   });
 
   it(

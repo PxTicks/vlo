@@ -160,16 +160,29 @@ test.describe('Current-project masks and composites', () => {
         });
 
         const canvas = editor.player.canvasContainer.locator('canvas').first();
-        await timeline.seekToTick(180_000);
-        // Cold hydration reconstructs a full 2752x1536 mask texture. The
-        // player can present the unmasked source frame while that work is in
-        // flight, so do not use the first painted frame as the reference.
-        await page.waitForTimeout(2_000);
+        const seekToPresentedFrame = async (tick: number) => {
+            const sequence = await page.evaluate(() =>
+                window.__vloE2E?.getLiveFramePresentation()?.sequence ?? 0,
+            );
+            await timeline.seekToTick(tick);
+            // Cold mask hydration and shader compilation can outlast a fixed
+            // delay. An exact frame awaits mask hydration in its mask sync,
+            // and superseded frames are not reported, so wait for that.
+            await expect
+                .poll(() => page.evaluate(({ target, previous }) => {
+                    const frame = window.__vloE2E?.getLiveFramePresentation();
+                    return Boolean(
+                        frame && frame.tick === target && frame.exact &&
+                        frame.sequence > previous,
+                    );
+                }, { target: tick, previous: sequence }), { timeout: 30_000 })
+                .toBe(true);
+        };
+        await seekToPresentedFrame(180_000);
         const initialMaskedFrame = await canvas.screenshot();
 
-        await timeline.seekToTick(480_000);
-        await timeline.seekToTick(180_000);
-        await page.waitForTimeout(500);
+        await seekToPresentedFrame(480_000);
+        await seekToPresentedFrame(180_000);
         expect(maskFailures).toEqual([]);
         await expect
             .poll(async () => (await canvas.screenshot()).equals(initialMaskedFrame), {

@@ -61,6 +61,12 @@ export interface E2EPlaybackDiagnostics {
   audioSampleRate: number | null;
 }
 
+interface E2ELiveFramePresentation {
+  tick: number;
+  sequence: number;
+  exact: boolean;
+}
+
 /**
  * Timeline geometry for a given tick, so a test can click the ruler at an exact
  * project tick instead of a brittle fraction of the ruler width.
@@ -90,6 +96,9 @@ declare global {
   interface Window {
     __vloE2E?: {
       getPlaybackDiagnostics: () => E2EPlaybackDiagnostics;
+      /** The submitted live frame, distinct from the requested playhead. */
+      getLiveFramePresentation: () => E2ELiveFramePresentation | null;
+      acceptLiveFramePresentation?: (frame: { tick: number; exact: boolean }) => void;
       getTimelineTickGeometry: (tick: number) => E2ETimelineTickGeometry;
       getSam2PreviewDiagnostics: () => E2ESam2PreviewDiagnostics;
       /**
@@ -114,6 +123,7 @@ declare global {
       }) => Promise<unknown>;
       runRgbSplitConsistencyProbe?: () => Promise<unknown>;
       runMaskDistanceFieldProbe?: () => Promise<unknown>;
+      runMaskCompositeFieldProbe?: () => Promise<unknown>;
       runCompositeParityProbe?: (request: {
         compositeId: string;
         placementTick: number;
@@ -170,7 +180,15 @@ export function installE2EDiagnostics(): void {
   if (typeof window === "undefined") return;
   if (!isReadOnlyDiagnosticsEnabled()) return;
 
+  let liveFramePresentation: E2ELiveFramePresentation | null = null;
   window.__vloE2E = {
+    getLiveFramePresentation: () => liveFramePresentation,
+    acceptLiveFramePresentation: (frame) => {
+      liveFramePresentation = {
+        ...frame,
+        sequence: (liveFramePresentation?.sequence ?? 0) + 1,
+      };
+    },
     getPlaybackDiagnostics: () => {
       const ctx = audioSystem.getContext();
       return {
@@ -262,6 +280,13 @@ export function installE2EDiagnostics(): void {
       })
       .catch((error: unknown) => {
         console.error("Failed to install mask distance-field probe", error);
+      });
+    void import("./e2e/maskCompositeFieldProbe")
+      .then(({ runMaskCompositeFieldProbe }) => {
+        if (window.__vloE2E) window.__vloE2E.runMaskCompositeFieldProbe = runMaskCompositeFieldProbe;
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to install mask composite-field probe", error);
       });
     void import("./e2e/rgbSplitConsistencyProbe")
       .then(({ runRgbSplitConsistencyProbe }) => {

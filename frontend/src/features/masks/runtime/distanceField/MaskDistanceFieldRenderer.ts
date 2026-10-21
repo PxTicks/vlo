@@ -13,6 +13,7 @@ import {
   resolveSeedCoordinateScale,
   type MaskEdgeShape,
 } from "../../utils/maskEdgeProfile";
+import { MASK_DISTANCE_BAND_PX } from "../../model/maskAssetEncoding";
 import {
   DISTANCE_FIELD_FLOOD_FRAGMENT,
   DISTANCE_FIELD_SEED_FRAGMENT,
@@ -25,6 +26,7 @@ function createSeedUniforms() {
     uSize: { value: new Float32Array(2), type: "vec2<f32>" },
     uSeedScale: { value: 1, type: "f32" },
     uSourceIsField: { value: 0, type: "f32" },
+    uSmoothCoverage: { value: 1, type: "f32" },
   });
 }
 
@@ -45,6 +47,7 @@ function createShapeUniforms() {
     uRampEnd: { value: 0.5, type: "f32" },
     uInvertOutput: { value: 0, type: "f32" },
     uDistanceSource: { value: 0, type: "f32" },
+    uOutputIsField: { value: 0, type: "f32" },
   });
 }
 
@@ -120,13 +123,16 @@ export class MaskDistanceFieldRenderer {
   /**
    * Shape `coverage` (red channel) into `target`. The two textures must be
    * the same size in texels, and must not be the same texture.
+   * Anti-aliased rasters use their raw 0.5 crossing; binary coverage keeps
+   * the pre-blurred seed placement.
    */
   public render(
     coverage: Texture,
     target: RenderTexture,
     shape: MaskEdgeShape,
+    sourceKind: "coverage" | "antialiased" = "coverage",
   ): void {
-    this.renderPasses(coverage, target, shape, "coverage");
+    this.renderPasses(coverage, target, shape, sourceKind);
   }
 
   /**
@@ -148,11 +154,44 @@ export class MaskDistanceFieldRenderer {
     this.renderPasses(field, target, shape, "field");
   }
 
+  /**
+   * Build a distance band for boolean composition. An offset is applied before
+   * inversion, preserving leaf grow → leaf invert. Flooding far enough for
+   * both the offset and the output band avoids shifting saturated source data.
+   */
+  public renderField(
+    source: Texture,
+    target: RenderTexture,
+    options: {
+      sourceKind: "coverage" | "antialiased" | "field";
+      growTexels: number;
+      inverted: boolean;
+    },
+  ): void {
+    const extent = Math.abs(options.growTexels) + MASK_DISTANCE_BAND_PX;
+    this.renderPasses(
+      source,
+      target,
+      {
+        offset: options.growTexels,
+        sign: 1,
+        rampStart: -0.5,
+        rampEnd: 0.5,
+        invertOutput: options.inverted,
+        extent,
+        reach: extent + 1,
+      },
+      options.sourceKind,
+      true,
+    );
+  }
+
   private renderPasses(
     source: Texture,
     target: RenderTexture,
     shape: MaskEdgeShape,
-    sourceKind: "coverage" | "field",
+    sourceKind: "coverage" | "antialiased" | "field",
+    outputIsField = false,
   ): void {
     const width = source.source.pixelWidth;
     const height = source.source.pixelHeight;
@@ -168,6 +207,7 @@ export class MaskDistanceFieldRenderer {
     passes.seedUniforms.uniforms.uSize[1] = height;
     passes.seedUniforms.uniforms.uSeedScale = seedScale;
     passes.seedUniforms.uniforms.uSourceIsField = sourceKind === "field" ? 1 : 0;
+    passes.seedUniforms.uniforms.uSmoothCoverage = sourceKind === "coverage" ? 1 : 0;
     passes.seed.shader.resources.uSource = source.source;
     this.renderer.render({
       container: passes.seed.mesh,
@@ -200,6 +240,7 @@ export class MaskDistanceFieldRenderer {
         ? DISTANCE_FROM_SEEDS_SIGNED_BY_FIELD
         : DISTANCE_FROM_SEEDS_SIGNED_BY_COVERAGE,
       { texture: seedTargets[read], seedScale },
+      outputIsField,
     );
   }
 
@@ -209,6 +250,7 @@ export class MaskDistanceFieldRenderer {
     shape: MaskEdgeShape,
     distanceSource: number,
     seeds: { texture: RenderTexture; seedScale: number } | null,
+    outputIsField = false,
   ): void {
     const passes = this.ensurePasses();
     const shapeUniforms = passes.shapeUniforms.uniforms;
@@ -219,6 +261,7 @@ export class MaskDistanceFieldRenderer {
     shapeUniforms.uRampEnd = shape.rampEnd;
     shapeUniforms.uInvertOutput = shape.invertOutput ? 1 : 0;
     shapeUniforms.uDistanceSource = distanceSource;
+    shapeUniforms.uOutputIsField = outputIsField ? 1 : 0;
     passes.shape.shader.resources.uSeeds = seeds?.texture.source ?? Texture.EMPTY.source;
     passes.shape.shader.resources.uSource = source.source;
     this.renderer.render({ container: passes.shape.mesh, target, clear: true });

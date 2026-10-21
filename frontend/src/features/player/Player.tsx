@@ -511,6 +511,8 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
           }
 
           let usedFrameGraph = false;
+          // A superseded or aborted graph frame leaves this tick unpresented.
+          let presentedRequestedFrame = true;
           let compositeSourceCommits = [] as Parameters<
             typeof publishCompositeSourcePresentations
           >[0];
@@ -613,6 +615,8 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
               );
               usedFrameGraph = true;
               compositeSourceCommits = result.execution.compositeSourceCommits;
+            } else {
+              presentedRequestedFrame = false;
             }
           } else {
             const frameRenderers = visualTrackIdsRef.current
@@ -644,6 +648,17 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
           if (pixiApp && pixiApp.renderer) {
             pixiApp.render();
             publishCompositeSourcePresentations(compositeSourceCommits);
+            // Same gate as the read-only diagnostics that expose this record.
+            if (
+              (import.meta.env.VITE_E2E_DIAGNOSTICS === "true" ||
+                import.meta.env.DEV) &&
+              presentedRequestedFrame
+            ) {
+              window.__vloE2E?.acceptLiveFramePresentation?.({
+                tick: nextFrame.time,
+                exact: (nextFrame.temporalPreviewQuality ?? "exact") === "exact",
+              });
+            }
           }
         }
       } finally {

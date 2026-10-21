@@ -61,7 +61,7 @@ uniform vec4 uLeftClamp;
 uniform float uOperator;
 uniform float uOperateOnInverseCoverage;
 
-float readMaskCoverage(sampler2D maskTexture, vec2 uv, vec4 clampFrame)
+float readMaskField(sampler2D maskTexture, vec2 uv, vec4 clampFrame)
 {
     float clip = step(3.5,
         step(clampFrame.x, uv.x) +
@@ -72,33 +72,29 @@ float readMaskCoverage(sampler2D maskTexture, vec2 uv, vec4 clampFrame)
     return texture(maskTexture, clamp(uv, clampFrame.xy, clampFrame.zw)).r * clip;
 }
 
-float applyMaskBooleanOperator(float leftCoverage, float rightCoverage)
+float applyMaskBooleanOperator(float leftLevel, float rightLevel)
 {
-    if (uOperator < 0.5) {
-        return max(leftCoverage, rightCoverage);
-    }
-
-    if (uOperator < 1.5) {
-        return leftCoverage * rightCoverage;
-    }
-
-    return leftCoverage * (1.0 - rightCoverage);
+    // Bright means inside (level = 127.5 - 8*d): min distance is max
+    // level, and negating a distance complements its level exactly.
+    if (uOperator < 0.5) return max(leftLevel, rightLevel);
+    if (uOperator < 1.5) return min(leftLevel, rightLevel);
+    return min(leftLevel, 1.0 - rightLevel);
 }
 
 void main(void)
 {
-    float leftCoverage = readMaskCoverage(uLeftTexture, vLeftCoord, uLeftClamp);
-    float rightCoverage = readMaskCoverage(uTexture, vTextureCoord, uInputClamp);
-    float coverage = applyMaskBooleanOperator(leftCoverage, rightCoverage);
+    float leftLevel = readMaskField(uLeftTexture, vLeftCoord, uLeftClamp);
+    float rightLevel = readMaskField(uTexture, vTextureCoord, uInputClamp);
+    float level = applyMaskBooleanOperator(leftLevel, rightLevel);
 
     if (uOperateOnInverseCoverage == 1.0) {
-        coverage = 1.0 - applyMaskBooleanOperator(
-            1.0 - leftCoverage,
-            1.0 - rightCoverage
+        level = 1.0 - applyMaskBooleanOperator(
+            1.0 - leftLevel,
+            1.0 - rightLevel
         );
     }
 
-    finalColor = vec4(coverage, coverage, coverage, coverage);
+    finalColor = vec4(vec3(level), 1.0);
 }
 `,
   name: "mask-boolean-blend-filter",
@@ -123,9 +119,10 @@ type MaskBooleanFilterUniforms = UniformGroup<{
 }>;
 
 /**
- * Aligns the left-hand operand with the filtered input texture using Pixi's
- * sprite-matrix calculation. This keeps both operands in the same coordinate
- * space even when the filter system pads or offsets the temporary input frame.
+ * Combines encoded signed-distance bands. Aligns the left-hand operand with
+ * the filtered input texture using Pixi's sprite-matrix calculation. This keeps
+ * both operands in the same coordinate space even when the filter system pads
+ * or offsets the temporary input frame.
  */
 export class MaskBooleanBlendFilter extends Filter {
   private leftTexture: Texture = Texture.EMPTY;

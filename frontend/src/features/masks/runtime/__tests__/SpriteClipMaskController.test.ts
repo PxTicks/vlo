@@ -941,9 +941,8 @@ describe("SpriteClipMaskController mask composition", () => {
     expect(alphaMaskEffect).not.toBeNull();
     expect(alphaMaskEffect?.inverse).toBe(false);
 
-    // Render each referenced leaf once, using the shared scratch target for
-    // the inverted leaf before the boolean combine and final presentation.
-    expect(renderSpy).toHaveBeenCalledTimes(5);
+    // Leaves become fields before the boolean combine and presentation.
+    expect(renderSpy).toHaveBeenCalledTimes(27);
     expect(
       renderSnapshots.some(
         (call) =>
@@ -1015,7 +1014,7 @@ describe("SpriteClipMaskController mask composition", () => {
 
     expect(alphaMaskEffect).not.toBeNull();
     expect(alphaMaskEffect?.inverse).toBe(false);
-    expect(renderSpy).toHaveBeenCalledTimes(4);
+    expect(renderSpy).toHaveBeenCalledTimes(27);
     expect(
       renderSnapshots.filter((call) => call.transform !== undefined).length,
     ).toBe(2);
@@ -1077,9 +1076,8 @@ describe("SpriteClipMaskController mask composition", () => {
       new Map<string, Asset>(),
     );
 
-    // Render each inverted leaf through the shared scratch target, then run
-    // one shader-based intersection before presenting red->alpha.
-    expect(renderSpy).toHaveBeenCalledTimes(6);
+    // Leaf inversion is part of the field, before the shared intersection.
+    expect(renderSpy).toHaveBeenCalledTimes(27);
     expect(
       renderSnapshots.filter((call) => call.transform !== undefined).length,
     ).toBe(2);
@@ -1096,7 +1094,7 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
-  it("evaluates an explicit intersection expression via multiply compositing", async () => {
+  it("evaluates an explicit intersection expression in field space", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSnapshots: Array<{
       clear?: boolean;
@@ -1152,7 +1150,7 @@ describe("SpriteClipMaskController mask composition", () => {
       new Map<string, Asset>(),
     );
 
-    expect(renderSpy).toHaveBeenCalledTimes(4);
+    expect(renderSpy).toHaveBeenCalledTimes(27);
     expect(
       renderSnapshots.some(
         (call) =>
@@ -1166,7 +1164,7 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
-  it("evaluates an explicit union expression with a coverage-preserving combine shader", async () => {
+  it("evaluates an explicit union expression with the field combine shader", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSnapshots: Array<{
       clear?: boolean;
@@ -1238,10 +1236,7 @@ describe("SpriteClipMaskController mask composition", () => {
     ).maskBooleanBlendFilters.union;
 
     expect(unionFilter).toBeTruthy();
-    expect(renderSpy).toHaveBeenCalledTimes(
-      4 +
-        distanceFieldRenderCount({ growPx: 8, growInvert: false, feather: null }),
-    );
+    expect(renderSpy).toHaveBeenCalledTimes(30);
     expect(
       renderSnapshots.some(
         (call) =>
@@ -1341,7 +1336,7 @@ describe("SpriteClipMaskController mask composition", () => {
     expect(
       unionFilter?.resources.filterUniforms.uniforms.uOperateOnInverseCoverage,
     ).toBe(1);
-    expect(renderSpy).toHaveBeenCalledTimes(6);
+    expect(renderSpy).toHaveBeenCalledTimes(27);
     expect(
       renderSnapshots.some(
         (call) =>
@@ -1417,7 +1412,7 @@ describe("SpriteClipMaskController mask composition", () => {
       expect(alphaMaskEffect?.inverse).toBe(false);
       expect(internals.currentMaskMode).toBe("alpha");
       expect(internals.maskBooleanBlendFilters[operator]).toBeUndefined();
-      expect(renderSpy).toHaveBeenCalledTimes(2);
+      expect(renderSpy).toHaveBeenCalledTimes(10);
 
       controller.dispose();
       warnSpy.mockRestore();
@@ -1551,7 +1546,7 @@ describe("SpriteClipMaskController mask composition", () => {
       new Map<string, Asset>(),
     );
 
-    expect(renderSpy).toHaveBeenCalledTimes(6);
+    expect(renderSpy).toHaveBeenCalledTimes(38);
     expect(
       renderSnapshots.filter(
         (call) =>

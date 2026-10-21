@@ -25,6 +25,55 @@ interface MaskDistanceFieldProbeResult {
 }
 
 test.describe('mask distance-field edges', () => {
+    test('preserves sub-pixel boolean edges and removes internal seams', async ({ editorCurrent }, testInfo) => {
+        const page = editorCurrent.page;
+        await expect.poll(() => page.evaluate(() => typeof window.__vloE2E?.runMaskCompositeFieldProbe)).toBe('function');
+        const result = await page.evaluate(async () => {
+            const run = window.__vloE2E?.runMaskCompositeFieldProbe;
+            if (!run) throw new Error('Composite field probe missing');
+            return await run() as {
+                subpixel: { label: string; rmsError: number; maxError: number }[];
+                crossings: { label: string; rmsError: number; maxError: number; junctionMaxError: number; sampleLineJunctionError: number; junctionSamples: number; edgeSamples: number }[];
+                seams: { label: string; minimum: number }[];
+                identities: { label: string; maxError: number }[];
+                erasedFeatureArea: number;
+                binaryFieldMaxError: number;
+                singleBrushMaxError: number;
+                brushGrowMaxError: number;
+                transformed: { label: string; measured: number; expected: number; tolerance: number }[];
+            };
+        });
+        await testInfo.attach('mask-composite-field-summary.json', {
+            body: JSON.stringify(result, null, 2), contentType: 'application/json',
+        });
+        expect(result.subpixel).toHaveLength(7);
+        for (const edge of result.subpixel) {
+            expect(edge.rmsError, edge.label).toBeLessThanOrEqual(0.02);
+            expect(edge.maxError, edge.label).toBeLessThanOrEqual(0.15);
+        }
+        expect(result.crossings).toHaveLength(6);
+        for (const corner of result.crossings) {
+            expect(corner.edgeSamples, corner.label).toBeGreaterThan(0);
+            expect(corner.junctionSamples, corner.label).toBeGreaterThanOrEqual(4);
+            expect(corner.rmsError, corner.label).toBeLessThanOrEqual(0.02);
+            expect(corner.maxError, corner.label).toBeLessThanOrEqual(0.25);
+            expect(corner.junctionMaxError, corner.label).toBeLessThanOrEqual(0.25);
+            // Known 4-neighbour seeding limit when an edge runs through texel
+            // centres: the corner texel misplaces its seed by up to half a
+            // texel of coverage, but never takes the wrong sign (plan §6).
+            expect(corner.sampleLineJunctionError, corner.label).toBeLessThanOrEqual(0.5);
+        }
+        for (const seam of result.seams) expect(seam.minimum, seam.label).toBe(1);
+        for (const identity of result.identities) expect(identity.maxError, identity.label).toBeLessThanOrEqual(0.15);
+        expect(result.erasedFeatureArea).toBe(0);
+        expect(result.binaryFieldMaxError).toBeLessThanOrEqual(0.02);
+        expect(result.singleBrushMaxError).toBeLessThanOrEqual(0.02);
+        expect(result.brushGrowMaxError).toBeLessThanOrEqual(0.02);
+        for (const item of result.transformed) {
+            expect(Math.abs(item.measured - item.expected), item.label).toBeLessThanOrEqual(item.tolerance);
+        }
+    });
+
     test('grows, shrinks and feathers by exact distances', async ({ editorCurrent }, testInfo) => {
         test.setTimeout(120_000);
         const page = editorCurrent.page;

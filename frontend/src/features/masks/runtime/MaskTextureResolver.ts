@@ -36,6 +36,11 @@ import {
   type AssetFieldGeometry,
 } from "../utils/maskAssetGeometry";
 import { resolveDistanceFieldBand } from "../model/maskAssetEncoding";
+import {
+  canShapeMaskUnionFromField,
+  combineMaskFieldQuality,
+  type MaskFieldQuality,
+} from "../utils/maskFieldComposition";
 import type { MaskAssetDecodeOutput } from "./MaskAssetDecodeFilter";
 import { getSam2MaskGrowAmount } from "./AssetMaskSourceFactory";
 import { MaskDistanceFieldRenderer } from "./distanceField/MaskDistanceFieldRenderer";
@@ -115,11 +120,16 @@ export type ProbeMaskCoverageOptions = Pick<
   "expressionAnalysis" | "maskClipByLocalId"
 >;
 
+interface ResolvedMaskTexture {
+  texture: Texture;
+  field: MaskFieldQuality | null;
+}
+
 /**
  * Sprite-independent GPU pipeline that turns a mask boolean expression into a
- * coverage texture: render each referenced leaf mask, evaluate the boolean
- * expression, then apply shared composite edge ops (grow / feather / invert)
- * through a signed distance field of the result.
+ * coverage texture: normalize leaves to distance bands, evaluate booleans in
+ * field space, then re-distance for the composite edge ops. Single leaves
+ * retain their direct coverage and stored-band fast paths.
  *
  * Extracted from `MaskBooleanTextureRenderer` so the same pipeline can serve
  * both the alpha-mask presentation path (today, via that renderer) and
@@ -207,25 +217,42 @@ export class MaskTextureResolver {
       options.contentSize,
     );
 
-    this.renderLeafMaskTextures(
-      leafVariants,
-      options.maskClipByLocalId,
-      options.contentSize,
-    );
+    const fieldQualities =
+      options.expression.kind === "operation"
+        ? this.renderLeafMaskFields(
+            leafVariants,
+            options.maskClipByLocalId,
+            options.contentSize,
+          )
+        : undefined;
+    if (!fieldQualities) {
+      this.renderLeafMaskTextures(
+        leafVariants,
+        options.maskClipByLocalId,
+        options.contentSize,
+      );
+    }
     const evaluatedTexture = this.evaluateMaskBooleanExpression(
       options.expression,
       { current: 0 },
       options.compositeState.compositeInvert,
       options.maskClipByLocalId,
+      fieldQualities,
     );
     if (!evaluatedTexture) {
       return null;
     }
 
+    const singleMask = options.expression.kind === "mask_ref"
+      ? options.maskClipByLocalId.get(options.expression.maskId)
+      : undefined;
+
     return this.renderCompositeMaskEdgeTexture(
-      evaluatedTexture,
+      evaluatedTexture.texture,
       options.compositeState,
       options.contentSize,
+      evaluatedTexture.field,
+      singleMask ? this.coverageSeedKind(singleMask) : "antialiased",
     );
   }
 
@@ -358,18 +385,77 @@ export class MaskTextureResolver {
     });
   }
 
+  /** Keep each leaf's sub-pixel edge through grow, inversion and booleans. */
+  private renderLeafMaskFields(
+    variants: readonly MaskBooleanLeafVariant[],
+    maskClipByLocalId: Map<string, MaskTimelineClip>,
+    contentSize: { width: number; height: number },
+  ): Map<string, MaskFieldQuality> {
+    const qualities = new Map<string, MaskFieldQuality>();
+    const scratch = this.pool.getPerMaskRenderTexture();
+    if (!scratch) return qualities;
+
+    for (const variant of variants) {
+      const key = getMaskBooleanLeafKey(variant.maskId, variant.inverted);
+      const target = this.pool.getLeafMaskRenderTexture(key);
+      const maskClip = maskClipByLocalId.get(variant.maskId);
+      if (!target || !maskClip || !this.isMaskClipRenderable(maskClip)) continue;
+
+      const inverted = maskClip.maskInverted !== variant.inverted;
+      const growTexels =
+        getSam2MaskGrowAmount(maskClip) * texelsPerContentPixel(target, contentSize);
+      const field = this.renderLeafDistanceField(maskClip, contentSize);
+      if (field && growTexels === 0 && field.band > 0) {
+        // No offset or geometric distortion: keep the stored band verbatim.
+        this.renderTextureToTarget(field.texture, target, {
+          filters: inverted ? [this.getMaskCoverageInvertFilter()] : null,
+        });
+        qualities.set(key, { band: field.band, exactOutside: true });
+        continue;
+      }
+
+      if (!field) {
+        this.renderMaskSubsetToTexture(
+          new Set([maskClip.id]),
+          scratch,
+          contentTransform(contentSize),
+        );
+      }
+      this.distanceFieldRenderer.renderField(field?.texture ?? scratch, target, {
+        sourceKind: field ? "field" : this.coverageSeedKind(maskClip),
+        growTexels,
+        inverted,
+      });
+      qualities.set(key, {
+        band: resolveDistanceFieldBand(1),
+        // Offsetting only preserves distances outside a grow / inside a
+        // shrink. Inversion exchanges those sides; the final composite
+        // re-distances whenever the shaping ramp needs the other side.
+        exactOutside: inverted ? growTexels <= 0 : growTexels >= 0,
+      });
+    }
+    return qualities;
+  }
+
   private evaluateMaskBooleanExpression(
     expression: MaskBooleanExpression,
     operationTextureIndex: { current: number },
     compositeInvert: boolean,
     maskClipByLocalId: Map<string, MaskTimelineClip>,
-  ): Texture | null {
+    fieldQualities?: ReadonlyMap<string, MaskFieldQuality>,
+  ): ResolvedMaskTexture | null {
     if (expression.kind === "mask_ref") {
-      return this.resolveRenderableLeafMaskTexture(
+      const texture = this.resolveRenderableLeafMaskTexture(
         expression.maskId,
         !!expression.inverted,
         maskClipByLocalId,
       );
+      const field = fieldQualities?.get(
+        getMaskBooleanLeafKey(expression.maskId, !!expression.inverted),
+      );
+      return texture && (!fieldQualities || field)
+        ? { texture, field: field ?? null }
+        : null;
     }
 
     const leftTexture = this.evaluateMaskBooleanExpression(
@@ -377,12 +463,14 @@ export class MaskTextureResolver {
       operationTextureIndex,
       compositeInvert,
       maskClipByLocalId,
+      fieldQualities,
     );
     const rightTexture = this.evaluateMaskBooleanExpression(
       expression.right,
       operationTextureIndex,
       compositeInvert,
       maskClipByLocalId,
+      fieldQualities,
     );
     const targetTexture =
       this.pool.getExpressionRenderTextures()[operationTextureIndex.current] ??
@@ -394,13 +482,24 @@ export class MaskTextureResolver {
     }
 
     this.renderMaskBooleanOperationToTarget(
-      leftTexture,
-      rightTexture,
+      leftTexture.texture,
+      rightTexture.texture,
       targetTexture,
       expression.operator,
       compositeInvert,
     );
-    return targetTexture;
+    return {
+      texture: targetTexture,
+      field:
+        leftTexture.field && rightTexture.field
+          ? combineMaskFieldQuality(
+              expression.operator,
+              compositeInvert,
+              leftTexture.field,
+              rightTexture.field,
+            )
+          : null,
+    };
   }
 
   private renderMaskBooleanOperationToTarget(
@@ -540,9 +639,11 @@ export class MaskTextureResolver {
     sourceTexture: Texture,
     compositeState: ResolvedMaskCompositeState,
     contentSize: { width: number; height: number },
+    field: MaskFieldQuality | null = null,
+    sourceKind: "coverage" | "antialiased" = "antialiased",
   ): Texture {
     const edgeOps = toMaskEdgeOps(compositeState);
-    if (!hasMaskEdgeOps(edgeOps)) {
+    if (!field && !hasMaskEdgeOps(edgeOps)) {
       return sourceTexture;
     }
 
@@ -556,14 +657,34 @@ export class MaskTextureResolver {
       edgeOps,
       texelsPerContentPixel(sourceTexture, contentSize),
     );
+    const firstTarget = stages.length === 1 ? target : scratch;
+    if (field) {
+      this.distanceFieldRenderer.renderFromField(
+        sourceTexture,
+        firstTarget,
+        stages[0],
+        canShapeMaskUnionFromField(stages[0], field) ? field.band : 0,
+      );
+    } else {
+      this.distanceFieldRenderer.render(sourceTexture, firstTarget, stages[0], sourceKind);
+    }
     if (stages.length === 1) {
-      this.distanceFieldRenderer.render(sourceTexture, target, stages[0]);
       return target;
     }
     // Grow, then re-distance the grown mask for the feather.
-    this.distanceFieldRenderer.render(sourceTexture, scratch, stages[0]);
-    this.distanceFieldRenderer.render(scratch, target, stages[1]);
+    this.distanceFieldRenderer.render(scratch, target, stages[1], "antialiased");
     return target;
+  }
+
+  /** Stored bands and brush/vector rasters have already placed their AA edge. */
+  private coverageSeedKind(maskClip: MaskTimelineClip): "coverage" | "antialiased" {
+    if (maskClip.maskType === "generation") return "coverage";
+    if (maskClip.maskType === "sam2") {
+      return this.nodeRegistry.getAssetNode(maskClip.id)?.decodeFilter.encoding === "tsdf8_k8"
+        ? "antialiased"
+        : "coverage";
+    }
+    return "antialiased";
   }
 
   private renderTextureToTarget(

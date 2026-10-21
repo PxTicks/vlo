@@ -72,6 +72,8 @@ void main(void)
  * (sigma ~0.7), which places a hard-edged mask's boundary between its pixel
  * steps instead of on them. Thin features whose smoothed coverage never
  * crosses 0.5 clamp to the texel centre rather than vanish.
+ * Anti-aliased brush/vector coverage instead uses its raw 0.5 crossing, so
+ * smoothing never moves an edge the source already placed sub-pixel.
  *
  * From a distance band the boundary is the band's zero crossing, already
  * sub-pixel: the crossing is linear in the two distances, with no smoothing.
@@ -83,6 +85,7 @@ export const DISTANCE_FIELD_SEED_FRAGMENT = `${HEADER}
 uniform sampler2D uSource;
 uniform vec2 uSize;
 uniform float uSourceIsField;
+uniform float uSmoothCoverage;
 ${SEED_CODEC}
 ${FIELD_CODEC}
 // One texel of true distance change, plus headroom for the band's codec error.
@@ -128,7 +131,7 @@ void main(void)
     bool fromField = uSourceIsField > 0.5;
     float fieldHere = fieldDistance(rawAt(ivec2(0)));
     bool inside = fromField ? fieldHere < 0.0 : rawAt(ivec2(0)) >= 0.5;
-    float smoothedHere = smoothedAt(ivec2(0));
+    float smoothedHere = uSmoothCoverage > 0.5 ? smoothedAt(ivec2(0)) : rawAt(ivec2(0));
     vec2 centre = vec2(texel) + 0.5;
     ivec2 size = ivec2(uSize);
 
@@ -155,7 +158,7 @@ void main(void)
             if ((rawAt(offset) >= 0.5) == inside) {
                 continue;
             }
-            float smoothedThere = smoothedAt(offset);
+            float smoothedThere = uSmoothCoverage > 0.5 ? smoothedAt(offset) : rawAt(offset);
             float difference = smoothedHere - smoothedThere;
             t = abs(difference) > 1e-6 ? (smoothedHere - 0.5) / difference : 0.5;
         }
@@ -230,6 +233,7 @@ uniform float uSign;
 uniform float uRampStart;
 uniform float uRampEnd;
 uniform float uInvertOutput;
+uniform float uOutputIsField;
 ${SEED_CODEC}
 ${FIELD_CODEC}
 out vec4 finalColor;
@@ -253,6 +257,15 @@ void main(void)
         signedDistance = inside ? -seedDistance : seedDistance;
     }
     float edge = uSign * (signedDistance - uOffset);
+    if (uOutputIsField > 0.5) {
+        if (uInvertOutput > 0.5) {
+            edge = -edge;
+        }
+        float level = clamp(${MASK_DISTANCE_ZERO_LEVEL.toFixed(1)} - ${MASK_DISTANCE_LEVELS_PER_PIXEL.toFixed(1)} * edge, 0.0, 255.0) / 255.0;
+        // Field values are data, independent of alpha and premultiplication.
+        finalColor = vec4(vec3(level), 1.0);
+        return;
+    }
     float t = clamp((edge - uRampStart) / (uRampEnd - uRampStart), 0.0, 1.0);
     float coverage = 1.0 - t * t * (3.0 - 2.0 * t);
     if (uInvertOutput > 0.5) {

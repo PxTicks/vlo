@@ -120,6 +120,10 @@
 /frontend/src/features/colorGrading/gradeParameters.ts extension-surface=adapter
 /frontend/src/features/masks/runtime/MaskedEffectRenderer.ts extension-surface=adapter
 /frontend/src/features/masks/runtime/MaskTextureResolver.ts extension-surface=adapter
+# Owner-neutral distance-field mechanics shared by native and SDK mask paths.
+/frontend/src/features/masks/runtime/distanceField/** extension-surface=host
+/frontend/src/features/masks/utils/maskFieldComposition.ts extension-surface=host
+/frontend/src/features/transformations/catalogue/mask/maskBooleanBlendFilter.ts extension-surface=host
 /frontend/src/features/masks/runtime/OffscreenFilterApplicator.ts extension-surface=adapter
 /frontend/src/features/masks/runtime/SpriteClipMaskController.ts extension-surface=adapter
 /frontend/src/features/player/Player.tsx extension-surface=adapter

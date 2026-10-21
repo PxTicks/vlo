@@ -138,7 +138,9 @@ Sidecars must declare `"version": 3` and use the shape below.
   "effect_switches": [],
   "slots": {},
   "media_fallbacks": [],
-  "pipeline": []
+  "pipeline": [],
+  "lora_stacks": [],
+  "generation_mask": {}
 }
 ```
 
@@ -158,6 +160,8 @@ Sidecars must declare `"version": 3` and use the shape below.
 | `slots`                | object keyed by slot id               | `{}`                    |
 | `media_fallbacks`      | array                                 | `[]`                    |
 | `pipeline`             | array of stages                       | `[]`                    |
+| `lora_stacks`          | array of interchangeable LoRA loaders | `[]`                    |
+| `generation_mask`      | object (see Generation Mask)          | none                    |
 
 ---
 
@@ -1037,6 +1041,52 @@ Controls across any pipeline stage also support:
 | `on_failure`             | `"fallback_raw" \| "show_error"`                                         |
 | `stitch_fps`             | Optional integer override for the framerate used during stitching        |
 | `attach_generation_mask` | Optional boolean. `false` skips importing/linking the prepared mask clip |
+
+---
+
+## Generation Mask
+
+`generation_mask` shapes the mask a delivered asset carries onto the timeline.
+Placed clips seed that mask with a 30 px outer feather. A workflow that repaints
+past its mask (a seam pass, say) declares how far with `grow`, so the patch
+keeps the repaint instead of fading back to the original over it.
+
+`grow` is a first-match-wins list of cases. The first case whose `when`
+matches sums its `terms` into a grow in **generation pixels**: the size the
+workflow samples at, which is the aspect-ratio stage's strided size. The
+frontend rescales it to the delivered asset, rounds it up, and records it on
+the asset as `generationMaskGrow`; placing the asset seeds a mask grow of that
+many pixels under the feather. No matching case means no grow.
+
+Each term is either a `ref` (any [state reference](#conditions)) times
+`scale`, or a constant `value`. A ref that does not resolve to a number adds
+nothing, and a case that references a node the workflow no longer has is
+dropped. Example from `vlo_minimax_h3_inpaint`, whose seam pass (switch `115`)
+repaints `105.expand` latent cells of 16 px past an edge snapped up to one
+32 px token outside the mask, which node `103` has already grown:
+
+```json
+"generation_mask": {
+  "grow": [
+    {
+      "when": {
+        "kind": "compare",
+        "ref": { "kind": "workflow_param", "node_id": "115", "param": "switch" },
+        "operator": "eq",
+        "value": true
+      },
+      "terms": [
+        { "ref": { "kind": "workflow_param", "node_id": "103", "param": "expand" } },
+        { "value": 32 },
+        { "ref": { "kind": "workflow_param", "node_id": "105", "param": "expand" }, "scale": 16 }
+      ]
+    }
+  ]
+}
+```
+
+Workflow params are read from the panel, so the widgets a term or condition
+references must be exposed in `nodes`.
 
 ---
 

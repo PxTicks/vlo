@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import services.generation_delivery.service as delivery_service_module
+from routers.comfyui import _enrich_generation_metadata
 from services.generation_delivery.service import (
     BINARY_PREVIEW_IMAGE,
     GenerationHoldingService,
@@ -173,6 +174,49 @@ async def test_generation_holding_service_keeps_nacked_delivery_pending(
     delivery = await service.get_delivery("project-1", "delivery-1")
     assert delivery is not None
     assert delivery["last_delivery_error"] == "Frontend ingest failed"
+
+
+@pytest.mark.anyio
+async def test_generation_holding_service_keeps_the_sampled_mask_grow_for_recovery(
+    tmp_path: Path,
+) -> None:
+    # A delivery recovered after a frontend reload is imported from the
+    # manifest alone, so the mask grow the frontend resolved at submission
+    # must survive submission enrichment and persistence.
+    root = tmp_path / "holding"
+    writer = GenerationHoldingService(root=root)
+    delivery_context = _delivery_context()
+    delivery_context["generation_metadata"]["sampledMaskGrow"] = 48
+
+    await writer.create_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        delivery_context=delivery_context,
+    )
+    await writer.update_submission_metadata(
+        delivery_id="delivery-1",
+        workflow_warnings=None,
+        applied_widget_values=None,
+        aspect_ratio_processing={"enabled": True, "strided": {"width": 832, "height": 480}},
+        generation_metadata=_enrich_generation_metadata(
+            delivery_context["generation_metadata"],
+            {"pipeline_outputs": {"mask": {"mask_crop_metadata": {"mode": "full"}}}},
+            None,
+        ),
+        prepared_mask_bytes=None,
+        prepared_mask_filename=None,
+        prepared_mask_content_type=None,
+    )
+    await writer.mark_completed("delivery-1", [])
+
+    (delivery,) = await GenerationHoldingService(root=root).list_project_deliveries(
+        "project-1"
+    )
+    assert delivery["generation_metadata"]["sampledMaskGrow"] == 48
+    assert delivery["generation_metadata"]["maskCropMetadata"] == {"mode": "full"}
+    assert delivery["aspect_ratio_processing"]["strided"] == {"width": 832, "height": 480}
 
 
 @pytest.mark.anyio

@@ -1000,19 +1000,35 @@ export function setClipMaskCompositeTransformsInDraft(
 
 const DEFAULT_GENERATED_MASK_OUTER_FEATHER = 30;
 
-/** Shared mask feathering seeded on a clip carrying a generated mask. */
-export function createDefaultGeneratedMaskTransforms(): ClipTransform[] {
+/**
+ * Shared mask edges seeded on a clip carrying a generated mask. `growPx`
+ * (the asset's `generationMaskGrow`) widens the mask over content the
+ * workflow repainted past it, so the feather starts beyond that repaint.
+ */
+export function createDefaultGeneratedMaskTransforms(
+  growPx = 0,
+): ClipTransform[] {
+  const feather: ClipTransform = {
+    id: crypto.randomUUID(),
+    type: "feather",
+    isEnabled: true,
+    parameters: {
+      mode: "hard_outer",
+      amount: DEFAULT_GENERATED_MASK_OUTER_FEATHER,
+      invert: false,
+    },
+  };
+  if (!(growPx > 0)) {
+    return [feather];
+  }
   return [
     {
       id: crypto.randomUUID(),
-      type: "feather",
+      type: "mask_grow",
       isEnabled: true,
-      parameters: {
-        mode: "hard_outer",
-        amount: DEFAULT_GENERATED_MASK_OUTER_FEATHER,
-        invert: false,
-      },
+      parameters: { amount: growPx, invert: false },
     },
+    feather,
   ];
 }
 
@@ -1023,13 +1039,14 @@ export function createDefaultGeneratedMaskTransforms(): ClipTransform[] {
  * without it renders differently from the same asset placed by the host. The
  * store-based `attachGenerationMask` in utils/insertAssetToTimeline.ts is the
  * drag-and-drop path and must stay behaviourally identical to this one.
- * `enabled: false` attaches the mask with the equation switched off.
+ * `enabled: false` attaches the mask with the equation switched off;
+ * `growPx` is the asset's `generationMaskGrow`.
  */
 export function attachGenerationMaskToDraft(
   draft: TimelineModelState,
   clipId: string,
   generationMaskAssetId: string,
-  { enabled = true }: { enabled?: boolean } = {},
+  { enabled = true, growPx = 0 }: { enabled?: boolean; growPx?: number } = {},
 ): void {
   addClipMaskToDraft(draft, clipId, {
     id: crypto.randomUUID(),
@@ -1059,7 +1076,7 @@ export function attachGenerationMaskToDraft(
     setClipMaskCompositeTransformsInDraft(
       draft,
       clipId,
-      createDefaultGeneratedMaskTransforms(),
+      createDefaultGeneratedMaskTransforms(growPx),
     );
   }
 

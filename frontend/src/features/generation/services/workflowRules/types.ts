@@ -177,6 +177,9 @@ export function createDefaultWorkflowRules(
     ...(overrides.lora_stacks !== undefined
       ? { lora_stacks: cloneJsonValue(overrides.lora_stacks) }
       : {}),
+    ...(overrides.generation_mask != null
+      ? { generation_mask: cloneJsonValue(overrides.generation_mask) }
+      : {}),
   };
 }
 

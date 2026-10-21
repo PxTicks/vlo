@@ -17,6 +17,7 @@ import {
   getSaveImageWebsocketNodeIds,
   mergeCachedPipelineOutputsIntoResponse,
   prepareGenerationPlan,
+  resolveSampledGenerationMaskGrow,
   type GenerationPreprocessCacheEntry,
   updateGenerationPreprocessCacheFromResponse,
 } from "../generationPlan";
@@ -825,6 +826,86 @@ describe("generationPlan cache media extraction", () => {
       comfyuiPrompt: { prompt: {} },
       comfyuiWorkflow: { nodes: [] },
       maskCropMetadata: { mode: "full" },
+    });
+  });
+
+  describe("generation mask grow", () => {
+    function planWithGrow(seamPass: boolean): GenerationPlan {
+      const plan = makePlan("LoadVideo");
+      plan.workflow.workflowRules = {
+        version: 3,
+        generation_mask: {
+          grow: [
+            {
+              when: {
+                kind: "compare",
+                ref: { kind: "workflow_param", node_id: "115", param: "switch" },
+                operator: "eq",
+                value: true,
+              },
+              terms: [
+                { value: 32 },
+                {
+                  ref: { kind: "workflow_param", node_id: "105", param: "expand" },
+                  scale: 16,
+                },
+              ],
+            },
+          ],
+        },
+      } as never;
+      plan.submission.frontendStateWidgetValues = {
+        widget_115_switch: seamPass,
+        widget_105_expand: 1,
+      };
+      return plan;
+    }
+
+    function submit(plan: GenerationPlan, sampledMaskGrow: number | null) {
+      return buildSubmittedGeneration(
+        {
+          plan,
+          request: {
+            workflow: {},
+            graphData: null,
+            workflowId: null,
+            exactAspectRatio: false,
+            textInputs: {},
+            imageInputs: {},
+            videoInputs: {},
+            audioInputs: {},
+            pipelineInputs: {},
+            clientId: "client",
+          },
+        },
+        { prompt_id: "prompt", number: 1, node_errors: {} },
+        { sampledMaskGrow },
+      );
+    }
+
+    it("resolves the declared grow in sampled pixels before submission", () => {
+      expect(resolveSampledGenerationMaskGrow(planWithGrow(true), new Set())).toBe(48);
+      expect(
+        resolveSampledGenerationMaskGrow(planWithGrow(false), new Set()),
+      ).toBeNull();
+    });
+
+    it("records the same sampled grow on the job that the delivery carries", () => {
+      const plan = planWithGrow(true);
+      const submitted = submit(
+        plan,
+        resolveSampledGenerationMaskGrow(plan, new Set()),
+      );
+      expect(submitted.generationMetadata.sampledMaskGrow).toBe(48);
+      // Asset pixels are import's job, from the manifest's aspect record.
+      expect(submitted.generationMetadata).not.toHaveProperty(
+        "generationMaskGrow",
+      );
+    });
+
+    it("records nothing when no grow case matches", () => {
+      const submitted = submit(planWithGrow(false), null);
+      expect(submitted.generationMetadata).not.toHaveProperty("sampledMaskGrow");
     });
   });
 });

@@ -370,6 +370,122 @@
       "title": "FrontendControlStateReference",
       "type": "object"
     },
+    "GenerationMaskGrowCase": {
+      "additionalProperties": false,
+      "properties": {
+        "terms": {
+          "items": {
+            "$ref": "#/$defs/GenerationMaskGrowTerm"
+          },
+          "minItems": 1,
+          "title": "Terms",
+          "type": "array"
+        },
+        "when": {
+          "discriminator": {
+            "mapping": {
+              "all_of": "#/$defs/ConditionAllOf",
+              "always": "#/$defs/ConditionAlways",
+              "any_of": "#/$defs/ConditionAnyOf",
+              "compare": "#/$defs/ConditionCompare",
+              "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
+              "not": "#/$defs/ConditionNot"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConditionAlways"
+            },
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+            },
+            {
+              "$ref": "#/$defs/ConditionCompare"
+            },
+            {
+              "$ref": "#/$defs/ConditionAllOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionAnyOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionNot"
+            }
+          ],
+          "title": "When"
+        }
+      },
+      "required": [
+        "when",
+        "terms"
+      ],
+      "title": "GenerationMaskGrowCase",
+      "type": "object"
+    },
+    "GenerationMaskGrowTerm": {
+      "additionalProperties": false,
+      "description": "One addend of a generation mask grow: a panel value times ``scale``, or a constant.",
+      "properties": {
+        "ref": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "derived_widget": "#/$defs/DerivedWidgetStateReference",
+                  "frontend_control": "#/$defs/FrontendControlStateReference",
+                  "input_metadata": "#/$defs/InputMetadataReference",
+                  "pipeline_control": "#/$defs/PipelineControlReference",
+                  "workflow_param": "#/$defs/WorkflowParamValueReference"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/WorkflowParamValueReference"
+                },
+                {
+                  "$ref": "#/$defs/PipelineControlReference"
+                },
+                {
+                  "$ref": "#/$defs/FrontendControlStateReference"
+                },
+                {
+                  "$ref": "#/$defs/DerivedWidgetStateReference"
+                },
+                {
+                  "$ref": "#/$defs/InputMetadataReference"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ref"
+        },
+        "scale": {
+          "default": 1.0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "title": "GenerationMaskGrowTerm",
+      "type": "object"
+    },
     "InputMetadataReference": {
       "properties": {
         "field": {
@@ -1854,6 +1970,21 @@
         }
       },
       "title": "WorkflowFrontendControl",
+      "type": "object"
+    },
+    "WorkflowGenerationMaskConfig": {
+      "additionalProperties": false,
+      "description": "How the mask attached to a delivered asset is shaped on the timeline.\n\n``grow`` is first-match-wins. The matching case's terms are summed into a\ngrow in generation pixels (the size the workflow samples at), which the\nfrontend rescales to the delivered asset and seeds on the clip beneath its\ndefault feather. A workflow that repaints past the mask, such as a seam\npass, declares how far here so the patch keeps that repaint.",
+      "properties": {
+        "grow": {
+          "items": {
+            "$ref": "#/$defs/GenerationMaskGrowCase"
+          },
+          "title": "Grow",
+          "type": "array"
+        }
+      },
+      "title": "WorkflowGenerationMaskConfig",
       "type": "object"
     },
     "WorkflowInputCondition": {
@@ -3840,6 +3971,17 @@
       },
       "title": "Frontend Controls",
       "type": "object"
+    },
+    "generation_mask": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorkflowGenerationMaskConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "input_conditions": {
       "anyOf": [

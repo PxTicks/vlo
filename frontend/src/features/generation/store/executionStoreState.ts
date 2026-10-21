@@ -7,6 +7,7 @@ import {
 import { mergeRuleWarnings } from "../services/warnings";
 import {
   buildSubmittedGeneration,
+  resolveSampledGenerationMaskGrow,
   buildGenerationPreprocessCacheEntry,
   buildGenerationPreprocessCacheKey,
   createGenerationPlan,
@@ -753,8 +754,15 @@ function buildGenerationDeliveryContext(
   plan: GenerationPlan,
   workflow: Record<string, unknown> | null,
   autoFamilyRequestKey: string | null,
+  sampledMaskGrow: number | null,
 ): GenerationDeliveryContext {
   const saveImageWebsocketNodeIds = getSaveImageWebsocketNodeIds(workflow);
+  // The manifest is all a delivery recovered after a reload has, so anything
+  // import needs must be in this metadata, not only on the local job.
+  const generationMetadata = structuredClone(plan.metadata.generationMetadata);
+  if (sampledMaskGrow != null) {
+    generationMetadata.sampledMaskGrow = sampledMaskGrow;
+  }
   return {
     planId: plan.id,
     workflowName: plan.metadata.generationMetadata.workflowName,
@@ -762,7 +770,7 @@ function buildGenerationDeliveryContext(
       plan.workflow.workflowId ??
       plan.metadata.generationMetadata.workflowSourceId ??
       null,
-    generationMetadata: structuredClone(plan.metadata.generationMetadata),
+    generationMetadata,
     postprocessConfig: clonePostprocessConfig(plan.postprocess.config),
     autoFamilyRequestKey,
     usesSaveImageWebsocketOutputs: saveImageWebsocketNodeIds.size > 0,
@@ -1079,10 +1087,18 @@ export function buildExecutionStoreState(
         );
       }
 
+      const sampledMaskGrow = resolveSampledGenerationMaskGrow(
+        effectivePrepared.plan,
+        collectProvidedInputIds(
+          effectivePrepared.plan,
+          effectivePrepared.request,
+        ),
+      );
       const deliveryContext = buildGenerationDeliveryContext(
         resolvedPlan,
         resolvedWorkflow,
         autoFamilyRequestKey,
+        sampledMaskGrow,
       );
 
       submissionStarted = true;
@@ -1130,6 +1146,7 @@ export function buildExecutionStoreState(
         responseWithCachedPipelineOutputs,
         {
           autoFamilyRequestKey,
+          sampledMaskGrow,
         },
       );
       set({

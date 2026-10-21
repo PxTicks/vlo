@@ -714,10 +714,10 @@ export function createExtensionTimelineApi(
           // A generated asset carries its matte as a separate asset; place it
           // with the clip so the result matches a host-placed copy.
           const creation = asset.creationMetadata;
-          const generationMaskAssetId =
-            creation?.source === "generated"
-              ? creation.generationMaskAssetId
-              : undefined;
+          const generated =
+            creation?.source === "generated" ? creation : undefined;
+          const generationMaskAssetId = generated?.generationMaskAssetId;
+          const generationMaskGrow = generated?.generationMaskGrow;
           commands.push({
             kind: "create_clip",
             clip,
@@ -725,6 +725,9 @@ export function createExtensionTimelineApi(
               ? {}
               : { trackId: assertIdentifier(input.trackId, "Track ID") }),
             ...(generationMaskAssetId ? { generationMaskAssetId } : {}),
+            ...(generationMaskAssetId && generationMaskGrow
+              ? { generationMaskGrow }
+              : {}),
           });
           return clipId;
         },

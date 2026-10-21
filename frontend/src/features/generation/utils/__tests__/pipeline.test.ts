@@ -1387,6 +1387,97 @@ describe("generation pipeline", () => {
     });
   });
 
+  describe("generation mask grow", () => {
+    async function importWithGrow(options: {
+      sampledMaskGrow?: number;
+      attachMask?: boolean;
+      aspectRatioProcessing?: Record<string, unknown> | null;
+    }) {
+      const output = new File(["video"], "raw-output.mp4", { type: "video/mp4" });
+      const metadata = {
+        ...makeGenerationMetadata(),
+        ...(options.sampledMaskGrow !== undefined
+          ? { sampledMaskGrow: options.sampledMaskGrow }
+          : {}),
+        // A stale value from an earlier import must not survive or compound.
+        generationMaskGrow: 999,
+      };
+      mockFetchOutputAsFile.mockResolvedValue(output);
+      mockAddLocalAsset
+        .mockResolvedValueOnce({ id: "mask-asset" })
+        .mockResolvedValue({ id: "asset-raw-video" });
+
+      await frontendPostprocess(
+        [
+          {
+            filename: "ComfyUI_00001_.mp4",
+            subfolder: "video",
+            type: "output",
+            viewUrl: "/api/vlo-memory/view/raw-output",
+          },
+        ],
+        {
+          postprocessing: {
+            mode: "none",
+            panel_preview: "raw_outputs",
+            on_failure: "fallback_raw",
+            ...(options.attachMask === false
+              ? { attach_generation_mask: false }
+              : {}),
+          },
+          aspectRatioProcessing: (options.aspectRatioProcessing ??
+            null) as never,
+          generationMetadata: metadata,
+          previewFrameFiles: null,
+          preparedMaskFile: new File(["mask"], "prepared-mask.mp4", {
+            type: "video/mp4",
+          }),
+        },
+      );
+      return metadata;
+    }
+
+    it("scales the sampled grow to the delivered asset and rounds up", async () => {
+      const metadata = await importWithGrow({
+        sampledMaskGrow: 48,
+        aspectRatioProcessing: {
+          enabled: true,
+          strided: { width: 832, height: 480 },
+          postprocess: {
+            enabled: true,
+            mode: "stretch_exact",
+            apply_to: "all_visual_outputs",
+            target_width: 1250,
+            target_height: 720,
+          },
+        },
+      });
+      // 48 * max(1250 / 832, 720 / 480) = 72.1, rounded up.
+      expect(metadata.generationMaskGrow).toBe(73);
+      expect(metadata.sampledMaskGrow).toBe(48);
+      expect(mockAddLocalAsset).toHaveBeenLastCalledWith(
+        expect.any(File),
+        expect.objectContaining({
+          generationMaskAssetId: "mask-asset",
+          generationMaskGrow: 73,
+        }),
+      );
+    });
+
+    it("keeps sampled pixels when the output is not resized", async () => {
+      const metadata = await importWithGrow({ sampledMaskGrow: 48 });
+      expect(metadata.generationMaskGrow).toBe(48);
+    });
+
+    it("records no grow without a sampled grow or an attached mask", async () => {
+      expect((await importWithGrow({})).generationMaskGrow).toBeUndefined();
+      expect(
+        (await importWithGrow({ sampledMaskGrow: 48, attachMask: false }))
+          .generationMaskGrow,
+      ).toBeUndefined();
+    });
+  });
+
   it("returns a single-frame PNG with message when stitch mode has only one frame", async () => {
     mockFetchOutputAsFile.mockResolvedValue(
       new File(["frame-1"], "frame_0001.png", {

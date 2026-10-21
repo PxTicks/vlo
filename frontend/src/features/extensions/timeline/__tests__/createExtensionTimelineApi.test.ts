@@ -16,9 +16,11 @@ import type {
   ExtensionTimelineClip,
   MaskBooleanExpression,
   MaskTimelineClip,
+  StandardTimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
+import { insertTimelineAssetAtTime } from "../../../timeline/api";
 import { createExtensionTimelineApi } from "../createExtensionTimelineApi";
 import { extensionTransitionRegistry } from "../../../transitions/extensions/ExtensionTransitionRegistry";
 import { useAssetStore } from "../../../userAssets";
@@ -1103,6 +1105,70 @@ describe("createExtensionTimelineApi clip and track commands", () => {
     // Undo covers the clip and its mask as one entry.
     expect(useTimelineStore.getState().undo()).toBe(true);
     expect(useTimelineStore.getState().clips).toHaveLength(0);
+  });
+
+  it("seeds a generated asset's recorded mask grow as a host placement does", () => {
+    const generated = {
+      ...VIDEO_ASSET,
+      id: "generated-asset",
+      creationMetadata: {
+        source: "generated" as const,
+        workflowName: "inpaint",
+        inputs: [],
+        generationMaskAssetId: "matte-asset",
+        generationMaskGrow: 48,
+      },
+    };
+    useAssetStore.setState({ assets: [generated, AUDIO_ASSET] });
+    const api = createExtensionTimelineApi(createScope("example.importer"));
+    let clipId = "";
+
+    api.transaction("Place generated", (transaction) => {
+      clipId = transaction.createClip({
+        assetId: "generated-asset",
+        trackId: "track-visual",
+        startTicks: 0,
+      });
+    });
+
+    const edgeTransforms = (id: string) => {
+      const clip = useTimelineStore
+        .getState()
+        .clips.find(
+          (candidate): candidate is StandardTimelineClip =>
+            candidate.id === id && candidate.type !== "mask",
+        );
+      const composition = (clip?.components ?? []).find(
+        (component) => component.type === "mask_composition",
+      );
+      return composition?.type === "mask_composition"
+        ? composition.parameters.compositeTransformations.map(
+            ({ type, parameters }) => ({ type, parameters }),
+          )
+        : [];
+    };
+    const extensionEdges = edgeTransforms(clipId);
+    expect(extensionEdges).toEqual([
+      { type: "mask_grow", parameters: { amount: 48, invert: false } },
+      {
+        type: "feather",
+        parameters: { mode: "hard_outer", amount: 30, invert: false },
+      },
+    ]);
+
+    // The native Send to Timeline path seeds the same edges from the same asset.
+    insertTimelineAssetAtTime(generated, 10_000_000);
+    const nativeClip = useTimelineStore
+      .getState()
+      .clips.find(
+        (clip): clip is StandardTimelineClip =>
+          clip.id !== clipId &&
+          clip.type !== "mask" &&
+          "assetId" in clip &&
+          clip.assetId === "generated-asset",
+      );
+    expect(nativeClip).toBeDefined();
+    expect(edgeTransforms(nativeClip!.id)).toEqual(extensionEdges);
   });
 
   it("refuses an unknown asset and commits nothing", () => {

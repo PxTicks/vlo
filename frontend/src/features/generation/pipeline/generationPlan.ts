@@ -14,6 +14,8 @@ import {
   buildFrontendStateControlKey,
   buildFrontendStateDerivedWidgetKey,
   buildFrontendStateWidgetKey,
+  createFrontendRuleState,
+  evaluateGenerationMaskGrow,
 } from "../services/frontendRuleState";
 import {
   buildGeneratedCreationMetadata,
@@ -1138,11 +1140,35 @@ export async function prepareGenerationPlan(
   };
 }
 
+/**
+ * The workflow's declared generation mask grow for this run, in the pixels it
+ * samples at, or null when the rules declare none. It is resolved before
+ * submission so it can travel in the delivery context: a delivery recovered
+ * after a reload only has what the backend manifest holds. Import rescales it
+ * to the delivered asset (see postprocessors/importAssets.ts).
+ */
+export function resolveSampledGenerationMaskGrow(
+  plan: GenerationPlan,
+  providedInputIds: ReadonlySet<string>,
+): number | null {
+  const growPx = evaluateGenerationMaskGrow(
+    plan.workflow.workflowRules,
+    createFrontendRuleState(
+      providedInputIds,
+      plan.submission.frontendStateWidgetValues,
+      plan.submission.inputMetadata,
+    ),
+  );
+  return growPx !== null && growPx > 0 ? growPx : null;
+}
+
 export function buildSubmittedGeneration(
   prepared: PreparedGeneration,
   response: PromptResponse,
   options: {
     autoFamilyRequestKey?: string | null;
+    /** From {@link resolveSampledGenerationMaskGrow}, as sent with the delivery. */
+    sampledMaskGrow?: number | null;
   } = {},
 ): SubmittedGeneration {
   const responseWarnings = Array.isArray(response.workflow_warnings)
@@ -1190,6 +1216,9 @@ export function buildSubmittedGeneration(
     generationMetadata,
     appliedWidgetValues,
   );
+  if (options.sampledMaskGrow != null) {
+    generationMetadata.sampledMaskGrow = options.sampledMaskGrow;
+  }
 
   let preparedMaskFile = findPreparedMaskFallback(
     prepared.plan.preprocess.slotValues,

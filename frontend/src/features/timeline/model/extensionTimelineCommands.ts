@@ -127,6 +127,8 @@ export type ExtensionTimelineCommand =
       trackId?: string;
       /** Linked matte of a generated asset, resolved with the clip. */
       generationMaskAssetId?: string;
+      /** The asset's `generationMaskGrow`, seeded with the matte. */
+      generationMaskGrow?: number;
     }
   | {
       kind: "move_clip";
@@ -549,6 +551,7 @@ export function applyExtensionTimelineCommands(
           draft,
           candidate.id,
           command.generationMaskAssetId,
+          { growPx: command.generationMaskGrow },
         );
       }
       continue;

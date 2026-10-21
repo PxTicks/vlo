@@ -1,8 +1,8 @@
 {
   "id": "5307784b-d1d0-403e-9f5b-6d184c299f1a",
   "revision": 0,
-  "last_node_id": 104,
-  "last_link_id": 173,
+  "last_node_id": 116,
+  "last_link_id": 196,
   "nodes": [
     {
       "id": 3,
@@ -612,7 +612,8 @@
           "name": "MASK",
           "type": "MASK",
           "links": [
-            27
+            27,
+            182
           ]
         },
         {
@@ -818,7 +819,8 @@
           "name": "SAMPLER",
           "type": "SAMPLER",
           "links": [
-            40
+            40,
+            189
           ]
         }
       ],
@@ -999,8 +1001,8 @@
           "name": "output",
           "type": "LATENT",
           "links": [
-            43,
-            45
+            179,
+            192
           ]
         },
         {
@@ -1045,7 +1047,8 @@
           "name": "NOISE",
           "type": "NOISE",
           "links": [
-            38
+            38,
+            187
           ]
         }
       ],
@@ -1578,7 +1581,7 @@
           "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
-          "link": 45
+          "link": 196
         },
         {
           "localized_name": "vae",
@@ -1622,7 +1625,7 @@
           "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
-          "link": 43
+          "link": 195
         },
         {
           "localized_name": "vae",
@@ -2064,7 +2067,9 @@
           "name": "latent_mask",
           "type": "MASK",
           "links": [
-            96
+            96,
+            174,
+            175
           ]
         }
       ],
@@ -2121,7 +2126,8 @@
           "name": "model",
           "type": "MODEL",
           "links": [
-            52
+            52,
+            194
           ]
         }
       ],
@@ -3788,7 +3794,8 @@
           "name": "VAE",
           "type": "VAE",
           "links": [
-            151
+            151,
+            183
           ]
         }
       ],
@@ -4611,7 +4618,8 @@
           "name": "positive",
           "type": "CONDITIONING",
           "links": [
-            138
+            138,
+            186
           ]
         },
         {
@@ -5141,6 +5149,727 @@
       "widgets_values_named": {
         "expand": 0
       }
+    },
+    {
+      "id": 105,
+      "type": "vloGrowMask",
+      "pos": [
+        -1550,
+        6131.461225997933
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 75,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "mask",
+          "name": "mask",
+          "type": "MASK",
+          "link": 174
+        },
+        {
+          "localized_name": "expand",
+          "name": "expand",
+          "type": "INT",
+          "widget": {
+            "name": "expand"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            177
+          ]
+        }
+      ],
+      "title": "Seam band into kept area (latent cells)",
+      "properties": {
+        "Node name for S&R": "vloGrowMask",
+        "cnr_id": "comfyui-vlo",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        1
+      ],
+      "widgets_values_named": {
+        "expand": 1
+      }
+    },
+    {
+      "id": 106,
+      "type": "InvertMask",
+      "pos": [
+        -1550,
+        6271.461225997933
+      ],
+      "size": [
+        210,
+        26
+      ],
+      "flags": {},
+      "order": 76,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "mask",
+          "name": "mask",
+          "type": "MASK",
+          "link": 175
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            176
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "InvertMask",
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1"
+      }
+    },
+    {
+      "id": 107,
+      "type": "vloGrowMask",
+      "pos": [
+        -1220,
+        6271.461225997933
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 77,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "mask",
+          "name": "mask",
+          "type": "MASK",
+          "link": 176
+        },
+        {
+          "localized_name": "expand",
+          "name": "expand",
+          "type": "INT",
+          "widget": {
+            "name": "expand"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            178
+          ]
+        }
+      ],
+      "title": "Seam band into generated area (latent cells)",
+      "properties": {
+        "Node name for S&R": "vloGrowMask",
+        "cnr_id": "comfyui-vlo",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        4
+      ],
+      "widgets_values_named": {
+        "expand": 4
+      }
+    },
+    {
+      "id": 108,
+      "type": "MaskComposite",
+      "pos": [
+        -890,
+        6131.461225997933
+      ],
+      "size": [
+        270,
+        130
+      ],
+      "flags": {},
+      "order": 78,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "destination",
+          "name": "destination",
+          "type": "MASK",
+          "link": 177
+        },
+        {
+          "localized_name": "source",
+          "name": "source",
+          "type": "MASK",
+          "link": 178
+        },
+        {
+          "localized_name": "x",
+          "name": "x",
+          "type": "INT",
+          "widget": {
+            "name": "x"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "y",
+          "name": "y",
+          "type": "INT",
+          "widget": {
+            "name": "y"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "operation",
+          "name": "operation",
+          "type": "COMBO",
+          "widget": {
+            "name": "operation"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            180
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MaskComposite",
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1"
+      },
+      "title": "Seam band (snapped latent)",
+      "widgets_values": [
+        0,
+        0,
+        "multiply"
+      ],
+      "widgets_values_named": {
+        "x": 0,
+        "y": 0,
+        "operation": "multiply"
+      }
+    },
+    {
+      "id": 110,
+      "type": "SetLatentNoiseMask",
+      "pos": [
+        -560,
+        6131.461225997933
+      ],
+      "size": [
+        188.1373046875,
+        46
+      ],
+      "flags": {},
+      "order": 79,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "samples",
+          "name": "samples",
+          "type": "LATENT",
+          "link": 179
+        },
+        {
+          "localized_name": "mask",
+          "name": "mask",
+          "type": "MASK",
+          "link": 180
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "LATENT",
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            181
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SetLatentNoiseMask"
+      }
+    },
+    {
+      "id": 111,
+      "type": "vloSetAudioLatentBinaryMasks",
+      "pos": [
+        100,
+        6131.461225997933
+      ],
+      "size": [
+        325.5748046875,
+        218
+      ],
+      "flags": {},
+      "order": 80,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "audio_latent",
+          "name": "audio_latent",
+          "type": "LATENT",
+          "link": 181
+        },
+        {
+          "localized_name": "masks",
+          "name": "masks",
+          "type": "MASK",
+          "link": 182
+        },
+        {
+          "localized_name": "audio_vae",
+          "name": "audio_vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": 183
+        },
+        {
+          "localized_name": "mask_fps",
+          "name": "mask_fps",
+          "type": "FLOAT",
+          "widget": {
+            "name": "mask_fps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "threshold",
+          "name": "threshold",
+          "type": "FLOAT",
+          "widget": {
+            "name": "threshold"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "resize_mode",
+          "name": "resize_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "resize_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "existing_mask_mode",
+          "name": "existing_mask_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "existing_mask_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "layout_override",
+          "name": "layout_override",
+          "type": "COMBO",
+          "widget": {
+            "name": "layout_override"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "audio_latent_rate",
+          "name": "audio_latent_rate",
+          "type": "FLOAT",
+          "widget": {
+            "name": "audio_latent_rate"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "audio_latent",
+          "name": "audio_latent",
+          "type": "LATENT",
+          "links": [
+            191
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "vloSetAudioLatentBinaryMasks",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0"
+      },
+      "widgets_values": [
+        0,
+        0.5,
+        "nearest",
+        "overwrite",
+        "auto",
+        0
+      ],
+      "widgets_values_named": {
+        "mask_fps": 0,
+        "threshold": 0.5,
+        "resize_mode": "nearest",
+        "existing_mask_mode": "overwrite",
+        "layout_override": "auto",
+        "audio_latent_rate": 0
+      },
+      "title": "Hold audio in seam pass"
+    },
+    {
+      "id": 112,
+      "type": "BasicScheduler",
+      "pos": [
+        -560,
+        6391.461225997933
+      ],
+      "size": [
+        370,
+        130
+      ],
+      "flags": {},
+      "order": 81,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 184
+        },
+        {
+          "localized_name": "scheduler",
+          "name": "scheduler",
+          "type": "COMBO",
+          "widget": {
+            "name": "scheduler"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "steps",
+          "name": "steps",
+          "type": "INT",
+          "widget": {
+            "name": "steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "denoise",
+          "name": "denoise",
+          "type": "FLOAT",
+          "widget": {
+            "name": "denoise"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "SIGMAS",
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            190
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicScheduler"
+      },
+      "widgets_values": [
+        "simple",
+        4,
+        1.0
+      ],
+      "widgets_values_named": {
+        "scheduler": "simple",
+        "steps": 4,
+        "denoise": 1.0
+      },
+      "title": "Seam pass schedule"
+    },
+    {
+      "id": 113,
+      "type": "BasicGuider",
+      "pos": [
+        -230,
+        6391.461225997933
+      ],
+      "size": [
+        360,
+        60
+      ],
+      "flags": {},
+      "order": 82,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 185
+        },
+        {
+          "localized_name": "conditioning",
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 186
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "GUIDER",
+          "name": "GUIDER",
+          "type": "GUIDER",
+          "links": [
+            188
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicGuider"
+      },
+      "title": "Seam pass guider"
+    },
+    {
+      "id": 114,
+      "type": "SamplerCustomAdvanced",
+      "pos": [
+        430,
+        6131.461225997933
+      ],
+      "size": [
+        230,
+        140
+      ],
+      "flags": {},
+      "order": 83,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "noise",
+          "name": "noise",
+          "type": "NOISE",
+          "link": 187
+        },
+        {
+          "localized_name": "guider",
+          "name": "guider",
+          "type": "GUIDER",
+          "link": 188
+        },
+        {
+          "localized_name": "sampler",
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": 189
+        },
+        {
+          "localized_name": "sigmas",
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 190
+        },
+        {
+          "localized_name": "latent_image",
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 191
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "output",
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            193
+          ]
+        },
+        {
+          "localized_name": "denoised_output",
+          "name": "denoised_output",
+          "type": "LATENT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SamplerCustomAdvanced"
+      },
+      "title": "Seam pass sampler"
+    },
+    {
+      "id": 115,
+      "type": "LazySwitchKJ",
+      "pos": [
+        760,
+        6131.461225997933
+      ],
+      "size": [
+        270,
+        80
+      ],
+      "flags": {},
+      "order": 84,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "on_false",
+          "name": "on_false",
+          "type": "*",
+          "link": 192
+        },
+        {
+          "localized_name": "on_true",
+          "name": "on_true",
+          "type": "*",
+          "link": 193
+        },
+        {
+          "localized_name": "switch",
+          "name": "switch",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "switch"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "*",
+          "name": "*",
+          "type": "*",
+          "links": [
+            195,
+            196
+          ]
+        }
+      ],
+      "title": "Use seam pass",
+      "properties": {
+        "Node name for S&R": "LazySwitchKJ",
+        "cnr_id": "comfyui-kjnodes",
+        "ver": "f12007dd57bd539052d3a92597b35365a49e7b06",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        false
+      ],
+      "widgets_values_named": {
+        "switch": false
+      }
+    },
+    {
+      "id": 116,
+      "type": "vloMiniMaxH3LoraLoader",
+      "pos": [
+        -560,
+        6591.461225997933
+      ],
+      "size": [
+        320,
+        106
+      ],
+      "flags": {},
+      "order": 85,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 194
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "base",
+          "name": "base",
+          "type": "COMBO",
+          "widget": {
+            "name": "base"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            184,
+            185
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "vloMiniMaxH3LoraLoader",
+        "cnr_id": "comfyui-vlo",
+        "models": [
+          {
+            "name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+            "url": "https://huggingface.co/larryvrh/MiniMax-H3-Turbo-Lora/resolve/main/minimax_h3_turbo_v4_step600_ema.safetensors",
+            "directory": "loras"
+          }
+        ]
+      },
+      "widgets_values": [
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
+        1,
+        "auto"
+      ],
+      "widgets_values_named": {
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+        "strength_model": 1,
+        "base": "auto"
+      },
+      "title": "Seam pass turbo LoRA"
     }
   ],
   "links": [
@@ -5279,22 +6008,6 @@
       39,
       3,
       "SIGMAS"
-    ],
-    [
-      43,
-      39,
-      0,
-      40,
-      0,
-      "LATENT"
-    ],
-    [
-      45,
-      39,
-      0,
-      41,
-      0,
-      "LATENT"
     ],
     [
       51,
@@ -5919,6 +6632,190 @@
       55,
       0,
       "IMAGE"
+    ],
+    [
+      174,
+      66,
+      0,
+      105,
+      0,
+      "MASK"
+    ],
+    [
+      175,
+      66,
+      0,
+      106,
+      0,
+      "MASK"
+    ],
+    [
+      176,
+      106,
+      0,
+      107,
+      0,
+      "MASK"
+    ],
+    [
+      177,
+      105,
+      0,
+      108,
+      0,
+      "MASK"
+    ],
+    [
+      178,
+      107,
+      0,
+      108,
+      1,
+      "MASK"
+    ],
+    [
+      179,
+      39,
+      0,
+      110,
+      0,
+      "LATENT"
+    ],
+    [
+      180,
+      108,
+      0,
+      110,
+      1,
+      "MASK"
+    ],
+    [
+      181,
+      110,
+      0,
+      111,
+      0,
+      "LATENT"
+    ],
+    [
+      182,
+      26,
+      0,
+      111,
+      1,
+      "MASK"
+    ],
+    [
+      183,
+      94,
+      0,
+      111,
+      2,
+      "VAE"
+    ],
+    [
+      184,
+      116,
+      0,
+      112,
+      0,
+      "MODEL"
+    ],
+    [
+      185,
+      116,
+      0,
+      113,
+      0,
+      "MODEL"
+    ],
+    [
+      186,
+      33,
+      0,
+      113,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      187,
+      43,
+      0,
+      114,
+      0,
+      "NOISE"
+    ],
+    [
+      188,
+      113,
+      0,
+      114,
+      1,
+      "GUIDER"
+    ],
+    [
+      189,
+      36,
+      0,
+      114,
+      2,
+      "SAMPLER"
+    ],
+    [
+      190,
+      112,
+      0,
+      114,
+      3,
+      "SIGMAS"
+    ],
+    [
+      191,
+      111,
+      0,
+      114,
+      4,
+      "LATENT"
+    ],
+    [
+      192,
+      39,
+      0,
+      115,
+      0,
+      "LATENT"
+    ],
+    [
+      193,
+      114,
+      0,
+      115,
+      1,
+      "LATENT"
+    ],
+    [
+      194,
+      47,
+      0,
+      116,
+      0,
+      "MODEL"
+    ],
+    [
+      195,
+      115,
+      0,
+      40,
+      0,
+      "LATENT"
+    ],
+    [
+      196,
+      115,
+      0,
+      41,
+      0,
+      "LATENT"
     ]
   ],
   "groups": [
@@ -6016,6 +6913,18 @@
         836.5860070711196
       ],
       "color": "#355",
+      "flags": {}
+    },
+    {
+      "id": 10,
+      "title": "Seam pass",
+      "bounding": [
+        -1590,
+        6051.461225997933,
+        2760,
+        720.0
+      ],
+      "color": "#8A8",
       "flags": {}
     }
   ],

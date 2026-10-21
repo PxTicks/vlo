@@ -793,6 +793,44 @@ class EffectSwitch(WorkflowRuleBaseModel):
     cases: list[EffectSwitchCase] = Field(default_factory=list)
 
 
+class GenerationMaskGrowTerm(WorkflowRuleBaseModel):
+    """One addend of a generation mask grow: a panel value times ``scale``, or a constant."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ref: StateReference | None = None
+    value: float | None = Field(default=None, allow_inf_nan=False)
+    scale: float = Field(default=1.0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "GenerationMaskGrowTerm":
+        if (self.ref is None) == (self.value is None):
+            raise ValueError("A generation mask grow term takes exactly one of ref or value")
+        return self
+
+
+class GenerationMaskGrowCase(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    when: ConditionExpression
+    terms: list[GenerationMaskGrowTerm] = Field(min_length=1)
+
+
+class WorkflowGenerationMaskConfig(WorkflowRuleBaseModel):
+    """How the mask attached to a delivered asset is shaped on the timeline.
+
+    ``grow`` is first-match-wins. The matching case's terms are summed into a
+    grow in generation pixels (the size the workflow samples at), which the
+    frontend rescales to the delivered asset and seeds on the clip beneath its
+    default feather. A workflow that repaints past the mask, such as a seam
+    pass, declares how far here so the patch keeps that repaint.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    grow: list[GenerationMaskGrowCase] = Field(default_factory=list)
+
+
 class WorkflowLoraStack(WorkflowRuleBaseModel):
     """Interchangeable LoRA loaders the panel presents as one growable list.
 
@@ -842,6 +880,7 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     media_fallbacks: list[WorkflowMediaFallback] = Field(default_factory=list)
     pipeline: list[WorkflowPipelineStage] = Field(default_factory=list)
     lora_stacks: list[WorkflowLoraStack] = Field(default_factory=list)
+    generation_mask: WorkflowGenerationMaskConfig | None = None
 
     @model_validator(mode="before")
     @classmethod

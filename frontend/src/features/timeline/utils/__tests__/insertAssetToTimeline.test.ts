@@ -133,6 +133,59 @@ describe("insertAssetToTimeline", () => {
     ]);
   });
 
+  it("grows the generated mask under the feather by the asset's recorded grow", () => {
+    const asset: Asset = {
+      id: "generated_asset",
+      hash: "hash-generated",
+      name: "generated.mp4",
+      type: "video",
+      src: "blob:generated",
+      createdAt: 0,
+      creationMetadata: {
+        source: "generated",
+        workflowName: "SeamPass",
+        inputs: [],
+        generationMaskAssetId: "generation-mask-asset",
+        generationMaskGrow: 48,
+      },
+    };
+
+    attachGenerationMask("clip_1", asset);
+
+    const parentClip = useTimelineStore
+      .getState()
+      .clips.find(
+        (clip): clip is StandardTimelineClip =>
+          clip.id === "clip_1" && clip.type !== "mask",
+      );
+    const expected = [
+      expect.objectContaining({
+        type: "mask_grow",
+        isEnabled: true,
+        parameters: { amount: 48, invert: false },
+      }),
+      expect.objectContaining({
+        type: "feather",
+        parameters: { mode: "hard_outer", amount: 30, invert: false },
+      }),
+    ];
+    expect(getCompositeTransforms(parentClip)).toEqual(expected);
+
+    // The extension placement path seeds the same edges.
+    const draft = {
+      tracks: [createTrack("track_1")],
+      clips: [createParentClip()],
+    } as unknown as Parameters<typeof attachGenerationMaskToDraft>[0];
+    attachGenerationMaskToDraft(draft, "clip_1", "generation-mask-asset", {
+      growPx: 48,
+    });
+    const draftParent = draft.clips.find(
+      (clip): clip is StandardTimelineClip =>
+        clip.id === "clip_1" && clip.type !== "mask",
+    );
+    expect(getCompositeTransforms(draftParent)).toEqual(expected);
+  });
+
   it("attaches generated masks switched off for disabled placement", () => {
     const asset: Asset = {
       id: "generated_asset",

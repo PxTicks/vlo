@@ -76,7 +76,7 @@ export function attachGenerationMask(
     if (existingTransforms.length === 0) {
       store.setClipMaskCompositeTransforms(
         clipId,
-        createDefaultGeneratedMaskTransforms(),
+        createDefaultGeneratedMaskTransforms(meta.generationMaskGrow),
       );
     }
   }

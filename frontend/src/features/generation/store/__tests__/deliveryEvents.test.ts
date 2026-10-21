@@ -430,6 +430,51 @@ describe("deliveryEvents", () => {
     await flushMicrotasks();
   });
 
+  it("imports a delivery recovered after a reload with the manifest's mask grow", async () => {
+    // After a reload the store has no local job, so import runs from the
+    // manifest alone. The mask grow has to ride in its generation_metadata,
+    // with the aspect-ratio record import rescales it by.
+    useGenerationStore.setState({ jobs: new Map(), activeJobId: null });
+    const aspectRatioProcessing = {
+      enabled: true,
+      strided: { width: 832, height: 480 },
+    };
+    mockFrontendPostprocess.mockResolvedValue({
+      postprocessedPreview: null,
+      postprocessError: null,
+      importedAssetIds: ["asset-1"],
+    });
+    mockWaitForAssetsPersistence.mockResolvedValue(undefined);
+
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "delivery_update",
+      data: {
+        delivery: makeCompletedManifest({
+          generation_metadata: {
+            source: "generated",
+            workflowName: "Workflow One",
+            inputs: [],
+            sampledMaskGrow: 48,
+          },
+          aspect_ratio_processing: aspectRatioProcessing as never,
+        }),
+      },
+    });
+    await flushMicrotasks();
+
+    expect(mockFrontendPostprocess).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        aspectRatioProcessing,
+        generationMetadata: expect.objectContaining({ sampledMaskGrow: 48 }),
+      }),
+    );
+  });
+
   it("preserves frontend-replayed applied widget values over stale manifest replay state", async () => {
     useGenerationStore.setState({
       jobs: new Map<string, GenerationJob>([

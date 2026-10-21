@@ -592,19 +592,33 @@ describe("shipped workflow LoRA stacks", () => {
     return { rules, widgetInputs, catalogue };
   }
 
-  const minimaxWorkflows = [
+  const minimaxWorkflows: Array<{
+    workflow: string;
+    nodes: string[];
+    others?: string[];
+  }> = [
     { workflow: "i2v", nodes: ["150", "153", "154", "155"] },
     { workflow: "r2v", nodes: ["148", "150", "151", "152"] },
-    { workflow: "inpaint", nodes: ["99", "100", "101", "102"] },
-    { workflow: "inpaint_flf2va", nodes: ["99", "100", "101", "102"] },
+    // The seam pass carries its own LoRA (116), outside the stack.
+    { workflow: "inpaint", nodes: ["99", "100", "101", "102"], others: ["116"] },
+    {
+      workflow: "inpaint_flf2va",
+      nodes: ["99", "100", "101", "102"],
+      others: ["116"],
+    },
     { workflow: "fun_controlnet_union", nodes: ["99", "111", "112", "113"] },
     { workflow: "masked_guide", nodes: ["106", "107", "108", "109"] },
     { workflow: "ttm", nodes: ["23", "41", "42", "43"] },
   ];
-  const workflows = [
-    ...minimaxWorkflows.map(({ workflow, nodes }) => ({
+  const workflows: Array<{
+    workflow: string;
+    nodes: string[];
+    others?: string[];
+  }> = [
+    ...minimaxWorkflows.map(({ workflow, nodes, others }) => ({
       workflow: `vlo_minimax_h3_${workflow}`,
       nodes,
+      others,
     })),
     {
       workflow: "vlo_krea2_turbo",
@@ -622,7 +636,7 @@ describe("shipped workflow LoRA stacks", () => {
 
   it.each(cases)(
     "reveals $profile/$workflow's four loaders one at a time and packs from the front",
-    ({ profile, workflow, nodes }) => {
+    ({ profile, workflow, nodes, others = [] }) => {
       const { rules, widgetInputs, catalogue } = shippedWidgets(profile, workflow);
       const targets = mountedTargets(widgetInputs);
       expect(rules.lora_stacks?.[0].nodes).toEqual(nodes);
@@ -633,7 +647,7 @@ describe("shipped workflow LoRA stacks", () => {
           .filter((widget) => widget.param === "strength_model")
           .map((widget) => widget.nodeId)
           .sort(),
-      ).toEqual([...nodes].sort());
+      ).toEqual([...nodes, ...others].sort());
 
       expect(
         visibleSlots(presentLoraStackWidgetInputs(widgetInputs, rules, targets)),

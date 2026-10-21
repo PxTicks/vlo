@@ -359,6 +359,37 @@ export function evaluateEffectSwitches(
   return { bypass, widgetOverrides };
 }
 
+/**
+ * The grow a workflow declares for its attached generation mask, in
+ * generation pixels: the summed terms of the first `generation_mask.grow`
+ * case that matches, or null when none does. A term whose reference does not
+ * resolve to a number adds nothing.
+ */
+export function evaluateGenerationMaskGrow(
+  rules: WorkflowRules | null | undefined,
+  state: FrontendRuleState,
+): number | null {
+  for (const growCase of rules?.generation_mask?.grow ?? []) {
+    if (!evaluateCondition(growCase.when, state)) {
+      continue;
+    }
+
+    let total = 0;
+    for (const term of growCase.terms) {
+      const base = term.ref
+        ? coerceNumeric(resolveStateReference(term.ref, state))
+        : coerceNumeric(term.value);
+      const scale = coerceNumeric(term.scale ?? 1);
+      if (base !== null && scale !== null) {
+        total += base * scale;
+      }
+    }
+    return total;
+  }
+
+  return null;
+}
+
 export function evaluateWidgetDefaultOverridesFromState(
   rules: WorkflowRules | null | undefined,
   state: FrontendRuleState,

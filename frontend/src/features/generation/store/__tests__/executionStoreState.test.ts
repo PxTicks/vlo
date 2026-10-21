@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   createGenerationPlan: vi.fn(),
   prepareGenerationPlan: vi.fn(),
   buildSubmittedGeneration: vi.fn(),
+  resolveSampledGenerationMaskGrow: vi.fn(),
   buildGenerationPreprocessCacheKey: vi.fn(),
   buildGenerationPreprocessCacheEntry: vi.fn(),
   mergeCachedPipelineOutputsIntoResponse: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock("../../pipeline/generationPlan", () => ({
   createGenerationPlan: mocks.createGenerationPlan,
   prepareGenerationPlan: mocks.prepareGenerationPlan,
   buildSubmittedGeneration: mocks.buildSubmittedGeneration,
+  resolveSampledGenerationMaskGrow: mocks.resolveSampledGenerationMaskGrow,
   buildGenerationPreprocessCacheKey: mocks.buildGenerationPreprocessCacheKey,
   buildGenerationPreprocessCacheEntry: mocks.buildGenerationPreprocessCacheEntry,
   mergeCachedPipelineOutputsIntoResponse:
@@ -273,6 +275,7 @@ describe("buildExecutionStoreState", () => {
     mocks.projectState.project = { id: "project-1" };
     const plan = makePlan();
     mocks.createGenerationPlan.mockReturnValue(plan);
+    mocks.resolveSampledGenerationMaskGrow.mockReturnValue(null);
     mocks.prepareGenerationPlan.mockResolvedValue({
       plan,
       request: {
@@ -356,6 +359,29 @@ describe("buildExecutionStoreState", () => {
       },
     );
     globalThis.URL.revokeObjectURL = vi.fn();
+  });
+
+  it("sends the sampled mask grow with the delivery and records it on the job", async () => {
+    // A delivery recovered after a reload is imported from the backend
+    // manifest, which only holds what the delivery context carried.
+    mocks.resolveSampledGenerationMaskGrow.mockReturnValue(48);
+    const harness = createHarness({});
+
+    await expect(harness.actions.submitGeneration({})).resolves.toBe("prompt-1");
+
+    expect(mocks.generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryContext: expect.objectContaining({
+          generationMetadata: expect.objectContaining({ sampledMaskGrow: 48 }),
+        }),
+      }),
+      expect.anything(),
+    );
+    expect(mocks.buildSubmittedGeneration).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ sampledMaskGrow: 48 }),
+    );
   });
 
   it("submits a prepared generation and creates its delivery job", async () => {

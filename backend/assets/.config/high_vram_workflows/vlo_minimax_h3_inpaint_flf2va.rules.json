@@ -172,6 +172,122 @@
         }
       }
     },
+    "115": {
+      "widgets": {
+        "switch": {
+          "label": "Run seam pass",
+          "value_type": "boolean",
+          "default": false,
+          "section_id": "advanced_settings",
+          "group_id": "seam_pass",
+          "group_title": "Seam pass",
+          "group_order": 3
+        }
+      }
+    },
+    "105": {
+      "widgets": {
+        "expand": {
+          "label": "Band into kept area",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 8,
+          "step": 1,
+          "default": 1,
+          "section_id": "advanced_settings",
+          "group_id": "seam_pass",
+          "group_title": "Seam pass",
+          "group_order": 3,
+          "display_unit": {
+            "scale": 16,
+            "unit": "px",
+            "precision": 0
+          }
+        }
+      }
+    },
+    "107": {
+      "widgets": {
+        "expand": {
+          "label": "Band into generated area",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 8,
+          "step": 1,
+          "default": 4,
+          "section_id": "advanced_settings",
+          "group_id": "seam_pass",
+          "group_title": "Seam pass",
+          "group_order": 3,
+          "display_unit": {
+            "scale": 16,
+            "unit": "px",
+            "precision": 0
+          }
+        }
+      }
+    },
+    "112": {
+      "widgets": {
+        "denoise": {
+          "label": "Seam pass denoise",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0.01,
+          "max": 1,
+          "step": 0.01,
+          "default": 1,
+          "section_id": "advanced_settings",
+          "group_id": "seam_pass",
+          "group_title": "Seam pass",
+          "group_order": 3
+        },
+        "steps": {
+          "label": "Seam pass steps",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 30,
+          "step": 1,
+          "default": 4,
+          "section_id": "advanced_settings",
+          "group_id": "seam_pass",
+          "group_title": "Seam pass",
+          "group_order": 3
+        }
+      }
+    },
+    "116": {
+      "widgets": {
+        "lora_name": {
+          "label": "Seam pass LoRA",
+          "section_id": "advanced_settings",
+          "group_id": "seam_pass",
+          "group_title": "Seam pass",
+          "group_order": 3
+        },
+        "strength_model": {
+          "label": "Seam pass LoRA strength",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 2,
+          "step": 0.05,
+          "default": 1,
+          "section_id": "advanced_settings",
+          "group_id": "seam_pass",
+          "group_title": "Seam pass",
+          "group_order": 3
+        }
+      }
+    },
     "29": {
       "widgets": {
         "switch": {
@@ -221,6 +337,15 @@
       "group_id": "mask",
       "group_title": "Mask",
       "group_order": 2
+    },
+    "seam_lora_enabled": {
+      "label": "Use LoRA in seam pass",
+      "value_type": "boolean",
+      "default": true,
+      "section_id": "advanced_settings",
+      "group_id": "seam_pass",
+      "group_title": "Seam pass",
+      "group_order": 3
     }
   },
   "validation": {
@@ -318,6 +443,35 @@
       "bypass": [
         "104"
       ]
+    },
+    {
+      "when": {
+        "kind": "any_of",
+        "conditions": [
+          {
+            "kind": "compare",
+            "ref": {
+              "kind": "frontend_control",
+              "control_id": "seam_lora_enabled"
+            },
+            "operator": "eq",
+            "value": false
+          },
+          {
+            "kind": "compare",
+            "ref": {
+              "kind": "workflow_param",
+              "node_id": "115",
+              "param": "switch"
+            },
+            "operator": "eq",
+            "value": false
+          }
+        ]
+      },
+      "bypass": [
+        "116"
+      ]
     }
   ],
   "effect_switches": [
@@ -385,6 +539,42 @@
       ]
     }
   ],
+  "generation_mask": {
+    "grow": [
+      {
+        "when": {
+          "kind": "compare",
+          "ref": {
+            "kind": "workflow_param",
+            "node_id": "115",
+            "param": "switch"
+          },
+          "operator": "eq",
+          "value": true
+        },
+        "terms": [
+          {
+            "ref": {
+              "kind": "workflow_param",
+              "node_id": "103",
+              "param": "expand"
+            }
+          },
+          {
+            "value": 32
+          },
+          {
+            "ref": {
+              "kind": "workflow_param",
+              "node_id": "105",
+              "param": "expand"
+            },
+            "scale": 16
+          }
+        ]
+      }
+    ]
+  },
   "slots": {},
   "pipeline": [
     {

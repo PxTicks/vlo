@@ -334,6 +334,17 @@ describe("workflowState rule pruning", () => {
       ],
       media_fallbacks: [{ kind: "dummy", node_id: "1", input_type: "image" }],
       lora_stacks: [{ id: "loras", nodes: ["1"] }],
+      generation_mask: {
+        grow: [
+          {
+            when: { kind: "always" },
+            terms: [
+              { ref: { kind: "workflow_param", node_id: "1", param: "expand" } },
+              { value: 32 },
+            ],
+          },
+        ],
+      },
     } as unknown as WorkflowRules;
 
     // Keep the fixture honest as the schema grows.

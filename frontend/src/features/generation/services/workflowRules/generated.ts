@@ -55,6 +55,17 @@ export interface FrontendControlStateReference {
   control_id: string;
 }
 
+export interface GenerationMaskGrowCase {
+  when: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot;
+  terms: Array<GenerationMaskGrowTerm>;
+}
+
+export interface GenerationMaskGrowTerm {
+  ref?: WorkflowParamValueReference | PipelineControlReference | FrontendControlStateReference | DerivedWidgetStateReference | InputMetadataReference | null;
+  value?: number | null;
+  scale?: number;
+}
+
 export interface InputMetadataReference {
   kind?: "input_metadata";
   input: string;
@@ -217,6 +228,10 @@ export interface WorkflowFrontendControl {
   true_value?: unknown | null;
   false_value?: unknown | null;
   default_overrides?: Array<WorkflowRuleWidgetDefaultOverride> | null;
+}
+
+export interface WorkflowGenerationMaskConfig {
+  grow?: Array<GenerationMaskGrowCase>;
 }
 
 export interface WorkflowInputCondition {
@@ -473,4 +488,5 @@ export interface WorkflowRules {
   media_fallbacks?: Array<WorkflowMediaFallback>;
   pipeline?: Array<WorkflowMaskProcessingStage | WorkflowAspectRatioStage | WorkflowOutputAssemblyStage>;
   lora_stacks?: Array<WorkflowLoraStack>;
+  generation_mask?: WorkflowGenerationMaskConfig | null;
 }

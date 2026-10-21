@@ -353,6 +353,7 @@ const PRUNED_RULE_SECTIONS = [
   "pipeline",
   "media_fallbacks",
   "lora_stacks",
+  "generation_mask",
 ] as const satisfies readonly (keyof WorkflowRules)[];
 
 export const PRUNED_WORKFLOW_RULE_SECTIONS: readonly string[] =
@@ -481,6 +482,11 @@ export function pruneWorkflowRulesForWorkflows(
         stage !== null,
     );
   const loraStacks = pruneLoraStacks(rules.lora_stacks, workflowNodeIds);
+  // A grow case that reads a missing node would undercount the repaint it
+  // covers, so it goes whole, like a rewrite.
+  const generationMaskGrow = (rules.generation_mask?.grow ?? []).filter(
+    (growCase) => isRuleFragmentApplicable(growCase, workflowNodeIds),
+  );
 
   const referencedFrontendControlIds = new Set<string>();
   collectReferencedFrontendControlIds(
@@ -490,6 +496,7 @@ export function pruneWorkflowRulesForWorkflows(
       rewrites,
       effect_switches: effectSwitches,
       pipeline,
+      generation_mask: generationMaskGrow,
     },
     referencedFrontendControlIds,
   );
@@ -535,6 +542,9 @@ export function pruneWorkflowRulesForWorkflows(
       pipeline,
       ...(mediaFallbacks.length > 0 ? { media_fallbacks: mediaFallbacks } : {}),
       ...(loraStacks.length > 0 ? { lora_stacks: loraStacks } : {}),
+      ...(generationMaskGrow.length > 0
+        ? { generation_mask: { grow: generationMaskGrow } }
+        : {}),
     }),
   );
 }

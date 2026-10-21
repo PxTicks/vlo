@@ -152,6 +152,19 @@ export interface GeneratedCreationMetadata {
   replayState?: GeneratedCreationReplayState;
   maskCropMetadata?: MaskCropMetadata;
   generationMaskAssetId?: string;
+  /**
+   * Pixels of this asset the attached generation mask is grown by when
+   * placed: how far the workflow repainted past the mask, from its
+   * `generation_mask` rules. Absent means no grow. Set on import from
+   * {@link sampledMaskGrow}.
+   */
+  generationMaskGrow?: number;
+  /**
+   * The same grow in the pixels the workflow sampled at. Resolved before
+   * submission so the backend delivery manifest carries it; import derives
+   * {@link generationMaskGrow} from it.
+   */
+  sampledMaskGrow?: number;
   /** The ComfyUI API prompt (node_id → {class_type, inputs}) that was executed. */
   comfyuiPrompt?: Record<string, unknown>;
   /** The authored ComfyUI visual workflow graph (LiteGraph format) used for editing/replay. */

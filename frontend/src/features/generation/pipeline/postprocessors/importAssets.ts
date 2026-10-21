@@ -2,6 +2,7 @@ import type { AssetFamily, CreationMetadata } from "../../../../types/Asset";
 import { isAssetFamilyCompatibilityComplete } from "../../../../shared/utils/assetFamilies";
 import { getOutputMediaKindFromFile } from "../../constants/mediaKinds";
 import type { FrontendPostprocessContext, Processor } from "../types";
+import { resolveResizeTarget } from "../utils/media";
 import {
   buildGenerationFamilyAutoMatchKey,
   resolveFamilyForGenerationMatchKey,
@@ -47,6 +48,31 @@ async function ingestMaskAsset(
   if (maskAsset) {
     ctx.generationMetadata.generationMaskAssetId = maskAsset.id;
   }
+}
+
+/**
+ * Turn the run's sampled-size mask grow into pixels of the delivered asset,
+ * whose resolution a clip's mask edges are measured in. Rounded up, since the
+ * grow has to cover a repaint. Always derived from `sampledMaskGrow` (never
+ * from a previous result) so a retried import cannot scale it twice.
+ */
+function resolveAssetMaskGrow(ctx: FrontendPostprocessContext): void {
+  const metadata = ctx.generationMetadata;
+  delete metadata.generationMaskGrow;
+  const sampledGrow = metadata.sampledMaskGrow;
+  if (!metadata.generationMaskAssetId) return;
+  if (typeof sampledGrow !== "number" || !(sampledGrow > 0)) return;
+
+  const sampled = ctx.aspectRatioProcessing?.strided;
+  const delivered = resolveResizeTarget(ctx.aspectRatioProcessing);
+  const scale =
+    sampled && delivered && sampled.width > 0 && sampled.height > 0
+      ? Math.max(
+          delivered.width / sampled.width,
+          delivered.height / sampled.height,
+        )
+      : 1;
+  metadata.generationMaskGrow = Math.ceil(sampledGrow * scale);
 }
 
 async function ingestGeneratedAsset(
@@ -156,6 +182,7 @@ export const importAssets: Processor<FrontendPostprocessContext> = {
       "previewFrameFiles",
       "preparedMaskFile",
       "packagedVideoCompatibility",
+      "aspectRatioProcessing",
     ],
     writes: ["importedAssetIds", "postprocessedPreview", "generationMetadata"],
     description:
@@ -190,6 +217,7 @@ export const importAssets: Processor<FrontendPostprocessContext> = {
     // multiple generated masks per run, this shared metadata flow must become
     // per-output instead.
     await ingestMaskAsset(ctx, addLocalAsset);
+    resolveAssetMaskGrow(ctx);
 
     if (ctx.packagedVideo) {
       const packagedAsset = await ingestGeneratedAsset(

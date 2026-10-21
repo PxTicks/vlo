@@ -1312,7 +1312,12 @@ export function GenerationPanel() {
         </Box>
       )}
 
-      <ComfyuiNodePackNotice report={runtimeStatus?.comfyui.vloNodePack} />
+      <ComfyuiNodePackNotice
+        report={runtimeStatus?.comfyui.vloNodePack}
+        onUpdateFinished={() =>
+          void useGenerationStore.getState().refreshRuntimeStatus()
+        }
+      />
 
       {/* Workflow Selector */}
       <Box sx={{ px: 2, pb: 2 }}>

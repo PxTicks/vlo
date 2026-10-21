@@ -100,6 +100,8 @@ export interface ComfyUiNodePackReport {
   path: string | null;
   /** Null when the pack is updated from ComfyUI-Manager instead. */
   updateCommand: string | null;
+  /** vlo cloned this pack, so it can update it from the app. */
+  managed: boolean;
 }
 
 export interface RuntimeStatus {

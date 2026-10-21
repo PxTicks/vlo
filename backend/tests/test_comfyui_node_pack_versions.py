@@ -158,6 +158,7 @@ def test_a_current_git_clone_is_ok(comfyui_dir: Path):
         "installedVersion": COMFYUI_VLO_MINIMUM_VERSION,
         "path": str(pack_dir),
         "updateCommand": None,
+        "managed": False,
     }
 
 

@@ -88,6 +88,7 @@ def fake_node_pack_report():
         "installedVersion": "0.3.0",
         "path": "/tmp/comfy/custom_nodes/ComfyUI-vlo",
         "updateCommand": None,
+        "managed": False,
     }
 
 

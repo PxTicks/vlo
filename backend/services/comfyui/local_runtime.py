@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -15,9 +16,17 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict
 from urllib.parse import urlparse
 
+import httpx
+
 from config import RUNTIME_ROOT
 from services.comfyui.frontend_settings import seed_managed_frontend_settings
+from services.comfyui.install_layout import resolve_comfyui_install_path
 from services.comfyui.install_output import InstallOutputTracker
+from services.comfyui.managed_install import (
+    find_managed_node_pack,
+    record_managed_node_pack,
+)
+from services.comfyui.node_pack_versions import inspect_comfyui_vlo
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +87,10 @@ _LAYOUT_MARKERS = ("comfy", "nodes.py", "server.py", "folder_paths.py")
 # shipping a large custom-node import dump on every status poll.
 _LAUNCH_LOG_TAIL_BYTES = 16 * 1024
 _LAUNCH_LOG_TAIL_LINES = 20
+# How long ComfyUI gets to exit after SIGTERM before it is killed. It holds no
+# state worth a long wait: queued prompts are lost either way.
+_COMFYUI_STOP_TIMEOUT_SECONDS = 15
+_GIT_QUERY_TIMEOUT_SECONDS = 60
 # ComfyUI colours its log levels even when writing to a file.
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _VERIFICATION_CACHE_LOCK = threading.Lock()
@@ -94,6 +107,7 @@ InstallPhase = Literal[
     "cloning",
     "creating_environment",
     "installing_requirements",
+    "updating_nodes",
     "complete",
     "failed",
 ]
@@ -173,33 +187,6 @@ def get_cached_comfyui_install_verification(
     with _VERIFICATION_CACHE_LOCK:
         verification = _VERIFICATION_CACHE.get(key)
         return _copy_verification(verification) if verification else None
-
-
-def _candidate_install_paths(path: Path) -> list[Path]:
-    expanded = path.expanduser()
-    candidates = [expanded]
-    nested = expanded / "ComfyUI"
-    if nested != expanded:
-        candidates.append(nested)
-    return candidates
-
-
-def resolve_comfyui_install_path(path: str | Path) -> Path | None:
-    """The ComfyUI checkout a configured directory refers to, if any.
-
-    Accepts the checkout itself or a folder holding it as ``ComfyUI/`` — the
-    layout of the Windows portable bundle — and stats only, so it is cheap
-    enough for polled status routes.
-    """
-
-    return next(
-        (
-            candidate
-            for candidate in _candidate_install_paths(Path(path))
-            if (candidate / "main.py").is_file()
-        ),
-        None,
-    )
 
 
 def verify_comfyui_install(path: str | Path) -> ComfyuiInstallVerification:
@@ -456,6 +443,16 @@ class ComfyuiLocalRuntime:
         # Set once the managed venv's pip can report download progress.
         self._install_environment: dict[str, str] | None = None
         self._process: subprocess.Popen[bytes] | None = None
+        # What started the current process, so a node-pack update can stop it
+        # and start it again the same way.
+        self._launch_command: list[str] | None = None
+        self._launch_cwd: Path | None = None
+        self._launch_port: int | None = None
+        # Set while launch() is between its checks and storing the process
+        # handle. Launches and node-pack updates each refuse to start while the
+        # other is underway, so an update never changes files beneath a server
+        # that starts mid-update, and never overwrites that server's handle.
+        self._launch_in_progress = False
         self._launch_log_path: Path | None = None
         # Byte offset where the current launch's output starts, so the tail
         # never shows a previous launch's traceback as this one's.
@@ -729,6 +726,9 @@ class ComfyuiLocalRuntime:
                         str(node_dir),
                     ]
                 )
+                # Only packs cloned here are vlo's to update later; one that
+                # was already present belongs to whoever put it there.
+                record_managed_node_pack(target, repository_name, repository_url)
 
             requirements_path = node_dir / "requirements.txt"
             if requirements_path.is_file():
@@ -865,13 +865,38 @@ class ComfyuiLocalRuntime:
         with self._lock:
             if self._process is not None and self._process.poll() is None:
                 return {"started": False, "alreadyRunning": True, "pid": self._process.pid}
+            if self._install_status["running"]:
+                raise ValueError(
+                    "ComfyUI cannot be launched while vlo is installing or updating it"
+                )
+            if self._launch_in_progress:
+                raise ValueError("ComfyUI is already being launched")
+            self._launch_in_progress = True
+        try:
+            return self._launch_reserved(
+                resolved,
+                comfyui_url,
+                python_path=python_path,
+                use_system_python=use_system_python,
+            )
+        finally:
+            with self._lock:
+                self._launch_in_progress = False
 
+    def _launch_reserved(
+        self,
+        resolved: Path,
+        comfyui_url: str,
+        *,
+        python_path: str | Path | None,
+        use_system_python: bool,
+    ) -> dict[str, Any]:
         parsed_url = urlparse(comfyui_url)
         if parsed_url.scheme != "http":
             raise ValueError("Launching local ComfyUI requires an http URL")
         if parsed_url.hostname not in {"127.0.0.1", "localhost", "::1"}:
             raise ValueError("A local ComfyUI install can only be launched for a local URL")
-        port = parsed_url.port or 8188
+        port = _comfyui_url_port(comfyui_url)
 
         if python_path is not None and use_system_python:
             raise ValueError("Choose either a Python executable or the system Python")
@@ -911,6 +936,19 @@ class ComfyuiLocalRuntime:
         # the one it manages, and installs made before this existed still pick
         # the defaults up on their next launch.
         seed_managed_frontend_settings(resolved)
+        process, log_path = self._spawn_launch(command, resolved)
+        with self._lock:
+            self._launch_port = port
+        return {
+            "started": True,
+            "alreadyRunning": False,
+            "pid": process.pid,
+            "logPath": str(log_path),
+        }
+
+    def _spawn_launch(
+        self, command: list[str], cwd: Path
+    ) -> tuple[subprocess.Popen[bytes], Path]:
         log_path = RUNTIME_ROOT / "comfyui.log"
         log_handle = log_path.open("ab")
         log_offset = log_handle.tell()
@@ -922,7 +960,7 @@ class ComfyuiLocalRuntime:
         )
         log_handle.flush()
         popen_kwargs: dict[str, Any] = {
-            "cwd": resolved,
+            "cwd": cwd,
             "stdin": subprocess.DEVNULL,
             "stdout": log_handle,
             "stderr": subprocess.STDOUT,
@@ -941,14 +979,296 @@ class ComfyuiLocalRuntime:
             log_handle.close()
         with self._lock:
             self._process = process
+            self._launch_command = command
+            self._launch_cwd = cwd
             self._launch_log_path = log_path
             self._launch_log_offset = log_offset
-        return {
-            "started": True,
-            "alreadyRunning": False,
-            "pid": process.pid,
-            "logPath": str(log_path),
-        }
+        return process, log_path
+
+    def _launched_process_serving(
+        self, checkout: Path, comfyui_url: str
+    ) -> tuple[subprocess.Popen[bytes] | None, bool]:
+        """The live process vlo launched from ``checkout``, and whether it is
+        the one that answers at ``comfyui_url``.
+
+        A process vlo launched from another checkout is none of an update's
+        business: stopping it would take down an unrelated server while the
+        target's own server, if any, kept running.
+        """
+
+        with self._lock:
+            process = self._process
+            cwd = self._launch_cwd
+            port = self._launch_port
+        if process is None or process.poll() is not None or cwd is None:
+            return None, False
+        if cwd.resolve() != checkout.resolve():
+            return None, False
+        return process, port == _comfyui_url_port(comfyui_url)
+
+    def _stop_launched_comfyui(
+        self, process: subprocess.Popen[bytes] | None
+    ) -> tuple[list[str], Path] | None:
+        """Stop ``process`` if it is still the ComfyUI this backend launched;
+        return how to start it again.
+
+        Only a process this backend holds a handle to can be stopped. One that
+        outlived a vlo restart is detached and unknown here, which is why the
+        node-pack update refuses to run while any other ComfyUI answers.
+        """
+
+        with self._lock:
+            if process is None or self._process is not process:
+                return None
+            command = self._launch_command
+            cwd = self._launch_cwd
+        if process.poll() is not None or command is None or cwd is None:
+            return None
+
+        logger.info("Stopping ComfyUI (pid %s) to update its node packs", process.pid)
+        self._signal_launched_process(process, kill=False)
+        try:
+            process.wait(timeout=_COMFYUI_STOP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            self._signal_launched_process(process, kill=True)
+            process.wait(timeout=_COMFYUI_STOP_TIMEOUT_SECONDS)
+        with self._lock:
+            # A deliberate stop is not a crash: report the launch as idle
+            # rather than as an exit with a log tail to diagnose.
+            if self._process is process:
+                self._process = None
+        return command, cwd
+
+    @staticmethod
+    def _signal_launched_process(process: subprocess.Popen[bytes], *, kill: bool) -> None:
+        if os.name == "nt":
+            if kill:
+                process.kill()
+            else:
+                process.terminate()
+            return
+        # start_new_session made ComfyUI a process-group leader; signalling
+        # the group stops anything it spawned along with it.
+        try:
+            os.killpg(process.pid, signal.SIGKILL if kill else signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    def start_node_pack_update(
+        self, install_path: str | Path, comfyui_url: str
+    ) -> ComfyuiInstallStatus:
+        """Bring a ComfyUI-vlo that vlo cloned up to the version vlo needs.
+
+        Refused for a pack vlo did not clone, and while a ComfyUI that vlo did
+        not start is running: installing requirements under a live server is
+        unsafe, and only a process vlo launched can be stopped and restarted.
+        """
+
+        _require_git()
+        checkout = resolve_comfyui_install_path(install_path)
+        if checkout is None:
+            raise ValueError("The configured directory is not a recognized ComfyUI install")
+        report = inspect_comfyui_vlo(checkout)
+        if report["status"] == "ok":
+            raise ValueError("ComfyUI-vlo is already up to date")
+        pack_dir = Path(report["path"]) if report["path"] else None
+        managed = find_managed_node_pack(checkout, pack_dir) if pack_dir else None
+        if pack_dir is None or managed is None:
+            raise ValueError(
+                "vlo did not install this copy of ComfyUI-vlo, so it will not change it"
+            )
+        target_process, answers_at_url = self._launched_process_serving(
+            checkout, comfyui_url
+        )
+        # Anything answering at the URL that is not the process vlo launched
+        # from this checkout cannot be stopped here, and may be serving it.
+        if not answers_at_url and _comfyui_responds(comfyui_url):
+            raise RuntimeError(
+                f"A ComfyUI that vlo cannot stop is running at {comfyui_url}. "
+                "Stop it, then update."
+            )
+
+        with self._lock:
+            if self._install_status["running"]:
+                raise RuntimeError("A ComfyUI installation task is already running")
+            current = self._process if self._process and self._process.poll() is None else None
+            if self._launch_in_progress or current is not target_process:
+                raise RuntimeError("ComfyUI is being launched. Try the update again shortly.")
+            self._install_status = {
+                "phase": "updating_nodes",
+                "running": True,
+                "targetPath": str(checkout),
+                "message": "Updating ComfyUI-vlo…",
+                "error": None,
+                "logLine": None,
+            }
+            self._install_environment = None
+
+        thread = threading.Thread(
+            target=self._node_pack_update_worker,
+            args=(checkout, pack_dir, managed["repository"], target_process),
+            name="vlo-comfyui-node-pack-update",
+            daemon=True,
+        )
+        thread.start()
+        return self.get_install_status()
+
+    def _node_pack_update_worker(
+        self,
+        checkout: Path,
+        pack_dir: Path,
+        repository: str,
+        target_process: subprocess.Popen[bytes] | None = None,
+    ) -> None:
+        relaunch: tuple[list[str], Path] | None = None
+        error: str | None = None
+        message: str | None = None
+        try:
+            self._set_install_status(
+                phase="updating_nodes",
+                running=True,
+                target_path=checkout,
+                message="Checking ComfyUI-vlo for local changes…",
+            )
+            if _git_output(pack_dir, "status", "--porcelain", "--untracked-files=no"):
+                raise RuntimeError(
+                    "ComfyUI-vlo has local changes, so vlo left it alone. "
+                    "Commit or discard them, then update."
+                )
+            origin = _git_output(pack_dir, "remote", "get-url", "origin")
+            if _normalize_repository(origin) != _normalize_repository(repository):
+                raise RuntimeError(
+                    f"ComfyUI-vlo now pulls from {origin} rather than {repository}, "
+                    "so vlo left it alone."
+                )
+
+            # Stopped only once the checks pass, so a refused update never
+            # takes ComfyUI down.
+            relaunch = self._stop_launched_comfyui(target_process)
+            self._set_install_status(
+                phase="updating_nodes",
+                running=True,
+                target_path=checkout,
+                message="Updating ComfyUI-vlo…",
+            )
+            previous_head = _git_output(pack_dir, "rev-parse", "HEAD")
+            self._run_install_command(["git", "-C", str(pack_dir), "pull", "--ff-only"])
+            try:
+                self._install_node_pack_requirements(checkout, pack_dir)
+            except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as exc:
+                # The pull already advanced pyproject.toml, so leaving it would
+                # report the pack as current with its requirements missing,
+                # and refuse the retry. Back to the commit that was working.
+                raise RuntimeError(_roll_back_node_pack(pack_dir, previous_head, exc)) from exc
+
+            report = inspect_comfyui_vlo(checkout)
+            installed = report["installedVersion"] or "an unversioned commit"
+            if report["status"] != "ok":
+                message = f"ComfyUI-vlo was updated to {installed}."
+                raise RuntimeError(
+                    f"vlo needs {report['requiredVersion']}, which the ComfyUI-vlo "
+                    "repository does not have yet."
+                )
+            message = f"ComfyUI-vlo is now {installed}."
+        except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as exc:
+            error = str(exc)
+
+        if relaunch is not None:
+            # Restarted whatever the outcome: the update stopped ComfyUI, and
+            # a failed pull leaves the previous checkout intact and runnable.
+            try:
+                self._spawn_launch(*relaunch)
+            except OSError as exc:
+                error = f"{error + ' ' if error else ''}ComfyUI could not be restarted: {exc}"
+            else:
+                if message:
+                    message += " ComfyUI was restarted to load it."
+        elif message:
+            message += " It loads the next time ComfyUI starts."
+
+        self._set_install_status(
+            phase="failed" if error else "complete",
+            running=False,
+            target_path=checkout,
+            # What happened, kept on failure too: an update can succeed and
+            # still fail to restart ComfyUI.
+            message=message or "ComfyUI-vlo was not updated.",
+            error=error,
+        )
+
+    def _install_node_pack_requirements(self, checkout: Path, pack_dir: Path) -> None:
+        requirements = pack_dir / "requirements.txt"
+        if not requirements.is_file():
+            return
+        python = _managed_venv_python(checkout)
+        if not python.is_file():
+            raise RuntimeError(
+                "vlo's ComfyUI environment is missing, so ComfyUI-vlo's "
+                "requirements could not be installed."
+            )
+        self._set_install_status(
+            phase="updating_nodes",
+            running=True,
+            target_path=checkout,
+            message="Installing ComfyUI-vlo requirements…",
+        )
+        self._run_install_command(
+            [str(python), "-m", "pip", "install", "-r", str(requirements)],
+            cwd=pack_dir,
+        )
+        # A pack's requirements can swap the CUDA torch build for PyPI's,
+        # exactly as during the first install.
+        if _requires_cuda_torch():
+            self._ensure_cuda_torch(checkout, python)
+
+
+def _git_output(cwd: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=_GIT_QUERY_TIMEOUT_SECONDS,
+    )
+    return result.stdout.strip()
+
+
+def _roll_back_node_pack(pack_dir: Path, previous_head: str, cause: Exception) -> str:
+    """Reset a pack to the commit it had before the update; describe the result.
+
+    Safe because the update only starts on a checkout without tracked changes,
+    and a hard reset leaves untracked files alone.
+    """
+
+    try:
+        _git_output(pack_dir, "reset", "--hard", "--quiet", previous_head)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return (
+            f"{cause} Putting ComfyUI-vlo back also failed ({exc}). Run "
+            f'git -C "{pack_dir}" reset --hard {previous_head}, then update again.'
+        )
+    return f"{cause} ComfyUI-vlo was put back to its previous version; try the update again."
+
+
+def _comfyui_url_port(comfyui_url: str) -> int:
+    return urlparse(comfyui_url).port or 8188
+
+
+def _normalize_repository(url: str) -> str:
+    return url.strip().rstrip("/").removesuffix(".git").casefold()
+
+
+def _comfyui_responds(comfyui_url: str) -> bool:
+    try:
+        httpx.get(
+            f"{comfyui_url.rstrip('/')}/system_stats",
+            timeout=httpx.Timeout(3.0, connect=2.0),
+        )
+    except httpx.HTTPError:
+        return False
+    return True
 
 
 comfyui_local_runtime = ComfyuiLocalRuntime()

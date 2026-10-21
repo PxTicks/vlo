@@ -18,6 +18,7 @@ export type ComfyuiInstallPhase =
   | "cloning"
   | "creating_environment"
   | "installing_requirements"
+  | "updating_nodes"
   | "complete"
   | "failed";
 
@@ -349,6 +350,14 @@ export function installComfyui(
 
 export function prepareComfyuiEnvironment(): Promise<ComfyuiInstallStatus> {
   return postRuntimeAction("/comfyui/environment");
+}
+
+/**
+ * Update the ComfyUI-vlo that vlo cloned. Progress is reported through
+ * {@link getComfyuiInstallStatus}, shared with installs.
+ */
+export function updateComfyuiVloNodePack(): Promise<ComfyuiInstallStatus> {
+  return postRuntimeAction("/comfyui/node-pack/update");
 }
 
 export async function getComfyuiInstallStatus(): Promise<ComfyuiInstallStatus> {

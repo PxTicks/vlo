@@ -10,8 +10,8 @@ before a generation is attempted.
 It reads the pack's pyproject.toml from disk rather than asking ComfyUI, so it
 works while ComfyUI is stopped (the installer runs it) and for every install
 route — git clone, Comfy Registry, ComfyUI-Manager — since all of them carry
-that file. It only reports: ComfyUI is a separate install, possibly running and
-possibly not one vlo created, so nothing here changes it.
+that file. It only reports. Updating is local_runtime's job, and only for a pack
+vlo itself cloned (``managed`` in the report).
 
 Run ``python -m services.comfyui.node_pack_versions`` from ``backend/`` for the
 command-line report.
@@ -25,7 +25,8 @@ import sys
 from pathlib import Path
 from typing import Literal, TypedDict
 
-from services.comfyui.local_runtime import resolve_comfyui_install_path
+from services.comfyui.install_layout import resolve_comfyui_install_path
+from services.comfyui.managed_install import find_managed_node_pack
 
 try:
     import tomllib
@@ -94,6 +95,8 @@ class NodePackReport(TypedDict):
     # A command that brings the pack up to date, when one is known. A pack
     # installed through the registry is updated from ComfyUI-Manager instead.
     updateCommand: str | None
+    # vlo cloned this pack, so the app may update it itself.
+    managed: bool
 
 
 def parse_release(version: str) -> tuple[int, ...] | None:
@@ -155,7 +158,9 @@ def _is_inactive(entry: Path) -> bool:
     return entry.name.startswith(".") or entry.name.endswith(".disabled")
 
 
-def _judge_pack(pack_dir: Path, required: tuple[int, ...]) -> NodePackReport:
+def _judge_pack(
+    checkout: Path, pack_dir: Path, required: tuple[int, ...]
+) -> NodePackReport:
     project = _read_project_table(pack_dir / "pyproject.toml") or {}
     installed_version = project.get("version")
     installed = parse_release(installed_version) if installed_version else None
@@ -180,6 +185,7 @@ def _judge_pack(pack_dir: Path, required: tuple[int, ...]) -> NodePackReport:
         "installedVersion": installed_version,
         "path": str(pack_dir),
         "updateCommand": update_command,
+        "managed": find_managed_node_pack(checkout, pack_dir) is not None,
     }
 
 
@@ -211,6 +217,7 @@ def _report(
         "installedVersion": None,
         "path": str(path) if path is not None else None,
         "updateCommand": update_command,
+        "managed": False,
     }
 
 
@@ -244,7 +251,7 @@ def inspect_comfyui_vlo(install_dir: Path | None) -> NodePackReport:
 
     required = parse_release(COMFYUI_VLO_MINIMUM_VERSION)
     assert required is not None
-    reports = [_judge_pack(pack_dir, required) for pack_dir in pack_dirs]
+    reports = [_judge_pack(checkout, pack_dir, required) for pack_dir in pack_dirs]
     return min(reports, key=lambda report: _STATUS_SEVERITY[report["status"]])
 
 
@@ -293,8 +300,11 @@ def describe_report(report: NodePackReport) -> str:
             f"ComfyUI-vlo {installed} at {report['path']} is older than the "
             f"{required} vlo's workflows need."
         ]
+    if report["managed"]:
+        lines.append("  vlo installed this copy: use Update in vlo's generation panel.")
     if report["updateCommand"]:
-        lines.append(f"  Update it with: {report['updateCommand']}")
+        verb = "Or update" if report["managed"] else "Update"
+        lines.append(f"  {verb} it with: {report['updateCommand']}")
     else:
         lines.append("  Update it from ComfyUI-Manager (Custom Nodes Manager).")
     lines.append("  Then restart ComfyUI.")

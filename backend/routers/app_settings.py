@@ -18,6 +18,7 @@ from services.comfyui.local_runtime import (
     pick_directory,
     verify_comfyui_install,
 )
+from services.model_registry import is_comfyui_local
 from services.model_work import (
     LEDGER_GAP,
     LOCAL_GPU_RESOURCE,
@@ -451,6 +452,33 @@ async def launch_comfyui(request: Request):
         return error_response(
             409,
             "comfyui_launch_failed",
+            str(exc),
+            retryable=False,
+        )
+
+
+@router.post("/comfyui/node-pack/update")
+async def update_comfyui_vlo_node_pack():
+    install_dir = get_runtime_settings().get("comfyui_install_dir")
+    # The same association the version report makes: a saved directory says
+    # nothing about a remote server, so it is never updated on its behalf.
+    if not install_dir or not is_comfyui_local():
+        return error_response(
+            409,
+            "comfyui_install_not_local",
+            "ComfyUI-vlo can only be updated for a local ComfyUI install",
+            retryable=False,
+        )
+    try:
+        return await run_in_threadpool(
+            comfyui_local_runtime.start_node_pack_update,
+            install_dir,
+            get_comfyui_url(),
+        )
+    except (ValueError, RuntimeError) as exc:
+        return error_response(
+            409,
+            "comfyui_node_pack_update_not_started",
             str(exc),
             retryable=False,
         )

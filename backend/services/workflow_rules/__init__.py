@@ -4,7 +4,10 @@ Provides rule normalization/loading, object_info enrichment, validation, and
 mask-crop pair collection.
 """
 
-from services.workflow_rules.mask_pairs import collect_mask_crop_pairs
+from services.workflow_rules.mask_pairs import (
+    collect_alpha_mask_crop_sources,
+    collect_mask_crop_pairs,
+)
 from services.workflow_rules.normalize import (
     WorkflowPrompt,
     WorkflowRuleWarning,
@@ -48,6 +51,7 @@ __all__ = [
     "WorkflowMaskProcessingStage",
     "WorkflowOutputAssemblyStage",
     "WorkflowPipelineStage",
+    "collect_alpha_mask_crop_sources",
     "collect_mask_crop_pairs",
     "default_rules",
     "default_rules_model",

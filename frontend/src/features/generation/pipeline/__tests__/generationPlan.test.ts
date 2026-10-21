@@ -822,6 +822,71 @@ describe("generationPlan cache media extraction", () => {
       aspectRatioProcessing: { source: "pipeline" },
     });
     expect(submitted.preparedMaskFile).toBeInstanceOf(File);
+    expect(submitted.preparedMaskFile?.type).toBe("video/mp4");
+    expect(submitted.generationMetadata).toMatchObject({
+      comfyuiPrompt: { prompt: {} },
+      comfyuiWorkflow: { nodes: [] },
+      maskCropMetadata: { mode: "full" },
+    });
+  });
+
+  it("decodes a still's returned mask as a PNG", () => {
+    const plan = makePlan("SaveImageWebsocket");
+    plan.workflow.workflowRules = {
+      version: 1,
+      pipeline: [
+        { id: "aspect", kind: "aspect_ratio" },
+        { id: "mask", kind: "mask_processing" },
+      ],
+    } as never;
+    plan.workflow.graphData = { nodes: [] };
+    const submitted = buildSubmittedGeneration(
+      {
+        plan,
+        request: {
+          workflow: {
+            save: { class_type: "SaveImageWebsocket", inputs: {} },
+          },
+          graphData: null,
+          workflowId: null,
+          exactAspectRatio: false,
+          textInputs: {},
+          imageInputs: {},
+          videoInputs: {},
+          audioInputs: {},
+          pipelineInputs: {},
+          clientId: "client",
+        },
+      },
+      {
+        prompt_id: "prompt",
+        delivery_id: "delivery",
+        number: 1,
+        node_errors: {},
+        workflow_warnings: [{ code: "warning", message: "Warning" }],
+        comfyui_prompt: { prompt: {} },
+        comfyui_workflow: { ignored: true },
+        pipeline_outputs: {
+          aspect: {
+            aspect_ratio_processing: { source: "pipeline" },
+          },
+          mask: {
+            mask_crop_metadata: { mode: "full" },
+            processed_mask_video: btoa("mask"),
+            processed_mask_content_type: "image/png",
+          },
+        },
+      },
+      { autoFamilyRequestKey: "family" },
+    );
+    expect(submitted).toMatchObject({
+      deliveryId: "delivery",
+      autoFamilyRequestKey: "family",
+      usesSaveImageWebsocketOutputs: true,
+      aspectRatioProcessing: { source: "pipeline" },
+    });
+    expect(submitted.preparedMaskFile?.type).toBe("image/png");
+    expect(submitted.preparedMaskFile?.name).toMatch(/\.png$/);
     expect(submitted.generationMetadata).toMatchObject({
       comfyuiPrompt: { prompt: {} },
       comfyuiWorkflow: { nodes: [] },

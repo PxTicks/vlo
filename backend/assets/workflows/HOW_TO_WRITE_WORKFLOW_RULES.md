@@ -755,6 +755,7 @@ kind of mask it is:
 | ------------ | ----------------------------- | ------------------------------------------------------ |
 | `source`     | `{ node_id, param }`          | The workflow input whose video/image is being masked   |
 | `mask`       | `{ node_id, param }`          | The mask input; automatically hidden from primary list |
+| `mask_source` | `"input"` (default) \| `"source_alpha"` | Where the mask comes from (see below)       |
 | `mask_type`  | `"binary"` \| `"soft"`        | How the mask values are interpreted                    |
 | `purpose`    | `"video"` \| `"audio_timing"` | What pipeline stage consumes this pair                 |
 | `render_fps` | integer, optional             | Override for how the mask is rendered (audio_timing)   |
@@ -764,6 +765,27 @@ same mask drives different downstream consumers — e.g. one target with
 `purpose: "video"` (drives the mask_crop output) and a second with
 `purpose: "audio_timing"` and an explicit `render_fps` (drives audio
 timing extraction).
+
+### Stills: the mask in the source's alpha
+
+An image input picked from the timeline already carries its masks: the frame
+is captured with masked pixels at zero alpha (their colour kept underneath),
+and `vloMemoryLoadImage` outputs `1 - alpha` as its MASK. Such a source needs
+no separate mask input, so its target names only the source:
+
+```json
+"targets": [
+  { "source": { "node_id": "1", "param": "image" }, "mask_source": "source_alpha" }
+]
+```
+
+- There is no `mask` (declaring one is a schema error), and `purpose` must be
+  `"video"`. A stage cannot mix `source_alpha` targets with mask inputs.
+- Crop mode works as for video: the backend crops the image (alpha intact) to
+  the mask's box, returns the crop metadata, and returns the mask as a PNG, so
+  the result is placed back as a positioned, masked patch.
+- An image without an alpha channel has nothing masked: it is sent whole and
+  no mask is returned.
 
 ### Controls
 

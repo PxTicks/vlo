@@ -2092,6 +2092,16 @@ async def generate(request: Request):
                 pipeline_outputs,
                 "processed_mask_video",
             )
+            # A still's mask comes back as a PNG; everything else is a mask video.
+            prepared_mask_content_type = (
+                "image/png"
+                if _extract_stage_output_value(
+                    pipeline_outputs,
+                    "processed_mask_content_type",
+                )
+                == "image/png"
+                else "video/mp4"
+            )
             prepared_mask_bytes = None
             if isinstance(prepared_mask_video, str) and prepared_mask_video:
                 try:
@@ -2125,10 +2135,14 @@ async def generate(request: Request):
                     graph_data,
                 ),
                 prepared_mask_bytes=prepared_mask_bytes,
-                prepared_mask_filename="generation-mask.mp4"
+                prepared_mask_filename=(
+                    "generation-mask.png"
+                    if prepared_mask_content_type == "image/png"
+                    else "generation-mask.mp4"
+                )
                 if prepared_mask_bytes is not None
                 else None,
-                prepared_mask_content_type="video/mp4"
+                prepared_mask_content_type=prepared_mask_content_type
                 if prepared_mask_bytes is not None
                 else None,
             )

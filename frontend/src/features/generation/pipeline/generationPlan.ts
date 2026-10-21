@@ -980,16 +980,23 @@ export function mergeCachedPipelineOutputsIntoResponse<
   };
 }
 
-function decodeProcessedMaskVideo(processedMaskVideo: string): File {
-  const binaryStr = atob(processedMaskVideo);
+/** The returned mask: a video, or a PNG when the source was a still. */
+function decodeProcessedMask(
+  processedMask: string,
+  contentType: unknown,
+): File {
+  const binaryStr = atob(processedMask);
   const bytes = new Uint8Array(binaryStr.length);
   for (let i = 0; i < binaryStr.length; i += 1) {
     bytes[i] = binaryStr.charCodeAt(i);
   }
 
-  return new File([bytes], `generation-mask-${crypto.randomUUID()}.mp4`, {
-    type: "video/mp4",
-  });
+  const isPng = contentType === "image/png";
+  return new File(
+    [bytes],
+    `generation-mask-${crypto.randomUUID()}.${isPng ? "png" : "mp4"}`,
+    { type: isPng ? "image/png" : "video/mp4" },
+  );
 }
 
 export function createGenerationPlan(
@@ -1226,8 +1233,9 @@ export function buildSubmittedGeneration(
     prepared.plan.workflow.workflowInputs,
   );
   if (typeof maskPipelineOutput?.processed_mask_video === "string") {
-    preparedMaskFile = decodeProcessedMaskVideo(
+    preparedMaskFile = decodeProcessedMask(
       maskPipelineOutput.processed_mask_video,
+      maskPipelineOutput.processed_mask_content_type,
     );
   }
 

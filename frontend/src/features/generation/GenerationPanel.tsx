@@ -47,6 +47,7 @@ import {
   getAspectRatioStage,
   getPipelineWidgetKey,
   getSupportedWorkflowResolutions,
+  hasSourceAlphaMaskTargets,
   isPipelineWidgetNodeId,
   resolvePipelineWidgetInputs,
   type WorkflowRules,
@@ -589,7 +590,9 @@ export function GenerationPanel() {
   );
   const fetchWorkflows = useGenerationStore((s) => s.fetchWorkflows);
   const loadWorkflow = useGenerationStore((s) => s.loadWorkflow);
-  const hasMaskMappings = derivedMaskMappings.length > 0;
+  const hasMaskMappings =
+    derivedMaskMappings.length > 0 ||
+    hasSourceAlphaMaskTargets(activeWorkflowRules);
   const aspectRatioProcessingConfig = getAspectRatioStage(activeWorkflowRules);
   const hasAspectRatioTargets =
     (aspectRatioProcessingConfig?.targets?.length ?? 0) > 0;

@@ -5,6 +5,7 @@ import {
   getAspectRatioStage,
   getMaskProcessingStage,
   getWorkflowStageControl,
+  hasSourceAlphaMaskTargets,
 } from "../services/workflowRules";
 import type { WorkflowRules } from "../services/workflowRules";
 import { resolveAspectRatioSelection } from "../utils/aspectRatioSelection";
@@ -39,7 +40,11 @@ function buildPipelineInputs(
   }
 
   const maskProcessingStage = getMaskProcessingStage(ctx.workflowRules);
-  if (maskProcessingStage && ctx.derivedMaskMappings.length > 0) {
+  if (
+    maskProcessingStage &&
+    (ctx.derivedMaskMappings.length > 0 ||
+      hasSourceAlphaMaskTargets(ctx.workflowRules))
+  ) {
     const stageInputs: Record<string, unknown> = {};
     if (getWorkflowStageControl(maskProcessingStage, "crop_mode")) {
       stageInputs.crop_mode = ctx.maskCropMode ?? "crop";

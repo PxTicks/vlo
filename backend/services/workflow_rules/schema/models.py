@@ -33,6 +33,10 @@ PipelineControlValueType = Literal["int", "float", "string", "boolean", "enum", 
 WorkflowMediaFallbackKind = Literal["dummy"]
 MaskProcessingTargetType = Literal["binary", "soft"]
 MaskProcessingTargetPurpose = Literal["video", "audio_timing"]
+# "input": `mask` names a separate mask input that vlo renders for the source.
+# "source_alpha": the source image's own alpha is the mask (a frame captured
+# with its timeline masks as transparency), so there is no mask input.
+MaskProcessingTargetMaskSource = Literal["input", "source_alpha"]
 MaskProcessingTargetSelectionMode = Literal["input_selection", "full_selection"]
 MaskProcessingSourceVideoTreatment = Literal[
     "preserve_transparency",
@@ -567,13 +571,26 @@ class PipelineControl(WorkflowRuleBaseModel):
 
 class MaskProcessingTarget(WorkflowRuleBaseModel):
     source: WorkflowParamReference
-    mask: WorkflowParamReference
+    mask: WorkflowParamReference | None = None
+    mask_source: MaskProcessingTargetMaskSource = "input"
     mask_type: MaskProcessingTargetType = "binary"
     purpose: MaskProcessingTargetPurpose = "video"
     render_fps: int | None = None
     source_selection: MaskProcessingTargetSelectionMode | None = None
     mask_selection: MaskProcessingTargetSelectionMode | None = None
     source_video_treatment: MaskProcessingSourceVideoTreatment | None = None
+
+    @model_validator(mode="after")
+    def validate_mask_source(self) -> "MaskProcessingTarget":
+        if self.mask_source == "input":
+            if self.mask is None:
+                raise ValueError("A mask processing target needs a mask unless mask_source is 'source_alpha'")
+            return self
+        if self.mask is not None:
+            raise ValueError("A 'source_alpha' mask processing target reads its mask from the source; drop mask")
+        if self.purpose != "video":
+            raise ValueError("A 'source_alpha' mask processing target must have purpose 'video'")
+        return self
 
 
 class AspectRatioTargetNode(WorkflowRuleBaseModel):
@@ -737,6 +754,16 @@ class WorkflowSection(WorkflowRuleBaseModel):
 class WorkflowMaskProcessingStage(WorkflowPipelineStageBase):
     kind: Literal["mask_processing"] = "mask_processing"
     targets: list[MaskProcessingTarget] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_single_mask_source(self) -> "WorkflowMaskProcessingStage":
+        # One crop region and one returned mask per stage: an alpha-masked
+        # still and a rendered video mask cannot share them.
+        if len({target.mask_source for target in self.targets}) > 1:
+            raise ValueError(
+                "A mask_processing stage cannot mix 'source_alpha' targets with mask inputs"
+            )
+        return self
 
 
 class WorkflowAspectRatioStage(WorkflowPipelineStageBase):

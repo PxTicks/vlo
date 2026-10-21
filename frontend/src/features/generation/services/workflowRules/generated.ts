@@ -76,7 +76,8 @@ export type JsonValue = unknown;
 
 export interface MaskProcessingTarget {
   source: WorkflowParamReference;
-  mask: WorkflowParamReference;
+  mask?: WorkflowParamReference | null;
+  mask_source?: "input" | "source_alpha";
   mask_type?: "binary" | "soft";
   purpose?: "video" | "audio_timing";
   render_fps?: number | null;

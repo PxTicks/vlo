@@ -7,19 +7,12 @@ from services.workflow_rules.pipeline import find_pipeline_stage
 MaskCroppingMode = Literal["crop", "full"]
 
 
-def collect_mask_crop_pairs(
+def _crop_targets(
     rules: WorkflowRules | None,
-    mode_override: MaskCroppingMode | None = None,
-    resolved_pipeline_controls: dict[str, dict[str, object]] | None = None,
-) -> list[tuple[str, str]]:
-    """Return ``(source_node_id, mask_node_id)`` pairs for mask-crop preprocessing.
-
-    Mask-processing stage targets are the source of truth. The workflow sidecar
-    can set the `crop_mode` control default to ``full`` to skip preprocessing
-    when no request override is provided. Runtime callers should prefer passing
-    `resolved_pipeline_controls` or an explicit `mode_override`; default
-    inspection is kept for sidecar introspection and tests.
-    """
+    mode_override: MaskCroppingMode | None,
+    resolved_pipeline_controls: dict[str, dict[str, object]] | None,
+) -> list[dict[str, object]]:
+    """Visual mask-processing targets, or none when cropping is off."""
     if not isinstance(rules, dict):
         return []
 
@@ -52,26 +45,48 @@ def collect_mask_crop_pairs(
     targets = mask_stage.get("targets")
     if not isinstance(targets, list):
         return []
+    return [
+        target
+        for target in targets
+        if isinstance(target, dict) and target.get("purpose", "video") == "video"
+    ]
 
+
+def _node_id(ref: object) -> str | None:
+    if not isinstance(ref, dict):
+        return None
+    node_id = ref.get("node_id")
+    if not isinstance(node_id, str) or not node_id.strip():
+        return None
+    return node_id.strip()
+
+
+def collect_mask_crop_pairs(
+    rules: WorkflowRules | None,
+    mode_override: MaskCroppingMode | None = None,
+    resolved_pipeline_controls: dict[str, dict[str, object]] | None = None,
+) -> list[tuple[str, str]]:
+    """Return ``(source_node_id, mask_node_id)`` pairs for mask-crop preprocessing.
+
+    Mask-processing stage targets are the source of truth. The workflow sidecar
+    can set the `crop_mode` control default to ``full`` to skip preprocessing
+    when no request override is provided. Runtime callers should prefer passing
+    `resolved_pipeline_controls` or an explicit `mode_override`; default
+    inspection is kept for sidecar introspection and tests.
+
+    Targets whose mask is the source's own alpha have no mask node; see
+    :func:`collect_alpha_mask_crop_sources`.
+    """
     pairs: list[tuple[str, str]] = []
     seen_pairs: set[tuple[str, str]] = set()
-    for target in targets:
-        if not isinstance(target, dict):
+    for target in _crop_targets(rules, mode_override, resolved_pipeline_controls):
+        if target.get("mask_source", "input") != "input":
             continue
-        purpose = target.get("purpose", "video")
-        if purpose != "video":
+        source_id = _node_id(target.get("source"))
+        mask_node_id = _node_id(target.get("mask"))
+        if source_id is None or mask_node_id is None:
             continue
-        source = target.get("source")
-        mask = target.get("mask")
-        if not isinstance(source, dict) or not isinstance(mask, dict):
-            continue
-        source_id = source.get("node_id")
-        mask_node_id = mask.get("node_id")
-        if not isinstance(source_id, str) or not source_id.strip():
-            continue
-        if not isinstance(mask_node_id, str) or not mask_node_id.strip():
-            continue
-        pair = (source_id.strip(), mask_node_id.strip())
+        pair = (source_id, mask_node_id)
         if pair in seen_pairs:
             continue
         seen_pairs.add(pair)
@@ -80,4 +95,27 @@ def collect_mask_crop_pairs(
     return pairs
 
 
-__all__ = ["MaskCroppingMode", "collect_mask_crop_pairs"]
+def collect_alpha_mask_crop_sources(
+    rules: WorkflowRules | None,
+    mode_override: MaskCroppingMode | None = None,
+    resolved_pipeline_controls: dict[str, dict[str, object]] | None = None,
+) -> list[str]:
+    """Source node ids whose image carries its own mask in the alpha channel.
+
+    Same crop-mode gating as :func:`collect_mask_crop_pairs`.
+    """
+    sources: list[str] = []
+    for target in _crop_targets(rules, mode_override, resolved_pipeline_controls):
+        if target.get("mask_source") != "source_alpha":
+            continue
+        source_id = _node_id(target.get("source"))
+        if source_id is not None and source_id not in sources:
+            sources.append(source_id)
+    return sources
+
+
+__all__ = [
+    "MaskCroppingMode",
+    "collect_alpha_mask_crop_sources",
+    "collect_mask_crop_pairs",
+]

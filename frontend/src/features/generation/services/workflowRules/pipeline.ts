@@ -69,6 +69,21 @@ export function getMaskProcessingStage(
   );
 }
 
+/**
+ * Whether the mask stage reads a still's mask from its own alpha. Such a
+ * target has no derived-mask mapping, yet still crops and returns a mask, so
+ * it needs the crop controls a derived mask would bring.
+ */
+export function hasSourceAlphaMaskTargets(
+  rules: WorkflowRules | null | undefined,
+): boolean {
+  return (
+    getMaskProcessingStage(rules)?.targets?.some(
+      (target) => target.mask_source === "source_alpha",
+    ) ?? false
+  );
+}
+
 export function getAspectRatioStage(
   rules: WorkflowRules | null | undefined,
 ): WorkflowAspectRatioStage | null {

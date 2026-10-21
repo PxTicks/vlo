@@ -8,7 +8,13 @@ from typing import Any
 from services.gen_pipeline.context import BackendPipelineContext
 from services.gen_pipeline.processors.utils.aspect_ratio_processing import _parse_aspect_ratio
 from services.gen_pipeline.types import Processor, ProcessorMeta
-from services.workflow_rules import collect_mask_crop_pairs
+from services.gen_pipeline.processors.utils.image_crop import (
+    analyze_alpha_mask_bounds,
+    crop_image,
+    encode_mask_png,
+    read_alpha_mask,
+)
+from services.workflow_rules import collect_alpha_mask_crop_sources, collect_mask_crop_pairs
 from services.workflow_rules.mask_pairs import collect_mask_crop_pairs as _collect_pairs_raw
 from services.workflow_rules.pipeline import find_pipeline_stage
 
@@ -17,12 +23,16 @@ log = logging.getLogger(__name__)
 
 
 def _has_mask_relations(rules: dict[str, Any] | None) -> bool:
-    return bool(_collect_pairs_raw(rules, mode_override="crop"))
+    return bool(
+        _collect_pairs_raw(rules, mode_override="crop")
+        or collect_alpha_mask_crop_sources(rules, mode_override="crop")
+    )
 
 
-def _find_buffered_video_key(
+def _find_buffered_key(
     buffered_media: dict[str, dict[str, Any]],
     node_id: str,
+    input_type: str,
 ) -> str | None:
     matches = [
         buffered_input_id
@@ -30,12 +40,39 @@ def _find_buffered_video_key(
         if (
             isinstance(media_info, dict)
             and media_info.get("node_id") == node_id
-            and media_info.get("input_type") == "video"
+            and media_info.get("input_type") == input_type
         )
     ]
     if len(matches) == 1:
         return matches[0]
     return None
+
+
+def _find_buffered_video_key(
+    buffered_media: dict[str, dict[str, Any]],
+    node_id: str,
+) -> str | None:
+    return _find_buffered_key(buffered_media, node_id, "video")
+
+
+def _crop_metadata(
+    region: tuple[int, int, int, int],
+    container_dims: tuple[int, int],
+) -> dict[str, Any]:
+    x1, y1, x2, y2 = region
+    container_w, container_h = container_dims
+    crop_w = x2 - x1
+    crop_h = y2 - y1
+    original_diag = math.sqrt(container_w ** 2 + container_h ** 2)
+    cropped_diag = math.sqrt(crop_w ** 2 + crop_h ** 2)
+    scale = cropped_diag / original_diag if original_diag > 0 else 1.0
+    return {
+        "mode": "cropped",
+        "crop_position": [x1, y1],
+        "crop_size": [crop_w, crop_h],
+        "container_size": [container_w, container_h],
+        "scale": round(scale, 6),
+    }
 
 
 class _MaskCropProcessor:
@@ -44,7 +81,7 @@ class _MaskCropProcessor:
         name="mask_crop",
         reads=("buffered_media", "rules", "resolved_pipeline_controls"),
         writes=("buffered_media", "pipeline_outputs"),
-        description="Crops buffered source and mask videos to the mask bounds before upload",
+        description="Crops buffered sources and masks (mask videos, or a still's own alpha) to the mask bounds before upload",
     )
 
     def __init__(
@@ -97,6 +134,24 @@ class _MaskCropProcessor:
         )
 
         stage_outputs = ctx.pipeline_outputs.setdefault(mask_stage_id, {})
+
+        alpha_sources = collect_alpha_mask_crop_sources(ctx.rules, mode_override="crop")
+        if alpha_sources:
+            parsed_ar = _parse_aspect_ratio(aspect_control_values.get("target_aspect_ratio"))
+            self._process_alpha_sources(
+                ctx,
+                alpha_sources,
+                stage_outputs,
+                target_ar=(parsed_ar[0] / parsed_ar[1]) if parsed_ar else None,
+                crop_dilation=(
+                    float(crop_dilation)
+                    if crop_mode != "full"
+                    and isinstance(crop_dilation, (int, float))
+                    and float(crop_dilation) >= 0
+                    else None
+                ),
+            )
+            return
 
         if not should_crop:
             stage_outputs["mask_crop_metadata"] = {"mode": "full"}
@@ -205,22 +260,64 @@ class _MaskCropProcessor:
             last_successful_mask_crop_region is not None
             and last_successful_mask_container_dims is not None
         ):
-            x1, y1, x2, y2 = last_successful_mask_crop_region
-            container_w, container_h = last_successful_mask_container_dims
-            crop_w = x2 - x1
-            crop_h = y2 - y1
-            original_diag = math.sqrt(container_w ** 2 + container_h ** 2)
-            cropped_diag = math.sqrt(crop_w ** 2 + crop_h ** 2)
-            scale = cropped_diag / original_diag if original_diag > 0 else 1.0
-            stage_outputs["mask_crop_metadata"] = {
-                "mode": "cropped",
-                "crop_position": [x1, y1],
-                "crop_size": [crop_w, crop_h],
-                "container_size": [container_w, container_h],
-                "scale": round(scale, 6),
-            }
+            stage_outputs["mask_crop_metadata"] = _crop_metadata(
+                last_successful_mask_crop_region,
+                last_successful_mask_container_dims,
+            )
         else:
             stage_outputs["mask_crop_metadata"] = {"mode": "full"}
+
+    def _process_alpha_sources(
+        self,
+        ctx: BackendPipelineContext,
+        source_node_ids: list[str],
+        stage_outputs: dict[str, Any],
+        *,
+        target_ar: float | None,
+        crop_dilation: float | None,
+    ) -> None:
+        """Crop stills whose alpha is their mask, and return that mask.
+
+        The first source with a buffered image frames the output; the
+        returned mask is that image's ``255 - alpha``, cropped alongside it.
+        """
+        stage_outputs["mask_crop_metadata"] = {"mode": "full"}
+        for source_node_id in source_node_ids:
+            source_key = _find_buffered_key(ctx.buffered_media, source_node_id, "image")
+            if source_key is None:
+                continue
+            image_bytes = ctx.buffered_media[source_key]["bytes"]
+            try:
+                mask = read_alpha_mask(image_bytes)
+            except Exception as exc:
+                log.warning("[mask-crop] Failed to read alpha mask for node %s: %s", source_node_id, exc)
+                return
+            if mask is None:
+                # Opaque image: nothing is masked, so there is no patch to place.
+                return
+
+            region = None
+            if crop_dilation is not None and target_ar is not None:
+                region = analyze_alpha_mask_bounds(mask, target_ar=target_ar, dilation=crop_dilation)
+            if region is not None:
+                try:
+                    cropped_image = crop_image(image_bytes, region)
+                except Exception as exc:
+                    log.warning("[mask-crop] Image crop failed for %s: %s", source_node_id, exc)
+                    region = None
+                else:
+                    ctx.buffered_media[source_key]["bytes"] = cropped_image
+                    ctx.buffered_media[source_key]["content_type"] = "image/png"
+                    x1, y1, x2, y2 = region
+                    stage_outputs["mask_crop_metadata"] = _crop_metadata(
+                        region,
+                        (mask.shape[1], mask.shape[0]),
+                    )
+                    mask = mask[y1:y2, x1:x2]
+
+            stage_outputs["processed_mask_bytes"] = encode_mask_png(mask)
+            stage_outputs["processed_mask_content_type"] = "image/png"
+            return
 
 
 def create_mask_crop_processor(

@@ -8,6 +8,7 @@ import {
   getMaskCropModeDefault,
   getSupportedWorkflowResolutions,
   getWorkflowPostprocessingConfig,
+  hasSourceAlphaMaskTargets,
 } from "../workflowRules";
 import { buildFrontendStateControlKey } from "../frontendRuleState";
 import { resolvePipelineWidgetInputs } from "../workflowRules/pipelineWidgets";
@@ -281,5 +282,26 @@ describe("workflowRules pipeline helpers", () => {
         key: "target_resolution",
       }),
     ).toBe(720);
+  });
+
+  it("tells source-alpha mask stages from rendered-mask ones", () => {
+    const stage = (target: Record<string, unknown>) =>
+      createDefaultWorkflowRules({
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            targets: [
+              { source: { node_id: "1", param: "image" }, ...target },
+            ] as never,
+          },
+        ],
+      });
+
+    expect(hasSourceAlphaMaskTargets(stage({ mask_source: "source_alpha" }))).toBe(true);
+    expect(
+      hasSourceAlphaMaskTargets(stage({ mask: { node_id: "2", param: "file" } })),
+    ).toBe(false);
+    expect(hasSourceAlphaMaskTargets(createDefaultWorkflowRules({}))).toBe(false);
   });
 });

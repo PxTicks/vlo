@@ -352,6 +352,8 @@ export function resolvePresentedInputsFromRules(
     }
   >();
   for (const target of maskProcessingStage?.targets ?? []) {
+    // A source-alpha target has no mask input to render or hide.
+    if (!target.mask) continue;
     const maskKey = `${target.mask.node_id}:${target.mask.param}`;
     derivedMaskTargets.set(maskKey, {
       sourceNodeId: target.source.node_id,

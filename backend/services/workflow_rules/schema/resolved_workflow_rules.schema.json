@@ -532,7 +532,15 @@
     "MaskProcessingTarget": {
       "properties": {
         "mask": {
-          "$ref": "#/$defs/WorkflowParamReference"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowParamReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "mask_selection": {
           "anyOf": [
@@ -549,6 +557,15 @@
           ],
           "default": null,
           "title": "Mask Selection"
+        },
+        "mask_source": {
+          "default": "input",
+          "enum": [
+            "input",
+            "source_alpha"
+          ],
+          "title": "Mask Source",
+          "type": "string"
         },
         "mask_type": {
           "default": "binary",
@@ -617,8 +634,7 @@
         }
       },
       "required": [
-        "source",
-        "mask"
+        "source"
       ],
       "title": "MaskProcessingTarget",
       "type": "object"

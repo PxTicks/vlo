@@ -54,17 +54,14 @@ def test_audio_mask_feather_sits_between_the_composite_and_the_sampler(workflow_
     assert _link(workflow, audio_latent["link"])[1:5] == [SWITCH_ID, 0, FEATHER_ID, 0]
     assert nodes[SWITCH_ID]["type"] == "ComfySwitchNode"
 
-    latent_image = next(
-        input_spec
-        for input_spec in nodes[SAMPLER_ID]["inputs"]
-        if input_spec["name"] == "latent_image"
-    )
-    assert _link(workflow, latent_image["link"])[1:5] == [
-        FEATHER_ID,
-        0,
-        SAMPLER_ID,
-        nodes[SAMPLER_ID]["inputs"].index(latent_image),
-    ]
+    # The video-mask feather sits between this one and the sampler; it only
+    # rewrites the video stream's mask, so the audio mask reaches the sampler
+    # as feathered here.
+    (output_link,) = feather["outputs"][0]["links"]
+    downstream = nodes[_link(workflow, output_link)[3]]
+    assert downstream["type"] == "vloFeatherVideoLatentMask"
+    (downstream_link,) = downstream["outputs"][0]["links"]
+    assert _link(workflow, downstream_link)[3] == SAMPLER_ID
     assert nodes[SAMPLER_ID]["type"] == "SamplerCustomAdvanced"
     assert nodes[SWITCH_ID]["order"] < feather["order"] < nodes[SAMPLER_ID]["order"]
 

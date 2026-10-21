@@ -8,6 +8,8 @@
 
 ::include{src="shared:minimax/seam-pass.md"}
 
+::include{src="shared:minimax/temporal-feather.md"}
+
 ::include{src="shared:inpainting/retake.md"}
 
 ::include{src="shared:inpainting/result.md"}

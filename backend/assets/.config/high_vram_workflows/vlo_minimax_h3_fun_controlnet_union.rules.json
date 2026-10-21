@@ -387,6 +387,45 @@
           "default": 2
         }
       }
+    },
+    "117": {
+      "widgets": {
+        "lead_ramp": {
+          "label": "Lead ramp (latent frames)",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 16,
+          "step": 1,
+          "default": 2,
+          "section_id": "advanced_settings",
+          "group_id": "video_feather",
+          "group_title": "Temporal feather",
+          "group_order": 4
+        },
+        "tail_ramp": {
+          "label": "Tail ramp (latent frames)",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 16,
+          "step": 1,
+          "default": 2,
+          "section_id": "advanced_settings",
+          "group_id": "video_feather",
+          "group_title": "Temporal feather",
+          "group_order": 4
+        },
+        "curve": {
+          "label": "Feather curve",
+          "section_id": "advanced_settings",
+          "group_id": "video_feather",
+          "group_title": "Temporal feather",
+          "group_order": 4
+        }
+      }
     }
   },
   "frontend_controls": {
@@ -398,6 +437,15 @@
       "group_id": "model_patches",
       "group_title": "Model",
       "group_order": 1
+    },
+    "video_feather_enabled": {
+      "label": "Feather mask in time",
+      "value_type": "boolean",
+      "default": false,
+      "section_id": "advanced_settings",
+      "group_id": "video_feather",
+      "group_title": "Temporal feather",
+      "group_order": 4
     }
   },
   "validation": {
@@ -463,6 +511,7 @@
         "25",
         "29",
         "97",
+        "117",
         "109",
         "110"
       ]
@@ -515,6 +564,20 @@
       },
       "bypass": [
         "45"
+      ]
+    },
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "frontend_control",
+          "control_id": "video_feather_enabled"
+        },
+        "operator": "neq",
+        "value": true
+      },
+      "bypass": [
+        "117"
       ]
     }
   ],

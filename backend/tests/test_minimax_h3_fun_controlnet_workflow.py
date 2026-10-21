@@ -79,7 +79,7 @@ def test_fun_controlnet_retake_options_are_not_presented():
     # stay hidden at those values and nothing in the panel can change them.
     rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
     assert rules["derived_widgets"] == []
-    assert set(rules["frontend_controls"]) == {"spectrum_enabled"}
+    assert set(rules["frontend_controls"]) == {"spectrum_enabled", "video_feather_enabled"}
     for node_id, value in (("27", False), ("28", False), ("29", True)):
         switch = rules["nodes"][node_id]["widgets"]["switch"]
         assert switch["hidden"] is True

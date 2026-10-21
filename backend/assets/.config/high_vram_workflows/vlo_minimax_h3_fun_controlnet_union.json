@@ -1,8 +1,8 @@
 {
   "id": "5307784b-d1d0-403e-9f5b-6d184c299114",
   "revision": 0,
-  "last_node_id": 113,
-  "last_link_id": 180,
+  "last_node_id": 117,
+  "last_link_id": 181,
   "nodes": [
     {
       "id": 3,
@@ -766,7 +766,7 @@
         140
       ],
       "flags": {},
-      "order": 68,
+      "order": 69,
       "mode": 0,
       "inputs": [
         {
@@ -792,7 +792,7 @@
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 158
+          "link": 181
         }
       ],
       "outputs": [
@@ -1059,7 +1059,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 70,
+      "order": 71,
       "mode": 0,
       "inputs": [
         {
@@ -1100,7 +1100,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 69,
+      "order": 70,
       "mode": 0,
       "inputs": [
         {
@@ -1140,7 +1140,7 @@
         334
       ],
       "flags": {},
-      "order": 72,
+      "order": 73,
       "mode": 0,
       "inputs": [
         {
@@ -4310,7 +4310,7 @@
         82
       ],
       "flags": {},
-      "order": 73,
+      "order": 74,
       "mode": 4,
       "inputs": [
         {
@@ -4372,7 +4372,7 @@
         82
       ],
       "flags": {},
-      "order": 74,
+      "order": 75,
       "mode": 4,
       "inputs": [
         {
@@ -4434,7 +4434,7 @@
         82
       ],
       "flags": {},
-      "order": 75,
+      "order": 76,
       "mode": 4,
       "inputs": [
         {
@@ -4482,6 +4482,67 @@
       "widgets_values_named": {
         "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
         "strength_model": 1
+      }
+    },
+    {
+      "id": 117,
+      "type": "vloFeatherVideoLatentMask",
+      "pos": [
+        2839.9538672631693,
+        4655.280079548546
+      ],
+      "size": [
+        325.5748046875,
+        274
+      ],
+      "flags": {},
+      "order": 68,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 158
+        },
+        {
+          "name": "original_latent",
+          "shape": 7,
+          "type": "LATENT",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            181
+          ]
+        }
+      ],
+      "title": "Feather video mask edges",
+      "properties": {
+        "Node name for S&R": "vloFeatherVideoLatentMask",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0"
+      },
+      "widgets_values": [
+        "outer",
+        2,
+        2,
+        0,
+        0,
+        "cosine",
+        0
+      ],
+      "widgets_values_named": {
+        "mode": "outer",
+        "lead_ramp": 2,
+        "tail_ramp": 2,
+        "lead_hold": 0,
+        "tail_hold": 0,
+        "curve": "cosine",
+        "floor": 0
       }
     }
   ],
@@ -5162,8 +5223,8 @@
       158,
       97,
       0,
-      39,
-      4,
+      117,
+      0,
       "LATENT"
     ],
     [
@@ -5341,6 +5402,14 @@
       47,
       0,
       "MODEL"
+    ],
+    [
+      181,
+      117,
+      0,
+      39,
+      4,
+      "LATENT"
     ]
   ],
   "groups": [

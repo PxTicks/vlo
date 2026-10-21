@@ -1,8 +1,8 @@
 {
   "id": "5307784b-d1d0-403e-9f5b-6d184c299f1a",
   "revision": 0,
-  "last_node_id": 116,
-  "last_link_id": 196,
+  "last_node_id": 117,
+  "last_link_id": 197,
   "nodes": [
     {
       "id": 3,
@@ -961,7 +961,7 @@
         140
       ],
       "flags": {},
-      "order": 71,
+      "order": 72,
       "mode": 0,
       "inputs": [
         {
@@ -992,7 +992,7 @@
           "localized_name": "latent_image",
           "name": "latent_image",
           "type": "LATENT",
-          "link": 165
+          "link": 197
         }
       ],
       "outputs": [
@@ -1574,7 +1574,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 73,
+      "order": 74,
       "mode": 0,
       "inputs": [
         {
@@ -1618,7 +1618,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 72,
+      "order": 73,
       "mode": 0,
       "inputs": [
         {
@@ -1660,7 +1660,7 @@
         342
       ],
       "flags": {},
-      "order": 74,
+      "order": 75,
       "mode": 0,
       "inputs": [
         {
@@ -5162,7 +5162,7 @@
         82
       ],
       "flags": {},
-      "order": 75,
+      "order": 76,
       "mode": 0,
       "inputs": [
         {
@@ -5216,7 +5216,7 @@
         26
       ],
       "flags": {},
-      "order": 76,
+      "order": 77,
       "mode": 0,
       "inputs": [
         {
@@ -5254,7 +5254,7 @@
         82
       ],
       "flags": {},
-      "order": 77,
+      "order": 78,
       "mode": 0,
       "inputs": [
         {
@@ -5308,7 +5308,7 @@
         130
       ],
       "flags": {},
-      "order": 78,
+      "order": 79,
       "mode": 0,
       "inputs": [
         {
@@ -5390,7 +5390,7 @@
         46
       ],
       "flags": {},
-      "order": 79,
+      "order": 80,
       "mode": 0,
       "inputs": [
         {
@@ -5432,7 +5432,7 @@
         218
       ],
       "flags": {},
-      "order": 80,
+      "order": 81,
       "mode": 0,
       "inputs": [
         {
@@ -5554,7 +5554,7 @@
         130
       ],
       "flags": {},
-      "order": 81,
+      "order": 82,
       "mode": 0,
       "inputs": [
         {
@@ -5628,7 +5628,7 @@
         60
       ],
       "flags": {},
-      "order": 82,
+      "order": 83,
       "mode": 0,
       "inputs": [
         {
@@ -5671,7 +5671,7 @@
         140
       ],
       "flags": {},
-      "order": 83,
+      "order": 84,
       "mode": 0,
       "inputs": [
         {
@@ -5738,7 +5738,7 @@
         80
       ],
       "flags": {},
-      "order": 84,
+      "order": 85,
       "mode": 0,
       "inputs": [
         {
@@ -5800,7 +5800,7 @@
         106
       ],
       "flags": {},
-      "order": 85,
+      "order": 86,
       "mode": 0,
       "inputs": [
         {
@@ -5870,6 +5870,67 @@
         "base": "auto"
       },
       "title": "Seam pass turbo LoRA"
+    },
+    {
+      "id": 117,
+      "type": "vloFeatherVideoLatentMask",
+      "pos": [
+        2839.9538672631693,
+        4655.280079548546
+      ],
+      "size": [
+        325.5748046875,
+        274
+      ],
+      "flags": {},
+      "order": 71,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 165
+        },
+        {
+          "name": "original_latent",
+          "shape": 7,
+          "type": "LATENT",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            197
+          ]
+        }
+      ],
+      "title": "Feather video mask edges",
+      "properties": {
+        "Node name for S&R": "vloFeatherVideoLatentMask",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0"
+      },
+      "widgets_values": [
+        "outer",
+        2,
+        2,
+        0,
+        0,
+        "cosine",
+        0
+      ],
+      "widgets_values_named": {
+        "mode": "outer",
+        "lead_ramp": 2,
+        "tail_ramp": 2,
+        "lead_hold": 0,
+        "tail_hold": 0,
+        "curve": "cosine",
+        "floor": 0
+      }
     }
   ],
   "links": [
@@ -6381,8 +6442,8 @@
       165,
       97,
       0,
-      39,
-      4,
+      117,
+      0,
       "LATENT"
     ],
     [
@@ -6815,6 +6876,14 @@
       0,
       41,
       0,
+      "LATENT"
+    ],
+    [
+      197,
+      117,
+      0,
+      39,
+      4,
       "LATENT"
     ]
   ],

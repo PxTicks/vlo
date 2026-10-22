@@ -265,8 +265,10 @@ export function useWaveformRenderer({
     }
 
     // Only after the visibility check: a long timeline would otherwise hold a
-    // 2D context for every off-screen clip.
-    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+    // 2D context for every off-screen clip. Not `desynchronized`: Chrome can
+    // stop presenting a low-latency canvas (it reads back fine but shows
+    // blank), and a filmstrip gains nothing from bypassing the compositor.
+    const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) {
       return;
     }

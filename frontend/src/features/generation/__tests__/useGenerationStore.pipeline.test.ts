@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerationJob, WorkflowInput } from "../types";
+import type { GenerationDeliveryManifest } from "../services/generationDeliveryApi";
 import {
   createDefaultWorkflowRules,
   type WorkflowRules,
@@ -2548,6 +2549,116 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockGenerate).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ["running", "running"],
+    ["completed_pending_ack", "completed"],
+    ["error", "error"],
+    ["cancelled", "error"],
+  ] as const)(
+    "preserves %s delivery state received before the submission response",
+    async (deliveryStatus, expectedJobStatus) => {
+      useGenerationStore.getState().connect();
+      makeReadyStoreState();
+      const deliveryClient = getLatestDeliveryClient();
+      deliveryClient.emitMessage({
+        type: "lease_state",
+        data: { project_id: "project-1", active: true },
+      });
+      vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:live-preview");
+      mockFrontendPostprocess.mockResolvedValue({
+        postprocessedPreview: null,
+        postprocessError: null,
+        importedAssetIds: [],
+      });
+      const outputs = [
+        {
+          filename: "result.png",
+          subfolder: "",
+          type: "output" as const,
+          viewUrl: "/comfy/view?filename=result.png&type=output",
+        },
+      ];
+      const delivery: GenerationDeliveryManifest = {
+        delivery_id: "delivery-1",
+        project_id: "project-1",
+        prompt_id: "prompt-1",
+        status: deliveryStatus,
+        progress: deliveryStatus === "running" ? 42 : 100,
+        current_node: deliveryStatus === "running" ? "sampler" : null,
+        error: expectedJobStatus === "error" ? "Generation stopped" : null,
+        submitted_at: 1000,
+        completed_at: deliveryStatus === "running" ? null : 2000,
+        generation_metadata: {
+          source: "generated",
+          workflowName: "Workflow Display Name",
+          inputs: [],
+        },
+        outputs: deliveryStatus === "completed_pending_ack" ? outputs : [],
+        preview_frames: [],
+      };
+      mockGenerate.mockImplementationOnce(async () => {
+        deliveryClient.emitMessage({
+          type: "delivery_update",
+          data: { delivery },
+        });
+        if (deliveryStatus === "running") {
+          deliveryClient.emitPreview({
+            blob: new Blob(["preview"], { type: "image/png" }),
+            frameIndex: 0,
+            frameRate: 8,
+            totalFrames: 1,
+          });
+        }
+        if (deliveryStatus === "completed_pending_ack") {
+          // Let ingestion finish before the delayed HTTP response arrives.
+          await vi.waitFor(() => {
+            expect(useGenerationStore.getState().postprocessingJobIds).toEqual([]);
+          });
+          deliveryClient.emitMessage({
+            type: "delivery_removed",
+            data: { delivery_id: "delivery-1", prompt_id: "prompt-1" },
+          });
+        }
+        return {
+          prompt_id: "prompt-1",
+          delivery_id: "delivery-1",
+          number: 1,
+          node_errors: {},
+        };
+      });
+
+      await expect(
+        useGenerationStore.getState().submitGeneration({}),
+      ).resolves.toBe("prompt-1");
+
+      const state = useGenerationStore.getState();
+      expect(state.jobs.get("prompt-1")).toMatchObject({
+        status: expectedJobStatus,
+        progress: delivery.progress,
+        currentNode: delivery.current_node,
+        error: delivery.error,
+        submittedAt: 1000,
+        completedAt: delivery.completed_at,
+        outputs: delivery.outputs,
+      });
+      expect(state.activeJobId).toBe(
+        deliveryStatus === "running" ? "prompt-1" : null,
+      );
+      expect(
+        [...state.jobs.values()].filter((job) => job.status === "queued"),
+      ).toHaveLength(0);
+      expect(state.generationQueue).toEqual([]);
+      expect(state.pipelineStatus.phase).toBe("idle");
+      if (deliveryStatus === "running") {
+        expect(state.latestPreviewUrl).toBe("blob:live-preview");
+        expect(state.previewAnimation?.frameUrls).toEqual(["blob:live-preview"]);
+      }
+      if (deliveryStatus === "completed_pending_ack") {
+        expect(state.jobs.get("prompt-1")?.importedAssetIds).toEqual([]);
+      }
+    },
+  );
+
   it("clears stale live previews when a new generation starts", async () => {
     makeReadyStoreState();
     const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
@@ -2564,6 +2675,69 @@ describe("useGenerationStore pipeline phases", () => {
     const jobId = await useGenerationStore.getState().submitGeneration({});
 
     expect(jobId).toBe("prompt-1");
+    expect(useGenerationStore.getState()).toMatchObject({
+      activeJobId: "prompt-1",
+      latestPreviewUrl: null,
+      previewAnimation: null,
+    });
+    expect(revokeSpy).toHaveBeenCalledWith("blob:stale-preview");
+    expect(revokeSpy).toHaveBeenCalledWith("blob:stale-frame");
+  });
+
+  it("clears stale live previews when the queued delivery beats the submission response", async () => {
+    useGenerationStore.getState().connect();
+    makeReadyStoreState();
+    const deliveryClient = getLatestDeliveryClient();
+    deliveryClient.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    useGenerationStore.setState({
+      latestPreviewUrl: "blob:stale-preview",
+      previewAnimation: {
+        frameUrls: ["blob:stale-frame"],
+        frameRate: 8,
+        totalFrames: 1,
+      },
+    });
+    mockGenerate.mockImplementationOnce(async () => {
+      deliveryClient.emitMessage({
+        type: "delivery_update",
+        data: {
+          delivery: {
+            delivery_id: "delivery-1",
+            project_id: "project-1",
+            prompt_id: "prompt-1",
+            status: "queued",
+            progress: 0,
+            current_node: null,
+            error: null,
+            submitted_at: 1000,
+            completed_at: null,
+            generation_metadata: {
+              source: "generated",
+              workflowName: "Workflow Display Name",
+              inputs: [],
+            },
+            outputs: [],
+            preview_frames: [],
+          },
+        },
+      });
+      return {
+        prompt_id: "prompt-1",
+        delivery_id: "delivery-1",
+        number: 1,
+        node_errors: {},
+      };
+    });
+
+    await expect(
+      useGenerationStore.getState().submitGeneration({}),
+    ).resolves.toBe("prompt-1");
+
     expect(useGenerationStore.getState()).toMatchObject({
       activeJobId: "prompt-1",
       latestPreviewUrl: null,

@@ -1157,39 +1157,51 @@ export function buildExecutionStoreState(
         lastAppliedWidgetValues: submitted.appliedWidgetValues,
       });
 
-      const newJob: import("../types").GenerationJob = {
-        id: submitted.promptId,
-        deliveryId: submitted.deliveryId,
-        status: "queued",
-        progress: 0,
-        currentNode: null,
-        outputs: [],
-        error: null,
-        submittedAt: Date.now(),
-        completedAt: null,
-        postprocessConfig: resolvedPlan.postprocess.config,
-        aspectRatioProcessing: submitted.aspectRatioProcessing,
-        generationMetadata: submitted.generationMetadata,
-        postprocessedPreview: null,
-        postprocessError: null,
-        autoFamilyRequestKey,
-        usesSaveImageWebsocketOutputs: submitted.usesSaveImageWebsocketOutputs,
-        saveImageWebsocketNodeIds: submitted.saveImageWebsocketNodeIds,
-        preparedMaskFile: submitted.preparedMaskFile,
-      };
-
-      const updated = new Map(get().jobs);
-      updated.set(submitted.promptId, newJob);
       set((state) => {
         if (state.pipelineRunToken !== pipelineRunToken) {
           return {};
         }
 
+        // Delivery events can arrive before the HTTP response, including a
+        // completion already ingested and acknowledged. Enrich that job with
+        // submission metadata without resetting its lifecycle or previews.
+        const existingJob = state.jobs.get(submitted.promptId);
+        const newJob: import("../types").GenerationJob = {
+          ...(existingJob ?? {
+            id: submitted.promptId,
+            status: "queued",
+            progress: 0,
+            currentNode: null,
+            outputs: [],
+            error: null,
+            submittedAt: Date.now(),
+            completedAt: null,
+            postprocessedPreview: null,
+            postprocessError: null,
+          }),
+          deliveryId: submitted.deliveryId ?? existingJob?.deliveryId,
+          postprocessConfig: resolvedPlan.postprocess.config,
+          aspectRatioProcessing: submitted.aspectRatioProcessing,
+          generationMetadata: submitted.generationMetadata,
+          autoFamilyRequestKey,
+          usesSaveImageWebsocketOutputs: submitted.usesSaveImageWebsocketOutputs,
+          saveImageWebsocketNodeIds: submitted.saveImageWebsocketNodeIds,
+          preparedMaskFile: submitted.preparedMaskFile,
+        };
+        const updated = new Map(state.jobs);
+        updated.set(submitted.promptId, newJob);
+
         // Submitting no longer means "this is now the one running": with the
         // whole batch handed to ComfyUI up front, a prompt queued behind a
         // still-running sibling must not steal the preview pane from it.
+        // The delivery's own "queued" update usually beats this response, so an
+        // existing job is the normal case. Only a job that has started running
+        // can own the preview on screen; anything shown for a queued one is
+        // left over from the previous generation.
         const nextActiveJobId = resolveActiveJobId(updated, state.activeJobId);
-        const takesOverPreview = nextActiveJobId === submitted.promptId;
+        const takesOverPreview =
+          nextActiveJobId === submitted.promptId &&
+          (!existingJob || existingJob.status === "queued");
         if (takesOverPreview) {
           if (state.latestPreviewUrl) {
             URL.revokeObjectURL(state.latestPreviewUrl);
@@ -1199,14 +1211,16 @@ export function buildExecutionStoreState(
 
         const nextPreviewFrames = new Map(state.jobPreviewFrames);
         const previewMode = newJob.postprocessConfig?.mode ?? "auto";
-        if (
-          newJob.usesSaveImageWebsocketOutputs &&
-          (previewMode === "auto" ||
-            previewMode === "stitch_frames_with_audio")
-        ) {
-          nextPreviewFrames.set(submitted.promptId, []);
-        } else {
-          nextPreviewFrames.delete(submitted.promptId);
+        if (!existingJob) {
+          if (
+            newJob.usesSaveImageWebsocketOutputs &&
+            (previewMode === "auto" ||
+              previewMode === "stitch_frames_with_audio")
+          ) {
+            nextPreviewFrames.set(submitted.promptId, []);
+          } else {
+            nextPreviewFrames.delete(submitted.promptId);
+          }
         }
 
         return {

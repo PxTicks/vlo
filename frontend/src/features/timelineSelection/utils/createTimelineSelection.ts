@@ -90,6 +90,7 @@ export function createTimelineSelection(
       ? { transitions: selectedTransitions }
       : {}),
     resolution: selectionResolution,
+    aspectRatio: useProjectStore.getState().config.aspectRatio,
     ...(selectionMessage ? { message: selectionMessage } : {}),
     ...(selectionIncludeModeEnabled && selectionIncludedTrackIds.length > 0
       ? { includedTrackIds: selectionIncludedTrackIds.slice() }
@@ -120,6 +121,7 @@ export function createPointTimelineSelection(
   );
   return projectTimelineSelection({
     start: tick,
+    aspectRatio: useProjectStore.getState().config.aspectRatio,
     clips: selectedClips,
     tracks,
     ...(selectedTransitions.length > 0
@@ -196,6 +198,7 @@ export function createTimelineSelectionFromClipIds({
   return projectTimelineSelection({
     start,
     end,
+    aspectRatio: useProjectStore.getState().config.aspectRatio,
     clips: structuredClone(selectionClips),
     tracks: sourceTracks.map((track) => structuredClone(track)),
     ...(selectionTransitions.length > 0

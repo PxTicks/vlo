@@ -12,6 +12,7 @@ import { buildGenerationFamilyAutoMatchKey } from "../familyAssignment";
 import { buildDerivedMaskRenderSignature } from "../derivedMaskRenderSignature";
 import type { WorkflowRules } from "../../services/workflowRules";
 import type { WorkflowInput } from "../../types";
+import type { SlotValue } from "../../pipeline/types";
 
 const {
   mockAddLocalAsset,
@@ -447,6 +448,33 @@ describe("generation pipeline", () => {
     expect(request.audioInputs).toEqual({ audio_input: audioFile });
     expect(request.targetAspectRatio).toBe("9:16");
   });
+
+  it.each(["image", "video"] as const)(
+    "keeps a captured custom %s canvas supported after the project ratio changes",
+    async (inputType) => {
+      const file = new File(["media"], "input", { type: `${inputType}/mp4` });
+      vi.spyOn(mediaUtils, "probeVisualFileAspectRatio").mockResolvedValue("5:3");
+      const crop = vi.spyOn(mediaUtils, "maybeCropVisualFileToAspectRatio").mockResolvedValue(file);
+      const value: SlotValue = inputType === "image"
+        ? { type: "image", file, canvasAspectRatio: "5:3" }
+        : {
+            type: "video_selection", preparedVideoFile: file,
+            selection: makeTimelineSelection({
+              start: 0, end: 96000, clips: [], resolution: 720, aspectRatio: "5:3",
+            }),
+          };
+
+      const request = await frontendPreprocess({}, "workflow.json", [{
+        nodeId: "source", classType: inputType === "image" ? "LoadImage" : "LoadVideo",
+        inputType, param: inputType, label: "Source", currentValue: null, origin: "rule",
+      }], { source: value }, "client-id", [], undefined, {
+        exactAspectRatio: false, projectConfig: { aspectRatio: "9:16", fps: 30 },
+      });
+
+      expect(request.targetAspectRatio).toBe("5:3");
+      expect(crop).toHaveBeenCalledWith(file, "5:3");
+    },
+  );
 
   it("normalizes off-grid input aspect ratios to the nearest supported ratio when exact matching is disabled", async () => {
     useProjectStore.setState((state) => ({

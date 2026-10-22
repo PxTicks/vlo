@@ -482,7 +482,10 @@ describe("generation metadata replay helpers", () => {
         nodeId: "145",
         kind: "timelineSelection",
         isFrame: true,
-        timelineSelection,
+        timelineSelection: {
+          ...timelineSelection,
+          aspectRatio: useProjectStore.getState().config.aspectRatio,
+        },
       },
     ]);
   });

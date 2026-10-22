@@ -94,7 +94,7 @@ export async function renderSelectionToOutput(
         refreshSelectionClips: false,
       })) ?? timelineSelection);
   const { exportConfig, projectData } =
-    options.renderInputs ?? buildProjectRenderInputs();
+    options.renderInputs ?? buildProjectRenderInputs(timelineSelection);
   const selection = options.skipNormalize
     ? preparedTimelineSelection
     : normalizeDetachedTimelineSelection(preparedTimelineSelection, projectData.fps);

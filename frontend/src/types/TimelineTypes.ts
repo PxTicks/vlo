@@ -105,6 +105,8 @@ export interface LegacyTimelineSelection extends TimelineRegionData {
    * on `CompositeContent` — and silently part of its bake identity.
    */
   resolution?: number;
+  /** Project canvas ratio at capture time; absent on older selections. */
+  aspectRatio?: `${number}:${number}`;
   /**
    * Records that this selection was taken as audio only: the extraction it
    * produced is a soundtrack, not a video. Set from the selection overlay's

@@ -198,6 +198,9 @@ function buildMediaSlotCacheDescriptor(
           {
             file: describeFileForCache(value.file),
             type: value.type,
+            ...(value.type === "image" && value.canvasAspectRatio
+              ? { canvasAspectRatio: value.canvasAspectRatio }
+              : {}),
             ...(value.type === "video"
               ? { includeEmbeddedAudio: value.includeEmbeddedAudio ?? null }
               : {}),

@@ -33,6 +33,7 @@ import {
 } from "../../timelineSelection";
 import { prepareBrushMasksForTimelineRender } from "../../masks/api";
 import { useProjectStore } from "../../project";
+import { normalizeAspectRatio } from "../../project/aspectRatioOptions";
 import { getAssetInput, getAssets } from "../../userAssets";
 import type {
   DerivedMaskMapping,
@@ -137,7 +138,7 @@ export function resolveSelectionOutputDimensions(
 ): { outputWidth: number; outputHeight: number } {
   const config = useProjectStore.getState().config;
   const fromSelection = resolveRegionRenderDimensions(
-    config.aspectRatio,
+    normalizeAspectRatio(timelineSelection?.aspectRatio) ?? config.aspectRatio,
     timelineSelection,
     config.outputResolution,
   );
@@ -175,7 +176,7 @@ async function resolveSelectionRenderInputs(
     (await prepareBrushMasksForTimelineRender(timelineSelection, {
       refreshSelectionClips: false,
     })) ?? timelineSelection;
-  const { exportConfig, projectData } = buildProjectRenderInputs();
+  const { exportConfig, projectData } = buildProjectRenderInputs(timelineSelection);
 
   return {
     renderInputs: {
@@ -465,7 +466,7 @@ async function renderTimelineSelectionToOutputs(
       })) ??
       timelineSelection);
   const { exportConfig, projectData } =
-    options.renderInputs ?? buildProjectRenderInputs();
+    options.renderInputs ?? buildProjectRenderInputs(timelineSelection);
   const normalizedSelection = normalizeDetachedTimelineSelection(
     preparedTimelineSelection,
     projectData.fps,
@@ -933,7 +934,7 @@ export async function renderTimelineSelectionToMp4WithMask(
         refreshSelectionClips: false,
       })) ?? timelineSelection);
   const { exportConfig, projectData } =
-    options.renderInputs ?? buildProjectRenderInputs();
+    options.renderInputs ?? buildProjectRenderInputs(timelineSelection);
   const pairDimensions = options.renderInputs
     ? options
     : resolveSelectionOutputDimensions(timelineSelection, options);

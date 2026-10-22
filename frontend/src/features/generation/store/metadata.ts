@@ -723,7 +723,13 @@ export function buildGeneratedCreationMetadata(
 function cloneTimelineSelectionForMetadata(
   selection: TimelineSelection,
 ): TimelineSelection {
-  return structuredClone(selection);
+  const snapshot = structuredClone(selection);
+  // Older attachments may still follow the project. Freeze that dependency
+  // when recording a generation, before a later project edit changes replay.
+  if (!snapshot.bakedSource) {
+    snapshot.aspectRatio ??= useProjectStore.getState().config.aspectRatio;
+  }
+  return snapshot;
 }
 
 export function findPreparedMaskFallback(

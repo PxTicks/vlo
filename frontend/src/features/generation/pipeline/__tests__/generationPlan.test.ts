@@ -256,6 +256,19 @@ describe("generationPlan cache media extraction", () => {
     });
   });
 
+  it("changes the preprocess cache key when a captured image canvas changes", () => {
+    const plan = makePlan("LoadImage");
+    const file = new File(["image"], "frame.png", { type: "image/png" });
+    plan.preprocess.slotValues = {
+      image: { type: "image", file, canvasAspectRatio: "5:3" },
+    };
+    const key = buildGenerationPreprocessCacheKey(plan);
+    plan.preprocess.slotValues.image = {
+      type: "image", file, canvasAspectRatio: "16:9",
+    };
+    expect(buildGenerationPreprocessCacheKey(plan)).not.toBe(key);
+  });
+
   it("changes the preprocess cache key when a memory loader toggles out of in-memory mode", () => {
     const memoryPlan = makePlan("VLOMemoryLoadVideo");
     const filePlan: GenerationPlan = {

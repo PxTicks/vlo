@@ -181,6 +181,7 @@ export const prepareAspectRatioInputs: Processor<FrontendPreprocessContext> = {
       "projectConfig",
       "exactAspectRatio",
       "requestedAspectRatio",
+      "slotValues",
       "imageInputs",
       "videoInputs",
     ],
@@ -197,10 +198,19 @@ export const prepareAspectRatioInputs: Processor<FrontendPreprocessContext> = {
     const anchor = resolveAnchorFile(ctx);
     const requestedTargetAspectRatio =
       await resolveRequestedTargetAspectRatio(ctx, anchor);
+    // A captured custom canvas remains supported after the project changes,
+    // just as the live project's custom ratio is supported for fresh inputs.
+    const capturedAspectRatios = Object.values(ctx.slotValues).flatMap((value) => {
+      const ratio = value.type === "video_selection"
+        ? value.selection.aspectRatio
+        : value.type === "image" ? value.canvasAspectRatio : undefined;
+      return ratio ? [ratio] : [];
+    });
     const targetAspectRatio = ctx.exactAspectRatio
       ? requestedTargetAspectRatio
       : normalizeToSupportedProjectAspectRatio(requestedTargetAspectRatio, [
           ctx.projectConfig.aspectRatio,
+          ...capturedAspectRatios,
         ]) ?? requestedTargetAspectRatio;
 
     ctx.targetAspectRatio = targetAspectRatio;

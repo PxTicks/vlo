@@ -1276,6 +1276,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
                 slotValues[slotInputId] = {
                   type: "image",
                   file: value.file,
+                  ...(value.timelineSelection?.aspectRatio
+                    ? { canvasAspectRatio: value.timelineSelection.aspectRatio }
+                    : {}),
                 };
               }
               continue;

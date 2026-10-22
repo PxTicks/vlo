@@ -13,10 +13,34 @@ import {
   snapFrameCountToStep,
   snapSteppedRangeEdge,
 } from "../timelineSelection";
-import { createTimelineSelectionFromClipIds } from "../createTimelineSelection";
+import {
+  createPointTimelineSelection,
+  createTimelineSelection,
+  createTimelineSelectionFromClipIds,
+} from "../createTimelineSelection";
 import { TICKS_PER_SECOND } from "../../../timeline";
+import { useProjectStore } from "../../../project";
 
 describe("timelineSelection helpers", () => {
+  it.each(["16:9", "9:16", "5:3"] as const)(
+    "captures the %s project canvas on point and range selections",
+    (aspectRatio) => {
+      const config = useProjectStore.getState().config;
+      try {
+        useProjectStore.setState({ config: { ...config, aspectRatio } });
+        const point = createPointTimelineSelection(0);
+        const range = createTimelineSelection(0, TICKS_PER_SECOND);
+        useProjectStore.setState({ config: { ...config, aspectRatio: "1:1" } });
+
+        expect(point.aspectRatio).toBe(aspectRatio);
+        expect(range.aspectRatio).toBe(aspectRatio);
+        expect(normalizeDetachedTimelineSelection(structuredClone(range)).aspectRatio).toBe(aspectRatio);
+      } finally {
+        useProjectStore.setState({ config });
+      }
+    },
+  );
+
   it("resolves selection fps over project fps", () => {
     expect(resolveSelectionFps({ fps: 24 }, 30)).toBe(24);
     expect(resolveSelectionFps({ fps: null }, 30)).toBe(30);
@@ -638,6 +662,7 @@ describe("timelineSelection helpers", () => {
     expect(selection).toEqual(makeTimelineSelection({
       start: TICKS_PER_SECOND,
       end: 2 * TICKS_PER_SECOND,
+      aspectRatio: useProjectStore.getState().config.aspectRatio,
       clips: [visualClip, maskClip],
       tracks: [visualTrack, maskTrack],
       fps: 24,

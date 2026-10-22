@@ -61,6 +61,15 @@ describe("resolveSelectionOutputDimensions", () => {
     ).toEqual({ outputWidth: 720, outputHeight: 1280 });
   });
 
+  it("preserves a saved selection's aspect ratio after the project changes", () => {
+    useProjectStore.setState({
+      config: { ...useProjectStore.getState().config, aspectRatio: "9:16" },
+    });
+    expect(resolveSelectionOutputDimensions(makeTimelineSelection({
+      start: 0, clips: [], resolution: 720, aspectRatio: "16:9",
+    }))).toEqual({ outputWidth: 1280, outputHeight: 720 });
+  });
+
   // Explicit dimensions are for callers rendering something that is not the
   // project's geometry — an asset at its native size.
   it("lets an explicit override win", () => {
@@ -151,6 +160,35 @@ describe("inputSelection", () => {
       ],
     });
   });
+
+  it.each(["video", "mask", "pair"] as const)(
+    "renders a saved %s on its original canvas after the project ratio changes",
+    async (output) => {
+      const render = vi.fn().mockResolvedValue({
+        video: new Blob(["video"]), mask: new Blob(["mask"]),
+        outputs: { video: new Blob(["video"]), mask: new Blob(["mask"]) },
+      });
+      const create = vi.spyOn(ExportRenderer, "create").mockResolvedValue({ render } as unknown as ExportRenderer);
+      const selection = makeTimelineSelection({
+        start: 0, end: 24, clips: useTimelineStore.getState().clips,
+        aspectRatio: "16:9", resolution: 720,
+      });
+      useProjectStore.setState({
+        config: { ...useProjectStore.getState().config, aspectRatio: "9:16" },
+      });
+
+      if (output === "video") await renderTimelineSelectionToMp4(selection);
+      else if (output === "mask") await renderTimelineSelectionToMaskMp4(selection);
+      else await renderTimelineSelectionToMp4WithMask(selection);
+
+      for (const [config] of create.mock.calls) {
+        expect(config).toMatchObject({
+          logicalWidth: 1920, logicalHeight: 1080, outputWidth: 1280, outputHeight: 720,
+        });
+      }
+      expect(create).toHaveBeenCalled();
+    },
+  );
 
   it("renders derived masks as a separate maskless video pass", async () => {
     const renderSpy = vi

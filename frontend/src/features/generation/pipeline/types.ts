@@ -68,7 +68,12 @@ export interface DerivedMaskMapping {
 
 export type SlotValue =
   | { type: "text"; value: string }
-  | { type: "image"; file: File }
+  | {
+      type: "image";
+      file: File;
+      /** Original canvas for captured timeline frames, including custom ratios. */
+      canvasAspectRatio?: string;
+    }
   | { type: "audio"; file: File }
   | {
       type: "video";

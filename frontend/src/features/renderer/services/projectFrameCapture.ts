@@ -1,4 +1,7 @@
 import { useProjectStore } from "../../project";
+import { normalizeAspectRatio } from "../../project/aspectRatioOptions";
+import type { TimelineSelection } from "../../../types/TimelineTypes";
+import { resolveRegionRenderResolution } from "../../timelineSelection/utils/selectionRenderResolution";
 import {
   getTimelineClips,
   getTimelineDuration,
@@ -49,11 +52,20 @@ function resolveExtension(mimeType: "image/png" | "image/webp"): string {
   }
 }
 
-export function buildProjectRenderInputs(): ProjectRenderInputs {
+/** Detached selections retain their original canvas; project renders use live settings. */
+export function buildProjectRenderInputs(
+  timelineSelection?: TimelineSelection,
+): ProjectRenderInputs {
   const projectStore = useProjectStore.getState();
   const assets = getAssets();
 
-  const { aspectRatio, outputResolution } = projectStore.config;
+  const aspectRatio =
+    normalizeAspectRatio(timelineSelection?.aspectRatio) ??
+    projectStore.config.aspectRatio;
+  const outputResolution = resolveRegionRenderResolution(
+    timelineSelection,
+    projectStore.config.outputResolution,
+  );
   const logicalDimensions = getProjectDimensions(aspectRatio);
   const outputDimensions = resolveRenderOutputDimensions(
     aspectRatio,
@@ -102,7 +114,7 @@ export async function renderProjectFrameAtTick(
     options.timelineSelection,
     { refreshSelectionClips: false },
   );
-  const { exportConfig, projectData } = buildProjectRenderInputs();
+  const { exportConfig, projectData } = buildProjectRenderInputs(options.timelineSelection);
   const renderer = await ExportRenderer.create(exportConfig);
   const blob = await renderer.renderStill(projectData, exportConfig, tick, {
     ...options,

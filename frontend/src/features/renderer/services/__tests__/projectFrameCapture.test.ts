@@ -1,6 +1,7 @@
 import { inflateSync } from "node:zlib";
 import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 import type { AspectRatio } from "../../../project/useProjectStore";
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 
 const projectConfig = {
   aspectRatio: "16:9" as AspectRatio,
@@ -32,6 +33,7 @@ vi.mock("../ExportRenderer", () => ({ ExportRenderer: { create: vi.fn() } }));
 
 import {
   buildProjectRenderInputs,
+  renderProjectFrameAtTick,
   renderProjectFrameFileAtTick,
 } from "../projectFrameCapture";
 import { ExportRenderer } from "../ExportRenderer";
@@ -136,6 +138,33 @@ describe("buildProjectRenderInputs output resolution", () => {
     expect(at2160.outputWidth).toBe(2160);
     expect(at2160.outputHeight).toBe(3840);
   });
+});
+
+describe("saved selection geometry", () => {
+  it.each(["16:9", "9:16", "5:3"] as const)(
+    "renders frames on the captured %s canvas after the project changes",
+    async (aspectRatio) => {
+      setAspectRatio(aspectRatio);
+      setOutputResolution(720);
+      const originalConfig = buildProjectRenderInputs().exportConfig;
+      const selection = makeTimelineSelection({
+        start: 0, clips: [], resolution: 720, aspectRatio,
+      });
+      setAspectRatio("1:1");
+      setOutputResolution(1080);
+      const renderStill = vi.fn().mockResolvedValue(new Blob(["frame"]));
+      vi.mocked(ExportRenderer.create).mockResolvedValue({ renderStill } as never);
+
+      const frame = await renderProjectFrameAtTick(0, { timelineSelection: selection });
+
+      expect(ExportRenderer.create).toHaveBeenLastCalledWith(originalConfig);
+      expect(renderStill.mock.calls[0][1]).toEqual(originalConfig);
+      expect(frame).toMatchObject({
+        width: originalConfig.outputWidth, height: originalConfig.outputHeight,
+      });
+      expect(projectConfig.aspectRatio).toBe("1:1");
+    },
+  );
 });
 
 describe("renderProjectFrameFileAtTick preserveMaskedPixels", () => {

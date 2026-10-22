@@ -735,7 +735,10 @@ describe("useGenerationStore workflow rules", () => {
         {
           nodeId: "node_timeline",
           kind: "timelineSelection",
-          timelineSelection,
+          timelineSelection: {
+            ...timelineSelection,
+            aspectRatio: useProjectStore.getState().config.aspectRatio,
+          },
         },
         {
           nodeId: "node_dragged",

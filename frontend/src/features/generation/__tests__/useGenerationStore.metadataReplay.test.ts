@@ -5,6 +5,9 @@ import { TEMP_WORKFLOW_ID, useGenerationStore } from "../useGenerationStore";
 import { useAssetStore } from "../../userAssets/useAssetStore";
 import { createDefaultWorkflowRules } from "../services/workflowRules";
 import type { Asset } from "../../../types/Asset";
+import { useProjectStore } from "../../project";
+import { buildGeneratedCreationInputs } from "../store/metadata";
+import type { GenerationMediaInputValue, WorkflowInput } from "../types";
 
 const mocks = vi.hoisted(() => ({
   captureFramePngAtTick: vi.fn(),
@@ -774,6 +777,60 @@ describe("useGenerationStore metadata replay", () => {
       thumbnailFile,
     });
   });
+
+  it.each(["image", "video"] as const)(
+    "replays auto %s inputs using the captured aspect ratio",
+    async (inputType) => {
+      const originalConfig = useProjectStore.getState().config;
+      try {
+        useProjectStore.setState({ config: { ...originalConfig, aspectRatio: "16:9" } });
+        const workflowInput: WorkflowInput = {
+          nodeId: "145", classType: inputType === "image" ? "LoadImage" : "LoadVideo",
+          inputType, param: inputType, label: "Source", currentValue: null, origin: "inferred",
+        };
+        const selection = makeTimelineSelection({ start: 10, end: 40, clips: [], resolution: 720 });
+        const file = new File(["input"], "input.png", { type: "image/png" });
+        const mediaInput: GenerationMediaInputValue = inputType === "image"
+          ? { kind: "frame", file, previewUrl: "blob:frame", timelineSelection: selection }
+          : {
+              kind: "timelineSelection", timelineSelection: selection,
+              thumbnailFile: file, thumbnailUrl: "blob:thumb", mediaType: "video",
+              isExtracting: false, extractionRequestId: 1, extractionError: null,
+              preparedVideoFile: null, preparedMaskFile: null,
+            };
+        const inputs = buildGeneratedCreationInputs([workflowInput], { "145": mediaInput });
+        useProjectStore.setState({ config: { ...originalConfig, aspectRatio: "9:16" } });
+        vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([]);
+
+        await useGenerationStore.getState().loadWorkflowFromAssetMetadata({
+          id: "generated", hash: "generated", name: "generated.mp4", type: "video",
+          src: "generated.mp4", createdAt: 0,
+          creationMetadata: {
+            source: "generated", workflowName: "Original Workflow", inputs,
+            replayState: { version: 2, aspectRatioSelection: "auto" },
+            comfyuiPrompt: {
+              "145": { class_type: workflowInput.classType, inputs: { [inputType]: "input" } },
+            },
+          },
+        });
+
+        expect(mocks.captureFramePngAtTick).toHaveBeenCalledWith(
+          10, expect.any(String), expect.objectContaining({ aspectRatio: "16:9" }),
+          ...(inputType === "image" ? [{ preserveMaskedPixels: true }] : []),
+        );
+        if (inputType === "video") {
+          expect(mocks.renderTimelineSelectionToMp4).toHaveBeenCalledWith(
+            expect.objectContaining({ aspectRatio: "16:9", resolution: 720 }),
+          );
+        }
+        expect(useGenerationStore.getState().aspectRatioSelection).toBe("auto");
+        expect(useProjectStore.getState().config.aspectRatio).toBe("9:16");
+        expect(selection.aspectRatio).toBeUndefined();
+      } finally {
+        useProjectStore.setState({ config: originalConfig });
+      }
+    },
+  );
 
   it("restores repeatable timeline selections into their saved slot ids", async () => {
     const generatedAsset: Asset = {

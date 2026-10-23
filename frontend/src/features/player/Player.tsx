@@ -1,7 +1,7 @@
 import { useEffect, useRef, useMemo, memo, useCallback, useState } from "react";
 import { isProjectExportRunning } from "../../core/export/exportRunLog";
 import { projectMutationGuard } from "../../core/project/projectMutationGuard";
-import { Box } from "@mui/material";
+import { Box, Button, Typography } from "@mui/material";
 import { RenderTexture } from "pixi.js";
 import {
   AudioLiveParamLayer,
@@ -180,7 +180,14 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
     });
 
   // --- Pixi Initialization ---
-  const { pixiApp, canvasSize } = usePixiApp(containerRef, canvasRef);
+  const {
+    pixiApp,
+    canvasSize,
+    canvasKey,
+    isRecovering,
+    error: previewError,
+    retry,
+  } = usePixiApp(containerRef, canvasRef);
   useCanvasSelectionKeyboard();
 
   useEffect(() => {
@@ -488,8 +495,17 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
     const temporalPreviewQuality = isPlaying ? "exact" : "approximate";
     let scrubSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
+    const isPreviewAvailable = () =>
+      !!pixiApp?.renderer &&
+      pixiApp.canvas.isConnected !== false &&
+      !("context" in pixiApp.renderer && pixiApp.renderer.context.isLost);
+
     const processPendingPlaybackFrames = async () => {
-      if (synchronizedPlaybackBusyRef.current || isDisposed) return;
+      if (
+        synchronizedPlaybackBusyRef.current ||
+        isDisposed ||
+        !isPreviewAvailable()
+      ) return;
       synchronizedPlaybackBusyRef.current = true;
 
       const shouldPauseTicker = !isPlaying && !!pixiApp;
@@ -559,7 +575,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
                   temporalPreviewQuality:
                     nextFrame.temporalPreviewQuality ?? "exact",
                   submitWarmupFrame: (tick, plan, render) => {
-                    if (!pixiApp?.renderer) return;
+                    if (!pixiApp?.renderer || !isPreviewAvailable()) return;
                     renderGroupOrchestrator?.syncPresentationPlan(
                       tick,
                       plan,
@@ -633,7 +649,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
             );
           }
 
-          if (isDisposed) {
+          if (isDisposed || !isPreviewAvailable()) {
             continue;
           }
 
@@ -663,7 +679,12 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
         }
       } finally {
         // usePixiApp keeps the ticker stopped during a project export.
-        if (shouldPauseTicker && !isDisposed && !isProjectExportRunning()) {
+        if (
+          shouldPauseTicker &&
+          !isDisposed &&
+          isPreviewAvailable() &&
+          !isProjectExportRunning()
+        ) {
           pixiApp.ticker.start();
         }
 
@@ -727,7 +748,12 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
       pendingPlaybackFrameQueueRef.current = [];
       unsubscribe();
       unsubscribeFrameRequests?.();
-      if (!isPlaying && pixiApp && !isProjectExportRunning()) {
+      if (
+        !isPlaying &&
+        pixiApp &&
+        isPreviewAvailable() &&
+        !isProjectExportRunning()
+      ) {
         pixiApp.ticker.start();
       }
     };
@@ -1082,12 +1108,26 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
         }}
       >
         <canvas
+          key={canvasKey}
           ref={canvasRef}
           style={{
             width: "100%",
             height: "100%",
           }}
         />
+        {(isRecovering || previewError) && (
+          <Box
+            role={previewError ? "alert" : "status"}
+            sx={{ position: "absolute", textAlign: "center", p: 2 }}
+          >
+            <Typography color="text.primary">
+              {previewError ?? "Restoring preview…"}
+            </Typography>
+            {previewError && (
+              <Button onClick={retry}>Restart preview</Button>
+            )}
+          </Box>
+        )}
         {/* Render Track Layers */}
         {pixiApp &&
           viewport &&

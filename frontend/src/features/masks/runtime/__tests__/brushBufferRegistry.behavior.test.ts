@@ -91,6 +91,7 @@ vi.mock("../../../../core/liveParams/livePreviewParamStore", () => ({
 import {
   beginBrushBufferEdit,
   clearBrushBuffer,
+  discardBrushBuffersForRenderer,
   disposeBrushBuffer,
   endBrushBufferEdit,
   ensureBrushBuffer,
@@ -400,6 +401,39 @@ describe("brushBufferRegistry behavior", () => {
     expect(warnSpy).toHaveBeenCalledWith(
       'Keeping dirty brush buffer "hydrate" on its original renderer',
     );
+  });
+
+  it("discards buffers bound to a lost renderer so a replacement can rebuild them", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const lost = ensureBrushBuffer("mask", 10, 20, activeRenderer as never);
+    paintBrushDot("mask", 1, 2, 1, "paint");
+    beginBrushBufferEdit("mask");
+    const otherRenderer = renderer();
+    const kept = ensureBrushBuffer("other", 10, 20, otherRenderer as never);
+    const listener = vi.fn(() => {
+      // A subscriber that re-ensures during notification must not loop.
+      ensureBrushBuffer("mask", 10, 20, activeRenderer as never);
+    });
+    subscribeToBrushBuffer("mask", listener);
+
+    discardBrushBuffersForRenderer(activeRenderer as never);
+
+    expect(lost.renderTexture.destroy).toHaveBeenCalledWith(true);
+    expect(listener).toHaveBeenCalled();
+    // The buffer a subscriber re-created is not swept by the same discard.
+    expect(getBrushBuffer("mask")).not.toBe(lost);
+    expect(getBrushBuffer("mask")).not.toBeNull();
+    expect(getBrushBuffer("other")).toBe(kept);
+    expect(isBrushBufferEditing("mask")).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Discarding unsaved brush strokes for "mask" after the renderer was lost',
+    );
+
+    const replacement = renderer();
+    const rebuilt = ensureBrushBuffer("mask", 10, 20, replacement as never);
+    expect(rebuilt.renderer).toBe(replacement);
+    expect(isBrushBufferDirty("mask")).toBe(false);
+    endBrushBufferEdit("mask");
   });
 
   it("hydrates PNG data through the buffer's explicit renderer", async () => {

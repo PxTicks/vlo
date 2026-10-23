@@ -82,7 +82,7 @@ const {
       },
       mockPixiApp: {
         canvas: { style: {} },
-        renderer: {},
+        renderer: { context: { isLost: false } },
         render: vi.fn(),
         stage: {
           on: vi.fn(),
@@ -383,6 +383,7 @@ describe("Player playback loop", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPixiApp.renderer.context.isLost = false;
     mockLiveFrameGraphState.enabled = true;
     mockLiveFrameGraphState.participantCount = 0;
     playerControlsProps.current = null;
@@ -584,6 +585,27 @@ describe("Player playback loop", () => {
     );
 
     view.unmount();
+  });
+
+  it("does not present an in-flight frame or restart the ticker after context loss", async () => {
+    mockLiveFrameGraphState.participantCount = 1;
+    usePlayerStore.setState({ isPlaying: false });
+    let resolveFrame!: (result: null) => void;
+    mockLiveFrameGraphRenderFrame.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveFrame = resolve; }),
+    );
+
+    const view = render(<Player />);
+    await waitFor(() => expect(resolveFrame).toBeDefined());
+    mockPixiApp.render.mockClear();
+    mockPixiApp.ticker.start.mockClear();
+    mockPixiApp.renderer.context.isLost = true;
+    await act(async () => resolveFrame(null));
+
+    expect(mockPixiApp.render).not.toHaveBeenCalled();
+    expect(mockPixiApp.ticker.start).not.toHaveBeenCalled();
+    view.unmount();
+    expect(mockPixiApp.ticker.start).not.toHaveBeenCalled();
   });
 
   it("reports diagnostic presentation only for submitted, current frames", async () => {

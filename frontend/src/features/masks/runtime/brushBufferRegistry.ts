@@ -393,6 +393,30 @@ export function disposeBrushBuffer(maskId: string): void {
   notify(maskId);
 }
 
+/**
+ * A lost WebGL context takes every render texture's pixels with it, so
+ * strokes on that renderer can never be materialized. Keeping a dirty buffer
+ * would pin brush input and commits to a dead renderer; dropping it lets brush
+ * sources rehydrate from the last persisted asset on the replacement renderer.
+ * Edit sessions belong to the mask panel and survive the discard.
+ */
+export function discardBrushBuffersForRenderer(renderer: Renderer): void {
+  // Collect first: subscribers may synchronously re-ensure a buffer.
+  const discarded = [...buffers].filter(
+    ([, buffer]) => buffer.renderer === renderer,
+  );
+  for (const [maskId, buffer] of discarded) {
+    if (buffer.dirty) {
+      console.warn(
+        `Discarding unsaved brush strokes for "${maskId}" after the renderer was lost`,
+      );
+    }
+    buffer.renderTexture.destroy(true);
+    buffers.delete(maskId);
+  }
+  for (const [maskId] of discarded) notify(maskId);
+}
+
 export function setBrushPaintedBounds(
   maskId: string,
   bounds: BrushPaintedBounds | null,

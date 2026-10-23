@@ -5,14 +5,27 @@ import type {
   Renderer,
   Ticker,
 } from "pixi.js";
-import { renderHook, act } from "@testing-library/react";
+import { StrictMode } from "react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { usePixiApp } from "../usePixiApp";
 import { usePlayerStore } from "../../usePlayerStore";
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
     beginExportRun,
     resetExportRunLogForTests,
 } from "../../../../core/export/exportRunLog";
+
+import { getActivePixiApplication } from "../../../../core/pixi/activeApplication";
+
+const { initMock, applications, discardBrushBuffersForRenderer } = vi.hoisted(() => ({
+    initMock: vi.fn<Application["init"]>(),
+    applications: [] as Application[],
+    discardBrushBuffersForRenderer: vi.fn(),
+}));
+
+vi.mock("../../../masks/runtime/brushBufferRegistry", () => ({
+    discardBrushBuffersForRenderer,
+}));
 
 // Mock Pixi
 vi.mock("pixi.js", async () => {
@@ -21,7 +34,10 @@ vi.mock("pixi.js", async () => {
     return {
         ...original,
         Application: class MockApplication implements Partial<Application> {
-            init = vi.fn<Application["init"]>().mockResolvedValue(undefined);
+            constructor() {
+                applications.push(this as unknown as Application);
+            }
+            init = initMock;
             destroy = vi.fn<Application["destroy"]>();
             stage = fake<Container>({
                 eventMode: 'passive', // Default
@@ -57,9 +73,16 @@ describe("usePixiApp", () => {
                 clientHeight: 600,
             } as HTMLDivElement 
         };
-        canvasRef = { current: {} as HTMLCanvasElement };
+        canvasRef = { current: document.createElement("canvas") };
+        applications.length = 0;
+        initMock.mockReset().mockResolvedValue(undefined);
         resetExportRunLogForTests();
         usePlayerStore.getState().setIsPlaying(false);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
     });
 
     async function renderApp() {
@@ -123,4 +146,120 @@ describe("usePixiApp", () => {
         expect(app!.stage.eventMode).toBe("static");
         expect(app!.stage.hitArea).toBe(app!.screen);
     });
+
+    async function mountPreview() {
+        const hook = renderHook(() => usePixiApp(containerRef, canvasRef));
+        await waitFor(() => expect(hook.result.current.pixiApp).not.toBeNull());
+        return hook;
+    }
+
+    function loseContext() {
+        const event = new Event("webglcontextlost", { cancelable: true });
+        act(() => { canvasRef.current!.dispatchEvent(event); });
+        return event;
+    }
+
+    it("pauses playback and withdraws the scene immediately on context loss", async () => {
+        const { result } = await mountPreview();
+        const app = result.current.pixiApp!;
+        act(() => usePlayerStore.getState().setIsPlaying(true));
+
+        expect(loseContext().defaultPrevented).toBe(true);
+
+        expect(usePlayerStore.getState().isPlaying).toBe(false);
+        expect(result.current.pixiApp).toBeNull();
+        expect(result.current.isRecovering).toBe(true);
+        expect(app.ticker.stop).toHaveBeenCalled();
+        expect(getActivePixiApplication()).toBeNull();
+        expect(discardBrushBuffersForRenderer).toHaveBeenCalledWith(app.renderer);
+    });
+
+    it.each(["restored", "timeout"])("rebuilds scene resources after %s", async (path) => {
+        const { result } = await mountPreview();
+        const original = result.current.pixiApp!;
+        vi.useFakeTimers();
+        loseContext();
+        // Player replaces the DOM canvas when canvasKey changes. The ref here
+        // emulates that commit without mocking the context-loss event itself.
+        canvasRef.current = document.createElement("canvas");
+        if (path === "restored") {
+            // The restored event belongs to the retiring canvas.
+            const canvas = initMock.mock.calls[0][0] as { canvas: HTMLCanvasElement };
+            act(() => canvas.canvas.dispatchEvent(new Event("webglcontextrestored")));
+        }
+        await act(async () => { await vi.advanceTimersByTimeAsync(path === "restored" ? 0 : 3_000); });
+
+        expect(result.current.canvasKey).toBe(1);
+        expect(result.current.pixiApp).not.toBe(original);
+        expect(result.current.pixiApp).not.toBeNull();
+        expect(original.destroy).toHaveBeenCalledOnce();
+        expect(result.current.isRecovering).toBe(false);
+        expect(getActivePixiApplication()).toBe(result.current.pixiApp);
+        expect(usePlayerStore.getState().isPlaying).toBe(false);
+    });
+
+    it("keeps the recovered ticker stopped during a project export", async () => {
+        const { result } = await mountPreview();
+        act(() => { beginExportRun({ kind: "project", startTicks: 0, endTicks: 96_000 }); });
+        vi.useFakeTimers();
+        loseContext();
+        canvasRef.current = document.createElement("canvas");
+        await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+        expect(result.current.pixiApp).not.toBeNull();
+        expect(result.current.pixiApp!.ticker.start).not.toHaveBeenCalled();
+    });
+
+    it("offers retry when the GPU cannot create a replacement renderer", async () => {
+        const { result } = await mountPreview();
+        const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+        initMock.mockRejectedValueOnce(new Error("GPU unavailable"));
+        vi.useFakeTimers();
+        loseContext();
+        canvasRef.current = document.createElement("canvas");
+        await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+        expect(result.current.pixiApp).toBeNull();
+        expect(result.current.error).toMatch(/could not start/);
+        expect(result.current.isRecovering).toBe(false);
+
+        canvasRef.current = document.createElement("canvas");
+        await act(async () => result.current.retry());
+        expect(result.current.pixiApp).not.toBeNull();
+        expect(result.current.error).toBeNull();
+        consoleError.mockRestore();
+    });
+
+    it("cancels recovery and removes canvas listeners on unmount", async () => {
+        const { result, unmount } = await mountPreview();
+        const original = result.current.pixiApp!;
+        vi.useFakeTimers();
+        loseContext();
+        unmount();
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+        const event = new Event("webglcontextlost", { cancelable: true });
+        canvasRef.current!.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+        expect(applications).toHaveLength(1);
+        expect(original.destroy).toHaveBeenCalledOnce();
+        expect(getActivePixiApplication()).toBeNull();
+    });
+
+    it("destroys an initialization that finishes after unmount without publishing it", async () => {
+        let finishInit!: () => void;
+        initMock.mockImplementationOnce(() => new Promise<void>((resolve) => { finishInit = resolve; }));
+        const { unmount } = renderHook(() => usePixiApp(containerRef, canvasRef));
+        await act(async () => {});
+        const original = applications[0];
+        unmount();
+        await act(async () => finishInit());
+        expect(original.destroy).toHaveBeenCalledOnce();
+        expect(getActivePixiApplication()).toBeNull();
+    });
+
+    it("initializes only the live StrictMode effect", async () => {
+        const { result } = renderHook(() => usePixiApp(containerRef, canvasRef), { wrapper: StrictMode });
+        await waitFor(() => expect(result.current.pixiApp).not.toBeNull());
+        expect(applications).toHaveLength(1);
+        expect(getActivePixiApplication()).toBe(result.current.pixiApp);
+    });
+
 });

@@ -31,6 +31,7 @@ import {
   buildBridgeEffectPayload,
   captureGenerationEffectsForPlan,
   collectGenerationEffectErrors,
+  omitWidgetSubmissionsForBypassedNodes,
 } from "../pipeline/generationGraphEffects";
 import { iframeBridge } from "../services/iframeBridgeClient";
 import { generationSessionService } from "../services/GenerationSessionService";
@@ -1063,6 +1064,15 @@ export function buildExecutionStoreState(
         resolvedPlan.workflow.promptIsPreResolved === true;
       const resolvedWorkflow: Record<string, unknown> | null =
         submittedWorkflow ?? effectivePrepared.request.workflow;
+      // Only a pre-resolved prompt had the effects applied, so only then are
+      // the bypassed nodes actually missing from what the backend receives.
+      const widgetSubmissions =
+        usesPreResolvedWorkflow && resolvedPlan.effects
+          ? omitWidgetSubmissionsForBypassedNodes(
+              effectivePrepared.request,
+              resolvedPlan.effects.effects,
+            )
+          : {};
 
       const projectId = useProjectStore.getState().project?.id;
       if (!projectId) {
@@ -1105,6 +1115,7 @@ export function buildExecutionStoreState(
       const response = await comfyApi.generate(
         {
           ...effectivePrepared.request,
+          ...widgetSubmissions,
           projectId,
           deliveryContext,
           workflow: resolvedWorkflow,

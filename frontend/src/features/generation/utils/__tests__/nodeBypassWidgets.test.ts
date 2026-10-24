@@ -4,9 +4,12 @@ import {
   collectDefaultNodeBypassWidgetTargets,
   getNodeBypassWidgetKey,
   isNodeBypassWidgetValue,
+  isNodeOrDescendant,
   partitionNodeBypassWidgetInputs,
   reconcileNodeBypassWidgetTargets,
 } from "../nodeBypassWidgets";
+import { collectWidgetSubmissionState } from "../widgetSubmissionState";
+import { buildFrontendStateWidgetKey } from "../../services/frontendRuleState";
 
 const widget: WorkflowWidgetInput = {
   nodeId: "12:6",
@@ -36,6 +39,7 @@ describe("node-bypass widget choices", () => {
       activeWidgetInputs: [],
       bypassNodeIds: ["12:6"],
       activateNodeIds: [],
+      inactiveNodeIds: ["12:6"],
     });
     expect(
       partitionNodeBypassWidgetInputs([widget], new Set()),
@@ -43,6 +47,7 @@ describe("node-bypass widget choices", () => {
       activeWidgetInputs: [widget],
       bypassNodeIds: [],
       activateNodeIds: [],
+      inactiveNodeIds: [],
     });
   });
 
@@ -63,6 +68,7 @@ describe("node-bypass widget choices", () => {
       activeWidgetInputs: [],
       bypassNodeIds: [],
       activateNodeIds: [],
+      inactiveNodeIds: ["12:6"],
     });
 
     expect(
@@ -71,6 +77,7 @@ describe("node-bypass widget choices", () => {
       activeWidgetInputs: [shippedBypassed],
       bypassNodeIds: [],
       activateNodeIds: ["12:6"],
+      inactiveNodeIds: [],
     });
   });
 
@@ -92,6 +99,100 @@ describe("node-bypass widget choices", () => {
       activeWidgetInputs: [fixedWidget],
       bypassNodeIds: [],
       activateNodeIds: [],
+      inactiveNodeIds: [],
+    });
+  });
+});
+
+describe("isNodeOrDescendant", () => {
+  it("matches the node and ids scoped under it, not lookalike ids", () => {
+    expect(isNodeOrDescendant("20", "20")).toBe(true);
+    expect(isNodeOrDescendant("20:30", "20")).toBe(true);
+    expect(isNodeOrDescendant("20:30:40", "20:30")).toBe(true);
+    expect(isNodeOrDescendant("200", "20")).toBe(false);
+    expect(isNodeOrDescendant("200:30", "20")).toBe(false);
+    expect(isNodeOrDescendant("2:20", "20")).toBe(false);
+    expect(isNodeOrDescendant("20", "20:30")).toBe(false);
+  });
+});
+
+describe("widget submission for bypassed nodes", () => {
+  const strength: WorkflowWidgetInput = {
+    nodeId: "12:6",
+    param: "strength_model",
+    currentValue: 1,
+    config: {
+      label: "Strength",
+      controlAfterGenerate: false,
+      valueType: "float",
+    },
+  };
+  const seed: WorkflowWidgetInput = {
+    nodeId: "3",
+    param: "seed",
+    currentValue: 7,
+    config: { label: "Seed", controlAfterGenerate: true, valueType: "int" },
+  };
+
+  it.each([
+    ["bypasses", widget],
+    [
+      "leaves off as shipped",
+      { ...widget, config: { ...widget.config, nodeShipsBypassed: true } },
+    ],
+  ])(
+    "sends no overrides for the other widgets of a node it %s",
+    (_label, loader) => {
+      const submission = collectWidgetSubmissionState({
+        widgetInputs: [loader, strength, seed],
+        widgetValues: {},
+        randomizeToggles: {},
+        bypassedWidgetTargets: new Set([
+          getNodeBypassWidgetKey("12:6", "lora_name"),
+        ]),
+      });
+
+      expect(submission.widgetOverrides).toEqual({ widget_3_seed: "7" });
+      // Still saved with the panel, so turning the loader back on restores it.
+      expect(submission.frontendStateWidgetValues).toMatchObject({
+        [buildFrontendStateWidgetKey("12:6", "strength_model")]: 1,
+      });
+    },
+  );
+
+  it("sends no overrides for nodes inside a subgraph it bypasses", () => {
+    const instance: WorkflowWidgetInput = { ...widget, nodeId: "20" };
+    const inner = (nodeId: string): WorkflowWidgetInput => ({
+      ...strength,
+      nodeId,
+    });
+
+    const submission = collectWidgetSubmissionState({
+      widgetInputs: [instance, inner("20:30:40"), inner("200:30"), seed],
+      widgetValues: {},
+      randomizeToggles: {},
+      bypassedWidgetTargets: new Set([
+        getNodeBypassWidgetKey("20", "lora_name"),
+      ]),
+    });
+
+    expect(submission.widgetOverrides).toEqual({
+      "widget_200:30_strength_model": "1",
+      widget_3_seed: "7",
+    });
+  });
+
+  it("still sends a loader's widgets while it runs", () => {
+    const submission = collectWidgetSubmissionState({
+      widgetInputs: [widget, strength],
+      widgetValues: {},
+      randomizeToggles: {},
+      bypassedWidgetTargets: new Set(),
+    });
+
+    expect(submission.widgetOverrides).toEqual({
+      "widget_12:6_lora_name": "base.safetensors",
+      "widget_12:6_strength_model": "1",
     });
   });
 });

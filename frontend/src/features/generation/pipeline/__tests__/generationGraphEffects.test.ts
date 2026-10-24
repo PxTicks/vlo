@@ -6,6 +6,7 @@ import {
   captureGenerationEffectsForPlan,
   collectGenerationEffectErrors,
   normalizeGenerationGraphEffects,
+  omitWidgetSubmissionsForBypassedNodes,
 } from "../generationGraphEffects";
 import type {
   GenerationContributedEffectGroup,
@@ -369,6 +370,72 @@ describe("buildBridgeEffectPayload", () => {
       activateNodeIds: ["7"],
       widgetOverrides: [],
     });
+  });
+});
+
+describe("omitWidgetSubmissionsForBypassedNodes", () => {
+  it("drops widget writes and modes for bypassed nodes only", () => {
+    expect(
+      omitWidgetSubmissionsForBypassedNodes(
+        {
+          widgetInputs: {
+            widget_116_lora_name: "seam.safetensors",
+            widget_116_strength_model: "1",
+            widget_1160_steps: "4",
+            "widget_12:6_lora_name": "a.safetensors",
+            widget_112_steps: "8",
+          },
+          widgetModes: {
+            widget_mode_116_seed: "randomize",
+            widget_mode_3_seed: "fixed",
+          },
+        },
+        [
+          { kind: "bypass-nodes", nodeIds: ["116"], source: "rule-rewrite" },
+          { kind: "activate-nodes", nodeIds: ["112"], source: "panel-bypass" },
+          {
+            kind: "bypass-nodes",
+            nodeIds: ["12:6"],
+            source: "rule-effect-switch",
+          },
+        ],
+      ),
+    ).toEqual({
+      widgetInputs: { widget_1160_steps: "4", widget_112_steps: "8" },
+      widgetModes: { widget_mode_3_seed: "fixed" },
+    });
+  });
+
+  it("drops writes for nodes inside a bypassed subgraph", () => {
+    expect(
+      omitWidgetSubmissionsForBypassedNodes(
+        {
+          widgetInputs: {
+            "widget_20:30:40_lora_name": "inner.safetensors",
+            "widget_20:31_steps": "4",
+            widget_20_strength: "1",
+            "widget_200:30_steps": "6",
+            "widget_2:20_steps": "7",
+          },
+          widgetModes: {
+            "widget_mode_20:30:40_seed": "randomize",
+            "widget_mode_200:5_seed": "fixed",
+          },
+        },
+        [{ kind: "bypass-nodes", nodeIds: ["20"], source: "rule-rewrite" }],
+      ),
+    ).toEqual({
+      widgetInputs: { "widget_200:30_steps": "6", "widget_2:20_steps": "7" },
+      widgetModes: { "widget_mode_200:5_seed": "fixed" },
+    });
+  });
+
+  it("leaves absent maps absent", () => {
+    expect(
+      omitWidgetSubmissionsForBypassedNodes({}, [
+        { kind: "bypass-nodes", nodeIds: ["116"], source: "rule-rewrite" },
+      ]),
+    ).toEqual({ widgetInputs: undefined, widgetModes: undefined });
   });
 });
 

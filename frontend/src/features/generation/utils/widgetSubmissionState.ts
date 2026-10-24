@@ -3,7 +3,10 @@ import {
   buildFrontendStateValueKey,
 } from "../services/frontendRuleState";
 import type { WorkflowWidgetInput } from "../types";
-import { partitionNodeBypassWidgetInputs } from "./nodeBypassWidgets";
+import {
+  isNodeOrDescendant,
+  partitionNodeBypassWidgetInputs,
+} from "./nodeBypassWidgets";
 import { parseStoredWidgetValue } from "./storedWidgetValues";
 import type { WidgetValueMap } from "./widgetValueReconciliation";
 
@@ -76,6 +79,16 @@ export function collectWidgetSubmissionState(
         : "fixed";
     }
     if (w.config.frontendOnly) {
+      continue;
+    }
+    // The panel keeps showing a bypassed node's other widgets, but the node
+    // never reaches the prompt, so the backend would be validating values
+    // for nothing (an unused stack slot's LoRA may not even be installed).
+    if (
+      partitioned.inactiveNodeIds.some((nodeId) =>
+        isNodeOrDescendant(w.nodeId, nodeId),
+      )
+    ) {
       continue;
     }
     // Randomization is resolved by the backend, so no value is sent: the

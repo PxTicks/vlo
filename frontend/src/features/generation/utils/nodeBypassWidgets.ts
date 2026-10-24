@@ -7,6 +7,14 @@ export function getNodeBypassWidgetKey(
   return `${nodeId}\u0000${param}`;
 }
 
+/**
+ * Bypassing a subgraph instance removes every node inside it, and those
+ * nodes' ids are scoped under the instance's (`20` contains `20:30:40`).
+ */
+export function isNodeOrDescendant(nodeId: string, ancestorId: string): boolean {
+  return nodeId === ancestorId || nodeId.startsWith(`${ancestorId}:`);
+}
+
 export function isNodeBypassWidgetValue(
   widget: WorkflowWidgetInput,
   value: unknown,
@@ -20,6 +28,12 @@ export interface NodeBypassWidgetPartition {
   readonly bypassNodeIds: readonly string[];
   /** Nodes shipping bypassed that this submission turns on. */
   readonly activateNodeIds: readonly string[];
+  /**
+   * Every node this submission leaves bypassed: those it bypasses and those
+   * shipping bypassed that it leaves off. graphToPrompt drops them, so their
+   * other widgets have nothing to write to.
+   */
+  readonly inactiveNodeIds: readonly string[];
 }
 
 /**
@@ -32,6 +46,7 @@ export function partitionNodeBypassWidgetInputs(
 ): NodeBypassWidgetPartition {
   const bypassNodeIds = new Set<string>();
   const activateNodeIds = new Set<string>();
+  const inactiveNodeIds = new Set<string>();
   const activeWidgetInputs: WorkflowWidgetInput[] = [];
   for (const widget of widgetInputs) {
     if (!widget.config.nodeBypassOption) {
@@ -44,6 +59,7 @@ export function partitionNodeBypassWidgetInputs(
         getNodeBypassWidgetKey(widget.nodeId, widget.param),
       )
     ) {
+      inactiveNodeIds.add(widget.nodeId);
       // A node already bypassed in the file needs no effect to stay off.
       if (!shipsBypassed) bypassNodeIds.add(widget.nodeId);
       continue;
@@ -55,6 +71,7 @@ export function partitionNodeBypassWidgetInputs(
     activeWidgetInputs,
     bypassNodeIds: [...bypassNodeIds],
     activateNodeIds: [...activateNodeIds],
+    inactiveNodeIds: [...inactiveNodeIds],
   };
 }
 

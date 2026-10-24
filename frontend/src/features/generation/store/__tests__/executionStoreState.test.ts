@@ -909,6 +909,53 @@ describe("buildExecutionStoreState", () => {
     });
   });
 
+  it("drops widget overrides for nodes the resolved prompt bypasses", async () => {
+    const plan = makePlan({
+      workflow: {
+        ...makePlan().workflow,
+        submittedWorkflow: null,
+        promptIsPreResolved: false,
+      },
+    });
+    mocks.createGenerationPlan.mockReturnValue(plan);
+    // A rule bypasses the seam-pass loader; the panel still holds its widgets.
+    mocks.evaluateRewrites.mockReturnValue({
+      bypass: ["116", "20"],
+      widgetOverrides: [],
+    });
+    mocks.prepareGenerationPlan.mockResolvedValue({
+      plan,
+      request: {
+        workflow: { fallback: true },
+        textInputs: {},
+        imageInputs: {},
+        videoInputs: {},
+        audioInputs: {},
+        cachedMediaInputs: {},
+        widgetInputs: {
+          widget_116_lora_name: "unavailable.safetensors",
+          // Inside subgraph 20, which graphToPrompt drops as a whole.
+          "widget_20:30:40_lora_name": "unavailable.safetensors",
+          widget_112_steps: "8",
+        },
+        widgetModes: {
+          widget_mode_116_seed: "randomize",
+          "widget_mode_20:30:40_seed": "randomize",
+        },
+      },
+    });
+    const harness = createHarness({ editorRef: {} as HTMLIFrameElement });
+
+    await harness.actions.queueGeneration({});
+
+    expect(mocks.preResolvePrompt.mock.calls[0]?.[1]).toEqual(["116", "20"]);
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+    const request = mocks.generate.mock.calls[0]?.[0];
+    expect(request.promptIsPreResolved).toBe(true);
+    expect(request.widgetInputs).toEqual({ widget_112_steps: "8" });
+    expect(request.widgetModes).toEqual({});
+  });
+
   it("fails the dispatch when a stale queued capture cannot be resolved again", async () => {
     const plan = makePlan({
       workflow: {

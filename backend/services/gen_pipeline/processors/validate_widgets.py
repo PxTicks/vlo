@@ -113,7 +113,7 @@ def _get_workflow_inputs(
 class _ValidateWidgetsProcessor:
     meta = ProcessorMeta(
         name="validate_widgets",
-        reads=("rules", "widget_overrides", "widget_modes"),
+        reads=("workflow", "rules", "widget_overrides", "widget_modes"),
         writes=("widget_overrides",),
         description="Validates and normalizes submitted widget values before they mutate the workflow",
     )

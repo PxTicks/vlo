@@ -14,6 +14,7 @@ import type {
   GenerationEffectSource,
   GenerationGraphEffect,
   GenerationPlan,
+  GenerationRequest,
   GenerationWorkflowExpectation,
 } from "./types";
 
@@ -369,6 +370,48 @@ export function buildBridgeEffectPayload(
     }
   }
   return { bypassNodeIds, activateNodeIds, widgetOverrides };
+}
+
+type WidgetSubmissionMaps = Pick<GenerationRequest, "widgetInputs" | "widgetModes">;
+
+function omitNodeKeys<T>(
+  entries: Record<string, T> | undefined,
+  prefix: string,
+  nodeIds: readonly string[],
+): Record<string, T> | undefined {
+  if (!entries) return entries;
+  // Keys are `<prefix><nodeId>_<param>`. The separator after the id keeps
+  // node "1" from also matching node "12"; `:` reaches into a bypassed
+  // subgraph, whose inner nodes graphToPrompt drops along with it.
+  const nodePrefixes = nodeIds.flatMap((nodeId) => [
+    `${prefix}${nodeId}_`,
+    `${prefix}${nodeId}:`,
+  ]);
+  return Object.fromEntries(
+    Object.entries(entries).filter(
+      ([key]) => !nodePrefixes.some((nodePrefix) => key.startsWith(nodePrefix)),
+    ),
+  );
+}
+
+/**
+ * Drop backend widget writes aimed at nodes the captured effects bypass.
+ * graphToPrompt leaves those nodes out of the submitted prompt, and the
+ * backend treats a rule-defined write to a missing node as rules that no
+ * longer match the workflow, so only this side can tell a bypass apart.
+ */
+export function omitWidgetSubmissionsForBypassedNodes(
+  request: WidgetSubmissionMaps,
+  effects: readonly GenerationGraphEffect[],
+): WidgetSubmissionMaps {
+  const { bypassNodeIds } = buildBridgeEffectPayload(effects);
+  if (bypassNodeIds.length === 0) {
+    return { widgetInputs: request.widgetInputs, widgetModes: request.widgetModes };
+  }
+  return {
+    widgetInputs: omitNodeKeys(request.widgetInputs, "widget_", bypassNodeIds),
+    widgetModes: omitNodeKeys(request.widgetModes, "widget_mode_", bypassNodeIds),
+  };
 }
 
 /**

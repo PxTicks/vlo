@@ -10,6 +10,11 @@ import {
   clearActivePixiApplication,
   setActivePixiApplication,
 } from "../../../core/pixi/activeApplication";
+import {
+  recordGpuContextInitFailure,
+  registerGpuContext,
+  type GpuContextRegistration,
+} from "../../../core/pixi/gpuContextDiagnostics";
 import { discardBrushBuffersForRenderer } from "../../masks/runtime/brushBufferRegistry";
 
 export function usePixiApp(
@@ -42,6 +47,7 @@ export function usePixiApp(
     let contextLost = false;
     let initializationSettled = false;
     let pixiApp: Application | null = null;
+    let gpuContext: GpuContextRegistration | null = null;
     let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
 
     const scheduleRecovery = (delay: number) => {
@@ -104,6 +110,7 @@ export function usePixiApp(
           return;
         }
         appRef.current = application;
+        gpuContext = registerGpuContext("player", application);
         if (contextLost) return;
 
         application.stage.eventMode = "static";
@@ -123,6 +130,12 @@ export function usePixiApp(
           if (application.renderer) application.destroy(false, { children: true });
           return;
         }
+        recordGpuContextInitFailure(
+          "player",
+          canvas.width,
+          canvas.height,
+          cause,
+        );
         console.error("[Player] Preview initialization failed", cause);
         setIsRecovering(false);
         setError("The preview could not start. Try restarting the preview.");
@@ -136,6 +149,7 @@ export function usePixiApp(
       clearTimeout(recoveryTimer);
       canvas.removeEventListener("webglcontextlost", handleContextLost);
       canvas.removeEventListener("webglcontextrestored", handleContextRestored);
+      gpuContext?.dispose();
       if (pixiApp && initializationSettled && pixiApp.renderer) {
         clearActivePixiApplication(pixiApp);
         pixiApp.destroy(false, { children: true });

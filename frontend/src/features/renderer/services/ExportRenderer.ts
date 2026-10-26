@@ -4,6 +4,11 @@ import type { ExportDiagnostic } from "./exportDiagnostics";
 import type { ExportFileTarget } from "./ExportFileTarget";
 import { Application, Container, RenderTexture } from "pixi.js";
 import { enableAdvancedBlendModes } from "../../../core/pixi/advancedBlendModes";
+import {
+  recordGpuContextInitFailure,
+  registerGpuContext,
+  type GpuContextRegistration,
+} from "../../../core/pixi/gpuContextDiagnostics";
 import type {
   TimelineTrack,
   TimelineClip,
@@ -396,10 +401,16 @@ export class ExportRenderer {
   private cancelController: AbortController | null = null;
   private isCancelled = false;
   private outputEncoder: TextureOutputEncoder | null = null;
+  private gpuContext: GpuContextRegistration;
 
-  private constructor(app: Application, logicalStage: Container) {
+  private constructor(
+    app: Application,
+    logicalStage: Container,
+    gpuContext: GpuContextRegistration,
+  ) {
     this.app = app;
     this.logicalStage = logicalStage;
+    this.gpuContext = gpuContext;
   }
 
   /**
@@ -419,22 +430,33 @@ export class ExportRenderer {
     enableAdvancedBlendModes();
     const app = new Application();
 
-    await app.init({
-      width: outputWidth,
-      height: outputHeight,
-      backgroundColor: 0x000000,
-      backgroundAlpha,
-      antialias: true,
-      resolution: 1,
-      autoDensity: false,
-      // Advanced blend modes read from the back buffer on WebGL.
-      useBackBuffer: true,
-      // Every export frame is rendered explicitly. A started ticker would also
-      // redraw the whole stage to the unseen canvas on every animation frame;
-      // on vlo_03 that tripled export time wherever rAF runs (a visible
-      // editor, or a hidden one kept alive by the progress PiP).
-      autoStart: false,
-    });
+    try {
+      await app.init({
+        width: outputWidth,
+        height: outputHeight,
+        backgroundColor: 0x000000,
+        backgroundAlpha,
+        antialias: true,
+        resolution: 1,
+        autoDensity: false,
+        // Advanced blend modes read from the back buffer on WebGL.
+        useBackBuffer: true,
+        // Every export frame is rendered explicitly. A started ticker would also
+        // redraw the whole stage to the unseen canvas on every animation frame;
+        // on vlo_03 that tripled export time wherever rAF runs (a visible
+        // editor, or a hidden one kept alive by the progress PiP).
+        autoStart: false,
+      });
+    } catch (cause) {
+      recordGpuContextInitFailure(
+        "offscreen-render",
+        outputWidth,
+        outputHeight,
+        cause,
+      );
+      throw cause;
+    }
+    const gpuContext = registerGpuContext("offscreen-render", app);
 
     // 2. Setup the "Logical Stage"
     const logicalStage = new Container();
@@ -449,7 +471,7 @@ export class ExportRenderer {
     );
     app.stage.addChild(logicalStage);
 
-    return new ExportRenderer(app, logicalStage);
+    return new ExportRenderer(app, logicalStage, gpuContext);
   }
 
   /**
@@ -1167,6 +1189,7 @@ export class ExportRenderer {
     this.orchestrator = null;
     this.engines.forEach((engine) => engine.dispose());
     this.engines = [];
+    this.gpuContext.dispose();
     this.app.destroy(false, { children: true, texture: true });
   }
 

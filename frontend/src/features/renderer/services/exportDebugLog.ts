@@ -8,6 +8,8 @@ export const EXPORT_DEBUG_SUMMARY_INTERVAL_MS = 10_000;
 export interface ExportDebugLog {
   onPhaseChange: (phase: ExportPhase) => void;
   onDiagnostic: (event: ExportDiagnostic) => void;
+  /** Log a one-off milestone, such as setup finishing, with the elapsed time. */
+  mark: (milestone: string) => void;
   /** Print the final tally and stop the periodic summary. Idempotent. */
   finish: (outcome: "completed" | "failed" | "cancelled") => void;
 }
@@ -103,6 +105,7 @@ export function startExportDebugLog(label: string): ExportDebugLog | null {
           break;
       }
     },
+    mark: (milestone) => log(milestone),
     finish: (outcome) => {
       if (finished) return;
       finished = true;

@@ -115,7 +115,10 @@ export async function renderProjectFrameAtTick(
     { refreshSelectionClips: false },
   );
   const { exportConfig, projectData } = buildProjectRenderInputs(options.timelineSelection);
-  const renderer = await ExportRenderer.create(exportConfig);
+  const renderer = await ExportRenderer.create({
+    ...exportConfig,
+    debugLabel: "frame capture",
+  });
   const blob = await renderer.renderStill(projectData, exportConfig, tick, {
     ...options,
     ...(preparedSelection ? { timelineSelection: preparedSelection } : {}),

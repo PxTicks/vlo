@@ -489,6 +489,7 @@ async function renderTimelineSelectionToOutputs(
   };
   const renderer = await ExportRenderer.create({
     ...renderConfig,
+    debugLabel: `generation ${outputs.map((output) => output.id).join("+")}`,
   });
   const result = await renderer.render(projectData, renderConfig, () => {}, {
     timelineSelection: normalizedSelection,
@@ -716,7 +717,10 @@ export async function renderAssetToMaskMp4(
     frameStep: 1,
   }, projectData);
 
-  const renderer = await ExportRenderer.create(exportConfig);
+  const renderer = await ExportRenderer.create({
+    ...exportConfig,
+    debugLabel: "generation asset mask",
+  });
   try {
     const result = await renderer.render(projectData, exportConfig, () => {}, {
       timelineSelection,
@@ -974,7 +978,10 @@ export async function renderTimelineSelectionToMp4WithMask(
     let maskHasVisibleContent = true;
 
     if (sourceVideoTreatment === "remove_transparency") {
-      const maskRenderer = await ExportRenderer.create(renderConfig);
+      const maskRenderer = await ExportRenderer.create({
+        ...renderConfig,
+        debugLabel: "generation mask pass",
+      });
       const maskResult = await maskRenderer.render(
         projectData,
         renderConfig,
@@ -993,7 +1000,10 @@ export async function renderTimelineSelectionToMp4WithMask(
       );
       throwIfAborted(options.signal);
 
-      const videoRenderer = await ExportRenderer.create(renderConfig);
+      const videoRenderer = await ExportRenderer.create({
+        ...renderConfig,
+        debugLabel: "generation source video",
+      });
       const videoResult = await videoRenderer.render(
         projectData,
         renderConfig,
@@ -1011,7 +1021,10 @@ export async function renderTimelineSelectionToMp4WithMask(
         "generation source video",
       );
     } else {
-      const renderer = await ExportRenderer.create(renderConfig);
+      const renderer = await ExportRenderer.create({
+        ...renderConfig,
+        debugLabel: "generation video+mask",
+      });
       const result = await renderer.render(
         projectData,
         renderConfig,

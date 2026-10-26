@@ -157,7 +157,10 @@ describe("saved selection geometry", () => {
 
       const frame = await renderProjectFrameAtTick(0, { timelineSelection: selection });
 
-      expect(ExportRenderer.create).toHaveBeenLastCalledWith(originalConfig);
+      expect(ExportRenderer.create).toHaveBeenLastCalledWith({
+        ...originalConfig,
+        debugLabel: "frame capture",
+      });
       expect(renderStill.mock.calls[0][1]).toEqual(originalConfig);
       expect(frame).toMatchObject({
         width: originalConfig.outputWidth, height: originalConfig.outputHeight,

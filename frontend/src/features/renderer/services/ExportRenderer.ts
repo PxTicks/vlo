@@ -69,6 +69,8 @@ import {
   type FrameJobResolutionTrack,
   type CompositeSourcePolicySnapshot,
 } from "./framePlanning";
+import { isAbortError } from "./framePlanning/BatchFrameGraphExecutor";
+import { startExportDebugLog, type ExportDebugLog } from "./exportDebugLog";
 import { resolveTransitionFrame } from "../../transitions/rendering/TransitionResolver";
 import { CompositeSceneRuntimeManager } from "./CompositeSceneRuntime";
 import {
@@ -321,6 +323,11 @@ export interface ExportConfig {
    * destination is not a browser file handle.
    */
   outputTarget?: ExportFileTarget;
+  /**
+   * Names this renderer in the debug-mode console log, which then also times
+   * context and pool setup. Callers that run their own log leave it unset.
+   */
+  debugLabel?: string;
 }
 
 export interface ProjectData {
@@ -402,15 +409,19 @@ export class ExportRenderer {
   private isCancelled = false;
   private outputEncoder: TextureOutputEncoder | null = null;
   private gpuContext: GpuContextRegistration;
+  private debugLog: ExportDebugLog | null;
+  private renderStarted = false;
 
   private constructor(
     app: Application,
     logicalStage: Container,
     gpuContext: GpuContextRegistration,
+    debugLog: ExportDebugLog | null,
   ) {
     this.app = app;
     this.logicalStage = logicalStage;
     this.gpuContext = gpuContext;
+    this.debugLog = debugLog;
   }
 
   /**
@@ -427,6 +438,10 @@ export class ExportRenderer {
 
     // 1. Initialize Headless App (Physical Resolution)
     // Register advanced blend modes so exported clip blend modes match preview.
+    // Started before the context exists, so the log covers setup too.
+    const debugLog = config.debugLabel
+      ? startExportDebugLog(config.debugLabel)
+      : null;
     enableAdvancedBlendModes();
     const app = new Application();
 
@@ -454,9 +469,11 @@ export class ExportRenderer {
         outputHeight,
         cause,
       );
+      debugLog?.finish("failed");
       throw cause;
     }
     const gpuContext = registerGpuContext("offscreen-render", app);
+    debugLog?.mark(`renderer ready (${outputWidth}x${outputHeight})`);
 
     // 2. Setup the "Logical Stage"
     const logicalStage = new Container();
@@ -471,7 +488,7 @@ export class ExportRenderer {
     );
     app.stage.addChild(logicalStage);
 
-    return new ExportRenderer(app, logicalStage, gpuContext);
+    return new ExportRenderer(app, logicalStage, gpuContext, debugLog);
   }
 
   /**
@@ -483,6 +500,31 @@ export class ExportRenderer {
     config: ExportConfig,
     onProgress: (percentage: number) => void,
     options: RenderOptions = {},
+  ): Promise<RenderResult> {
+    const debugLog = this.debugLog;
+    if (!debugLog) {
+      return this.renderOutputs(projectData, config, onProgress, options);
+    }
+    return this.withDebugLog(debugLog, () =>
+      this.renderOutputs(projectData, config, onProgress, {
+        ...options,
+        onPhaseChange: (phase) => {
+          debugLog.onPhaseChange(phase);
+          options.onPhaseChange?.(phase);
+        },
+        onDiagnostic: (event) => {
+          debugLog.onDiagnostic(event);
+          options.onDiagnostic?.(event);
+        },
+      }),
+    );
+  }
+
+  private async renderOutputs(
+    projectData: ProjectData,
+    config: ExportConfig,
+    onProgress: (percentage: number) => void,
+    options: RenderOptions,
   ): Promise<RenderResult> {
     this.cancelController = new AbortController();
     const decoderPool = createDecoderWorkerPool({ label: "export" });
@@ -924,6 +966,36 @@ export class ExportRenderer {
     requestedTick: number,
     options: RenderStillOptions = {},
   ): Promise<Blob> {
+    const debugLog = this.debugLog;
+    if (!debugLog) {
+      return this.renderStillFrame(projectData, config, requestedTick, options);
+    }
+    return this.withDebugLog(debugLog, () =>
+      this.renderStillFrame(projectData, config, requestedTick, options),
+    );
+  }
+
+  private async withDebugLog<T>(
+    debugLog: ExportDebugLog,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    this.renderStarted = true;
+    try {
+      const result = await run();
+      debugLog.finish("completed");
+      return result;
+    } catch (error) {
+      debugLog.finish(isAbortError(error) ? "cancelled" : "failed");
+      throw error;
+    }
+  }
+
+  private async renderStillFrame(
+    projectData: ProjectData,
+    config: ExportConfig,
+    requestedTick: number,
+    options: RenderStillOptions,
+  ): Promise<Blob> {
     this.isCancelled = false;
     this.cancelController = new AbortController();
     const decoderPool = createDecoderWorkerPool({ label: "export" });
@@ -1185,6 +1257,8 @@ export class ExportRenderer {
   }
 
   public dispose() {
+    // Rendering finishes its own log; this covers a renderer that never ran.
+    if (!this.renderStarted) this.debugLog?.finish("cancelled");
     this.orchestrator?.dispose();
     this.orchestrator = null;
     this.engines.forEach((engine) => engine.dispose());

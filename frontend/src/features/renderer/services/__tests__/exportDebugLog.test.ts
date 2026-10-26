@@ -26,6 +26,7 @@ describe("export debug log", () => {
     useDebugStore.getState().setDebugMode(true);
     const log = startExportDebugLog("project export")!;
 
+    log.mark("renderer ready");
     log.onPhaseChange("rendering");
     log.onDiagnostic({ kind: "encoder-config", outputId: "video",
       config: { codec: "avc1.640028", width: 1920, height: 1080, hardwareAcceleration: "no-preference" } });
@@ -39,6 +40,7 @@ describe("export debug log", () => {
     log.finish("failed");
 
     const output = lines();
+    expect(output.some((line) => line.includes("renderer ready"))).toBe(true);
     expect(output.some((line) => line.includes("phase rendering"))).toBe(true);
     expect(output.some((line) => line.includes("avc1.640028"))).toBe(true);
     expect(output.some((line) => line.includes("submitted 5, encoded 1, backlog 4")

@@ -33,6 +33,7 @@ import type {
 import type { Component } from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../../timeline";
+import { useDebugStore } from "../../../../shared/debug/useDebugStore";
 import { extensionTransformationRegistry } from "../../../transformations/extensions/ExtensionTransformationRegistry";
 import {
   createCompositeBakeKey,
@@ -1123,6 +1124,52 @@ describe("ExportRenderer", () => {
 
     presentFrameSpy.mockRestore();
     renderer.dispose();
+  });
+
+  it("times setup and the render under a debug label only in debug mode", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const config = {
+      logicalWidth: 1920,
+      logicalHeight: 1080,
+      outputWidth: 640,
+      outputHeight: 360,
+      debugLabel: "frame capture",
+    };
+    const projectData = {
+      tracks: [{ id: "t1", type: "visual", isVisible: true }] as TimelineTrack[],
+      clips: [],
+      assets: [],
+      duration: 96000 * 0.1,
+      fps: 30,
+    } satisfies ProjectData;
+    const renderStill = async () => {
+      const renderer = await ExportRenderer.create(config);
+      Object.defineProperty((renderer as unknown as TestExportRenderer).app.canvas, "toBlob", {
+        value: (callback: BlobCallback) => callback(new Blob(["frame"])),
+        configurable: true,
+      });
+      await renderer.renderStill(projectData, config, 0);
+    };
+    const lines = () => info.mock.calls.map((call: unknown[]) => call.join(" "));
+
+    try {
+      await renderStill();
+      expect(info).not.toHaveBeenCalled();
+
+      useDebugStore.getState().setDebugMode(true);
+      await renderStill();
+      expect(lines().every((line) => line.startsWith("[Export debug: frame capture]"))).toBe(true);
+      expect(lines().some((line) => line.includes("renderer ready (640x360)"))).toBe(true);
+      expect(lines().filter((line) => line.includes("completed"))).toHaveLength(1);
+
+      // A renderer disposed without rendering still closes its log.
+      info.mockClear();
+      (await ExportRenderer.create(config)).dispose();
+      expect(lines().filter((line) => line.includes("cancelled"))).toHaveLength(1);
+    } finally {
+      useDebugStore.getState().setDebugMode(false);
+      info.mockRestore();
+    }
   });
 
   it("registers visual tracks with the orchestrator and syncs once per video frame", async () => {

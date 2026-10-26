@@ -808,6 +808,7 @@ describe("inputSelection", () => {
       outputWidth: 321,
       outputHeight: 123,
       backgroundAlpha: 0,
+      debugLabel: "generation asset mask",
     });
     expect(renderSpy.mock.calls[0][0]).toMatchObject({
       duration: 96000,

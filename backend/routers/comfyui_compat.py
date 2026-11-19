@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Request, Response, WebSocket
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from services.comfyui.comfyui_proxy import (
     PROXY_HTTP_METHODS,
@@ -333,7 +333,17 @@ def _not_ready_response(exc: CoordinatorNotReadyError) -> Response:
 # Root compatibility routes for same-origin ComfyUI iframe usage
 # ---------------------------------------------------------------------------
 
-@compat_router.api_route("/comfyui-frame", methods=PROXY_HTTP_METHODS)
+@compat_router.api_route(
+    "/comfyui-frame", methods=PROXY_HTTP_METHODS, response_class=RedirectResponse
+)
+async def redirect_comfyui_frame(request: Request) -> RedirectResponse:
+    # ComfyUI's relative asset URLs need the frame path to end with a slash.
+    location = "/comfyui-frame/"
+    if request.url.query:
+        location = f"{location}?{request.url.query}"
+    return RedirectResponse(location)
+
+
 @compat_router.api_route("/comfyui-frame/{path:path}", methods=PROXY_HTTP_METHODS)
 async def proxy_comfyui_frame(request: Request, path: str = ""):
     normalized_path = path.strip("/")

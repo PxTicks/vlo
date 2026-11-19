@@ -1,5 +1,6 @@
 import asyncio
 import json
+from urllib.parse import urljoin
 
 import httpx
 import pytest
@@ -126,6 +127,46 @@ def test_iframe_html_bootstraps_bridge_before_comfy_finishes_loading(
     assert body.count(bridge_tag) == 1
     assert body.index(bridge_tag) < body.index("./assets/index.js")
     assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.anyio
+async def test_slashless_iframe_redirect_keeps_relative_assets_in_the_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asset_path = "./assets/index.js"
+
+    async def fake_proxy(_request: Request, upstream_path: str) -> Response:
+        if upstream_path == "/":
+            return Response(
+                content=(
+                    f'<html><head><script type="module" src="{asset_path}">'
+                    "</script></head></html>"
+                ),
+                media_type="text/html",
+            )
+        assert upstream_path == "/assets/index.js"
+        return Response(content="export {};", media_type="text/javascript")
+
+    monkeypatch.setattr(comfyui_compat, "proxy_http_request", fake_proxy)
+    app = FastAPI()
+    app.include_router(comfyui_compat.compat_router)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="https://testserver",
+        follow_redirects=True,
+    ) as client:
+        frame = await client.get("/comfyui-frame?view=a%2Fb")
+
+        assert frame.status_code == 200
+        assert len(frame.history) == 1
+        assert frame.history[0].status_code == 307
+        assert frame.history[0].headers["location"] == "/comfyui-frame/?view=a%2Fb"
+        assert f'src="{asset_path}"' in frame.text
+
+        asset = await client.get(urljoin(str(frame.url), asset_path))
+
+    assert asset.status_code == 200
+    assert asset.headers["content-type"].startswith("text/javascript")
 
 
 @pytest.mark.anyio

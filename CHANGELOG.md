@@ -2,6 +2,41 @@
 
 Notable changes to VLO are documented here.
 
+## 0.3.2
+
+### Added
+
+- LTX 2.5 Refine Details and Restore workflows for enhancing existing video.
+- MiniMax H3 inpaint controls for mask growth, VAE-grid snapping, masked-area
+  prefill, temporal feathering, and an optional seam repair pass.
+- Alpha-based cropping for masked stills and custom generation crop padding
+  above the slider's range.
+- A 360p option for timeline selections, clip skew, and fixed-edge scaling.
+- The Generation panel detects outdated local ComfyUI-vlo packs and can update
+  packs installed by vlo.
+
+### Changed
+
+- SAM2 masks preserve subpixel edges. Mask growth, feathering, and Boolean
+  combinations use distance fields for smoother edges and fewer seams.
+- Position, scale, and rotation share one layout keyframe track.
+
+### Fixed
+
+- MP4 and WebM exports preserve the encoder's color metadata, preventing crushed
+  shadows, clipped highlights, and incorrect color tags in exported selections.
+- The embedded ComfyUI page loads its relative assets when opened without a
+  trailing slash and reports ready even when no workflow tab is open.
+- The preview recovers after WebGL context loss. Timeline thumbnails and
+  waveforms remain visible during scrolling and editing.
+- Generation keeps delivery events that arrive before the submission response,
+  preserves captured aspect ratios when replaying settings, and skips widget
+  overrides for bypassed nodes.
+- ComfyUI V3 combo widgets appear as dropdowns. Audio-only video containers
+  import as audio.
+- Color grading retains curve textures and preserves super-whites when editing
+  the highlight response.
+
 ## 0.3.1
 
 ### Added

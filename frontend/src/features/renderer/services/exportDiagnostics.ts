@@ -18,7 +18,7 @@ export type ExportDiagnostic =
   | {
       kind: "encoder-config";
       outputId: string;
-      /** Mediabunny's actual candidate, after host color metadata is applied. */
+      /** Encoder candidate reported by Mediabunny before support checks. */
       config: VideoEncoderConfig;
     }
   | {

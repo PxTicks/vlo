@@ -35,9 +35,6 @@ interface DeferredAdd {
   reject: (reason: unknown) => void;
   promise: Promise<void>;
 }
-interface ColorTaggedVideoEncoderConfig extends VideoEncoderConfig {
-  colorSpace?: VideoColorSpaceInit;
-}
 const addCalls: DeferredAdd[] = [];
 const mp4Options: Array<{ fastStart: false | "in-memory" }> = [];
 const outputs: Array<{ finalize: ReturnType<typeof vi.fn>; cancel: ReturnType<typeof vi.fn> }> = [];
@@ -451,24 +448,58 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     mp4Encoder.dispose();
   });
 
-  it("tags AVC encoder and MP4 decoder metadata as BT.709/sRGB", async () => {
+  it.each([true, false])("preserves MP4 encoder color metadata with fullRange=%s", async (fullRange) => {
     const encoder = new TextureOutputEncoder(app, 30, [definition]);
     await encoder.start();
 
-    const config = {} as ColorTaggedVideoEncoderConfig;
+    const codec = "avc1.42001f";
+    const config: VideoEncoderConfig = { codec, width: 1280, height: 720 };
     canvasSourceConfigs[0].onEncoderConfig?.(config);
-    expect(config.colorSpace).toEqual({
-      primaries: "bt709",
-      transfer: "iec61966-2-1",
-      matrix: "bt709",
-      fullRange: false,
-    });
+    expect(config).not.toHaveProperty("colorSpace");
 
-    const metadata = {
-      decoderConfig: {},
-    } as EncodedVideoChunkMetadata;
+    const colorSpace = {
+      fullRange,
+      primaries: "bt709",
+      transfer: "bt709",
+      matrix: "smpte170m",
+    } satisfies VideoColorSpaceInit;
+    const metadata: EncodedVideoChunkMetadata = { decoderConfig: { codec, colorSpace } };
     canvasSourceConfigs[0].onEncodedPacket?.({}, metadata);
-    expect(metadata.decoderConfig?.colorSpace).toEqual(config.colorSpace);
+    expect(metadata.decoderConfig?.colorSpace).toEqual(colorSpace);
+  });
+
+  it.each([undefined, null])("omits the MP4 color tag when range is %s", async (fullRange) => {
+    const encoder = new TextureOutputEncoder(app, 30, [definition]);
+    await encoder.start();
+
+    const decoderConfig: VideoDecoderConfig = {
+      codec: "avc1.42001f",
+      description: new Uint8Array([1, 0x42, 0, 0x1f]),
+      colorSpace: { primaries: "bt709", fullRange },
+    };
+    const { codec, description } = decoderConfig;
+    canvasSourceConfigs[0].onEncodedPacket?.({}, { decoderConfig });
+    expect(decoderConfig).toEqual({ codec, description });
+  });
+
+  it.each([true, false, null, undefined])("preserves WebM encoder color metadata with fullRange=%s", async (fullRange) => {
+    const encoder = new TextureOutputEncoder(app, 30, [{ ...definition, format: "webm" }]);
+    await encoder.start();
+
+    const codec = "vp09.00.31.08";
+    const config: VideoEncoderConfig = { codec, width: 1280, height: 720 };
+    canvasSourceConfigs[0].onEncoderConfig?.(config);
+    expect(config).not.toHaveProperty("colorSpace");
+
+    const colorSpace = {
+      primaries: "smpte170m",
+      transfer: "smpte170m",
+      matrix: "smpte170m",
+      fullRange,
+    } satisfies VideoColorSpaceInit;
+    const metadata: EncodedVideoChunkMetadata = { decoderConfig: { codec, colorSpace } };
+    canvasSourceConfigs[0].onEncodedPacket?.({}, metadata);
+    expect(metadata.decoderConfig?.colorSpace).toEqual(colorSpace);
   });
 
   it("throttles once the window is full and resumes when the oldest drains", async () => {
@@ -526,9 +557,7 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     await encoder.start();
     const config: VideoEncoderConfig = { codec: "avc1.42001f", width: 320, height: 180 };
     canvasSourceConfigs[0].onEncoderConfig?.(config);
-    expect(diagnostics[0]).toMatchObject({ kind: "encoder-config", config: {
-      codec: config.codec, colorSpace: { primaries: "bt709" },
-    } });
+    expect(diagnostics[0]).toMatchObject({ kind: "encoder-config", config });
     const clock = vi.spyOn(performance, "now");
     try {
       clock.mockReturnValue(100);

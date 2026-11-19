@@ -26,12 +26,6 @@ export interface ColorModelV1 {
     readonly primaries: "rec709";
     readonly transfer: "srgb";
   };
-  readonly export: {
-    readonly primaries: "bt709";
-    readonly transfer: "iec61966-2-1";
-    readonly matrix: "bt709";
-    readonly fullRange: false;
-  };
 }
 
 /**
@@ -74,12 +68,6 @@ export const V1_COLOR_MODEL: ColorModelV1 = Object.freeze({
     space: "srgb",
     primaries: "rec709",
     transfer: "srgb",
-  }),
-  export: Object.freeze({
-    primaries: "bt709",
-    transfer: "iec61966-2-1",
-    matrix: "bt709",
-    fullRange: false,
   }),
 });
 

@@ -34,12 +34,6 @@ describe("v1 color model", () => {
         lumaCoefficients: [0.2126, 0.7152, 0.0722],
       },
       display: { space: "srgb" },
-      export: {
-        primaries: "bt709",
-        transfer: "iec61966-2-1",
-        matrix: "bt709",
-        fullRange: false,
-      },
     });
     expect(Object.isFrozen(V1_COLOR_MODEL)).toBe(true);
     expect(Object.isFrozen(V1_COLOR_MODEL.working)).toBe(true);

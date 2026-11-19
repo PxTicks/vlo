@@ -18,8 +18,6 @@ import {
   applyOutputTransformStack,
   type OutputTransform,
 } from "../utils/outputTransformStack";
-import { V1_COLOR_MODEL } from "../../../core/color";
-
 import type { ExportPhase } from "../../../core/export/exportProgress";
 import { ExportFileTarget } from "./ExportFileTarget";
 import { ensureAacEncoder } from "./aacEncoderFallback";
@@ -178,10 +176,6 @@ export interface TextureOutputEncoderOptions {
   onDiagnostic?: (event: ExportDiagnostic) => void;
 }
 
-interface ColorTaggedVideoEncoderConfig extends VideoEncoderConfig {
-  colorSpace?: VideoColorSpaceInit;
-}
-
 /** Captured outcome of a deferred encode; never rejects so it can sit unawaited. */
 type SettledEncode =
   | { status: "fulfilled" }
@@ -298,21 +292,12 @@ export class TextureOutputEncoder {
         const videoSource = new CanvasSource(this.app.canvas, {
           ...encoding.video,
           keyFrameInterval: definition.keyFrameInterval,
-          // Mediabunny 1.34 exposes the WebCodecs config immediately before it
-          // checks/configures the encoder. Supplying a complete color space
-          // gives the encoder the information needed for H.264 VUI metadata.
           onEncoderConfig: (config) => {
-            (config as ColorTaggedVideoEncoderConfig).colorSpace = {
-              ...V1_COLOR_MODEL.export,
-            };
             this.onDiagnostic?.({
               kind: "encoder-config", outputId: definition.id,
               config: structuredClone(config),
             });
           },
-          // The MP4 muxer emits `colr` when the first decoder config carries a
-          // complete color space. Keep this explicit even on encoders that omit
-          // the fields from their returned metadata.
           onEncodedPacket: (packet, metadata) => {
             encodeCounts.encoded += 1;
             const waiters = encodeCounts.packetWaiters;
@@ -335,10 +320,13 @@ export class TextureOutputEncoder {
                   ? null : performance.now() - startedAt,
               });
             }
-            if (metadata?.decoderConfig) {
-              metadata.decoderConfig.colorSpace = {
-                ...V1_COLOR_MODEL.export,
-              };
+            const decoderConfig = metadata?.decoderConfig;
+            if (!isAlphaWebM && decoderConfig && decoderConfig.colorSpace?.fullRange == null) {
+              // WebM can signal unknown range and keep the other color fields.
+              // MP4's colr box requires a range bit. Mediabunny writes limited
+              // range for partial metadata, so omit the box when range is
+              // unknown and let the decoder use any H.264 bitstream signaling.
+              delete decoderConfig.colorSpace;
             }
           },
         });
